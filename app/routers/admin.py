@@ -9,6 +9,36 @@ from app.config import IS_CLOUD, PUBLIC_BASE_URL, PUBLIC_HTML_DIR, inject_global
 
 router = APIRouter()
 
+# ---- BGM（ヘッダー再生・設定登録） ----
+# 設定画面のシーン選択プルダウンの選択肢（先頭は未選択）。
+BGM_SCENES = ["受付", "練習", "予選", "決勝", "選手入場", "優勝決定戦", "昼休み", "終了"]
+BGM_MAX = 10                          # 登録できる最大曲数
+BGM_MAX_BYTES = 30 * 1024 * 1024      # 1曲あたり最大30MB
+
+
+def _bgm_dir(request) -> str | None:
+    """BGM mp3 の保存先ディレクトリを返す。
+
+    - クラウド版：{store.public_dir or PUBLIC_HTML_DIR}/bgm （nginx 配信ではなくアプリ経由で返す）
+    - オンプレ版：app/static/bgm （賞状背景と同じくファイル名固定で上書き）
+
+    未設定（クラウドで公開ディレクトリ不明）のときは None。
+    """
+    if IS_CLOUD:
+        store = getattr(request.state, "store", None)
+        public_dir = getattr(store, "public_dir", None) if store is not None else None
+        if not public_dir:
+            public_dir = PUBLIC_HTML_DIR
+        if not public_dir:
+            return None
+        return os.path.join(public_dir, "bgm")
+    return os.path.join(os.path.dirname(__file__), "../static/bgm")
+
+
+def _bgm_slot_name(slot: int) -> str:
+    """スロット番号（1..10）→ 固定ファイル名（bgm-01.mp3 …）。"""
+    return f"bgm-{int(slot):02d}.mp3"
+
 
 def _read_store_icon_ver(db_path: str) -> str:
     """指定店舗のDBから共通アイコンのバージョン（pwa_icon_ver）を読む。無ければ空。"""
@@ -224,6 +254,34 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     # 設定画面プレビュー用（有効/無効に関係なく登録枚数分のURL）
     slideshow_previews = _pwa.slideshow_urls(request, respect_enabled=False) if IS_CLOUD else []
 
+    # ---- BGM（設定画面：最大10曲の登録フォーム用） ----
+    async with db.execute("SELECT value FROM app_settings WHERE key='bgm_tracks'") as cur:
+        _bgm_row = await cur.fetchone()
+    try:
+        _bgm_list = json.loads(_bgm_row["value"]) if _bgm_row and _bgm_row["value"] else []
+    except Exception:
+        _bgm_list = []
+    async with db.execute("SELECT value FROM app_settings WHERE key='bgm_ver'") as cur:
+        _bgm_ver_row = await cur.fetchone()
+    bgm_ver = _bgm_ver_row["value"] if _bgm_ver_row and _bgm_ver_row["value"] else ""
+    _bgm_by_slot = {}
+    for t in _bgm_list:
+        try:
+            _bgm_by_slot[int(t.get("slot"))] = t
+        except Exception:
+            pass
+    # 1..BGM_MAX の固定行を作る（未登録スロットは空）
+    bgm_rows = []
+    for i in range(1, BGM_MAX + 1):
+        t = _bgm_by_slot.get(i)
+        bgm_rows.append({
+            "slot": i,
+            "name": (t.get("name") if t else "") or "",
+            "note": (t.get("note") if t else "") or "",
+            "scene": (t.get("scene") if t else "") or "",
+            "registered": bool(t),
+        })
+
     # 3画面QR（管理用＝admin鍵付き／観覧用＝view鍵付き／レーサー用＝/enter鍵なし）
     # 中央ロゴは画面別の枠付きアイコン（共通アイコン未登録なら無し）。
     qr_targets = []
@@ -293,6 +351,9 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
         "slideshow_count": slideshow_count,
         "slideshow_previews": slideshow_previews,
         "qr_targets": qr_targets,
+        "bgm_rows": bgm_rows,
+        "bgm_ver": bgm_ver,
+        "bgm_scenes": BGM_SCENES,
     })
 
 
@@ -1286,3 +1347,158 @@ async def upload_card_bg(tid: int, request: Request, db: aiosqlite.Connection = 
         import traceback
         traceback.print_exc()
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ============================================================
+# BGM（ヘッダー再生・設定登録）
+# ============================================================
+
+@router.post("/settings/bgm/save")
+async def save_bgm(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """設定画面の BGM フォーム（最大10曲）を保存する。
+
+    各行 i（1..BGM_MAX）について:
+      - bgm_delete_i にチェック  → その行の mp3 とメタデータを削除
+      - bgm_file_i に mp3 添付   → bgm-0i.mp3 へ上書き保存し、名前/備考/シーンを更新
+      - ファイル未添付           → 既存行の備考/シーンのみ更新（曲は据え置き）
+    メタデータは app_settings.bgm_tracks（JSON配列）に保存し、bgm_ver を更新する。
+    """
+    import os as _os, json as _json, uuid as _uuid
+    from fastapi.responses import RedirectResponse
+
+    try:
+        form = await request.form()
+        bgm_dir = _bgm_dir(request)
+        if not bgm_dir:
+            raise ValueError("BGMの保存先ディレクトリが未設定です（クラウド版は PUBLIC_HTML_DIR を確認）。")
+        _os.makedirs(bgm_dir, exist_ok=True)
+
+        # 既存メタデータを slot 辞書へ
+        async with db.execute("SELECT value FROM app_settings WHERE key='bgm_tracks'") as cur:
+            row = await cur.fetchone()
+        try:
+            existing = _json.loads(row["value"]) if row and row["value"] else []
+        except Exception:
+            existing = []
+        by_slot = {}
+        for t in existing:
+            try:
+                by_slot[int(t.get("slot"))] = dict(t)
+            except Exception:
+                pass
+
+        for i in range(1, BGM_MAX + 1):
+            delete = bool(form.get(f"bgm_delete_{i}"))
+            note = (form.get(f"bgm_note_{i}") or "").strip()
+            scene = (form.get(f"bgm_scene_{i}") or "").strip()
+            if scene not in BGM_SCENES:
+                scene = ""
+
+            path = _os.path.join(bgm_dir, _bgm_slot_name(i))
+
+            if delete:
+                try:
+                    if _os.path.exists(path):
+                        _os.remove(path)
+                except Exception:
+                    pass
+                by_slot.pop(i, None)
+                continue
+
+            up = form.get(f"bgm_file_{i}")
+            has_file = up is not None and hasattr(up, "filename") and up.filename
+
+            if has_file:
+                ext = _os.path.splitext(up.filename)[1].lower()
+                if ext != ".mp3":
+                    # mp3 以外は無視（他の行は処理継続）
+                    continue
+                data = await up.read()
+                if not (0 < len(data) <= BGM_MAX_BYTES):
+                    continue
+                with open(path, "wb") as f:
+                    f.write(data)
+                by_slot[i] = {
+                    "slot": i,
+                    "name": _os.path.basename(up.filename),
+                    "note": note,
+                    "scene": scene,
+                }
+            else:
+                # 添付なし：既存行があればメタのみ更新
+                if i in by_slot:
+                    by_slot[i]["note"] = note
+                    by_slot[i]["scene"] = scene
+
+        tracks = [by_slot[k] for k in sorted(by_slot.keys())]
+        ver = _uuid.uuid4().hex[:8]
+        await db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('bgm_tracks', ?)",
+            (_json.dumps(tracks, ensure_ascii=False),),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('bgm_ver', ?)",
+            (ver,),
+        )
+        await db.commit()
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[admin] bgm save error: {e}", flush=True)
+
+    return RedirectResponse(url="/admin/settings#bgm", status_code=303)
+
+
+@router.get("/bgm/list")
+async def bgm_list(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """ヘッダーのBGMポップアップ用：登録済み曲の一覧をJSONで返す。"""
+    import json as _json
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    async with db.execute("SELECT value FROM app_settings WHERE key='bgm_tracks'") as cur:
+        row = await cur.fetchone()
+    try:
+        tracks = _json.loads(row["value"]) if row and row["value"] else []
+    except Exception:
+        tracks = []
+    async with db.execute("SELECT value FROM app_settings WHERE key='bgm_ver'") as cur:
+        vrow = await cur.fetchone()
+    ver = vrow["value"] if vrow and vrow["value"] else ""
+
+    # 実ファイルが存在する曲だけ返す
+    bgm_dir = _bgm_dir(request)
+    out = []
+    for t in tracks:
+        try:
+            slot = int(t.get("slot"))
+        except Exception:
+            continue
+        if bgm_dir:
+            import os as _os
+            if not _os.path.exists(_os.path.join(bgm_dir, _bgm_slot_name(slot))):
+                continue
+        out.append({
+            "slot": slot,
+            "name": t.get("name") or f"BGM {slot}",
+            "note": t.get("note") or "",
+            "scene": t.get("scene") or "",
+        })
+    return _JSONResponse({"tracks": out, "ver": ver})
+
+
+@router.get("/bgm/file/{slot}")
+async def bgm_file(slot: int, request: Request):
+    """登録済みBGM（mp3）を返す。オンプレ/クラウド共通でこのルート経由で配信する。"""
+    import os as _os
+    from fastapi.responses import FileResponse, Response
+
+    if slot < 1 or slot > BGM_MAX:
+        return Response(status_code=404)
+    bgm_dir = _bgm_dir(request)
+    if not bgm_dir:
+        return Response(status_code=404)
+    path = _os.path.join(bgm_dir, _bgm_slot_name(slot))
+    if not _os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="audio/mpeg", filename=_bgm_slot_name(slot))
