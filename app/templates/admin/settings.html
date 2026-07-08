@@ -1261,14 +1261,14 @@
 <script>
 /* ---------- BGM 試聴（設定画面内） ---------- */
 (function(){
-  var _bgmPrefix = "{{ ('/' ~ request.state.store.slug) if (request.state.store and request.state.store.slug) else '' }}";
+  // スラグ（店舗2以降）はミドルウェアが '/admin...' に自動前置するため、素のパスで書く
   var _bgmVer = "{{ bgm_ver }}";
   var _bgmTestSlot = null;
   window.testBgm = function(slot){
     var a = document.getElementById('bgmTestAudio');
     if(!a) return;
     if(_bgmTestSlot === slot && !a.paused){ a.pause(); _bgmTestSlot = null; return; }
-    a.src = _bgmPrefix + '/admin/bgm/file/' + slot + (_bgmVer ? ('?v=' + _bgmVer) : '');
+    a.src = '/admin/bgm/file/' + slot + (_bgmVer ? ('?v=' + _bgmVer) : '');
     a.loop = true;
     a.play().then(function(){ _bgmTestSlot = slot; }).catch(function(){});
   };
