@@ -445,6 +445,19 @@ updatePubStatus();
   var audio = document.getElementById('bgmAudio');
   var curSlot = null;
 
+  // ページを開いた／「戻る」等で復帰した（bfcache含む）ときは必ずBGMをOFFにする
+  function forceBgmOff(){
+    try { audio.pause(); audio.currentTime = 0; audio.removeAttribute('src'); audio.load(); } catch(e){}
+    curSlot = null;
+    updateNowPlaying('');
+    setStatus();
+    var overlay = document.getElementById('bgmOverlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+  window.addEventListener('pageshow', forceBgmOff);
+  // ページを離れる瞬間にも止める（bfcacheに再生中で入り込むのを防ぐ）
+  window.addEventListener('pagehide', function(){ try { audio.pause(); } catch(e){} });
+
   window.openBgmPopup = function(){
     var overlay = document.getElementById('bgmOverlay');
     overlay.style.display = 'flex';
