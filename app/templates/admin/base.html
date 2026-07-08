@@ -162,7 +162,6 @@ select{background:#fff}
   <!-- BGM（クリックでポップアップ→1曲選択→ループ再生） -->
   <div class="nav-group">
     <button type="button" id="bgmBtn"
-            data-prefix="{{ ('/' ~ request.state.store.slug) if (request.state.store and request.state.store.slug) else '' }}"
             onclick="openBgmPopup()"
             title="BGMを再生"
             style="display:flex;align-items:center;gap:6px;color:#ecf0f1;padding:14px 16px;font-size:13px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
@@ -440,8 +439,6 @@ updatePubStatus();
 
 <script>
 (function(){
-  var btn   = document.getElementById('bgmBtn');
-  var prefix = (btn && btn.dataset.prefix) || '';
   var audio = document.getElementById('bgmAudio');
   var curSlot = null;
 
@@ -470,7 +467,7 @@ updatePubStatus();
   function loadBgmList(){
     var box = document.getElementById('bgmList');
     box.innerHTML = '<div style="color:#95a5a6;font-size:13px;padding:16px 4px">読み込み中…</div>';
-    fetch(prefix + '/admin/bgm/list', {cache:'no-store'})
+    fetch('/admin/bgm/list', {cache:'no-store'})
       .then(function(r){ return r.json(); })
       .then(function(d){ renderBgmList(d.tracks || [], d.ver || ''); })
       .catch(function(){
@@ -508,7 +505,7 @@ updatePubStatus();
   }
 
   window.playBgm = function(slot, name, ver){
-    audio.src = prefix + '/admin/bgm/file/' + slot + (ver ? ('?v=' + ver) : '');
+    audio.src = '/admin/bgm/file/' + slot + (ver ? ('?v=' + ver) : '');
     audio.loop = true;
     audio.play().then(function(){
       curSlot = slot;
