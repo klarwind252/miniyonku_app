@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<link href="/static/fonts/cert_fonts.css" rel="stylesheet">
+<title>賞状 - {{ t.name }}</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: #e8e8e8;
+  font-family: 'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;
+  min-height: 100vh;
+}
+
+/* ===== コントロールバー ===== */
+.ctrl {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #2c3e50;
+  color: #ecf0f1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  flex-wrap: wrap;
+}
+.ctrl-title { font-size: 15px; font-weight: bold; flex:1; min-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctrl label  { font-size: 12px; color: #bdc3c7; white-space: nowrap; }
+.ctrl select {
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid #3d5166;
+  background: #1a252f;
+  color: #ecf0f1;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cbtn {
+  padding: 7px 18px;
+  border-radius: 5px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.cbtn-print   { background: #2980b9; color: #fff; }
+.cbtn-print:hover { background: #2471a3; }
+.cbtn-back    { background: transparent; color: #bdc3c7; border: 1px solid #3d5166; }
+.cbtn-back:hover { background: #34495e; color: #fff; text-decoration: none; }
+
+/* ===== 賞状ページ群 ===== */
+.pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40px;
+  padding: 32px 20px 60px;
+}
+
+/* ===== 1枚の用紙 ===== */
+.cert-page {
+  position: relative;
+  background: #fff;
+  box-shadow: 0 4px 24px rgba(0,0,0,.25);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+/* 背景画像レイヤー */
+.cert-page .cert-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.cert-page .cert-bg-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* テキストオブジェクトレイヤー */
+.cert-page .cert-field {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+.cert-page .cert-field-inner {
+  width: 100%;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+
+
+/* ===== 印刷 ===== */
+@media print {
+  body { background: #fff; }
+  .ctrl { display: none !important; }
+  .pages { gap: 0; padding: 0; }
+  .cert-page {
+    box-shadow: none;
+    page-break-after: always;
+    margin: 0 !important;
+  }
+  .cert-page:last-child { page-break-after: avoid; }
+}
+</style>
+</head>
+<body>
+
+<!-- テンプレートデータをJSに埋め込む -->
+<script>
+const RACE = {
+  name: {{ t.name | tojson }},
+  date: {{ (t.date or '') | tojson }},
+};
+const RESULTS = {
+  1: {{ results.get(1, '') | tojson }},
+  2: {{ results.get(2, '') | tojson }},
+  3: {{ results.get(3, '') | tojson }},
+};
+const TODAY = {{ (today.year|string + '年' + today.month|string + '月' + today.day|string + '日') | tojson }};
+const RANKS = [
+  { rank:1, label:'第一位', titleClass:'gold',   medal:'🥇' },
+  { rank:2, label:'第二位', titleClass:'silver', medal:'🥈' },
+  { rank:3, label:'第三位', titleClass:'bronze', medal:'🥉' },
+];
+
+// テンプレート一覧（layout はPython側でパース済みオブジェクト）
+const TEMPLATES = [
+  {% for tpl in cert_templates %}
+  {
+    id: {{ tpl.id }},
+    name: {{ tpl.name | tojson }},
+    paper_size: {{ tpl.paper_size | tojson }},
+    orientation: {{ tpl.orientation | tojson }},
+    layout: (function(){ var l = {{ tpl.layout | tojson }}; return (l && typeof l === 'object') ? l : {}; })()
+  },
+  {% endfor %}
+];
+
+// 用紙サイズ定義 (mm) @96dpi
+const PAPER = { 'A4':[210,297],'A5':[148,210],'A6':[105,148],'B4':[257,364],'B5':[182,257],'B6':[128,182],'ハガキ':[100,148],'L判':[89,127] };
+const MM2PX = 3.7795;
+</script>
+
+<!-- コントロールバー -->
+<div class="ctrl">
+  <div class="ctrl-title">🏅 賞状 — {{ t.name }}</div>
+  <div style="flex:1"></div>
+
+  <a href="/admin/tournaments/{{ t.id }}" class="cbtn cbtn-back">← 戻る</a>
+
+  <label>テンプレート</label>
+  <select id="tplSelect" onchange="applyTemplate()">
+    {% for tpl in cert_templates %}
+    <option value="{{ tpl.id }}">{{ tpl.name }}（{{ tpl.paper_size }}{% if tpl.orientation=='landscape' %}横{% else %}縦{% endif %}）</option>
+    {% endfor %}
+  </select>
+
+  <button class="cbtn cbtn-print" onclick="window.print()">🖨️ 印刷</button>
+</div>
+
+<!-- 賞状3枚 -->
+<div class="pages" id="pages"></div>
+
+<script>
+// ============================================================
+// メイン
+// ============================================================
+function applyTemplate() {
+  const tid = +document.getElementById('tplSelect').value;
+  const tpl = TEMPLATES.find(t => t.id === tid);
+  renderPages(tpl || null);
+  setPrintPageSize(tpl || null);
+}
+
+function renderPages(tpl) {
+  const container = document.getElementById('pages');
+  container.innerHTML = '';
+  if (!tpl) return;
+  RANKS.forEach(r => {
+    container.appendChild(renderTemplatePage(r, tpl));
+  });
+}
+
+// ============================================================
+// テンプレートモード
+// ============================================================
+function renderTemplatePage(rankInfo, tpl) {
+  // layout が空オブジェクト or objects が空の場合はコンソールに警告
+  const layout = (tpl.layout && typeof tpl.layout === 'object') ? tpl.layout : {};
+  const objs   = Array.isArray(layout.objects) ? layout.objects : [];
+
+  console.log('[certificate] tpl.id='+tpl.id+' layout keys='+Object.keys(layout)+' objs='+objs.length);
+
+  // 旧URL形式 /cert_bg/ → /static/cert_bg/ に自動補正
+  let bgUrl = layout.bg_image_url || '';
+  if (bgUrl.startsWith('/cert_bg/')) bgUrl = '/static' + bgUrl;
+
+  const [wMM, hMM] = PAPER[tpl.paper_size] || PAPER['A4'];
+  let [wPX, hPX]   = [Math.round(wMM * MM2PX), Math.round(hMM * MM2PX)];
+  if (tpl.orientation === 'landscape') [wPX, hPX] = [hPX, wPX];
+
+  const page = document.createElement('div');
+  page.className = 'cert-page';
+  page.style.width  = wPX + 'px';
+  page.style.height = hPX + 'px';
+
+  // 背景
+  if (bgUrl) {
+    if (bgUrl.toLowerCase().endsWith('.svg')) {
+      const wrap = document.createElement('div');
+      wrap.className = 'cert-bg-svg';
+      fetch(bgUrl).then(r => r.text()).then(txt => { wrap.innerHTML = txt; }).catch(()=>{});
+      page.appendChild(wrap);
+    } else {
+      const img = document.createElement('img');
+      img.className = 'cert-bg';
+      img.src = bgUrl;
+      page.appendChild(img);
+    }
+  }
+
+  // オブジェクト（テキスト・画像）
+  objs.forEach(obj => {
+    const el = document.createElement('div');
+    el.className = 'cert-field';
+    const vaMap = {top:'flex-start', middle:'center', bottom:'flex-end'};
+    el.style.cssText = `left:${obj.x}px;top:${obj.y}px;width:${obj.w}px;height:${obj.h}px;align-items:${vaMap[obj.verticalAlign||'middle']};`;
+
+    if (obj.type === 'image') {
+      // 画像オブジェクト
+      if (obj.imageUrl) {
+        const img = document.createElement('img');
+        img.className = 'cert-field-inner';
+        img.src = obj.imageUrl;
+        img.style.cssText = `width:100%;height:100%;object-fit:${obj.objectFit||'contain'};display:block;`;
+        el.appendChild(img);
+      }
+    } else {
+      // テキストオブジェクト
+      const inner = document.createElement('div');
+      inner.className = 'cert-field-inner';
+      inner.style.cssText = `
+        font-size:${obj.fontSize}px;
+        font-family:${obj.fontFamily};
+        font-weight:${obj.fontWeight};
+        font-style:${obj.fontStyle};
+        color:${obj.color};
+        text-align:${obj.align};
+        letter-spacing:${obj.letterSpacing}px;
+        line-height:${obj.lineHeight};
+      `;
+      // カスタムテキストはfieldがないのでtextを使う
+      inner.textContent = obj.field ? resolveField(obj.field, rankInfo) : (obj.text || '');
+      el.appendChild(inner);
+    }
+    page.appendChild(el);
+  });
+
+  return page;
+}
+
+// {racer_name} 等の変数を実値に置換
+function resolveField(field, rankInfo) {
+  const name = RESULTS[rankInfo.rank] || '　—　';
+  return (field || '')
+    .replace('{racer_name}', name)
+    .replace('{race_name}',  RACE.name)
+    .replace('{rank}',       rankInfo.label)
+    .replace('{date}',       RACE.date || TODAY);
+}
+
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ============================================================
+// 印刷用 @page サイズ指定
+// ============================================================
+function setPrintPageSize(tpl) {
+  let css = '@media print { @page { size: A4 portrait; } }';
+  if (tpl && tpl.paper_size) {
+    const [wMM, hMM] = PAPER[tpl.paper_size] || PAPER['A4'];
+    const orient = tpl.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const sw = orient === 'landscape' ? hMM : wMM;
+    const sh = orient === 'landscape' ? wMM : hMM;
+    css = `@media print { @page { size: ${sw}mm ${sh}mm; margin: 0; } }`;
+  }
+  let el = document.getElementById('print-page-style');
+  if (!el) { el = document.createElement('style'); el.id = 'print-page-style'; document.head.appendChild(el); }
+  el.textContent = css;
+}
+
+// ============================================================
+// 起動（テンプレートが1件以上あれば最初のものを自動選択）
+// ============================================================
+(function() {
+  const sel = document.getElementById('tplSelect');
+  if (TEMPLATES.length > 0) {
+    sel.value = TEMPLATES[0].id;
+  }
+  applyTemplate();
+})();
+</script>
+</body>
+</html>

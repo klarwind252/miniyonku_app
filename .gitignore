@@ -1,0 +1,35 @@
+# ==== 秘密情報（絶対に公開しない）====
+# 本番トークンを含む実環境ファイル
+deploy/miniyonku.env
+# 接続情報・実トークンの控え
+setup/アクセス用.txt
+# 念のため、あらゆる .env 実ファイル（.env.example は除外されない）
+*.env
+
+# ==== データベース（本番データ）====
+data/
+*.db
+*.sqlite
+*.sqlite3
+data_bkp/
+
+# ==== Python 実行環境・キャッシュ ====
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# ==== バックアップ ====
+app_bkp/
+
+# ==== Windows のゴミファイル ====
+desktop.ini
+Thumbs.db
+
+# ==== 参加者向けに書き出す生成物（あれば）====
+public_html/
+
+# ==== （任意）リポジトリを軽くしたい場合はコメント解除 ====
+# setup/python-3.12.10_32bit.exe
+# setup/python-3.12.10_64bit.exe
+# setup/wheelhouse/

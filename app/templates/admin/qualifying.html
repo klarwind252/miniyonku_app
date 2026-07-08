@@ -1,0 +1,2263 @@
+{% extends "admin/base.html" %}
+{% block title %}{% if is_none_roundrobin %}決勝管理（総当たり）{% elif is_roundrobin %}総当たり管理{% else %}予選管理{% endif %} - {{ t.name }}{% endblock %}
+{% block head %}
+<style>
+/* 予選管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
+/* インライン入力 */
+.round-tab-btn { padding:8px 18px;border:2px solid #dee2e6;border-radius:20px;cursor:pointer;font-size:18px;font-weight:bold;background:#fff;font-family:inherit;transition:all .15s; }
+.round-tab-btn.active { background:#2980b9;color:#fff;border-color:#2980b9; }
+.win-btn {
+  width:36px; height:36px; border:2px solid #dee2e6; border-radius:6px;
+  cursor:pointer; font-size:18px; font-weight:bold; background:#fff;
+  transition:all .12s; line-height:1; padding:0; font-family:inherit;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.win-btn.sel-win  { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
+.win-btn.sel-lose { border-color:#e74c3c; background:#fdf2f2; color:#e74c3c; }
+.win-btn.sel-co   { border-color:#e67e22; background:#fef9e7; color:#d35400; font-weight:bold; }
+.time-input {
+  width:88px; padding:3px 6px; border:1px solid #ced4da; border-radius:4px;
+  font-size:12px; text-align:center; margin-top:3px;
+}
+.time-input:focus { outline:none; border-color:#2980b9; }
+.race-row td { vertical-align:middle; padding:8px 10px; }
+.save-btn {
+  padding:4px 12px; border:none; border-radius:4px; cursor:pointer;
+  font-size:12px; font-weight:bold; font-family:inherit; transition:all .12s;
+}
+.save-btn.unsaved  { background:#f39c12; color:#fff; }
+.save-btn.saved    { background:#27ae60; color:#fff; }
+.save-btn.saving   { background:#95a5a6; color:#fff; cursor:wait; }
+.adv-btn {
+  width:34px; height:34px; border:2px solid #dee2e6; border-radius:6px;
+  cursor:pointer; font-size:16px; font-weight:bold; background:#fff;
+  transition:all .12s; font-family:inherit;
+}
+.adv-btn.adv-yes { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
+.adv-btn.adv-no  { border-color:#e74c3c; background:#fdf2f2; color:#e74c3c; }
+.lane-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
+/* ===== 上部アクションバー（sticky・レース詳細と同じ挙動） =====
+   PC(>1024px) : 折り返さず1行（右寄せ）  タブレット/スマホ : 段組み＋均等幅
+   スマホ(≤700px) : 全幅（画面端まで）＋padding/margin 0 */
+.detail-actionbar{
+  position:sticky; top:0; z-index:100;
+  background:#f4f5f7;
+  margin:0 -20px 16px;        /* .container の左右padding(20px)を打ち消して全幅にする */
+  padding:10px 20px;
+  border-bottom:1px solid #e1e5ea;
+  box-shadow:0 6px 10px -8px rgba(0,0,0,.25);
+  display:flex; gap:8px; flex-wrap:nowrap;
+  align-items:center; justify-content:flex-end;
+}
+.detail-actionbar .btn{margin:0}
+@media(max-width:1024px){
+  .detail-actionbar{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:8px; align-items:stretch; justify-items:stretch;
+  }
+  .detail-actionbar a{width:100%;}   /* ボタン均等幅・画面いっぱい（.btnの中央揃えを継承） */
+}
+@media(max-width:700px){
+  .detail-actionbar{
+    gap:6px;
+    padding:0;                            /* padding 0 */
+    margin:0 0 12px;                      /* margin 0（下だけ間隔を確保） */
+    width:100vw; max-width:100vw;
+    margin-left:calc(50% - 50vw);         /* 画面端まで拡張（container左右余白を打ち消し全幅化） */
+    border-radius:0;
+  }
+}
+/* 全予選終了時：決勝管理ボタンを点滅グローで強調（heat_tournament と同一） */
+@keyframes m4DecisionPulse{0%,100%{box-shadow:0 0 0 0 rgba(39,174,96,.6)}50%{box-shadow:0 0 0 7px rgba(39,174,96,0)}}
+.btn-decision-hl{animation:m4DecisionPulse 1.4s ease-out infinite;font-weight:bold!important}
+/* ヒート完了時：次ヒートのスケジュール生成ボタンを青グローで強調 */
+@keyframes m4NextHeatPulse{0%,100%{box-shadow:0 0 0 0 rgba(41,128,185,.6)}50%{box-shadow:0 0 0 8px rgba(41,128,185,0)}}
+.btn-nextheat-hl{animation:m4NextHeatPulse 1.3s ease-out infinite;font-weight:bold!important}
+/* 全レース入力完了時：自動集計ボタンを大きく・強い緑グローで最も目立たせる */
+@keyframes m4AutoCalcPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.75)}70%{box-shadow:0 0 0 14px rgba(39,174,96,0)}100%{box-shadow:0 0 0 0 rgba(39,174,96,0)}}
+.btn-autocalc-hl{animation:m4AutoCalcPulse 1.1s ease-out infinite;font-size:18px!important;padding:11px 28px!important;font-weight:bold!important;transform:scale(1.03)}
+</style>
+{% endblock %}
+{% block content %}
+{% raw %}
+<button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
+<style>
+#m4-reload-btn{position:fixed;bottom:16px;right:16px;z-index:99999;width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;padding:0;background:#f39c12;color:#fff;opacity:.62;font-size:24px;line-height:44px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;transition:opacity .15s}
+#m4-reload-btn:hover,#m4-reload-btn:active{opacity:.95}
+@media print{ #m4-reload-btn{display:none} }
+</style>
+<script>
+function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
+</script>
+{% endraw %}
+{# 表示するコース列。総当たり系（roundrobin/heat_roundrobin/none_roundrobin）は
+   1vs1 のため常に 1コース・2コースの2列。それ以外（通常ヒート・ポイント制）は3列。 #}
+{% set course_cols = [1, 2] if (is_roundrobin or is_heat_roundrobin or is_none_roundrobin) else [1, 2, 3] %}
+<div class="detail-actionbar">
+  {% if is_heat_roundrobin %}
+  {# ヒート（総当たり）：ヒート（トーナメント）と同じアクションバー・表示ルール #}
+  {% set hr_all_done = (heat_total_count > 0) and (complete_round_nos|length >= heat_total_count) %}
+  {% if hr_all_done %}
+  <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#1e824c">✅ すべての予選が終了しました。結果を確認して「決勝管理」に進んでください。</span>
+  {% else %}
+  <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#c0392b">⚠️ すべてのヒートの結果を確定してください。</span>
+  {% endif %}
+  <a href="/admin/tournaments/{{ t.id }}" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">← レース管理</a>
+  {% if hr_all_done %}
+  <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success btn-sm btn-decision-hl" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">🏆 決勝管理</a>
+  {% else %}
+  <button type="button" class="btn btn-secondary btn-sm"
+          title="すべての予選が終了していません"
+          onclick="alert('すべての予選が終了していません。すべてのヒートの結果を確定してから決勝管理に進んでください。')"
+          style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1;cursor:not-allowed;opacity:.6">🏆 決勝管理</button>
+  {% endif %}
+  <a href="/admin/tournaments/{{ t.id }}/edit" class="btn btn-warning btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">✏️ レース情報を編集</a>
+  {% elif is_finalized %}
+  <a href="/admin/tournaments/{{ t.id }}/certificate" target="_blank" class="btn btn-secondary btn-sm">🏅 賞状</a>
+  <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-secondary btn-sm">𝕏 ポスト</a>
+  <a href="/admin/tournaments/" class="btn btn-secondary btn-sm">← レース一覧</a>
+  {% if not is_none_roundrobin %}<a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success btn-sm">🏆 決勝管理</a>{% endif %}
+  <a href="/admin/tournaments/{{ t.id }}/edit" class="btn btn-warning btn-sm">✏️ レース情報を編集</a>
+  {% else %}
+  {# ポイント制・総当たり・並び順など：ヒート系と同じ3ボタン構成に統一 #}
+  {% set all_races_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
+  {# 自動集計で決勝進出者が確定したら（standings に advanced が入る）決勝管理ボタンを緑グローで強調 #}
+  {% set fd = namespace(any=false) %}
+  {% for s in standings %}{% if s.advanced is defined and s.advanced is not none %}{% set fd.any = true %}{% endif %}{% endfor %}
+  {% if not is_none_roundrobin %}
+    {% if all_races_done %}
+    <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#1e824c">✅ すべての予選が終了しました。結果を確認して「決勝管理」に進んでください。</span>
+    {% else %}
+    <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#c0392b">⚠️ すべてのレースの結果を入力してください。</span>
+    {% endif %}
+  {% endif %}
+  <a href="/admin/tournaments/{{ t.id }}" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">← レース管理</a>
+  {% if not is_none_roundrobin %}<a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success btn-sm{% if fd.any %} btn-decision-hl{% endif %}" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">🏆 決勝管理</a>{% endif %}
+  <a href="/admin/tournaments/{{ t.id }}/edit" class="btn btn-warning btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">✏️ レース情報を編集</a>
+  {% endif %}
+</div>
+
+<div class="page-title">
+  <h1>{% if is_none_roundrobin %}決勝管理（総当たり）{% elif is_roundrobin %}総当たり管理{% else %}予選管理{% endif %}</h1>
+  <p>{{ t.name }} / {{ t.date }} / {{ t.lane_count }}レーン</p>
+  <p style="margin-top:4px">
+    <span class="status status-qualifying" style="font-size:13px">
+      {{ qualifying_labels.get(t.qualifying_type, t.qualifying_type) }}
+    </span>
+    {% if finalists %}
+      <span style="margin-left:8px;font-size:13px;color:#636e72">→ 決勝進出予定 <strong>{{ finalists }}名</strong></span>
+    {% endif %}
+  </p>
+</div>
+
+{# ── ページ最上部：確定済み表彰台 ── #}
+{% if is_none_roundrobin and is_confirmed_nr and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
+<div style="margin-bottom:20px;padding:24px;background:linear-gradient(135deg,#fff9e6,#fffde7);border:2px solid #f0ad4e;border-radius:12px;text-align:center">
+  <div style="font-size:16px;font-weight:bold;color:#856404;margin-bottom:18px">🏆 最終結果</div>
+  <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px">
+    <div style="text-align:center">
+      <div style="font-size:28px">🥈</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">2位</div>
+      <div style="font-size:16px;font-weight:bold;margin-top:4px">{{ top3_nr[1].name if top3_nr[1] else '—' }}</div>
+      {% if top3_nr[1] %}<div style="font-size:12px;color:#636e72">{{ top3_nr[1].wins }}勝 {{ top3_nr[1].losses }}負</div>{% endif %}
+    </div>
+    <div style="text-align:center;padding:12px 20px;background:#fff3cd;border-radius:10px;border:2px solid #f0ad4e">
+      <div style="font-size:36px">🥇</div>
+      <div style="font-size:13px;color:#856404;margin-top:4px">1位</div>
+      <div style="font-size:20px;font-weight:bold;margin-top:4px;color:#856404">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
+      {% if top3_nr[0] %}<div style="font-size:12px;color:#856404">{{ top3_nr[0].wins }}勝 {{ top3_nr[0].losses }}負</div>{% endif %}
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:28px">🥉</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">3位</div>
+      <div style="font-size:16px;font-weight:bold;margin-top:4px">{{ top3_nr[2].name if top3_nr[2] else '—' }}</div>
+      {% if top3_nr[2] %}<div style="font-size:12px;color:#636e72">{{ top3_nr[2].wins }}勝 {{ top3_nr[2].losses }}負</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ══ order_winner（並び順（勝ち抜け））専用：段階管理・スキャン・組・1着入力 ══ #}
+{% if is_order_winner %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:18px;font-weight:bold">並び順（勝ち抜け）</span>
+    <span style="font-size:20px;font-weight:bold;color:#fff;background:#8e44ad;padding:4px 18px;border-radius:8px;letter-spacing:1px">
+      {{ ow_stage_no }}次予選{% if ow_is_last_stage %}（最終）{% endif %} / 全{{ ow_stage_count }}段階
+    </span>
+    {% if ow_stage_status == 'closed' %}
+      <span class="badge" style="background:#c0392b;color:#fff">この段階は終了</span>
+    {% endif %}
+    <span style="margin-left:auto;font-size:14px;color:#2c3e50;font-weight:bold">
+      通過 <span style="color:#27ae60;font-size:18px">{{ ow_passed }}</span> / {{ ow_advance_count }}名
+      <span style="font-size:12px;color:#7f8c8d;font-weight:normal">（1着{{ ow_win_target }}回で通過・最大{{ ow_max_runs }}回走行・敗退{{ ow_eliminated_count }}名）</span>
+    </span>
+  </div>
+
+  {# 段階タブ #}
+  {% if ow_stages|length > 1 %}
+  <div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0">
+    {% for s in ow_stages %}
+    <span style="padding:5px 14px;border-radius:16px 16px 0 0;font-size:13px;font-weight:bold;
+                 {% if s.stage_no == ow_stage_no %}background:#8e44ad;color:#fff{% elif s.status=='closed' %}background:#d5f5e3;color:#1e8449{% else %}background:#f0f0f0;color:#95a5a6{% endif %}">
+      {{ s.stage_no }}次{% if s.status=='closed' %} ✓{% endif %}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card-body">
+    {% if ow_stage_status != 'closed' %}
+    {# スキャン受付 #}
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <input type="text" id="owScanInput" inputmode="numeric" autocomplete="off"
+             placeholder="エントリーカードをスキャン（または連番を入力）"
+             style="flex:1;min-width:260px;font-size:18px;padding:10px 14px;border:2px solid #8e44ad;border-radius:8px"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();setTimeout(owScan,0);}">
+      <button type="button" class="btn btn-primary" style="font-size:16px;padding:10px 22px;font-weight:bold;background:#8e44ad;border-color:#8e44ad" onclick="owScan()">読み取り</button>
+    </div>
+    <div id="owScanMsg" style="min-height:22px;font-size:14px;margin-bottom:14px"></div>
+    {% else %}
+    <div style="padding:12px 16px;background:#e8f8f0;border:1px solid #a9dfbf;border-radius:8px;color:#1e8449;margin-bottom:14px;font-weight:bold">
+      ✓ {{ ow_stage_no }}次予選は通過枠（{{ ow_advance_count }}名）が埋まり終了しました。
+      {% if ow_is_last_stage %}「決勝進出を確定」で決勝トーナメントへ進みます。{% else %}「次の予選へ進む」で {{ ow_stage_no + 1 }}次予選を開始します。{% endif %}
+    </div>
+    {% endif %}
+
+    {# 待機列 #}
+    <div style="margin-bottom:6px;font-weight:bold;font-size:14px;color:#2c3e50">
+      待機列（出走待ち） <span style="color:#7f8c8d;font-weight:normal">先着順・3人溜まったら自動で3人組確定（残り5人以下は手動）</span>
+    </div>
+    {% if ow_pending %}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      {% for p in ow_pending %}
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#f4ecf9;border:1px solid #e0cef0;border-radius:20px;font-size:14px">
+        <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#8e44ad;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ loop.index }}</span>
+        <strong>{{ p.name }}</strong>{% if p.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ p.yomi }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {# 手動組確定（残り5人以下で表示） #}
+    {% if ow_stage_status != 'closed' and ow_pending|length >= 1 and ow_pending|length <= 5 %}
+    <div style="margin-bottom:12px">
+      <button type="button" class="btn" style="background:#8e44ad;color:#fff;font-weight:bold;padding:8px 18px" onclick="owMakeGroup(false)">
+        待機列で組を確定（{{ ow_pending|length }}名）
+      </button>
+      {% if ow_pending|length == 1 %}
+      <span style="font-size:12px;color:#c0392b;margin-left:8px">※1人のみ。やむを得ない場合のみ単走で確定されます</span>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div style="color:#95a5a6;font-size:13px;margin-bottom:12px">待機列は空です。</div>
+    {% endif %}
+
+    {# 未確定の組（1着入力対象） #}
+    {% if ow_open_heats %}
+    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#2c3e50">走行中の組（1着を入力）</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      {% for h in ow_open_heats %}
+      <div style="border:2px solid #8e44ad;border-radius:10px;padding:12px 14px;background:#fff">
+        <div style="font-size:13px;color:#8e44ad;font-weight:bold;margin-bottom:8px">第{{ h.heat_no }}レース</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          {% for m in h.members %}
+          <button type="button" class="ow-win-btn"
+                  onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})"
+                  style="padding:8px 16px;border:2px solid #27ae60;border-radius:8px;background:#fff;color:#1e8449;font-size:15px;font-weight:bold;cursor:pointer">
+            🏁 {{ m.name }}
+          </button>
+          {% endfor %}
+          <button type="button"
+                  onclick="owSetWin({{ h.heat_id }}, 0)"
+                  style="padding:8px 16px;border:2px solid #95a5a6;border-radius:8px;background:#f8f9fa;color:#636e72;font-size:14px;cursor:pointer">
+            該当者なし（全員CO）
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# 通過者一覧 #}
+    {% if ow_passed_list %}
+    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#1e8449">通過者（{{ ow_passed_list|length }}名）</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      {% for x in ow_passed_list %}
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#eafaf1;border:1px solid #abebc6;border-radius:20px;font-size:14px">
+        <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ x.passed_seq }}</span>
+        <strong>{{ x.name }}</strong>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# 段階制御ボタン #}
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid #eee;padding-top:14px">
+      {% if ow_stage_status == 'closed' %}
+        {% if ow_is_last_stage %}
+        <button type="button" class="btn btn-success" style="font-weight:bold;padding:10px 22px" onclick="owNextStage()">🏆 決勝進出を確定</button>
+        {% else %}
+        <button type="button" class="btn btn-primary" style="font-weight:bold;padding:10px 22px;background:#8e44ad;border-color:#8e44ad" onclick="owNextStage()">➡ 次の予選（{{ ow_stage_no + 1 }}次）へ進む</button>
+        {% endif %}
+        <button type="button" class="btn" style="background:#f39c12;color:#fff" onclick="owReopen()">この段階を再開</button>
+      {% else %}
+        <button type="button" class="btn" style="background:#e67e22;color:#fff;font-weight:bold" onclick="owAddRun()">🔁 もう1周追加（枠が埋まらないとき）</button>
+      {% endif %}
+      <button type="button" class="btn" style="background:#fff;color:#c0392b;border:1px solid #c0392b;margin-left:auto" onclick="owResetStage()">この段階をリセット</button>
+      <button type="button" class="btn" style="background:#fff;color:#c0392b;border:1px solid #c0392b" onclick="owResetAll()">全リセット</button>
+    </div>
+  </div>
+</div>
+
+<script>
+async function owPost(url, body){
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: body || ''
+  });
+  return await res.json();
+}
+function owMsg(text, ok){
+  const el = document.getElementById('owScanMsg');
+  if(el){ el.textContent = text; el.style.color = ok ? '#1e8449' : '#c0392b'; }
+}
+async function owScan(){
+  const inp = document.getElementById('owScanInput');
+  if(!inp) return;
+  const code = inp.value.trim();
+  if(!code) return;
+  inp.value = '';
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/scan', 'code=' + encodeURIComponent(code));
+  owMsg(res.message || '', res.ok);
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 500); }
+  inp.focus();
+}
+async function owMakeGroup(forceSingle){
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/make-group',
+                           forceSingle ? 'force_single=1' : '');
+  if(res.need_confirm_single){
+    if(confirm(res.message)){ return owMakeGroup(true); }
+    return;
+  }
+  owMsg(res.message || '', res.ok);
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 400); }
+}
+async function owSetWin(heatId, winEntryId){
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/heat/' + heatId + '/win',
+                           'win_entry_id=' + encodeURIComponent(winEntryId));
+  owMsg(res.message || '', res.ok);
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 500); }
+}
+async function owAddRun(){
+  if(!confirm('この段階の最大走行回数を1増やして、敗退者を再スキャン可能にします。よろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/add-run', '');
+  owMsg(res.message || '', res.ok);
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 500); }
+}
+async function owNextStage(){
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/next-stage', '');
+  alert(res.message || '');
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 200); }
+}
+async function owReopen(){
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/reopen', '');
+  if(res.ok){ location.reload(); }
+}
+async function owResetStage(){
+  if(!confirm('この段階の待機列・組・結果・通過状況をリセットします（設定は保持）。よろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/reset-stage', '');
+  if(res.ok){ location.reload(); }
+}
+async function owResetAll(){
+  if(!confirm('全段階の予選データを完全にリセットします。元に戻せません。よろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/reset', '');
+  if(res.ok){ location.reload(); }
+}
+document.addEventListener('DOMContentLoaded', function(){
+  const inp = document.getElementById('owScanInput');
+  if(inp) inp.focus();
+});
+</script>
+{% endif %}
+
+{# ══ order（並び順（ポイント制））専用：スキャン受付・待機列・ラウンド制御 ══ #}
+{% if is_order %}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:18px;font-weight:bold">出走スキャン受付</span>
+    {% if order_mode == 'round' %}
+      <span style="font-size:20px;font-weight:bold;color:#fff;background:#2980b9;padding:4px 18px;border-radius:8px;letter-spacing:1px">
+        ラウンド {{ order_current_round }} / {{ order_round_count }} 回戦
+      </span>
+    {% else %}
+      <span class="badge" style="background:#16a085;color:#fff">フリー走行制</span>
+    {% endif %}
+    {% if order_status == 'closed' %}
+      <span class="badge" style="background:#c0392b;color:#fff">予選終了</span>
+    {% endif %}
+    <span style="margin-left:auto;font-size:13px;color:#636e72;display:flex;align-items:center;gap:10px">
+      本エントリー {{ order_total_entries }}名 / {% if order_mode == 'round' %}このラウンドのスキャン済 {{ order_scanned_this_round }}名{% else %}のべ走行 {{ order_scanned_this_round }}回{% endif %}
+      <button type="button" id="unscannedToggle"
+              onclick="toggleUnscanned()"
+              style="font-size:12px;padding:4px 12px;border:1px solid #d35400;border-radius:6px;{% if order_mode == 'round' and order_unscanned|length >= 1 %}background:#e74c3c;color:#fff;box-shadow:0 0 0 3px rgba(231,76,60,.35);animation:unscannedPulse 1.1s ease-in-out infinite{% else %}background:#fff;color:#d35400{% endif %};cursor:pointer;font-weight:bold;white-space:nowrap">
+        {% if order_mode == 'round' %}未受付のレーサーを確認（{{ order_unscanned|length }}名）{% elif order_free_max_runs and order_free_max_runs > 0 %}{{ order_free_max_runs }}回走っていないレーサーを確認（{{ order_unscanned|length }}名）{% else %}エントリーレーサーを確認（{{ order_unscanned|length }}名）{% endif %}
+      </button>
+    </span>
+  </div>
+  <div class="card-body">
+    {% if order_status != 'closed' %}
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <input type="text" id="orderScanInput" inputmode="numeric" autocomplete="off"
+             placeholder="エントリーカードをスキャン（または連番を入力）"
+             style="flex:1;min-width:260px;font-size:18px;padding:10px 14px;border:2px solid #2980b9;border-radius:8px"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();setTimeout(orderScanFlush,0);}">
+      <button type="button" class="btn btn-primary" style="font-size:16px;padding:10px 22px;font-weight:bold" onclick="orderScan()">読み取り</button>
+      <button type="button" class="btn btn-success" style="font-size:16px;padding:10px 18px;font-weight:bold" onclick="startOrderCameraScan()">📷 カメラ</button>
+    </div>
+    <div id="orderScanMsg" style="min-height:22px;font-size:14px;margin-bottom:14px"></div>
+    {% else %}
+    <div style="padding:12px 16px;background:#fdf0f0;border:1px solid #f5c6cb;border-radius:8px;color:#922;margin-bottom:14px">
+      この予選は終了しています。再開するには「予選を再開」を押してください。
+    </div>
+    {% endif %}
+
+    {# 未受付（このラウンド未スキャン）レーサー一覧：初期は非表示 #}
+    <div id="unscannedPanel" style="display:none;margin-bottom:14px;padding:14px 16px;background:#fff5ec;border:2px solid #e67e22;border-radius:10px">
+      <div style="font-size:14px;font-weight:bold;color:#a04000;margin-bottom:10px">
+        {% if order_mode == 'round' %}このラウンド未スキャンのレーサー（{{ order_unscanned|length }}名）{% elif order_free_max_runs and order_free_max_runs > 0 %}{{ order_free_max_runs }}回走っていないレーサー（{{ order_unscanned|length }}名）{% else %}エントリーレーサー（{{ order_unscanned|length }}名）{% endif %}{% if order_status != 'closed' and not is_finalized %}<span style="font-weight:normal;font-size:12px;color:#a04000;margin-left:10px">レーサー名をクリックすると走行スキャン受付ができます</span>{% endif %}
+      </div>
+      {% if order_unscanned %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {% for u in order_unscanned %}
+        <div {% if order_status != 'closed' and not is_finalized %}onclick="orderScanEntry({{ u.entry_id }})" title="クリックで出走スキャン"{% endif %}
+             style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border:1px solid #f0c9a8;border-radius:20px;font-size:14px;{% if order_status != 'closed' and not is_finalized %}cursor:pointer{% endif %}">
+          <span style="display:inline-flex;min-width:34px;height:22px;padding:0 6px;align-items:center;justify-content:center;background:#e67e22;color:#fff;border-radius:11px;font-size:12px;font-weight:bold">
+            {% if u.pre_seq_no is not none %}{{ '%04d'|format(u.pre_seq_no) }}{% else %}—{% endif %}
+          </span>
+          <strong>{{ u.name }}</strong>{% if u.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ u.yomi }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="color:#a04000;font-size:13px">未スキャンのレーサーはいません（全員スキャン済み）。</div>
+      {% endif %}
+    </div>
+
+    {# 待機列 #}
+    <div style="margin-bottom:6px;font-weight:bold;font-size:14px;color:#2c3e50">
+      待機列（出走待ち） <span style="color:#7f8c8d;font-weight:normal">先着順・3人溜まったら自動で3人組確定</span>
+    </div>
+    {% if order_pending %}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      {% for p in order_pending %}
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#eef6fc;border:1px solid #cfe5f7;border-radius:20px;font-size:14px">
+        <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#2980b9;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ loop.index }}</span>
+        <strong>{{ p.name }}</strong>{% if p.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ p.yomi }}</span>{% endif %}
+        {% if order_status != 'closed' and not is_finalized %}
+        <button type="button" title="この受付を取り消す"
+                onclick="orderCancelQueue({{ p.id }}, '{{ p.name|e }}')"
+                style="margin-left:2px;width:20px;height:20px;line-height:1;padding:0;border:none;border-radius:50%;background:#e74c3c;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">×</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding:10px 14px;background:#f8f9fa;border:1px dashed #dee2e6;border-radius:8px;color:#95a5a6;font-size:13px;margin-bottom:12px">
+      待機中のレーサーはいません。
+    </div>
+    {% endif %}
+
+    {# 手動確定パネル：モード別 #}
+    {% if order_mode == 'round' %}
+    {# ── ラウンド制：残り10人以下で調整（従来どおり） ── #}
+    {% set remaining = order_total_entries - order_scanned_this_round %}
+    {% if remaining <= 10 and order_status != 'closed' and (order_pending|length > 0 or remaining > 0) %}
+    <div id="order-adjust-panel" style="margin-bottom:12px;padding:14px 16px;background:#fffbe6;border:2px solid #f0ad4e;border-radius:10px">
+      <div style="font-size:15px;font-weight:bold;color:#856404;margin-bottom:10px">
+        ⚠️ 残り {{ remaining }} 名 — 組み合わせを調整してください
+      </div>
+      <div style="font-size:13px;color:#856404;margin-bottom:12px">
+        待機列の先頭から人数を選んで確定できます。
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        {% if order_pending|length >= 2 and (order_pending|length - 2) != 1 %}
+        <button type="button" style="padding:10px 24px;font-size:16px;font-weight:bold;border:none;border-radius:8px;background:#2980b9;color:#fff;cursor:pointer"
+                onclick="orderMakeGroupWithConfirm(2, {{ remaining }})">👥 2人組で確定</button>
+        {% endif %}
+        {% if order_pending|length >= 3 and (order_pending|length - 3) != 1 %}
+        <button type="button" style="padding:10px 24px;font-size:16px;font-weight:bold;border:none;border-radius:8px;background:#27ae60;color:#fff;cursor:pointer"
+                onclick="orderMakeGroupWithConfirm(3, {{ remaining }})">👥 3人組で確定</button>
+        {% endif %}
+        {% if order_pending|length == 0 %}
+        <span style="color:#856404;font-size:13px">待機列にレーサーがいません。スキャンしてください。</span>
+        {% endif %}
+        {% if order_pending|length == 1 %}
+        <span style="color:#856404;font-size:13px">あと1人スキャンすると2人組で確定できます。</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% else %}
+    {# ── フリー走行制：端数が残ったら任意のタイミングで手動確定（残り警告なし） ── #}
+    {% if order_status != 'closed' and order_pending|length >= 1 %}
+    <div id="order-adjust-panel" style="margin-bottom:12px;padding:14px 16px;background:#eef9f4;border:2px solid #16a085;border-radius:10px">
+      <div style="font-size:13px;color:#0e6b56;margin-bottom:10px">
+        待機列の先頭から人数を選んで、任意のタイミングで手動確定できます（3人揃えば自動確定）。
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        {% if order_pending|length >= 2 and (order_pending|length - 2) != 1 %}
+        <button type="button" style="padding:10px 24px;font-size:16px;font-weight:bold;border:none;border-radius:8px;background:#2980b9;color:#fff;cursor:pointer"
+                onclick="orderMakeGroupWithConfirm(2, 0)">👥 2人組で確定</button>
+        {% endif %}
+        {% if order_pending|length >= 3 and (order_pending|length - 3) != 1 %}
+        <button type="button" style="padding:10px 24px;font-size:16px;font-weight:bold;border:none;border-radius:8px;background:#27ae60;color:#fff;cursor:pointer"
+                onclick="orderMakeGroupWithConfirm(3, 0)">👥 3人組で確定</button>
+        {% endif %}
+        {% if order_pending|length == 1 %}
+        <span style="color:#0e6b56;font-size:13px">あと1人スキャンすると2人組で確定できます。</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {# 制御ボタン #}
+    {% if not is_finalized %}
+    {# 次ラウンド進行の判定：未受付0・待機列空・当ラウンド全結果確定・次ラウンドありなら強調 #}
+    {% set _oa = namespace(total=0, done=0) %}
+    {% for h in heats if h.round_no == order_current_round %}{% set _oa.total = _oa.total + 1 %}{% if h.id in done_heat_ids %}{% set _oa.done = _oa.done + 1 %}{% endif %}{% endfor %}
+    {% set _round_all_done = _oa.total > 0 and _oa.total == _oa.done %}
+    {% set _next_round_exists = order_current_round < order_round_count %}
+    {% set _unscanned_n = order_unscanned|length %}
+    {% set _pending_n = order_pending|length %}
+    {% set _ready_next = (order_mode == 'round' and order_status != 'closed' and _unscanned_n == 0 and _pending_n == 0 and _round_all_done and _next_round_exists) %}
+    {# 最終ラウンド（次ラウンドなし）で当ラウンドの結果が全確定 → 予選終了を促す #}
+    {% set _ready_close = (order_mode == 'round' and order_status != 'closed' and _unscanned_n == 0 and _pending_n == 0 and _round_all_done and not _next_round_exists) %}
+    <style>
+    .next-round-ready{animation:nextRoundPulse 1.1s ease-in-out infinite;font-weight:bold !important;transform:scale(1.03)}
+    @keyframes nextRoundPulse{0%,100%{box-shadow:0 0 0 3px rgba(230,126,34,.55)}50%{box-shadow:0 0 0 8px rgba(230,126,34,.12)}}
+    .close-ready{animation:closeReadyPulse 1.1s ease-in-out infinite;font-weight:bold !important;transform:scale(1.05)}
+    @keyframes closeReadyPulse{0%,100%{box-shadow:0 0 0 3px rgba(231,76,60,.55)}50%{box-shadow:0 0 0 9px rgba(231,76,60,.12)}}
+    @keyframes unscannedPulse{0%,100%{box-shadow:0 0 0 3px rgba(231,76,60,.5)}50%{box-shadow:0 0 0 7px rgba(231,76,60,.12)}}
+    </style>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #f0f0f0;padding-top:12px">
+      {% if order_mode == 'round' and order_status != 'closed' and _next_round_exists %}
+      <button type="button" class="btn btn-warning btn-sm{% if _ready_next %} next-round-ready{% endif %}" onclick="orderRoundEnd('round')"
+              title="このラウンドを締めて次のラウンドへ進みます（待機列の残りも組にします）">
+        次のラウンドへ →
+      </button>
+      {% endif %}
+      {% if order_status != 'closed' %}
+      <button type="button" class="btn btn-danger btn-sm{% if _ready_close %} close-ready{% endif %}" onclick="orderRoundEnd('close')"
+              title="予選全体を終了して順位を確定します">
+        予選を終了
+      </button>
+      {% endif %}
+      {% if order_mode == 'round' and order_status != 'closed' %}
+      <button type="button" class="btn btn-success btn-sm" onclick="orderAddRound()"
+              title="規定回数を1回増やして、もう1ラウンド走らせます">
+        ＋ ラウンド追加
+      </button>
+      {% endif %}
+      {% if order_status == 'closed' %}
+      <button type="button" class="btn btn-primary btn-sm" onclick="orderReopen()"
+              title="予選を予選中の状態に戻します（入力済みの結果は維持されます）">
+        予選を再開
+      </button>
+      {% endif %}
+      <button type="button" class="btn btn-light btn-sm" style="margin-left:auto;color:#c0392b"
+              onclick="orderReset()" title="待機列・組・結果をすべて消去してやり直します">
+        全リセット
+      </button>
+    </div>
+    {% if order_mode == 'round' and order_status != 'closed' %}
+      {% if _unscanned_n >= 1 %}
+      <div style="margin-top:10px;padding:8px 12px;background:#fff5ec;border:1px solid #f0c088;border-radius:6px;color:#c0700a;font-size:13px;font-weight:bold">⚠️ まだスキャン（出走）していないレーサーいます。</div>
+      {% elif not _round_all_done or _pending_n >= 1 %}
+      <div style="margin-top:10px;padding:8px 12px;background:#fdf3e7;border:1px solid #e6c48a;border-radius:6px;color:#b9770a;font-size:13px;font-weight:bold">📝 結果が未入力のレースがあります。</div>
+      {% elif _ready_next %}
+      <div style="margin-top:10px;padding:8px 12px;background:#eafaf1;border:1px solid #a9e5c3;border-radius:6px;color:#1e8449;font-size:13px;font-weight:bold">✅ 全てのレーサーが出走して結果が確定したので、次のラウンドに進んでください。</div>
+      {% elif _ready_close %}
+      <div style="margin-top:10px;padding:8px 12px;background:#eafaf1;border:1px solid #a9e5c3;border-radius:6px;color:#1e8449;font-size:13px;font-weight:bold">✅ 最終ラウンドの全レーサーが出走して結果が確定しました。「予選を終了」を押してください。</div>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<script>
+// sessionStorage キーはレース別にする（別レースのメッセージ・パネル状態が残らないように）
+const ORDER_MSG_KEY = 'orderScanLastMsg_{{ t.id }}';
+const ORDER_PANEL_KEY = 'orderUnscannedOpen_{{ t.id }}';
+function toggleUnscanned(){
+  const panel = document.getElementById('unscannedPanel');
+  if(!panel) return;
+  const willShow = panel.style.display === 'none';
+  panel.style.display = willShow ? 'block' : 'none';
+  try{ sessionStorage.setItem(ORDER_PANEL_KEY, willShow ? '1' : '0'); }catch(e){}
+}
+// リロード後も未スキャンパネルの開閉状態を保持（チップ連続クリック用）
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    if(sessionStorage.getItem(ORDER_PANEL_KEY) === '1'){
+      const panel = document.getElementById('unscannedPanel');
+      if(panel) panel.style.display = 'block';
+    }
+  }catch(e){}
+});
+async function orderPost(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: body || ''});
+  return await r.json();
+}
+// 未スキャン一覧のレーサーをクリック→出走スキャン（コードスキャンと同義）
+async function orderScanEntry(eid){
+  const msg = document.getElementById('orderScanMsg');
+  try{
+    const res = await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/scan', 'entry_id=' + encodeURIComponent(eid));
+    if(res.ok){
+      const text = '✓ ' + res.message + '（待機 ' + res.queue_count + '名）';
+      if(msg){ msg.style.color = '#27ae60'; msg.textContent = text; }
+      try{ sessionStorage.setItem(ORDER_MSG_KEY, JSON.stringify({text: text, ok: true})); }catch(e){}
+      try{ sessionStorage.setItem(ORDER_PANEL_KEY, '1'); }catch(e){}
+      if(res.reload){ setTimeout(()=>location.reload(), 400); }
+    }else{
+      const text = '✗ ' + res.message;
+      if(msg){ msg.style.color = '#e74c3c'; msg.textContent = text; }
+      try{ sessionStorage.setItem(ORDER_MSG_KEY, JSON.stringify({text: text, ok: false})); }catch(e){}
+    }
+  }catch(e){
+    if(msg){ msg.style.color = '#e74c3c'; msg.textContent = '通信エラー'; }
+  }
+}
+// ===== 出走スキャン（高速連続スキャン対策・コードは10桁固定） =====
+// 入力欄にたまった数字を10桁ごとに切り出して送信する。10桁未満の端数は次スキャンの
+// 先頭として欄に残すだけで破棄しない（CR終端に依存しない）。常に10の倍数で揃い桁ズレしない。
+// スキャン値の正規化：全角英数字→半角、数字以外を除去（受付スキャンと同仕様）
+function normalizeOrderScan(raw){
+  if(!raw) return '';
+  let s = raw.replace(/[\uFF01-\uFF5E]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); });
+  s = s.replace(/[^0-9]/g, '');
+  return s.trim();
+}
+const ORDER_CODE_LEN = 10;
+let _orderLastInput = 0;   // 直近に文字が流れ込んだ時刻（スキャン断片と手入力の判別用）
+
+// 10桁ちょうどを切り出して送信。端数は欄に残す（破棄しない）
+function orderDrain(){
+  const inp = document.getElementById('orderScanInput');
+  if(!inp) return;
+  const raw = inp.value;
+  let digits = normalizeOrderScan(raw);
+  if(digits.length < ORDER_CODE_LEN){
+    if(digits !== raw) inp.value = digits;  // 非数字が混じった時だけ整える
+    return;
+  }
+  let pos = 0;
+  while(digits.length - pos >= ORDER_CODE_LEN){
+    orderScanSubmit(digits.slice(pos, pos + ORDER_CODE_LEN));
+    pos += ORDER_CODE_LEN;
+  }
+  inp.value = digits.slice(pos);  // 端数（次スキャンの先頭）だけ残す
+}
+
+// Enter／読み取りボタン：10桁を確定。残った端数は手入力の連番のときだけ確定する。
+// 直近60ms以内に文字が流れ込んでいる＝スキャン中の断片とみなし、端数は確定しない。
+function orderScanFlush(){
+  const inp = document.getElementById('orderScanInput');
+  if(!inp) return;
+  orderDrain();
+  const rest = normalizeOrderScan(inp.value);
+  if(rest.length >= 1 && rest.length < ORDER_CODE_LEN && (Date.now() - _orderLastInput) > 60){
+    inp.value = '';
+    orderScanSubmit(rest);   // 手入力の連番。サーバ側で連番として解決される
+  }
+  inp.focus();
+}
+function orderScan(){ orderScanFlush(); }
+
+// 10桁そろうたびに即確定（時間待ち・CR待ちなし）
+document.addEventListener('DOMContentLoaded', function(){
+  const inp = document.getElementById('orderScanInput');
+  if(!inp) return;
+  inp.addEventListener('input', function(){ _orderLastInput = Date.now(); orderDrain(); });
+});
+
+// ===== カメラスキャン（外部リーダーが無い場合の内蔵カメラ出走受付）=====
+// 読み取った10桁コードを、HIDスキャナと同じ orderScanSubmit() に流して待機列へ追加する。
+function startOrderCameraScan(){
+  if (typeof M4Scan === 'undefined') { alert('スキャナ部品の読み込みに失敗しました'); return; }
+  M4Scan.open({
+    title: '📷 出走スキャン（カメラ）',
+    continuous: true,
+    onDecode: function(text){
+      const digits = normalizeOrderScan(text);
+      if(digits.length < ORDER_CODE_LEN) return;     // 10桁未満は無視
+      let pos = 0;
+      while(digits.length - pos >= ORDER_CODE_LEN){
+        orderScanSubmit(digits.slice(pos, pos + ORDER_CODE_LEN));
+        pos += ORDER_CODE_LEN;
+      }
+    }
+  });
+}
+
+async function orderScanSubmit(code){
+  const msg = document.getElementById('orderScanMsg');
+  if(!code){ return; }
+  try{
+    const res = await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/scan', 'code=' + encodeURIComponent(code));
+    if(res.ok){
+      const text = '✓ ' + res.message + '（待機 ' + res.queue_count + '名）';
+      msg.style.color = '#27ae60';
+      msg.textContent = text;
+      // リロードしてもメッセージが消えないよう保存（リロード後に一度だけ表示）
+      try{ sessionStorage.setItem(ORDER_MSG_KEY, JSON.stringify({text: text, ok: true})); }catch(e){}
+      if(res.reload){ setTimeout(()=>location.reload(), 600); }
+    }else{
+      const text = '✗ ' + res.message;
+      msg.style.color = '#e74c3c';
+      msg.textContent = text;
+      try{ sessionStorage.setItem(ORDER_MSG_KEY, JSON.stringify({text: text, ok: false})); }catch(e){}
+    }
+  }catch(e){
+    msg.style.color = '#e74c3c';
+    msg.textContent = '通信エラー';
+  }
+}
+async function orderMakeGroup(size){
+  const body = size ? 'size=' + size : '';
+  await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/make-group', body);
+  location.reload();
+}
+async function orderMakeGroupWithConfirm(size, remaining){
+  // 未スキャンが残っている場合は警告
+  if(remaining > 0){
+    const msg = remaining + '名がまだスキャンされていません。\n'
+      + '確定すると' + remaining + '名が余る可能性があります。\n\n'
+      + '（棄権の場合はそのまま確定してください）\n\n'
+      + size + '人組で確定しますか？';
+    if(!confirm(msg)) return;
+  }
+  await orderMakeGroup(size);
+}
+async function orderRoundEnd(mode){
+  const label = mode === 'close'
+    ? '予選を終了して順位を確定します。よろしいですか？'
+    : '確認してください\n・未出走のレーサーはいませんか？\n・未確定の結果はありませんか？\n\n問題なければOKを、\nこのラウンドにとどまる場合はやめるをクリックしてください';
+  if(!confirm(label)) return;
+  await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/round-end', 'mode=' + mode);
+  location.reload();
+}
+async function orderAddRound(){
+  if(!confirm('もう1ラウンド追加します。よろしいですか？')) return;
+  await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/add-round');
+  location.reload();
+}
+async function orderReopen(){
+  if(!confirm('予選を予選中の状態に戻します。入力済みの結果はそのまま維持されます。よろしいですか？')) return;
+  await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/reopen');
+  location.reload();
+}
+async function orderReset(){
+  if(!confirm('待機列・組・結果をすべて消去します。元に戻せません。よろしいですか？')) return;
+  await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/reset');
+  location.reload();
+}
+async function orderCancelQueue(queueId, name){
+  if(!confirm((name || 'このレーサー') + ' の走行受付（待機列）を取り消します。よろしいですか？')) return;
+  const res = await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/cancel-queue', 'queue_id=' + encodeURIComponent(queueId));
+  const msg = document.getElementById('orderScanMsg');
+  if(res.ok){
+    try{ sessionStorage.setItem(ORDER_MSG_KEY, JSON.stringify({text: '✓ ' + res.message, ok: true})); }catch(e){}
+    location.reload();
+  }else{
+    if(msg){ msg.style.color = '#e74c3c'; msg.textContent = '✗ ' + res.message; }
+    else { alert(res.message); }
+  }
+}
+async function orderCancelMember(heatId, entryId, name){
+  if(!confirm((name || 'このレーサー') + ' の走行受付を取り消します。\nこの取消にともない、結果未確定の組と待機列を来た順で前詰め再編成します（確定済みの組は変更しません）。\n\nよろしいですか？')) return;
+  const res = await orderPost('/admin/tournaments/{{ t.id }}/qualifying/order/cancel-member', 'heat_id=' + encodeURIComponent(heatId) + '&entry_id=' + encodeURIComponent(entryId));
+  const msg = document.getElementById('orderScanMsg');
+  if(res.ok){
+    try{ sessionStorage.setItem(ORDER_MSG_KEY, JSON.stringify({text: '✓ ' + res.message, ok: true})); }catch(e){}
+    location.reload();
+  }else{
+    if(msg){ msg.style.color = '#e74c3c'; msg.textContent = '✗ ' + res.message; }
+    else { alert(res.message); }
+  }
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var el = document.getElementById('orderScanInput');
+  if(el){ el.focus(); }
+  // 直前のスキャン結果メッセージを復元（リロードで消えないように）
+  try{
+    var saved = sessionStorage.getItem(ORDER_MSG_KEY);
+    sessionStorage.removeItem(ORDER_MSG_KEY);   // ワンショット：一度表示したら消す（別レース・再訪での残留を防ぐ）
+    if(saved){
+      var d = JSON.parse(saved);
+      var msg = document.getElementById('orderScanMsg');
+      if(msg && d && d.text){
+        msg.style.color = d.ok ? '#27ae60' : '#e74c3c';
+        msg.textContent = d.text;
+      }
+    }
+  }catch(e){}
+});
+</script>
+{% endif %}
+
+<!-- ① レーススケジュール（全幅・インライン入力） -->
+<div class="card">
+  <div class="card-header">
+    レーススケジュール
+    <span class="badge">{{ heats|length }} レース</span>
+    {% if not is_finalized and not is_confirmed_nr and not is_order %}
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      {% if heats and t.qualifying_type == 'point' %}
+      <button type="button" class="btn btn-secondary" style="font-size:15px;padding:8px 18px;font-weight:bold"
+              onclick="printQualSchedule()"
+              title="各予選ラウンドの組み合わせ表を印刷します">
+        🖨️ 印刷
+      </button>
+      {% endif %}
+      {% if heats and (is_roundrobin or is_heat_roundrobin or t.qualifying_type == 'point') %}
+      <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/racer-add"
+            onsubmit="return confirm('現在の結果を維持したまま、未割当のエントリー（追加レーサー）ぶんの対戦を補填生成します。よろしいですか？')">
+        <button type="submit" class="btn btn-success" style="font-size:15px;padding:8px 18px;font-weight:bold"
+                title="エントリーで追加したレーサーぶんの不足対戦を、現在の結果を維持して補填します">
+          ➕ レーサー追加
+        </button>
+      </form>
+      {% endif %}
+      <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/generate"
+            onsubmit="return confirm('{% if heats %}再生成すると既存の結果も削除されます。よろしいですか？{% else %}スケジュールを生成します{% endif %}')">
+        <button type="submit" class="btn btn-primary{% if not heats %} btn-nextheat-hl{% endif %}" style="font-size:15px;padding:8px 20px;font-weight:bold">
+          {% if heats %}🔄 再生成{% else %}⚡ 自動生成{% endif %}
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-body" style="padding:0;overflow-x:auto">
+    {% if heats %}
+
+
+    {% macro race_row(heat) %}
+    {% set lanes = heat_lanes_map.get(heat.id, []) %}
+    <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
+      <td style="color:#636e72;font-weight:bold">{{ heat.heat_no }}</td>
+      {% for col in course_cols %}
+        {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
+        {% if ld %}{% set lane = ld[0] %}{% set lc = ["#2980b9","#e74c3c","#27ae60"] %}
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            {% if is_roundrobin or is_heat_roundrobin or is_none_roundrobin %}
+            {# 総当たり系：○×ボタンを名前の左に配置 #}
+            {% set _win_val = inline_results.get((heat.id, lane.entry_id), {}).get('win') %}
+            <button type="button" class="win-btn {% if _win_val == 1 %}sel-win{% endif %}"
+                    id="btn-win-{{ heat.id }}-{{ lane.entry_id }}"
+                    {% if not is_confirmed_nr %}onclick="setWin({{ heat.id }}, {{ lane.entry_id }}, 1)"{% else %}disabled style="opacity:0.5;cursor:not-allowed"{% endif %}>○</button>
+            <button type="button" class="win-btn {% if _win_val == 0 %}sel-lose{% endif %}"
+                    id="btn-lose-{{ heat.id }}-{{ lane.entry_id }}"
+                    {% if not is_confirmed_nr %}onclick="setWin({{ heat.id }}, {{ lane.entry_id }}, 0)"{% else %}disabled style="opacity:0.5;cursor:not-allowed"{% endif %}>×</button>
+            <input type="hidden" id="winval-{{ heat.id }}-{{ lane.entry_id }}"
+                   value="{{ '' if _win_val is none else _win_val }}">
+            <strong style="font-size:18px;margin-left:10px">{{ lane.name }}</strong>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:4px">{{ lane.yomi }}</span>{% endif %}
+            {% else %}
+            {# 通常ヒート・ポイント制：着順枠（左端）→ レーサー名（クリック可）→ よみがな #}
+            {# ポイント制：着順枠（クリック順で自動入力、枠クリックでCO） #}
+            {% set n_lanes = lanes | length %}
+            {% set cur_rank = inline_results.get((heat.id, lane.entry_id), {}).get('rank', 0) %}
+            {% set cur_co = inline_results.get((heat.id, lane.entry_id), {}).get('is_co', 0) %}
+            {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
+            <div id="rank-cell-{{ heat.id }}-{{ lane.entry_id }}"
+                 onclick="toggleCO({{ heat.id }}, {{ lane.entry_id }}, {{ n_lanes }}, {{ t.id }})"
+                 style="min-width:48px;height:48px;border-radius:5px;font-size:14px;font-weight:bold;cursor:pointer;margin-right:10px;
+                        border:2px solid {% if cur_co %}#e74c3c{% elif cur_rank %}{{ rc.get(cur_rank,'#95a5a6') }}{% else %}#dee2e6{% endif %};
+                        background:{% if cur_co %}#fdf0f0{% elif cur_rank %}#fff{% else %}#fafafa{% endif %};
+                        color:{% if cur_co %}#e74c3c{% elif cur_rank %}{{ rc.get(cur_rank,'#2c3e50') }}{% else %}#bdc3c7{% endif %};
+                        display:flex;align-items:center;justify-content:center;padding:0 6px;user-select:none">
+              {% if cur_co %}CO{% elif cur_rank %}{{ cur_rank }}位{% else %}—{% endif %}
+            </div>
+            <div onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
+                 style="display:flex;align-items:center;gap:4px;height:48px;cursor:pointer;user-select:none">
+              <strong style="font-size:18px">{{ lane.name }}</strong>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ lane.yomi }}</span>{% endif %}
+            </div>
+            {% if t.qualifying_type == 'order' and heat.id not in done_heat_ids and order_status != 'closed' and not is_finalized %}
+            <button type="button" title="このレーサーの走行受付を取り消す"
+                    onclick="event.stopPropagation(); orderCancelMember({{ heat.id }}, {{ lane.entry_id }}, '{{ lane.name|e }}')"
+                    style="margin-left:6px;width:24px;height:24px;line-height:1;padding:0;border:none;border-radius:50%;background:#e74c3c;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">×</button>
+            {% endif %}
+            {% endif %}
+          </div>
+        </td>
+        {% else %}
+        <td style="color:#bdc3c7;text-align:center">ー</td>
+        {% endif %}
+      {% endfor %}
+      <td>
+        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end">
+          <span class="status {% if heat.id in done_heat_ids %}status-finished{% else %}status-prepare{% endif %}"
+                id="status-{{ heat.id }}" style="cursor:pointer"
+                onclick="resetRace({{ heat.id }}, {{ t.id }})">
+            {% if heat.id in done_heat_ids %}入力済{% else %}未入力{% endif %}
+          </span>
+          {% if heat.id not in done_heat_ids %}
+          <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
+             style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
+            ✏️
+          </a>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% endmacro %}
+
+    {% macro hoshitori_table(hoshi) %}
+    {% if hoshi and hoshi.entries %}
+    <div style="overflow-x:auto">
+      <table style="border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr>
+            <th style="background:#f8f9fa;padding:4px 8px;border:1px solid #dee2e6"></th>
+            {% for col in hoshi.entries %}
+            <th style="background:#f8f9fa;padding:4px 8px;border:1px solid #dee2e6;text-align:center;min-width:44px">{{ col.name }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in hoshi.entries %}
+          <tr>
+            <td style="background:#f8f9fa;padding:4px 8px;border:1px solid #dee2e6;font-weight:bold;white-space:nowrap">{{ row.name }}</td>
+            {% for col in hoshi.entries %}
+            {% if row.entry_id == col.entry_id %}
+              <td style="border:1px solid #dee2e6;background:#f0f0f0;text-align:center;padding:4px">
+                <svg width="28" height="20"><line x1="0" y1="0" x2="28" y2="20" stroke="#bbb" stroke-width="1.5"/></svg>
+              </td>
+            {% else %}
+              {% set results = hoshi.matrix.get((row.entry_id, col.entry_id), []) %}
+              <td style="border:1px solid #dee2e6;text-align:center;padding:3px 5px">
+                {% for r in results %}{% if r=='win' %}<span style="font-size:15px;font-weight:bold;color:#27ae60">○</span>{% else %}<span style="font-size:15px;font-weight:bold;color:#e74c3c">×</span>{% endif %}{% endfor %}
+                {% if not results %}<span style="color:#dee2e6;font-size:12px">－</span>{% endif %}
+              </td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% endmacro %}
+
+    {% if is_heat_roundrobin %}
+    {# ── ヒートNごとにまとめて表示 ── #}
+    {% set all_round_nos = [] %}
+    {% for key in heat_group_standings.keys() %}{% if key[0] not in all_round_nos %}{% set _ = all_round_nos.append(key[0]) %}{% endif %}{% endfor %}
+
+    {# 未生成ヒートのプレースホルダー（heat_exclude=1 かつ未生成の場合） #}
+    {% if heat_exclude %}
+    {% set max_generated = generated_round_nos | max if generated_round_nos else 0 %}
+    {% for pending_rno in range(max_generated + 1, heat_total_count + 1) %}
+    {% if pending_rno not in generated_round_nos %}
+    <div style="background:#f8f9fa;border:2px dashed #dee2e6;border-radius:8px;padding:16px;text-align:center;color:#95a5a6;margin-top:8px;font-size:13px">
+      ヒート{{ pending_rno }}（前ヒートの結果確定後に生成）
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+
+    {% for rno in all_round_nos | sort %}
+
+    {# ── ヒートN 大ヘッダー ── #}
+    <div id="hr-heat-section-{{ rno }}" style="background:#2980b9;color:#fff;padding:10px 16px;font-weight:bold;font-size:15px;margin-top:8px">
+      ヒート {{ rno }}
+    </div>
+
+    {# グループ一覧 #}
+    {% set group_nos_in_rnd = [] %}
+    {% for key in heat_group_standings.keys() %}{% if key[0]==rno and key[1] not in group_nos_in_rnd %}{% set _ = group_nos_in_rnd.append(key[1]) %}{% endif %}{% endfor %}
+
+    {% for gno in group_nos_in_rnd | sort %}
+    {# グループのレーステーブル #}
+    <div style="background:#e8f4fd;padding:6px 16px;font-size:13px;color:#2980b9;border-bottom:1px solid #c8e0f4;font-weight:bold">
+      グループ {{ gno }}
+    </div>
+    <table style="min-width:500px">
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+      <tbody>
+      {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
+      {{ race_row(heat) }}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+
+    {# ── ヒートN 成績（順位表 + 星取表 × グループ数） ── #}
+    <div style="background:#f0f7ff;padding:8px 16px;font-weight:bold;font-size:13px;color:#1a5276;border-top:2px solid #2980b9;border-bottom:1px solid #c8e0f4;margin-top:2px">
+      ヒート{{ rno }} 成績
+    </div>
+    {% for gno in group_nos_in_rnd | sort %}
+    {% set key = (rno, gno) %}
+    {% set gstand = heat_group_standings.get(key, []) %}
+    {% set hoshi = heat_group_hoshitori.get(key) %}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 8px 0">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header" style="font-size:12px;padding:6px 12px">グループ{{ gno }} 順位</div>
+        <div class="card-body" style="padding:0">
+          <table>
+            <thead><tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th></tr></thead>
+            <tbody>
+              {% for s in gstand %}
+              <tr style="{% if s.rank <= t.qual_group_advance %}background:#f0fff4{% endif %}">
+                <td style="font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
+                <td><strong>{{ s.name }}</strong></td>
+                <td><strong>{{ s.wins }}</strong> 勝</td>
+                <td>{{ s.races }} 戦</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header" style="font-size:12px;padding:6px 12px">グループ{{ gno }} 星取表</div>
+        <div class="card-body" style="padding:8px">{{ hoshitori_table(hoshi) }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    <div style="margin-bottom:8px"></div>
+
+    {# ── 決勝進出決定戦（プレーオフ）── #}
+    {% for gno in group_nos_in_rnd | sort %}
+    {% set pkey = (rno, gno) %}
+    {% set pdata = playoff_data.get(pkey) %}
+    {% if pdata %}
+    <div style="background:#fef9f0;border-left:4px solid #e67e22;padding:8px 16px;display:flex;align-items:center;gap:12px;margin-top:2px">
+      <span style="font-weight:bold;font-size:13px;color:#e67e22">⚔️ 決勝進出決定戦 ヒート{{ rno }} グループ{{ gno }}</span>
+      <span style="font-size:12px;color:#95a5a6">同率{{ pdata.tied|length }}名 → {{ pdata.playoff_spots }}名が通過</span>
+      {% if pdata.all_done %}
+      {% if not is_finalized and not is_confirmed_nr %}
+      <button type="button" class="btn btn-warning" style="font-size:15px;padding:8px 18px;font-weight:bold"
+              onclick="generatePlayoff({{ t.id }}, {{ rno }}, {{ gno }})">⚡ 対象者を自動配置</button>
+      {% endif %}
+      {% else %}
+      <span style="font-size:12px;color:#bdc3c7">（ヒート{{ rno }}の全レース完了後に有効）</span>
+      {% endif %}
+    </div>
+    {% if pdata.slots and pdata.all_done %}
+    <div style="padding:10px 16px;background:#fffdf8;border-bottom:1px solid #f0e0c0">
+      <div style="font-size:12px;color:#e67e22;margin-bottom:8px">○を{{ pdata.playoff_spots }}名まで選択（クリックでON/OFF）</div>
+      <div style="display:flex;flex-direction:column;gap:6px;max-width:320px">
+        {% for slot in pdata.slots %}
+        {% set is_w = slot.winner_entry_id is not none and slot.winner_entry_id == slot.entry_id %}
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 12px;
+                    border:2px solid {% if is_w %}#27ae60{% else %}#dee2e6{% endif %};
+                    border-radius:8px;background:{% if is_w %}#eafaf1{% else %}#fff{% endif %}">
+          <strong style="flex:1">{{ slot.name or '（未確定）' }}</strong>
+          {% if slot.entry_id %}
+          <button type="button"
+                  class="win-btn {% if is_w %}sel-win{% endif %}"
+                  onclick="savePlayoff({{ t.id }}, {{ rno }}, {{ gno }}, {{ slot.entry_id }})">○</button>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% set pw = pdata.slots | selectattr('winner_entry_id') | list %}
+      {% if pw %}
+      <div style="margin-top:8px;font-size:13px;color:#27ae60;font-weight:bold">
+        ✓ 決勝進出：{% for w in pw %}{{ w.name }}{% if not loop.last %}・{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% elif pdata.all_done %}
+    <div style="padding:12px 16px;color:#95a5a6;background:#fffdf8;border-bottom:1px solid #f0e0c0;font-size:13px">
+      「⚡ 対象者を自動配置」ボタンで決勝進出決定戦を生成してください
+    </div>
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+
+    {# ── ヒートN 優勝トーナメント ── #}
+    {% if t.qual_heat_final and heat_final_data and heat_final_data.rounds %}
+    {% set hf_list = heat_final_data.rounds | selectattr('round_no','equalto',rno) | list %}
+    {% if hf_list %}{% set hf = hf_list[0] %}
+    <div style="background:#fff3cd;padding:8px 16px;font-weight:bold;font-size:14px;color:#856404;border-left:4px solid #f39c12;display:flex;align-items:center;gap:12px">
+      🏁 ヒート{{ rno }} 優勝トーナメント
+      {% if hf.all_done %}
+      {% if not is_finalized and not is_confirmed_nr %}
+      <button type="button" class="btn btn-warning" style="font-size:15px;padding:8px 18px;font-weight:bold"
+              onclick="generateHeatFinal({{ t.id }}, {{ rno }})">⚡ 上位者を自動配置</button>
+      {% endif %}
+      {% else %}
+      <span style="font-size:12px;font-weight:normal;color:#95a5a6">（ヒート{{ rno }}の全レース完了後に有効）</span>
+      {% endif %}
+    </div>
+    {% if hf.all_done %}
+    {% if hf.final_slots %}
+    <div style="padding:12px 16px;background:#fffdf0;border-bottom:1px solid #f0e6a0">
+      <div style="font-size:12px;color:#856404;margin-bottom:10px">
+        順位を入力してください（上位{{ t.qual_heat_final_advance }}名が決勝進出・この順位が予選順位になります）
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;max-width:400px" id="hf-rank-form-{{ rno }}">
+        {% for slot in hf.final_slots %}
+        {% set cur_rank = slot.deciding_rank %}
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                    border:2px solid {% if cur_rank and cur_rank <= t.qual_heat_final_advance %}#27ae60{% else %}#dee2e6{% endif %};
+                    border-radius:8px;background:{% if cur_rank and cur_rank <= t.qual_heat_final_advance %}#eafaf1{% else %}#fff{% endif %}">
+          <span style="width:24px;height:24px;border-radius:50%;
+                       background:{% if cur_rank %}{% if cur_rank==1 %}#d4a017{% elif cur_rank==2 %}#888{% elif cur_rank==3 %}#cd7f32{% else %}#636e72{% endif %}{% else %}#dee2e6{% endif %};
+                       color:#fff;display:flex;align-items:center;justify-content:center;
+                       font-size:12px;font-weight:bold;flex-shrink:0">
+            {% if cur_rank %}{{ cur_rank }}{% else %}?{% endif %}
+          </span>
+          <strong style="flex:1;color:{% if cur_rank and cur_rank <= t.qual_heat_final_advance %}#1e8449{% else %}#2c3e50{% endif %}">
+            {{ slot.name or '（未確定）' }}
+          </strong>
+          {% if slot.entry_id %}
+          <select onchange="setHeatFinalRank({{ t.id }}, {{ rno }}, {{ slot.entry_id }}, this.value, {{ hf.final_slots|length }})"
+                  style="padding:4px 8px;border-radius:6px;border:2px solid #dee2e6;font-size:13px">
+            <option value="">-- 順位 --</option>
+            {% for r in range(1, hf.final_slots|length + 1) %}
+            <option value="{{ r }}" {% if cur_rank == r %}selected{% endif %}>{{ r }}位</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% set finalists = hf.final_slots | selectattr('deciding_rank') | list | sort(attribute='deciding_rank') | selectattr('deciding_rank', 'le', t.qual_heat_final_advance) | list %}
+      {% if finalists %}
+      <div style="margin-top:10px;font-size:13px;color:#27ae60;font-weight:bold">
+        🏆 ヒート{{ rno }} 決勝進出：{% for w in finalists %}{{ w.name }}{% if not loop.last %}・{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div style="padding:16px;color:#95a5a6;background:#fffdf0;border-bottom:1px solid #f0e6a0">
+      「⚡ 上位者を自動配置」ボタンでトーナメントを生成してください
+    </div>
+    {% endif %}
+    {% endif %}
+    {% endif %}{% endif %}
+
+    {# ── 次ヒート生成ボタン（qual_heat_exclude=1 かつ最後のヒートが完了済みの場合） ── #}
+    {% if heat_exclude and not is_finalized %}
+    {% set next_rno = rno + 1 %}
+    {% if next_rno <= heat_total_count and next_rno not in generated_round_nos %}
+    {# 現在のヒートが完了済み（complete_round_nos に含まれる）場合のみ表示 #}
+    {% if rno in complete_round_nos %}
+    <div style="text-align:center;padding:12px 0 4px">
+      <button type="button" class="btn btn-primary btn-nextheat-hl" style="font-size:15px;padding:8px 24px;font-weight:bold"
+              onclick="generateNextHeat({{ t.id }}, {{ next_rno }})">
+        ⚡ ヒート{{ next_rno }} のスケジュールを生成
+      </button>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:10px 0;color:#95a5a6;font-size:13px">
+      ヒート{{ next_rno }}の生成はヒート{{ rno }}の全結果確定後に有効になります
+    </div>
+    {% endif %}
+    {% endif %}
+    {% endif %}
+
+    <hr style="border:none;border-top:2px solid #dee2e6;margin:16px 0">
+    {% endfor %}{# end for rno #}
+
+    {# ── 決勝進出レーサー一覧（ヒート制総当たり） ── #}
+    {% if is_heat_roundrobin and hr_advanced_by_heat %}
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        🏆 決勝進出レーサー
+        <span style="font-size:12px;color:#636e72;margin-left:8px;font-weight:normal">各ヒート・グループ上位通過者</span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          {% for rno, slots in hr_advanced_by_heat.items() %}
+          <div style="flex:1;min-width:200px;background:#f8f9fa;border-radius:8px;padding:12px 16px;border:1px solid #dee2e6">
+            <div style="font-size:13px;font-weight:bold;color:#2980b9;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #2980b9">
+              第{{ rno }}ヒート
+            </div>
+            {% if slots %}
+            {# グループ別列表示 #}
+            {% set ns = namespace(group_nos=[]) %}
+            {% for slot in slots %}{% if slot.group_no not in ns.group_nos %}{% set ns.group_nos = ns.group_nos + [slot.group_no] %}{% endif %}{% endfor %}
+            <div style="display:flex;gap:0;flex-wrap:wrap">
+              {% for gno in ns.group_nos %}
+              {% set group_slots = slots | selectattr('group_no','equalto',gno) | list %}
+              <div style="flex:1;min-width:80px;{% if not loop.last %}border-right:1px solid #e9ecef;padding-right:10px;margin-right:10px{% endif %}">
+                {% if gno > 0 %}
+                <div style="font-size:11px;color:#888;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #eee">グループ{{ gno }}</div>
+                {% endif %}
+                {% for slot in group_slots %}
+                <div style="display:flex;align-items:center;gap:6px;padding:3px 0">
+                  <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#636e72{% endif %};min-width:28px">{{ slot.rank }}位</span>
+                  <span style="font-size:13px;font-weight:bold;color:#212529">{{ slot.name }}</span>
+                </div>
+                {% endfor %}
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div style="color:#aaa;font-size:12px">未確定</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {# ── 総合成績 ── #}
+    {% if overall_standings %}
+    <div class="card">
+      <div class="card-header">
+        総合成績
+        <span style="font-size:12px;color:#636e72;margin-left:8px;font-weight:normal">全ヒート・全グループ合算（参考）</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead><tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th><th>タイム計</th></tr></thead>
+          <tbody>
+            {% for s in overall_standings %}
+            <tr>
+              <td style="font-weight:bold;font-size:15px;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
+              <td><strong>{{ s.name }}</strong></td>
+              <td><strong>{{ s.wins }}</strong> 勝</td>
+              <td>{{ s.races }} 戦</td>
+              <td>{% if s.time_sum %}{{ "%.3f"|format(s.time_sum) }}s{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    {# ポイント制：ラウンドごとに見出しをつけて表示 #}
+    {% if t.qualifying_type == 'point' or is_order %}
+      {% set round_nos = [] %}
+      {% for h in heats %}{% if h.round_no and h.round_no not in round_nos %}{% set _ = round_nos.append(h.round_no) %}{% endif %}{% endfor %}
+      {% if round_nos | length > 1 %}
+        {% set sorted_rounds = round_nos | sort %}
+        {# ── アクティブにするラウンドを決定：order は現在ラウンド、それ以外は未完了の最初のラウンド（無ければ最終） ── #}
+        {% set ns_active = namespace(r=None) %}
+        {% if is_order and order_current_round and order_current_round in sorted_rounds %}
+          {% set ns_active.r = order_current_round %}
+        {% endif %}
+        {% if ns_active.r is none %}
+          {% for rno in sorted_rounds %}
+            {% if ns_active.r is none %}
+              {% set _rh = heats | selectattr('round_no','equalto',rno) | list %}
+              {% set _rd = _rh | selectattr('id','in',done_heat_ids) | list %}
+              {% if _rd | length < _rh | length %}{% set ns_active.r = rno %}{% endif %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        {% if ns_active.r is none %}{% set ns_active.r = sorted_rounds | last %}{% endif %}
+
+        {# ── ラウンド切替タブ ── #}
+        <div class="sched-round-tabbar" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid #eee;background:#fafafa">
+          {% for rno in sorted_rounds %}
+          {% set rno_heats = heats | selectattr('round_no','equalto',rno) | list %}
+          {% set rno_done = rno_heats | selectattr('id','in',done_heat_ids) | list %}
+          {% set is_done = (rno_heats and rno_done | length == rno_heats | length) %}
+          <button type="button" class="round-tab-btn{% if rno == ns_active.r %} active{% endif %}"
+                  data-sched-round-tab="{{ rno }}" onclick="showSchedRound({{ rno }})">
+            {% if is_order %}ラウンド {{ rno }}{% else %}予選 {{ rno }} 回目{% endif %}{% if is_done %} ✓{% endif %}
+          </button>
+          {% endfor %}
+        </div>
+
+        {# ── 各ラウンドのパネル（アクティブ以外は非表示） ── #}
+        {% for rno in sorted_rounds %}
+        <div class="sched-round-pane" data-sched-round-pane="{{ rno }}" style="{% if rno != ns_active.r %}display:none{% endif %}">
+          <div style="background:#2980b9;color:#fff;padding:8px 16px;font-weight:bold;font-size:14px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:18px">{% if is_order %}ラウンド {{ rno }}{% else %}予選 {{ rno }} 回目{% endif %}</span>
+            {% set rno_heats = heats | selectattr('round_no','equalto',rno) | list %}
+            {% set rno_done = rno_heats | selectattr('id','in',done_heat_ids) | list %}
+            {% if rno_done | length == rno_heats | length and rno_heats %}
+            <span style="font-size:12px;font-weight:normal;opacity:0.8">✓完了</span>
+            {% endif %}
+          </div>
+          <table style="min-width:600px">
+            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+            <tbody>
+            {% for heat in heats if heat.round_no == rno %}
+            {{ race_row(heat) }}
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endfor %}
+      {% else %}
+        <table style="min-width:600px">
+          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+          <tbody>
+          {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    {% else %}
+    {# 通常ヒート・総当たり #}
+    <table style="min-width:600px">
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+      <tbody>
+      {% for heat in heats %}
+      {{ race_row(heat) }}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% endif %}
+
+    {% else %}
+    <div style="padding:30px;text-align:center;color:#95a5a6">
+      「自動生成」ボタンでスケジュールを作成してください<br>
+      <span style="font-size:12px">（エントリー{{ entries|length }}名{% if is_roundrobin %} / 総レース数 {{ (entries|length * (entries|length - 1) // 2) }}{% endif %}）</span>
+    </div>
+    {% endif %}
+{% if not is_heat_roundrobin %}
+{# none_roundrobin: 順位表 + 勝敗表を横並び #}
+{% if is_none_roundrobin %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+{% else %}
+<div style="display:grid;grid-template-columns:3fr 1fr;gap:16px">
+{% endif %}
+  <div class="card">
+    <div class="card-header">
+      {% if is_roundrobin %}勝敗表{% else %}予選順位表{% endif %}
+
+      {% if finalists %}
+      <span style="font-size:12px;color:#636e72;margin-left:8px;font-weight:normal">決勝進出 {{ finalists }} 名</span>
+      {% endif %}
+      {% if not is_finalized and not is_confirmed_nr %}
+      {# 全レースの結果入力が完了したら自動集計ボタンを緑グローで強調 #}
+      {% set all_races_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
+      <button type="button" class="btn {% if all_races_done %}btn-success btn-autocalc-hl{% else %}btn-secondary{% endif %}" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold"
+              onclick="autoAdvanced({{ t.id }})">⚡ 自動集計</button>
+      {% endif %}
+    </div>
+    <div class="card-body" style="padding:0">
+      {% if standings %}
+      <table>
+        <thead>
+          {% if is_none_roundrobin %}
+          <tr><th>#</th><th>順位</th><th>レーサー</th><th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th><th>出走</th></tr>
+          {% elif is_roundrobin %}
+          <tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th><th>タイム計</th><th style="text-align:center">決勝</th></tr>
+          {% else %}
+          <tr><th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th></tr>
+          {% endif %}
+        </thead>
+        <tbody id="standings-tbody">
+          {% set has_results = (standings | selectattr('races', 'defined') | selectattr('races', 'gt', 0) | list | length > 0) or (standings | selectattr('race_count', 'defined') | selectattr('race_count', 'gt', 0) | list | length > 0) %}
+          {% for s in standings %}
+          {% if has_results and s.get('is_tied_cutoff') and (loop.first or not standings[loop.index0 - 1].get('is_tied_cutoff')) %}
+          <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:3px dashed #f39c12;margin:2px 0"></div></td></tr>
+          {% endif %}
+          <tr style="{% if has_results and s.get('is_tied_cutoff') %}background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e{% elif s.rank==1 %}background:#fffde7{% endif %}">
+            <td style="color:#aaa;font-size:12px">{{ loop.index }}</td>
+            <td style="font-weight:bold;font-size:16px;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
+            <td><strong>{{ s.name }}</strong></td>
+            {% if is_none_roundrobin %}
+            <td style="color:#27ae60"><strong>{{ s.wins }}</strong></td>
+            <td style="color:#e74c3c">{{ s.losses }}</td>
+            <td>{{ s.races }} 戦</td>
+            {% elif is_roundrobin %}
+            <td><strong>{{ s.wins }}</strong> 勝</td>
+            <td>{{ s.races }} 戦</td>
+            <td>{% if s.time_sum %}{{ "%.3f"|format(s.time_sum) }}s{% else %}-{% endif %}</td>
+            {% else %}
+            <td><strong>{{ s.total_points }}</strong> pt</td>
+            <td>{{ s.race_count or 0 }}</td>
+            <td>{{ s.finish_count or 0 }}</td>
+            <td>{% if s.race_count %}{{ ((s.finish_count / s.race_count) * 100) | int }}%{% else %}—{% endif %}</td>
+            {% endif %}
+            {% if not is_none_roundrobin %}
+            <td style="text-align:center;white-space:nowrap">
+              <button type="button"
+                      class="adv-btn {% if s.advanced is not none and s.advanced >= 1 %}adv-yes{% elif s.advanced == 0 %}adv-no{% endif %}"
+                      id="adv-{{ s.entry_id }}"
+                      data-tid="{{ t.id }}"
+                      onclick="toggleAdvanced({{ s.entry_id }}, {{ t.id }}, {{ s.advanced if s.advanced is not none else 'null' }})">
+                {% if s.advanced is not none and s.advanced >= 1 %}○{% elif s.advanced == 0 %}×{% else %}－{% endif %}
+              </button>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:24px;text-align:center;color:#95a5a6">結果が入力されると表示されます</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# none_roundrobin: 勝敗表 #}
+  {% if is_none_roundrobin %}
+  <div class="card">
+    <div class="card-header" style="font-size:13px">⚔️ 勝敗表</div>
+    <div class="card-body" style="padding:8px;overflow-x:auto">
+      {% if hoshitori_entries %}
+      {# standings 順（勝数順）でレーサーを並べる #}
+      {% set ordered_names = standings | map(attribute='name') | list %}
+      {% set name_to_eid = {} %}
+      {% for e in hoshitori_entries %}{% set _ = name_to_eid.update({e.name: e.entry_id}) %}{% endfor %}
+      <table style="border-collapse:collapse;font-size:13px;width:100%">
+        <thead>
+          <tr>
+            <th style="padding:4px 6px;text-align:left;white-space:nowrap;border-bottom:1px solid #dee2e6"></th>
+            {% for name in ordered_names %}
+            <th style="padding:4px 3px;text-align:center;white-space:nowrap;border-bottom:1px solid #dee2e6;font-size:12px;max-width:36px;overflow:hidden;text-overflow:ellipsis" title="{{ name }}">{{ name }}</th>
+            {% endfor %}
+            <th style="padding:4px 6px;text-align:center;border-bottom:1px solid #dee2e6;color:#27ae60">勝</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row_name in ordered_names %}
+          {% set row_eid = name_to_eid.get(row_name) %}
+          {% set wins = namespace(count=0) %}
+          <tr>
+            <td style="padding:4px 6px;white-space:nowrap;font-weight:bold;border-bottom:1px solid #f0f0f0">{{ row_name }}</td>
+            {% for col_name in ordered_names %}
+              {% set col_eid = name_to_eid.get(col_name) %}
+              {% if row_name == col_name %}
+              <td style="padding:4px 3px;text-align:center;background:#f5f5f5;color:#999;border-bottom:1px solid #f0f0f0">—</td>
+              {% else %}
+                {% set result = hoshitori_matrix.get((row_eid, col_eid), None) %}
+                {% if result == "win" %}
+                  {% set wins.count = wins.count + 1 %}
+                <td style="padding:4px 3px;text-align:center;background:#e8f5e9;color:#27ae60;font-weight:bold;border-bottom:1px solid #f0f0f0">○</td>
+                {% elif result == "lose" %}
+                <td style="padding:4px 3px;text-align:center;background:#fdecea;color:#e74c3c;border-bottom:1px solid #f0f0f0">×</td>
+                {% else %}
+                <td style="padding:4px 3px;text-align:center;color:#ccc;border-bottom:1px solid #f0f0f0">-</td>
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            <td style="padding:4px 6px;text-align:center;font-weight:bold;color:#27ae60;border-bottom:1px solid #f0f0f0">{{ wins.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:#95a5a6;padding:6px 4px">
+        <span style="color:#27ae60">○</span>=勝　<span style="color:#e74c3c">×</span>=負　縦軸が対象レーサー
+      </div>
+      {% else %}
+      <div style="padding:24px;text-align:center;color:#95a5a6">結果が入力されると表示されます</div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  {# 通常: エントリー一覧を右隣に #}
+  <div class="card">
+    <div class="card-header" style="font-size:13px">エントリー <span class="badge">{{ entries|length }}</span></div>
+    <div class="card-body" style="padding:0">
+      <table>
+        <thead><tr><th>#</th><th>名前</th></tr></thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td style="color:#636e72;font-size:12px">{{ e.entry_order }}</td>
+            <td style="font-size:13px"><strong>{{ e.name }}</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# none_roundrobin: 決定戦（同率解消）を予選順位表の直下に #}
+{% if is_none_roundrobin %}
+  {% if deciding_groups_nr %}
+  <div class="card" style="margin-top:16px;border:2px solid #e74c3c">
+    <div class="card-header" style="background:#e74c3c;color:white">⚔️ 決定戦（同率解消）</div>
+    <div class="card-body">
+      {% for grp in deciding_groups_nr %}
+      <div style="margin-bottom:20px;padding:16px;background:#fff5f5;border-radius:8px;border:1px solid #f5c6cb">
+        {% if grp.decide_positions | length == 1 %}
+          {% set dtitle = grp.decide_positions[0] | string + "位決定戦" %}
+        {% else %}
+          {% set dtitle = grp.decide_positions[0] | string + "〜" + grp.decide_positions[-1] | string + "位決定戦" %}
+        {% endif %}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <strong style="color:#e74c3c;font-size:15px">⚔️ {{ dtitle }}</strong>
+          <span style="font-size:12px;color:#636e72">{{ grp.tied_players | length }}名が同率（勝ち・負け同数）</span>
+        </div>
+        <div style="font-size:13px;color:#636e72;margin-bottom:12px">
+          対象: {% for p in grp.tied_players %}{{ p.name }}（{{ p.wins }}勝{{ p.losses }}敗）{% if not loop.last %}・{% endif %}{% endfor %}
+        </div>
+        {% if not is_confirmed_nr %}
+        <form onsubmit="saveDecideRank(event, this)">
+          {% for dp in grp.decide_positions %}
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+            <label style="font-weight:bold;color:#c0392b;width:50px">{{ dp }}位</label>
+            <select name="rank_{{ dp }}"
+                    style="padding:6px 10px;border-radius:6px;border:1px solid #ccc;font-size:14px;min-width:160px">
+              <option value="">-- 選択 --</option>
+              {% for p in grp.tied_players %}
+              <option value="{{ p.entry_id }}"
+                {% if grp.decided.get(dp) and grp.decided[dp].entry_id == p.entry_id %}selected{% endif %}>
+                {{ p.name }}
+              </option>
+              {% endfor %}
+            </select>
+            {% if grp.decided.get(dp) %}
+            <span style="color:#27ae60;font-size:13px">✅ {{ grp.decided[dp].name }}</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+          <div style="margin-top:6px;font-size:12px;color:#636e72">
+            ※ 残り{{ grp.tied_players | length - grp.decide_positions | length }}名は自動的に{{ grp.decide_positions[-1] + 1 }}位以下
+          </div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+            <button type="submit" style="padding:8px 20px;background:#e74c3c;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold">
+              💾 保存
+            </button>
+            {% if grp.all_decided %}
+            <span style="color:#27ae60;font-weight:bold">✅ 決定済み</span>
+            <button type="button" onclick="resetDecideRank()"
+                    style="padding:6px 12px;background:#95a5a6;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px">
+              リセット
+            </button>
+            {% endif %}
+          </div>
+        </form>
+        {% else %}
+        {% for dp in grp.decide_positions %}
+        <div style="padding:4px 0;font-size:14px">
+          <strong>{{ dp }}位:</strong> {{ grp.decided[dp].name if grp.decided.get(dp) else '未決定' }}
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% elif standings %}
+  <div style="margin-top:16px;padding:12px 16px;background:#d4edda;border-radius:8px;color:#155724">
+    ✅ 1〜3位に同率なし。決定戦は不要です。
+  </div>
+  {% endif %}
+{% endif %}
+
+{% endif %}
+
+{% if not is_none_roundrobin %}
+<div style="margin-top:4px;display:flex;gap:12px">
+  <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success">🏆 決勝管理へ</a>
+</div>
+{% endif %}
+
+<script>
+const TID = {{ t.id }};
+const IS_RR = {{ 'true' if (is_roundrobin or is_heat_roundrobin or is_none_roundrobin) else 'false' }};
+
+// ── スクロール位置の復元 ──────────────────────────────────
+(function() {
+  const key = 'qualifying_scroll_' + TID;
+  const saved = sessionStorage.getItem(key);
+  if (saved !== null) {
+    sessionStorage.removeItem(key);
+    requestAnimationFrame(() => window.scrollTo(0, parseInt(saved, 10)));
+  }
+})();
+
+// ── ヒートスケジュール生成（スクロール位置を保持） ────────
+async function generateNextHeat(tid, roundNo) {
+  if (!confirm(`ヒート${roundNo}のスケジュールを生成します。\n進出確定済みのレーサーは除外されます。`)) return;
+  sessionStorage.setItem('hr_focus_heat_' + tid, roundNo);
+  const res = await fetch(`/admin/tournaments/${tid}/qualifying/generate-heat/${roundNo}`, {method:'POST'});
+  location.reload();
+}
+
+// リロード後にフォーカスを生成したヒートへ
+(function(){
+  const tid = typeof TID !== 'undefined' ? TID : null;
+  if (!tid) return;
+  const key = 'hr_focus_heat_' + tid;
+  const rno = sessionStorage.getItem(key);
+  if (rno) {
+    sessionStorage.removeItem(key);
+    const el = document.getElementById('hr-heat-section-' + rno);
+    if (el) setTimeout(function(){ el.scrollIntoView({behavior:'auto', block:'start'}); }, 100);
+  }
+})();
+
+// ── 順位表リアルタイム更新 ────────────────────────────────
+const IS_ROUNDROBIN_TYPE = {{ 'true' if is_roundrobin else 'false' }};
+const IS_NONE_RR_TYPE    = {{ 'true' if is_none_roundrobin else 'false' }};
+const IS_POINT_TYPE      = {{ 'true' if (not is_roundrobin and not is_none_roundrobin and not is_heat_roundrobin) else 'false' }};
+
+async function updateStandings() {
+  try {
+    const res = await fetch(`/admin/tournaments/${TID}/qualifying/standings-json`);
+    const data = await res.json();
+    if (!data.ok || !data.standings) return;
+    const tbody = document.getElementById('standings-tbody');
+    if (!tbody) return;
+    const hasResults = data.standings.some(s => (s.race_count || s.races || 0) > 0);
+    const rows = data.standings.map((s, i) => {
+      const rankColor = s.rank===1 ? '#d4a017' : s.rank===2 ? '#aaa' : s.rank===3 ? '#cd7f32' : '#636e72';
+      const isCutoff = hasResults && s.is_tied_cutoff;
+      const rowBg = isCutoff ? 'background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e' : s.rank===1 ? 'background:#fffde7' : '';
+      const prevIsCutoff = i > 0 && hasResults && data.standings[i-1].is_tied_cutoff;
+      const separator = isCutoff && !prevIsCutoff ? '<tr><td colspan="99" style="padding:0;border:none"><div style="border-top:3px dashed #f39c12;margin:2px 0"></div></td></tr>' : '';
+      let cells = `<td style="color:#aaa;font-size:12px">${i+1}</td>
+        <td style="font-weight:bold;font-size:16px;color:${rankColor}">${s.rank}</td>
+        <td><strong>${s.name}</strong></td>`;
+      if (IS_NONE_RR_TYPE) {
+        cells += `<td style="color:#27ae60"><strong>${s.wins||0}</strong></td>
+          <td style="color:#e74c3c">${s.losses||0}</td>
+          <td>${s.races||0} 戦</td>`;
+      } else if (IS_ROUNDROBIN_TYPE) {
+        const t = s.time_sum ? s.time_sum.toFixed(3)+'s' : '-';
+        cells += `<td><strong>${s.wins||0}</strong> 勝</td>
+          <td>${s.races||0} 戦</td>
+          <td>${t}</td>`;
+      } else {
+        const pct = s.race_count ? Math.floor((s.finish_count/s.race_count)*100)+'%' : '—';
+        cells += `<td><strong>${s.total_points||0}</strong> pt</td>
+          <td>${s.race_count||0}</td>
+          <td>${s.finish_count||0}</td>
+          <td>${pct}</td>`;
+      }
+      if (!IS_NONE_RR_TYPE) {
+        const adv = s.advanced;
+        const advClass = adv!=null && adv>=1 ? 'adv-yes' : adv===0 ? 'adv-no' : '';
+        const advText = adv!=null && adv>=1 ? '○' : adv===0 ? '×' : '－';
+        const advVal = adv!=null ? adv : 'null';
+        cells += `<td style="text-align:center;white-space:nowrap">
+          <button type="button" class="adv-btn ${advClass}" id="adv-${s.entry_id}"
+            data-tid="${TID}" onclick="toggleAdvanced(${s.entry_id},${TID},${advVal})">${advText}</button>
+          </td>`;
+      }
+      return separator + `<tr style="${rowBg}">${cells}</tr>`;
+    });
+    tbody.innerHTML = rows.join('');
+  } catch(e) {}
+}
+// heat_id -> {entry_id: {rank, is_co}}
+const heatRanks = {};
+const rankColors = {1:'#d4a017',2:'#888',3:'#cd7f32'};
+
+function getRankCell(heatId, entryId) {
+  return document.getElementById(`rank-cell-${heatId}-${entryId}`);
+}
+
+function updateRankCell(heatId, entryId, rank, isCO) {
+  const cell = getRankCell(heatId, entryId);
+  if (!cell) return;
+  if (isCO) {
+    cell.style.border = '2px solid #e74c3c';
+    cell.style.background = '#fdf0f0';
+    cell.style.color = '#e74c3c';
+    cell.textContent = 'CO';
+  } else if (rank) {
+    const rc = rankColors[rank] || '#95a5a6';
+    cell.style.border = `2px solid ${rc}`;
+    cell.style.background = '#fff';
+    cell.style.color = rc;
+    cell.textContent = rank + '位';
+  } else {
+    cell.style.border = '2px solid #dee2e6';
+    cell.style.background = '#fafafa';
+    cell.style.color = '#bdc3c7';
+    cell.textContent = '—';
+  }
+}
+
+function clickRacer(heatId, entryId, nLanes, tid) {
+  if (!heatRanks[heatId]) heatRanks[heatId] = {};
+  const cur = heatRanks[heatId][entryId];
+
+  // 既に設定済みならクリア
+  if (cur) {
+    delete heatRanks[heatId][entryId];
+    updateRankCell(heatId, entryId, 0, false);
+    return;
+  }
+
+  // 次の順位を決定（CO以外で未使用の最小順位）
+  const usedRanks = Object.values(heatRanks[heatId])
+    .filter(v => !v.is_co).map(v => v.rank);
+  let nextRank = null;
+  for (let r = 1; r <= nLanes; r++) {
+    if (!usedRanks.includes(r)) { nextRank = r; break; }
+  }
+  if (!nextRank) return;
+
+  heatRanks[heatId][entryId] = {rank: nextRank, is_co: false};
+  updateRankCell(heatId, entryId, nextRank, false);
+
+  checkAutoComplete(heatId, nLanes, tid);
+}
+
+function toggleCO(heatId, entryId, nLanes, tid) {
+  if (!heatRanks[heatId]) heatRanks[heatId] = {};
+  const cur = heatRanks[heatId][entryId];
+
+  if (cur && cur.is_co) {
+    // COを解除
+    delete heatRanks[heatId][entryId];
+    updateRankCell(heatId, entryId, 0, false);
+    return;
+  }
+  if (cur && !cur.is_co) {
+    // 順位→COに変更
+    heatRanks[heatId][entryId] = {rank: 0, is_co: true};
+    updateRankCell(heatId, entryId, 0, true);
+    checkAutoComplete(heatId, nLanes, tid);
+    return;
+  }
+  // 未入力→CO
+  heatRanks[heatId][entryId] = {rank: 0, is_co: true};
+  updateRankCell(heatId, entryId, 0, true);
+  checkAutoComplete(heatId, nLanes, tid);
+}
+
+function checkAutoComplete(heatId, nLanes, tid) {
+  const ranks = heatRanks[heatId];
+  const entered = Object.keys(ranks).length;
+
+  // 残り1人 → 自動入力
+  if (entered === nLanes - 1) {
+    // 全entry_idを取得
+    const allCells = document.querySelectorAll(`[id^="rank-cell-${heatId}-"]`);
+    const allEntries = [...allCells].map(c => parseInt(c.id.split('-').pop()));
+    const notEntered = allEntries.filter(eid => !ranks[eid]);
+
+    if (notEntered.length === 1) {
+      const lastEid = notEntered[0];
+      const usedRanks = Object.values(ranks).filter(v => !v.is_co).map(v => v.rank);
+      let lastRank = null;
+      for (let r = 1; r <= nLanes; r++) {
+        if (!usedRanks.includes(r)) { lastRank = r; break; }
+      }
+      if (lastRank) {
+        ranks[lastEid] = {rank: lastRank, is_co: false};
+        updateRankCell(heatId, lastEid, lastRank, false);
+      }
+    }
+  }
+
+  // 全員入力完了 → 保存
+  if (Object.keys(heatRanks[heatId]).length >= nLanes) {
+    saveRanks(heatId, tid, nLanes);
+  }
+}
+
+async function saveRanks(heatId, tid, nLanes) {
+  const form = new FormData();
+  for (const [eid, val] of Object.entries(heatRanks[heatId])) {
+    form.append(`rank_${eid}`, val.rank);
+    form.append(`co_${eid}`, val.is_co ? '1' : '0');
+  }
+  // 観覧画面スクロール同期
+  const _grpR = heatGroupMap[heatId];
+  const _scrollIdR = _grpR
+    ? 'hr-group-' + _grpR.round + '-' + _grpR.group
+    : (heatNoMap[heatId] ? 'heat-' + heatNoMap[heatId] : null);
+  if (_scrollIdR) {
+    fetch('/view/host-sync', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url: location.pathname, scroll_to: _scrollIdR})
+    }).catch(()=>{});
+  }
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/heat/${heatId}/save-rank`, {method:'POST',body:form});
+    const data = await res.json();
+    if (data.ok) {
+      const st = document.getElementById(`status-${heatId}`);
+      if (st) { st.textContent = '入力済'; st.className = 'status status-finished'; }
+      updateStandings();
+    }
+  } catch(e) { console.error(e); }
+}
+
+function showRound(round, btn) {
+  document.querySelectorAll('.round-tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.race-row').forEach(row => {
+    if (round === 'all') {
+      row.style.display = '';
+    } else {
+      row.style.display = row.dataset.round == round ? '' : 'none';
+    }
+  });
+}
+
+// レーススケジュール：ラウンドをタブ切替（現在ラウンド＝アクティブ）
+function showSchedRound(rno) {
+  const key = String(rno);
+  document.querySelectorAll('.sched-round-pane').forEach(p => {
+    p.style.display = (String(p.dataset.schedRoundPane) === key) ? '' : 'none';
+  });
+  document.querySelectorAll('.round-tab-btn[data-sched-round-tab]').forEach(b => {
+    b.classList.toggle('active', String(b.dataset.schedRoundTab) === key);
+  });
+}
+
+async function resetRace(heatId, tid) {
+  if (!confirm('このレースの結果をリセットしますか？')) return;
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/heat/${heatId}/reset`, {method:'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      // UI上の全セルをリセット
+      delete heatRanks[heatId];
+      document.querySelectorAll(`[id^="rank-cell-${heatId}-"]`).forEach(cell => {
+        cell.style.border = '2px solid #dee2e6';
+        cell.style.background = '#fafafa';
+        cell.style.color = '#bdc3c7';
+        cell.textContent = '—';
+      });
+      const st = document.getElementById(`status-${heatId}`);
+      if (st) { st.textContent = '未入力'; st.className = 'status status-prepare'; }
+    }
+  } catch(e) { console.error(e); }
+}
+
+// heat_id -> [entry_id, entry_id]
+const raceEntries = {};
+// heat_id -> [lane_id, lane_id]（保存時に使用）
+const raceLaneIds = {};
+// heat_id -> heat_no（スクロール同期用）
+const heatNoMap = {};
+// heat_id -> round_no（ヒート制総当たり：ヒートブロック単位でスクロール）
+const heatRoundNoMap = {};
+// heat_id -> {round, group}（heat_roundrobin：グループブロック単位でスクロール）
+const heatGroupMap = {};
+// 全ヒートのheatNoMap・heatGroupMapを設定（予選形式問わず）
+{% for heat in heats %}
+heatNoMap[{{ heat.id }}] = {{ heat.heat_no }};
+{% if heat.round_no %}heatRoundNoMap[{{ heat.id }}] = {{ heat.round_no }};{% endif %}
+{% if heat.group_no %}heatGroupMap[{{ heat.id }}] = { round: {{ heat.round_no }}, group: {{ heat.group_no }} };{% endif %}
+{% endfor %}
+{% if is_roundrobin or is_heat_roundrobin or is_none_roundrobin %}
+{% for heat in heats %}
+{% set lanes = heat_lanes_map.get(heat.id, []) %}
+raceEntries[{{ heat.id }}] = [{% for ld in lanes %}{{ ld.entry_id }}{% if not loop.last %},{% endif %}{% endfor %}];
+raceLaneIds[{{ heat.id }}]  = [{% for ld in lanes %}{{ ld.lane_id }}{% if not loop.last %},{% endif %}{% endfor %}];
+{% endfor %}
+{% endif %}
+
+// ○×クリック → UI更新 → 即時コミット
+// ルール:
+//   ○クリック: 相手が未入力→自動×, 相手が○→相手を×に変更, 相手が×→相手の×を維持
+//   ×クリック: 相手が未入力→自動○, 相手が×→双方×(××)を許容, 相手が○→相手の○を維持
+function setWin(heatId, clickedEid, result) {
+  const ids = raceEntries[heatId] || [];
+  const otherEid = ids.find(e => e !== clickedEid);
+  _setOne(heatId, clickedEid, result);
+  if (otherEid !== undefined) {
+    const otherHidden = document.getElementById(`winval-${heatId}-${otherEid}`);
+    const _otherRaw = otherHidden ? otherHidden.value : '';
+    const _otherParsed = parseInt(_otherRaw);
+    const otherVal = (_otherRaw !== '' && !isNaN(_otherParsed)) ? _otherParsed : null;
+    if (result === 1) {
+      if (otherVal !== 0) _setOne(heatId, otherEid, 0);
+    } else {
+      if (otherVal === null) _setOne(heatId, otherEid, 1);
+    }
+  }
+  // 観覧画面スクロール同期（commitRace の成否に依存しないよう setWin でも送信）
+  // グループブロック優先、なければ個別レース行へスクロール
+  const _grp = heatGroupMap[heatId];
+  const scrollId = _grp
+    ? 'hr-group-' + _grp.round + '-' + _grp.group
+    : (heatNoMap[heatId] ? 'heat-' + heatNoMap[heatId] : null);
+  if (scrollId) {
+    fetch('/view/host-sync', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: location.pathname, scroll_to: scrollId})
+    }).catch(() => {});
+  }
+  commitRace(heatId);
+}
+
+function _setOne(heatId, eid, val) {
+  const hidden = document.getElementById(`winval-${heatId}-${eid}`);
+  if (hidden) hidden.value = val;
+  const bw = document.getElementById(`btn-win-${heatId}-${eid}`);
+  const bl = document.getElementById(`btn-lose-${heatId}-${eid}`);
+  if (!bw || !bl) return;
+  bw.classList.remove('sel-win','sel-lose');
+  bl.classList.remove('sel-win','sel-lose');
+  if (val === 1) {
+    bw.classList.add('sel-win');
+  } else {
+    bl.classList.add('sel-lose');
+  }
+}
+
+// 即時コミット（保存ボタンなし）
+async function commitRace(heatId) {
+  const eids  = raceEntries[heatId] || [];
+  const lids  = raceLaneIds[heatId] || [];
+  const form  = new FormData();
+
+  eids.forEach((eid, i) => {
+    const lid = lids[i];
+    const winEl = document.getElementById(`winval-${heatId}-${eid}`);
+    if (winEl) form.append(`win_${lid}`, winEl.value);
+  });
+
+  try {
+    const res  = await fetch(`/admin/tournaments/${TID}/qualifying/heat/${heatId}/save-inline`,
+                             { method: 'POST', body: form });
+    const data = await res.json();
+    // 状態バッジ更新
+    if (data.ok) {
+      const st = document.getElementById(`status-${heatId}`);
+      if (st) {
+        st.className = 'status ' + (data.status === 'done' ? 'status-finished' : 'status-prepare');
+        st.textContent = data.status === 'done' ? '入力済' : '未入力';
+      }
+      updateStandings();
+    }
+    // 観覧画面のスクロール位置を同期（グループブロックへ）
+    const _grp2 = heatGroupMap[heatId];
+    const scrollId2 = _grp2
+      ? 'hr-group-' + _grp2.round + '-' + _grp2.group
+      : (heatNoMap[heatId] ? 'heat-' + heatNoMap[heatId] : null);
+    if (scrollId2) {
+      fetch('/view/host-sync', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: location.pathname, scroll_to: scrollId2})
+      }).catch(() => {});
+    }
+  } catch(e) {
+    console.error('commit error', e);
+    const _grp2 = heatGroupMap[heatId];
+    const scrollId2 = _grp2
+      ? 'hr-group-' + _grp2.round + '-' + _grp2.group
+      : (heatNoMap[heatId] ? 'heat-' + heatNoMap[heatId] : null);
+    if (scrollId2) {
+      fetch('/view/host-sync', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: location.pathname, scroll_to: scrollId2})
+      }).catch(() => {});
+    }
+  }
+}
+
+// ── 決勝進出決定戦（プレーオフ）───────────────────────────
+async function generatePlayoff(tid, roundNo, groupNo) {
+  const form = new FormData();
+  form.append('round_no', roundNo);
+  form.append('group_no', groupNo);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/playoff/generate`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) setTimeout(() => location.reload(), 200);
+  } catch(e) { console.error(e); }
+}
+
+async function savePlayoff(tid, roundNo, groupNo, entryId) {
+  const form = new FormData();
+  form.append('round_no', roundNo);
+  form.append('group_no', groupNo);
+  form.append('entry_id', entryId);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/playoff/save`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) setTimeout(() => location.reload(), 200);
+    else if (data.error) alert(data.error);
+  } catch(e) { console.error(e); }
+}
+
+// ── ヒート優勝トーナメント ───────────────────────────────
+async function generateHeatFinal(tid, roundNo) {
+  const form = new FormData();
+  form.append('round_no', roundNo);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/heat-final/generate`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) setTimeout(() => location.reload(), 200);
+  } catch(e) { console.error(e); }
+}
+
+async function setHeatFinalWinner(tid, roundNo, entryId) {
+  const form = new FormData();
+  form.append('round_no', roundNo);
+  form.append('entry_id', entryId);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/heat-final/save`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) setTimeout(() => location.reload(), 200);
+    else if (data.error) alert(data.error);
+  } catch(e) { console.error(e); }
+}
+
+async function setHeatFinalRank(tid, roundNo, entryId, rank, total) {
+  const form = new FormData();
+  form.append('round_no', roundNo);
+  form.append('entry_id', entryId);
+  form.append('rank', rank);
+  form.append('total', total);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/heat-final/rank`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) setTimeout(() => location.reload(), 200);
+    else if (data.error) alert(data.error);
+  } catch(e) { console.error(e); }
+}
+
+// ── 決勝進出フラグ：自動集計 ─────────────────────────────
+async function autoAdvanced(tid) {
+  try {
+    // まずページをリロードして最新状態を取得してから集計
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/auto-advanced`,
+                            { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      location.reload();
+    } else {
+      alert('集計エラー: ' + (data.error || '不明'));
+    }
+  } catch(e) { console.error(e); }
+}
+
+function updateAdvBtn(entryId, tid, val) {
+  const btn = document.getElementById(`adv-${entryId}`);
+  if (!btn) return;
+  btn.className = 'adv-btn' + (val === 1 ? ' adv-yes' : val === 0 ? ' adv-no' : '');
+  btn.textContent = val === 1 ? '○' : val === 0 ? '×' : '－';
+  btn.onclick = () => toggleAdvanced(entryId, tid, val);
+}
+
+// ── 決勝進出フラグ：手動切り替え ─────────────────────────
+async function toggleAdvanced(entryId, tid, current) {
+  let next;
+  if (current === null || current === undefined || current === '') next = 1;
+  else if (current === 1) next = 0;
+  else next = -1;
+
+  const form = new FormData();
+  form.append('advanced', next);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/qualifying/set-advanced/${entryId}`,
+                            { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.ok) updateAdvBtn(entryId, tid, data.advanced);
+  } catch(e) { console.error(e); }
+}
+</script>
+
+{% if is_none_roundrobin %}
+
+{# ── 確定ボタン / 確定前プレビュー ── #}
+{% if is_confirmed_nr %}
+<div style="margin-bottom:16px;padding:14px 20px;background:#fff9e6;border:2px solid #f0ad4e;border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+  <strong style="color:#856404">🏆 結果確定済み</strong>
+  <button onclick="unconfirmNR()" style="background:#6c757d;color:white;padding:6px 16px;border-radius:6px;cursor:pointer;border:none">
+    ✏️ 確定を取り消す
+  </button>
+</div>
+{% elif nr_can_confirm %}
+<div style="margin-bottom:16px;padding:14px 20px;background:#d4edda;border:2px solid #28a745;border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+  <div>
+    <strong style="color:#155724">✅ 全ヒート完了・同率なし</strong>
+    <span style="font-size:13px;color:#155724;margin-left:8px">1〜3位が確定できます</span>
+  </div>
+  <button onclick="confirmNR()" style="padding:8px 20px;font-weight:bold;border-radius:6px;cursor:pointer;background:#28a745;color:white;border:none">
+    🏆 結果を確定
+  </button>
+</div>
+{# 確定前プレビュー表彰台 #}
+{% if top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
+<div style="margin-bottom:16px;padding:20px 24px;background:#f0fff4;border:2px solid #28a745;border-radius:12px;text-align:center">
+  <div style="font-size:14px;font-weight:bold;color:#155724;margin-bottom:14px">🏅 確定予定の順位</div>
+  <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px;margin-bottom:16px">
+    <div style="text-align:center">
+      <div style="font-size:24px">🥈</div>
+      <div style="font-size:12px;color:#888;margin-top:4px">2位</div>
+      <div style="font-size:15px;font-weight:bold;margin-top:4px">{{ top3_nr[1].name if top3_nr[1] else '—' }}</div>
+      {% if top3_nr[1] %}<div style="font-size:11px;color:#636e72">{{ top3_nr[1].wins }}勝 {{ top3_nr[1].losses }}負</div>{% endif %}
+    </div>
+    <div style="text-align:center;padding:10px 18px;background:#d4edda;border-radius:10px;border:2px solid #28a745">
+      <div style="font-size:30px">🥇</div>
+      <div style="font-size:12px;color:#155724;margin-top:4px">1位</div>
+      <div style="font-size:18px;font-weight:bold;margin-top:4px;color:#155724">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
+      {% if top3_nr[0] %}<div style="font-size:11px;color:#155724">{{ top3_nr[0].wins }}勝 {{ top3_nr[0].losses }}負</div>{% endif %}
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:24px">🥉</div>
+      <div style="font-size:12px;color:#888;margin-top:4px">3位</div>
+      <div style="font-size:15px;font-weight:bold;margin-top:4px">{{ top3_nr[2].name if top3_nr[2] else '—' }}</div>
+      {% if top3_nr[2] %}<div style="font-size:11px;color:#636e72">{{ top3_nr[2].wins }}勝 {{ top3_nr[2].losses }}負</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+// ── 即決勝総当たり: 決定戦 ────────────────────────────────────
+async function confirmNR() {
+  if (!confirm('結果を確定します。確定後はヒートの編集ができなくなります。')) return;
+  const res = await fetch(`/admin/tournaments/{{ t.id }}/qualifying/none-rr/confirm`, {method:'POST'});
+  const data = await res.json();
+  if (data.ok) { location.reload(); }
+  else { alert('確定できません: ' + (data.error || '不明なエラー')); }
+}
+
+async function unconfirmNR() {
+  if (!confirm('確定を取り消します。ヒートの編集が可能になります。')) return;
+  const res = await fetch(`/admin/tournaments/{{ t.id }}/qualifying/none-rr/unconfirm`, {method:'POST'});
+  const data = await res.json();
+  if (data.ok) { location.reload(); }
+  else { alert('エラー: ' + (data.error || '')); }
+}
+
+async function saveDecideRank(event, form) {
+  event.preventDefault();
+  const fd = new FormData();
+  const selects = form.querySelectorAll('select[name^="rank_"]');
+  const selected = {};
+  for (const sel of selects) {
+    const pos = sel.name.replace('rank_', '');
+    const eid = sel.value;
+    if (!eid) { alert(pos + '位を選択してください。'); return; }
+    if (Object.values(selected).includes(eid)) { alert('同じ選手を複数の順位に選択できません。'); return; }
+    selected[pos] = eid;
+    fd.append('rank_' + eid, pos);
+  }
+  const res = await fetch(`/admin/tournaments/{{ t.id }}/qualifying/none-rr/decide-rank`, {method:'POST', body:fd});
+  const data = await res.json();
+  if (data.ok) { location.reload(); }
+  else { alert('エラー: ' + (data.error || '')); }
+}
+
+async function resetDecideRank() {
+  if (!confirm('決定戦の結果をリセットします。')) return;
+  const res = await fetch(`/admin/tournaments/{{ t.id }}/qualifying/none-rr/decide-rank/reset`, {method:'POST'});
+  const data = await res.json();
+  if (data.ok) { location.reload(); }
+}
+</script>
+
+{# エントリー一覧（一番下） #}
+<div class="card" style="margin-top:16px">
+  <div class="card-header" style="font-size:13px">エントリー <span class="badge">{{ entries|length }}</span></div>
+  <div class="card-body" style="padding:0">
+    <table>
+      <thead><tr><th>#</th><th>名前</th></tr></thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td style="color:#636e72;font-size:12px">{{ e.entry_order }}</td>
+          <td style="font-size:13px"><strong>{{ e.name }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}{# /is_none_roundrobin #}
+
+{# ══ ポイント制：予選組み合わせ表 印刷用データ（非表示） ══ #}
+{% if heats and t.qualifying_type == 'point' %}
+{% set print_round_nos = [] %}
+{% for h in heats %}{% if h.round_no and h.round_no not in print_round_nos %}{% set _ = print_round_nos.append(h.round_no) %}{% endif %}{% endfor %}
+<div id="qual-print-source" style="display:none">
+  {% if print_round_nos %}
+    {% for rno in print_round_nos | sort %}
+    <div class="qp-round-block">
+    {% if loop.first %}
+    <div class="qp-title">{{ t.name }}　予選組み合わせ表</div>
+    <div class="qp-sub">{{ t.regulation }}　/　{{ t.date }}　/　{{ course_cols|length }}レーン</div>
+    {% endif %}
+    <div class="qp-round">予選 {{ rno }} 回目</div>
+    <table class="qp-table">
+      <thead><tr><th class="qp-no">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for heat in heats if heat.round_no == rno %}
+        <tr>
+          <td class="qp-no">{{ heat.heat_no }}</td>
+          {% set planes = heat_lanes_map.get(heat.id, []) %}
+          {% for col in course_cols %}
+            {% set pld = planes | selectattr("lane_no","equalto",col) | list %}
+            {% if pld %}<td>{{ pld[0].name }}{% if pld[0].yomi %}<span class="qp-yomi">{{ pld[0].yomi }}</span>{% endif %}</td>
+            {% else %}<td class="qp-empty">ー</td>{% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endfor %}
+  {% else %}
+    {# ラウンド未設定（単一ラウンド）の場合は全heatを1表で #}
+    <div class="qp-round-block">
+    <div class="qp-title">{{ t.name }}　予選組み合わせ表</div>
+    <div class="qp-sub">{{ t.regulation }}　/　{{ t.date }}　/　{{ course_cols|length }}レーン</div>
+    <div class="qp-round">予選 組み合わせ</div>
+    <table class="qp-table">
+      <thead><tr><th class="qp-no">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for heat in heats %}
+        <tr>
+          <td class="qp-no">{{ heat.heat_no }}</td>
+          {% set planes = heat_lanes_map.get(heat.id, []) %}
+          {% for col in course_cols %}
+            {% set pld = planes | selectattr("lane_no","equalto",col) | list %}
+            {% if pld %}<td>{{ pld[0].name }}{% if pld[0].yomi %}<span class="qp-yomi">{{ pld[0].yomi }}</span>{% endif %}</td>
+            {% else %}<td class="qp-empty">ー</td>{% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+</div>
+<script>
+function printQualSchedule() {
+  var src = document.getElementById('qual-print-source');
+  if (!src) return;
+  var win = window.open('', '_blank');
+  if (!win) { alert('ポップアップがブロックされました。印刷を許可してください。'); return; }
+  var css =
+    '@page{size:A4;margin:12mm}' +
+    '*{box-sizing:border-box}' +
+    'body{font-family:"Hiragino Sans","Yu Gothic","Meiryo",sans-serif;color:#000;margin:0;padding:0}' +
+    '.qp-title{font-size:20px;font-weight:bold;margin:0 0 4px}' +
+    '.qp-sub{font-size:12px;color:#444;margin:0 0 14px}' +
+    '.qp-round-block{page-break-before:always;break-before:page;page-break-inside:auto}' +
+    '.qp-round-block:first-of-type{page-break-before:avoid;break-before:auto}' +
+    '.qp-round{font-size:15px;font-weight:bold;background:#2980b9;color:#fff;padding:5px 10px;margin:14px 0 8px;page-break-after:avoid;break-after:avoid}' +
+    '.qp-table{width:100%;border-collapse:collapse;margin:0 0 6px;page-break-inside:auto}' +
+    '.qp-table thead{display:table-header-group}' +
+    '.qp-table th,.qp-table td{border:1px solid #999;padding:6px 8px;font-size:14px;text-align:left;vertical-align:middle}' +
+    '.qp-table th{background:#f0f0f0;font-size:12px;text-align:center}' +
+    '.qp-table tr{page-break-inside:avoid}' +
+    '.qp-no{width:36px;text-align:center;color:#555}' +
+    '.qp-empty{text-align:center;color:#aaa}' +
+    '.qp-yomi{font-size:10px;color:#888;margin-left:4px}';
+  win.document.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>予選組み合わせ表</title>' +
+    '<style>' + css + '</style></head><body>' + src.innerHTML + '</body></html>'
+  );
+  win.document.close();
+  win.focus();
+  // レンダリング完了を待ってから印刷
+  setTimeout(function(){ win.print(); }, 300);
+}
+</script>
+{% endif %}
+
+{% endblock %}

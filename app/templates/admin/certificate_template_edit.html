@@ -1,0 +1,1092 @@
+{% extends "admin/base.html" %}
+{% block title %}賞状テンプレート編集 - Mini4WD Race System{% endblock %}
+
+{% block extra_head %}
+<link href="/static/fonts/cert_fonts.css" rel="stylesheet">
+<style>
+/* ===== ページ全体 ===== */
+.editor-page { display:flex; flex-direction:column; height:calc(100vh - 100px); min-height:600px; gap:0; }
+.editor-topbar { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-shrink:0; }
+.editor-topbar h1 { font-size:18px; flex:1; margin:0; }
+
+/* ===== 3ペイン ===== */
+.editor-wrap {
+  display:grid;
+  grid-template-columns:260px 1fr 260px;
+  flex:1;
+  min-height:0;
+  border-radius:8px;
+  overflow:hidden;
+  box-shadow:0 2px 12px rgba(0,0,0,.18);
+}
+
+/* ===== 左パネル ===== */
+.panel-left {
+  background:#2c3e50;
+  color:#ecf0f1;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.panel-head {
+  padding:10px 14px;
+  font-size:11px;
+  font-weight:bold;
+  letter-spacing:.8px;
+  text-transform:uppercase;
+  color:#7f8c8d;
+  background:#1a252f;
+  border-bottom:1px solid #3d5166;
+  flex-shrink:0;
+}
+.left-scroll { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
+
+/* 背景アップロード */
+.bg-drop {
+  border:2px dashed #3d5166;
+  border-radius:8px;
+  padding:18px 12px;
+  text-align:center;
+  cursor:pointer;
+  transition:border-color .15s, background .15s;
+  font-size:12px;
+  color:#95a5a6;
+}
+.bg-drop:hover, .bg-drop.dragover { border-color:#2980b9; background:rgba(41,128,185,.08); color:#ecf0f1; }
+.bg-preview {
+  width:100%;
+  border-radius:6px;
+  margin-top:8px;
+  display:none;
+  object-fit:contain;
+  max-height:140px;
+  background:#111;
+}
+.left-section-title { font-size:11px; color:#7f8c8d; font-weight:bold; letter-spacing:.5px; text-transform:uppercase; margin-bottom:4px; }
+
+/* テンプレート名・用紙設定 */
+.left-input {
+  width:100%;
+  padding:6px 10px;
+  border:1px solid #3d5166;
+  border-radius:5px;
+  background:#1a252f;
+  color:#ecf0f1;
+  font-size:13px;
+  margin-bottom:6px;
+}
+.left-select {
+  width:100%;
+  padding:6px 8px;
+  border:1px solid #3d5166;
+  border-radius:5px;
+  background:#1a252f;
+  color:#ecf0f1;
+  font-size:13px;
+  margin-bottom:6px;
+}
+
+/* オブジェクト行 */
+.obj-row {
+  background:#1a252f;
+  border-radius:6px;
+  padding:10px 12px;
+  cursor:pointer;
+  border:2px solid transparent;
+  transition:border-color .1s, background .1s;
+}
+.obj-row:hover { background:#253545; }
+.obj-row.selected { border-color:#2980b9; background:#1e3a52; }
+.obj-row-title { font-size:13px; font-weight:bold; margin-bottom:2px; }
+.obj-row-sub { font-size:11px; color:#7f8c8d; }
+
+/* ===== 中央キャンバス ===== */
+.panel-canvas {
+  background:#666;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.canvas-bar {
+  background:#34495e;
+  padding:7px 12px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-shrink:0;
+}
+.canvas-bar label { font-size:12px; color:#bdc3c7; white-space:nowrap; }
+.canvas-bar input[type=range] {
+  accent-color:#2980b9;
+  width:90px;
+}
+.canvas-bar span { font-size:12px; color:#ecf0f1; min-width:34px; }
+.canvas-scroll {
+  flex:1;
+  overflow:auto;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:24px;
+}
+.canvas-stage { position:relative; transform-origin:top center; flex-shrink:0; }
+
+/* A4縦 794×1123px */
+#certCanvas {
+  width:794px;
+  height:1123px;
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 4px 28px rgba(0,0,0,.5);
+  background:#fff;
+  cursor:default;
+}
+#certBg {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  pointer-events:none;
+  user-select:none;
+  display:none;
+}
+#certBgSvg {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  display:none;
+  pointer-events:none;
+}
+
+/* ===== ドラッグオブジェクト ===== */
+.cert-obj {
+  position:absolute;
+  cursor:move;
+  user-select:none;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+}
+.cert-obj.sel {
+  outline:2px solid #2980b9;
+  outline-offset:2px;
+}
+.cert-obj.sel::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  background:rgba(41,128,185,.07);
+  pointer-events:none;
+}
+.cert-obj-inner {
+  width:100%;
+  pointer-events:none;
+  white-space:pre-wrap;
+  word-break:break-all;
+}
+/* リサイズハンドル */
+.rh {
+  position:absolute;
+  width:10px; height:10px;
+  background:#2980b9;
+  border:2px solid #fff;
+  border-radius:2px;
+  z-index:10;
+  display:none;
+}
+.sel .rh { display:block; }
+.rh.se{bottom:-5px;right:-5px;cursor:se-resize;}
+.rh.sw{bottom:-5px;left:-5px;cursor:sw-resize;}
+.rh.ne{top:-5px;right:-5px;cursor:ne-resize;}
+.rh.nw{top:-5px;left:-5px;cursor:nw-resize;}
+.rh.n{top:-5px;left:calc(50% - 5px);cursor:n-resize;}
+.rh.s{bottom:-5px;left:calc(50% - 5px);cursor:s-resize;}
+.rh.e{right:-5px;top:calc(50% - 5px);cursor:e-resize;}
+.rh.w{left:-5px;top:calc(50% - 5px);cursor:w-resize;}
+
+/* ===== 右パネル（プロパティ） ===== */
+.panel-right {
+  background:#fff;
+  border-left:1px solid #e0e0e0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.prop-scroll { flex:1; overflow-y:auto; padding:14px; }
+.prop-group { margin-bottom:14px; }
+.prop-label { font-size:11px; font-weight:bold; color:#7f8c8d; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+.prop-row { display:flex; gap:6px; align-items:center; margin-bottom:7px; }
+.prop-row > label { font-size:12px; color:#636e72; min-width:46px; flex-shrink:0; }
+.prop-row input[type=number],
+.prop-row input[type=text],
+.prop-row select { flex:1; padding:4px 7px; border:1px solid #ced4da; border-radius:4px; font-size:12px; min-width:0; }
+.prop-row input[type=color] { width:34px; height:28px; border:1px solid #ced4da; border-radius:4px; padding:1px; cursor:pointer; flex-shrink:0; }
+.prop-row textarea { flex:1; padding:4px 7px; border:1px solid #ced4da; border-radius:4px; font-size:12px; min-height:60px; resize:vertical; }
+.prop-hr { border:none; border-top:1px solid #e9ecef; margin:10px 0; }
+.prop-hint { font-size:11px; color:#95a5a6; margin-top:2px; }
+.no-sel { padding:24px 14px; font-size:13px; color:#95a5a6; text-align:center; }
+
+/* 揃えアイコンボタン */
+.align-btns { display:flex; gap:3px; flex-wrap:wrap; }
+.align-btn {
+  width:30px; height:28px;
+  border:1px solid #ced4da; border-radius:4px;
+  background:#fff; cursor:pointer; font-size:14px;
+  display:flex; align-items:center; justify-content:center;
+  transition:background .1s, border-color .1s;
+  flex-shrink:0;
+}
+.align-btn:hover { background:#eaf4fb; border-color:#2980b9; }
+.align-btn.active { background:#2980b9; border-color:#2980b9; color:#fff; }
+
+/* ボタン */
+.tbtn { padding:6px 14px; border-radius:5px; border:none; font-size:13px; cursor:pointer; font-family:inherit; }
+.tbtn-primary { background:#2980b9; color:#fff; }
+.tbtn-primary:hover { background:#2471a3; }
+.tbtn-secondary { background:#95a5a6; color:#fff; }
+.tbtn-secondary:hover { background:#7f8c8d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-page">
+
+  <!-- 上バー -->
+  <div class="editor-topbar">
+    <h1>🏅 賞状テンプレート編集{% if tpl %} — {{ tpl.name }}{% endif %}</h1>
+    <button class="tbtn tbtn-secondary" onclick="history.back()">← 戻る</button>
+    <button class="tbtn tbtn-primary" onclick="saveAll()">💾 保存</button>
+  </div>
+
+  <!-- 保存フォーム（非表示） -->
+  <form id="saveForm" method="post"
+        action="/admin/settings/certificate-templates/{% if tpl %}{{ tpl.id }}/update{% else %}create{% endif %}"
+        style="display:none">
+    <input type="hidden" name="name"        id="f_name"        value="{{ tpl.name if tpl else 'デフォルト' }}">
+    <input type="hidden" name="paper_size"  id="f_paper"       value="{{ tpl.paper_size if tpl else 'A4' }}">
+    <input type="hidden" name="orientation" id="f_orient"      value="{{ tpl.orientation if tpl else 'portrait' }}">
+    <input type="hidden" name="layout_json" id="f_layout">
+  </form>
+
+  <div class="editor-wrap">
+
+    <!-- ===== 左パネル ===== -->
+    <div class="panel-left">
+      <div class="panel-head">設定</div>
+      <div class="left-scroll">
+
+        <!-- テンプレート名 -->
+        <div>
+          <div class="left-section-title">テンプレート名</div>
+          <input class="left-input" id="tplName" type="text" value="{{ tpl.name if tpl else 'デフォルト' }}">
+        </div>
+
+        <!-- 用紙設定 -->
+        <div>
+          <div class="left-section-title">用紙サイズ</div>
+          <select class="left-select" id="tplPaper" onchange="updateCanvasSize()">
+            {% for s in ['A4','A5','A6','B4','B5','B6','ハガキ','L判'] %}
+            <option value="{{ s }}" {% if tpl and tpl.paper_size == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <div class="left-section-title" style="margin-top:6px">用紙向き</div>
+          <select class="left-select" id="tplOrient" onchange="updateCanvasSize()">
+            <option value="portrait"  {% if not tpl or tpl.orientation=='portrait'  %}selected{% endif %}>縦</option>
+            <option value="landscape" {% if tpl and tpl.orientation=='landscape' %}selected{% endif %}>横</option>
+          </select>
+        </div>
+
+        <!-- 背景画像 -->
+        <div>
+          <div class="left-section-title">背景画像</div>
+          <div class="bg-drop" id="bgDrop"
+               onclick="document.getElementById('bgFile').click()"
+               ondragover="event.preventDefault();this.classList.add('dragover')"
+               ondragleave="this.classList.remove('dragover')"
+               ondrop="onBgDrop(event)">
+            クリックまたはドロップ<br>
+            <span style="font-size:11px">JPEG / PNG / GIF / SVG</span>
+          </div>
+          <input type="file" id="bgFile" accept=".jpg,.jpeg,.png,.gif,.svg,.webp" style="display:none" onchange="onBgFile(this)">
+          <img id="bgPreview" class="bg-preview" alt="背景プレビュー">
+        </div>
+
+        <!-- オブジェクト一覧 -->
+        <div>
+          <div class="left-section-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>前面オブジェクト</span>
+            <div style="display:flex;gap:4px">
+            <button onclick="addTextObj()" style="font-size:11px;padding:2px 7px;border:1px solid #3d5166;border-radius:4px;background:#1a252f;color:#ecf0f1;cursor:pointer" title="テキスト追加">T＋</button>
+            <button onclick="addImageObj()" style="font-size:11px;padding:2px 7px;border:1px solid #3d5166;border-radius:4px;background:#1a252f;color:#ecf0f1;cursor:pointer" title="画像追加">🖼＋</button>
+          </div>
+          </div>
+          <div id="objList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== 中央キャンバス ===== -->
+    <div class="panel-canvas">
+      <div class="canvas-bar">
+        <label>ズーム</label>
+        <input type="range" id="zoomSlider" min="50" max="200" value="65" oninput="setZoom(+this.value)">
+        <span id="zoomLabel">65%</span>
+        <span id="canvasSizeLbl" style="font-size:11px;color:#95a5a6"></span>
+        <div style="flex:1"></div>
+        <button class="tbtn tbtn-secondary" style="font-size:12px;padding:4px 10px" onclick="resetObjs()">↩ 位置リセット</button>
+      </div>
+      <div class="canvas-scroll">
+        <div class="canvas-stage" id="stage">
+          <div id="certCanvas">
+            <img id="certBg" alt="">
+            <div id="certBgSvg"></div>
+            <!-- ドラッグオブジェクトはJSで挿入 -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 右パネル ===== -->
+    <div class="panel-right">
+      <div class="panel-head" style="background:#f8f9fa;color:#636e72;border-bottom:1px solid #e9ecef">プロパティ</div>
+      <div class="prop-scroll" id="propPanel">
+        <div class="no-sel">オブジェクトを選択してください</div>
+      </div>
+    </div>
+
+  </div><!-- /editor-wrap -->
+</div><!-- /editor-page -->
+
+<script>
+// ============================================================
+// 定数
+// ============================================================
+const TPL_ID = {{ tpl.id if tpl else 'null' }};
+
+// 用紙サイズ定義 [幅mm, 高さmm] @96dpi: 1mm = 3.7795px
+const PAPER_SIZES = {
+  'A4':   [210, 297],
+  'A5':   [148, 210],
+  'A6':   [105, 148],
+  'B4':   [257, 364],
+  'B5':   [182, 257],
+  'B6':   [128, 182],
+  'ハガキ': [100, 148],
+  'L判':   [89,  127],
+};
+const MM2PX = 3.7795;
+
+function getCanvasSize() {
+  const sz     = document.getElementById('tplPaper')?.value  || 'A4';
+  const orient = document.getElementById('tplOrient')?.value || 'portrait';
+  const [wMM, hMM] = PAPER_SIZES[sz] || PAPER_SIZES['A4'];
+  const wPX = Math.round(wMM * MM2PX);
+  const hPX = Math.round(hMM * MM2PX);
+  return orient === 'landscape' ? [hPX, wPX] : [wPX, hPX];
+}
+
+// DB保存済みレイアウト（Python側でパース済みオブジェクトを直接埋め込む）
+const SAVED = (function() {
+  {% if tpl and tpl.layout and tpl.layout %}
+  const obj = {{ tpl.layout | tojson }};
+  if (obj && typeof obj === 'object' && Object.keys(obj).length > 0) return obj;
+  {% endif %}
+  return null;
+})();
+
+// ============================================================
+// デフォルトオブジェクト（レーサー名・レース名・開催日時）
+// ============================================================
+function defaultObjs() {
+  return [
+    {
+      id: 'racer_name',
+      label: 'レーサー名',
+      field: '{racer_name}',
+      preview: '山田 太郎',
+      x: 97, y: 480, w: 600, h: 70,
+      fontSize: 52, fontFamily: 'serif', fontWeight: 'bold', fontStyle: 'normal',
+      color: '#1a1a1a', align: 'center', verticalAlign: 'middle', letterSpacing: 6, lineHeight: 1.2
+    },
+    {
+      id: 'race_name',
+      label: 'レース名',
+      field: '{race_name}',
+      preview: 'Mini4WD Race System 第1回レース',
+      x: 97, y: 580, w: 600, h: 44,
+      fontSize: 22, fontFamily: 'serif', fontWeight: 'bold', fontStyle: 'normal',
+      color: '#1a1a1a', align: 'center', verticalAlign: 'middle', letterSpacing: 2, lineHeight: 1.4
+    },
+    {
+      id: 'date',
+      label: '開催日時',
+      field: '{date}',
+      preview: '2025年1月1日',
+      x: 64, y: 940, w: 300, h: 34,
+      fontSize: 16, fontFamily: 'serif', fontWeight: 'normal', fontStyle: 'normal',
+      color: '#555555', align: 'left', verticalAlign: 'middle', letterSpacing: 2, lineHeight: 1.4
+    }
+  ];
+}
+
+// ============================================================
+// 状態
+// ============================================================
+let objs     = [];
+let selId    = null;
+let zoom     = 0.65;
+let bgUrl    = '';
+let dragSt   = null;
+
+// ============================================================
+// 用紙サイズ適用
+// ============================================================
+function updateCanvasSize() {
+  const [w, h] = getCanvasSize();
+  const canvas = document.getElementById('certCanvas');
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  // SVG背景のサイズも追従
+  const svgEl = document.querySelector('#certBgSvg svg');
+  if (svgEl) { svgEl.style.width='100%'; svgEl.style.height='100%'; }
+  // サイズ表示を更新
+  const lbl = document.getElementById('canvasSizeLbl');
+  if (lbl) lbl.textContent = `${w} × ${h} px`;
+}
+
+// ============================================================
+// 初期化
+// ============================================================
+function init() {
+  if (SAVED) {
+    // 保存済みオブジェクトに label/preview/field 等のメタ情報をマージ
+    const defaults = defaultObjs();
+    const defMap = {};
+    defaults.forEach(d => { defMap[d.id] = d; });
+    objs = (SAVED.objects || defaults).map(o => {
+      const def = defMap[o.id] || {};
+      return Object.assign({}, def, o);  // デフォルト値を下敷きに、保存値で上書き
+    });
+    bgUrl = SAVED.bg_image_url || '';
+  } else {
+    objs  = defaultObjs();
+    bgUrl = '';
+  }
+  updateCanvasSize();
+  setZoom(65);
+  applyBg(bgUrl);
+  renderObjs();
+  renderObjList();
+}
+
+// ============================================================
+// ズーム
+// ============================================================
+function setZoom(v) {
+  zoom = v / 100;
+  document.getElementById('stage').style.transform = `scale(${zoom})`;
+  document.getElementById('zoomLabel').textContent  = Math.round(v) + '%';
+  document.getElementById('zoomSlider').value = v;
+}
+
+// ============================================================
+// 背景画像
+// ============================================================
+function onBgFile(input) {
+  if (!input.files[0]) return;
+  uploadBg(input.files[0]);
+}
+function onBgDrop(e) {
+  e.preventDefault();
+  document.getElementById('bgDrop').classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) uploadBg(f);
+}
+
+function uploadBg(file) {
+  // ローカルプレビューをまず即表示
+  const localUrl = URL.createObjectURL(file);
+  applyBg(localUrl);
+  bgUrl = localUrl;
+
+  if (!TPL_ID) return;  // 未保存テンプレートはローカルURLのまま
+
+  // アップロード中表示
+  const drop = document.getElementById('bgDrop');
+  drop.textContent = '⏳ アップロード中...';
+  drop.style.padding = '10px';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fetch(`/admin/settings/certificate-templates/${TPL_ID}/upload-bg`, { method:'POST', body:fd })
+    .then(r => r.json())
+    .then(d => {
+      if (d.url) {
+        bgUrl = d.url;
+        applyBg(d.url);
+        drop.textContent = '✅ ' + file.name;
+      } else {
+        drop.textContent = '❌ ' + (d.error || 'エラー');
+        console.error('Upload error:', d);
+      }
+    })
+    .catch(e => {
+      drop.textContent = '❌ 通信エラー';
+      console.error('Upload fetch error:', e);
+    });
+}
+
+function applyBg(url) {
+  const img   = document.getElementById('certBg');
+  const svgWr = document.getElementById('certBgSvg');
+
+  // まず両方隠す
+  img.style.display  = 'none';
+  svgWr.style.display = 'none';
+
+  if (!url) return;
+  // 旧URL形式 /cert_bg/ → /static/cert_bg/ に自動補正
+  if (url.startsWith('/cert_bg/')) url = '/static' + url;
+
+  if (url.toLowerCase().endsWith('.svg')) {
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(txt => {
+        svgWr.innerHTML = txt;
+        // SVG要素にwidth/height 100%を強制
+        const svgEl = svgWr.querySelector('svg');
+        if (svgEl) { svgEl.style.width='100%'; svgEl.style.height='100%'; }
+        svgWr.style.display = 'block';
+      })
+      .catch(e => console.error('SVG読み込み失敗:', e));
+  } else {
+    img.onload  = () => { img.style.display = 'block'; };
+    img.onerror = () => { console.error('画像読み込み失敗:', url); };
+    img.src = url;
+    // キャッシュ済みの場合 onload が発火しないことがあるので直接表示も試みる
+    if (img.complete && img.naturalWidth > 0) img.style.display = 'block';
+  }
+
+  // 左パネルのサムネ更新
+  const prev = document.getElementById('bgPreview');
+  if (!url.toLowerCase().endsWith('.svg')) {
+    prev.onload = () => { prev.style.display = 'block'; };
+    prev.src = url;
+    if (prev.complete && prev.naturalWidth > 0) prev.style.display = 'block';
+  } else {
+    prev.style.display = 'none';
+  }
+  // ドロップゾーンを縮小
+  document.getElementById('bgDrop').style.padding = '6px';
+}
+
+// ============================================================
+// オブジェクト一覧（左パネル）
+// ============================================================
+function renderObjList() {
+  const list = document.getElementById('objList');
+  list.innerHTML = '';
+  objs.forEach(o => {
+    const d = document.createElement('div');
+    d.className = 'obj-row' + (o.id === selId ? ' selected' : '');
+    const isFixed = ['racer_name','race_name','date'].includes(o.id);
+    d.innerHTML = `
+      <div style="display:flex;align-items:center;gap:4px">
+        <div style="flex:1">
+          <div class="obj-row-title">${o.type==='image'?'🖼':'T'}&nbsp; ${o.label}</div>
+          <div class="obj-row-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${o.type==='image'?(o.imageUrl||'未設定'):(o.field||o.text||'')}</div>
+        </div>
+        ${!isFixed ? `<button onclick="deleteObj('${o.id}',event)" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0" title="削除">✕</button>` : ''}
+      </div>`;
+    d.onclick = (e) => { if (!e.target.closest('button')) selectObj(o.id); };
+    list.appendChild(d);
+  });
+}
+
+// ============================================================
+// キャンバス上のオブジェクト
+// ============================================================
+function renderObjs() {
+  // 既存のdraggableだけ削除（bg要素は残す）
+  document.querySelectorAll('#certCanvas .cert-obj').forEach(el => el.remove());
+
+  objs.forEach(o => {
+    const el = makeDom(o);
+    document.getElementById('certCanvas').appendChild(el);
+  });
+}
+
+function makeDom(o) {
+  const el = document.createElement('div');
+  el.className = 'cert-obj' + (o.id === selId ? ' sel' : '');
+  el.dataset.id = o.id;
+  const vaMap = {top:'flex-start', middle:'center', bottom:'flex-end'};
+  el.style.cssText = `left:${o.x}px;top:${o.y}px;width:${o.w}px;height:${o.h}px;align-items:${vaMap[o.verticalAlign||'middle']};`;
+
+  if (o.type === 'image') {
+    // 画像オブジェクト
+    const img = document.createElement('img');
+    img.className = 'cert-obj-inner';
+    img.style.cssText = `width:100%;height:100%;object-fit:${o.objectFit||'contain'};display:block;pointer-events:none;`;
+    if (o.imageUrl) {
+      img.src = o.imageUrl;
+    } else {
+      // プレースホルダー
+      img.alt = '画像未設定';
+      img.style.background = '#ddd';
+      img.style.display = 'flex';
+    }
+    el.appendChild(img);
+  } else {
+    // テキスト内側
+    const inner = document.createElement('div');
+    inner.className = 'cert-obj-inner';
+    inner.style.cssText = `
+      font-size:${o.fontSize}px;
+      font-family:${o.fontFamily};
+      font-weight:${o.fontWeight};
+      font-style:${o.fontStyle};
+      color:${o.color};
+      text-align:${o.align};
+      letter-spacing:${o.letterSpacing}px;
+      line-height:${o.lineHeight};
+    `;
+    inner.textContent = o.preview || o.field || o.text || '';
+    el.appendChild(inner);
+  }
+
+  // リサイズハンドル（8方向）
+  ['nw','n','ne','e','se','s','sw','w'].forEach(dir => {
+    const h = document.createElement('div');
+    h.className = `rh ${dir}`;
+    h.dataset.dir = dir;
+    h.onmousedown = e => onHandleMD(e, o.id, dir);
+    el.appendChild(h);
+  });
+
+  el.onmousedown = e => onObjMD(e, o.id);
+  el.onclick     = e => { e.stopPropagation(); selectObj(o.id); };
+  return el;
+}
+
+// ============================================================
+// 選択
+// ============================================================
+function selectObj(id) {
+  selId = id;
+  renderObjs();
+  renderObjList();
+  renderProps();
+}
+
+document.getElementById('certCanvas').onclick = e => {
+  if (e.target === document.getElementById('certCanvas') ||
+      e.target === document.getElementById('certBg') ||
+      e.target === document.getElementById('certBgSvg')) {
+    selId = null;
+    renderObjs();
+    renderObjList();
+    renderProps();
+  }
+};
+
+// ============================================================
+// ドラッグ移動
+// ============================================================
+function onObjMD(e, id) {
+  if (e.target.classList.contains('rh')) return;
+  e.preventDefault(); e.stopPropagation();
+  selectObj(id);
+  const o = objs.find(x => x.id === id);
+  dragSt = { type:'move', id, startX:e.clientX, startY:e.clientY, origX:o.x, origY:o.y };
+}
+
+function onHandleMD(e, id, dir) {
+  e.preventDefault(); e.stopPropagation();
+  const o = objs.find(x => x.id === id);
+  dragSt = { type:'resize', id, dir, startX:e.clientX, startY:e.clientY,
+             origX:o.x, origY:o.y, origW:o.w, origH:o.h };
+}
+
+document.addEventListener('mousemove', e => {
+  if (!dragSt) return;
+  const dx = (e.clientX - dragSt.startX) / zoom;
+  const dy = (e.clientY - dragSt.startY) / zoom;
+  const o  = objs.find(x => x.id === dragSt.id);
+  if (!o) return;
+
+  if (dragSt.type === 'move') {
+    o.x = Math.round(dragSt.origX + dx);
+    o.y = Math.round(dragSt.origY + dy);
+  } else {
+    const d = dragSt.dir;
+    let nx=dragSt.origX, ny=dragSt.origY, nw=dragSt.origW, nh=dragSt.origH;
+    if (d.includes('e')) nw = Math.max(40, Math.round(dragSt.origW + dx));
+    if (d.includes('s')) nh = Math.max(20, Math.round(dragSt.origH + dy));
+    if (d.includes('w')) { nx=Math.round(dragSt.origX+dx); nw=Math.max(40, Math.round(dragSt.origW-dx)); }
+    if (d.includes('n')) { ny=Math.round(dragSt.origY+dy); nh=Math.max(20, Math.round(dragSt.origH-dy)); }
+    o.x=nx; o.y=ny; o.w=nw; o.h=nh;
+  }
+
+  // DOMだけ更新（軽量）
+  const el = document.querySelector(`#certCanvas .cert-obj[data-id="${o.id}"]`);
+  if (el) {
+    el.style.left=o.x+'px'; el.style.top=o.y+'px';
+    el.style.width=o.w+'px'; el.style.height=o.h+'px';
+  }
+  updatePropXYWH(o);
+});
+
+document.addEventListener('mouseup', () => { dragSt = null; });
+
+// ============================================================
+// プロパティパネル
+// ============================================================
+function renderProps() {
+  const panel = document.getElementById('propPanel');
+  if (!selId) { panel.innerHTML = '<div class="no-sel">オブジェクトを選択してください</div>'; return; }
+  const o = objs.find(x => x.id === selId);
+  if (!o) return;
+
+  // 画像オブジェクトの場合は専用パネル
+  if (o.type === 'image') {
+    panel.innerHTML = `
+      <div class="prop-group">
+        <div class="prop-label">位置・サイズ</div>
+        <div class="prop-row"><label>X</label><input type="number" id="px" value="${o.x}" oninput="sp('x',+this.value)"></div>
+        <div class="prop-row"><label>Y</label><input type="number" id="py" value="${o.y}" oninput="sp('y',+this.value)"></div>
+        <div class="prop-row"><label>幅</label><input type="number" id="pw" value="${o.w}" oninput="sp('w',+this.value)"></div>
+        <div class="prop-row"><label>高さ</label><input type="number" id="ph" value="${o.h}" oninput="sp('h',+this.value)"></div>
+      </div>
+      <hr class="prop-hr">
+      <div class="prop-group">
+        <div class="prop-label">画像</div>
+        <div style="margin-bottom:8px;font-size:12px;color:#636e72">
+          ${o.imageUrl ? `<img src="${o.imageUrl}" style="width:100%;max-height:100px;object-fit:contain;border-radius:4px;border:1px solid #ddd;background:#f8f9fa">` : '<div style="padding:16px;text-align:center;background:#f8f9fa;border-radius:4px;color:#95a5a6;border:1px dashed #ddd">未設定</div>'}
+        </div>
+        <button onclick="document.getElementById('imgObjFile').click()" style="width:100%;padding:7px;border:1px solid #2980b9;border-radius:5px;background:#eaf4fb;color:#2980b9;cursor:pointer;font-size:13px">📁 画像を選択</button>
+        <input type="file" id="imgObjFile" accept=".jpg,.jpeg,.png,.gif,.svg" style="display:none" onchange="uploadImgObj(this)">
+        <div class="prop-row" style="margin-top:10px">
+          <label>フィット</label>
+          <select onchange="sp('objectFit',this.value)">
+            <option value="contain" ${(o.objectFit||'contain')==='contain'?'selected':''}>contain（比率維持・余白あり）</option>
+            <option value="cover"   ${o.objectFit==='cover'  ?'selected':''}>cover（比率維持・トリミング）</option>
+            <option value="fill"    ${o.objectFit==='fill'   ?'selected':''}>fill（引き伸ばし）</option>
+          </select>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="prop-group">
+      <div class="prop-label">位置・サイズ</div>
+      <div class="prop-row"><label>X</label><input type="number" id="px" value="${o.x}" oninput="sp('x',+this.value)"></div>
+      <div class="prop-row"><label>Y</label><input type="number" id="py" value="${o.y}" oninput="sp('y',+this.value)"></div>
+      <div class="prop-row"><label>幅</label><input type="number" id="pw" value="${o.w}" oninput="sp('w',+this.value)"></div>
+      <div class="prop-row"><label>高さ</label><input type="number" id="ph" value="${o.h}" oninput="sp('h',+this.value)"></div>
+    </div>
+    <hr class="prop-hr">
+    <div class="prop-group">
+      <div class="prop-label">フォント</div>
+      <div class="prop-row">
+        <label>種類</label>
+        <select onchange="sp('fontFamily',this.value)">
+          ${[
+          {label:'serif（明朝・システム）', value:'serif'},
+          {label:'sans-serif（ゴシック・システム）', value:'sans-serif'},
+          {label:'Hiragino Mincho ProN（ヒラギノ明朝）', value:'Hiragino Mincho ProN'},
+          {label:'Yu Mincho（游明朝）', value:'Yu Mincho'},
+          {label:'MS Mincho（MS明朝）', value:'MS Mincho'},
+          {label:'── 明朝系 ──', value:"", sep:true},
+          {label:'Noto Serif JP', value:'Noto Serif JP'},
+          {label:'Shippori Mincho（しっぽり明朝）', value:'Shippori Mincho'},
+          {label:'Zen Old Mincho（禅 古明朝）', value:'Zen Old Mincho'},
+          {label:'Kaisei Decol（カイセイデコール）', value:'Kaisei Decol'},
+          {label:'Hina Mincho（ひな明朝）', value:'Hina Mincho'},
+          {label:'Sawarabi Mincho（さわらび明朝）', value:'Sawarabi Mincho'},
+          {label:'Yuji Syuku（遊字熟・毛筆風）', value:'Yuji Syuku'},
+          {label:'── ゴシック系 ──', value:"", sep:true},
+          {label:'Noto Sans JP', value:'Noto Sans JP'},
+          {label:'M PLUS 1p', value:'M PLUS 1p'},
+          {label:'M PLUS 2', value:'M PLUS 2'},
+          {label:'Sawarabi Gothic（さわらびゴシック）', value:'Sawarabi Gothic'},
+          {label:'Zen Kaku Gothic New（禅 角ゴシック）', value:'Zen Kaku Gothic New'},
+          {label:'BIZ UDPGothic（モリサワUD）', value:'BIZ UDPGothic'},
+          {label:'── 丸ゴシック系 ──', value:"", sep:true},
+          {label:'M PLUS Rounded 1c（丸ゴシック）', value:'M PLUS Rounded 1c'},
+          {label:'Zen Maru Gothic（禅 丸ゴシック）', value:'Zen Maru Gothic'},
+          {label:'Kosugi Maru（小杉丸ゴシック）', value:'Kosugi Maru'},
+          {label:'Kiwi Maru（キウイ丸）', value:'Kiwi Maru'},
+          {label:'── 手書き・デザイン系 ──', value:"", sep:true},
+          {label:'Zen Kurenaido（禅 くれないど・手書き）', value:'Zen Kurenaido'},
+          {label:'Hachi Maru Pop（はちまるポップ）', value:'Hachi Maru Pop'},
+          {label:'Reggae One（レゲエOne）', value:'Reggae One'},
+          {label:'Dela Gothic One（デラゴシック）', value:'Dela Gothic One'},
+          {label:'Rampart One（ランパートOne）', value:'Rampart One'}
+          ].map(f => f.sep
+            ? `<option value="" disabled>${f.label}</option>`
+            : `<option value="${f.value}" ${o.fontFamily===f.value?'selected':''}>${f.label}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>サイズ</label><input type="number" min="6" max="200" value="${o.fontSize}" oninput="sp('fontSize',+this.value)"></div>
+      <div class="prop-row">
+        <label>太さ</label>
+        <select onchange="sp('fontWeight',this.value)">
+          <option value="normal" ${o.fontWeight==='normal'?'selected':''}>標準</option>
+          <option value="bold"   ${o.fontWeight==='bold'  ?'selected':''}>太字</option>
+        </select>
+      </div>
+      <div class="prop-row">
+        <label>斜体</label>
+        <select onchange="sp('fontStyle',this.value)">
+          <option value="normal" ${o.fontStyle==='normal'?'selected':''}>標準</option>
+          <option value="italic" ${o.fontStyle==='italic'?'selected':''}>斜体</option>
+        </select>
+      </div>
+    </div>
+    <hr class="prop-hr">
+    <div class="prop-group">
+      <div class="prop-label">テキスト</div>
+      <div class="prop-row">
+        <label>色</label>
+        <input type="color" value="${o.color}" oninput="sp('color',this.value)">
+        <input type="text"  value="${o.color}" oninput="sp('color',this.value)" style="flex:1">
+      </div>
+      <div class="prop-row" style="align-items:flex-start">
+        <label style="padding-top:4px">水平</label>
+        <div class="align-btns">
+          <button class="align-btn ${o.align==='left'   ?'active':''}" data-ha="left"    title="左揃え"   onclick="sp('align','left')"   >&#x2630;</button>
+          <button class="align-btn ${o.align==='center' ?'active':''}" data-ha="center"  title="中央揃え" onclick="sp('align','center')" >&#x2263;</button>
+          <button class="align-btn ${o.align==='right'  ?'active':''}" data-ha="right"   title="右揃え"   onclick="sp('align','right')"  >&#x2631;</button>
+          <button class="align-btn ${o.align==='justify'?'active':''}" data-ha="justify" title="両端揃え" onclick="sp('align','justify')">&#x2261;</button>
+        </div>
+      </div>
+      <div class="prop-row" style="align-items:flex-start">
+        <label style="padding-top:4px">垂直</label>
+        <div class="align-btns">
+          <button class="align-btn ${(o.verticalAlign||'middle')==='top'   ?'active':''}" data-va="top"    title="上揃え"   onclick="sp('verticalAlign','top')"   >&#x2912;</button>
+          <button class="align-btn ${(o.verticalAlign||'middle')==='middle'?'active':''}" data-va="middle" title="上下中央" onclick="sp('verticalAlign','middle')">&#x2195;</button>
+          <button class="align-btn ${(o.verticalAlign||'middle')==='bottom'?'active':''}" data-va="bottom" title="下揃え"   onclick="sp('verticalAlign','bottom')">&#x2913;</button>
+        </div>
+      </div>
+      <div class="prop-row"><label>字間</label><input type="number" value="${o.letterSpacing}" oninput="sp('letterSpacing',+this.value)"></div>
+      <div class="prop-row"><label>行高</label><input type="number" step="0.1" value="${o.lineHeight}" oninput="sp('lineHeight',+this.value)"></div>
+    </div>
+    ${o.isCustom ? `
+    <hr class="prop-hr">
+    <div class="prop-group">
+      <div class="prop-label">テキスト内容</div>
+      <div class="prop-row">
+        <textarea style="flex:1;padding:6px;border:1px solid #ced4da;border-radius:4px;font-size:13px;min-height:70px;resize:vertical" oninput="spText(this.value)">${(o.text||'').replace(/</g,'&lt;')}</textarea>
+      </div>
+    </div>` : ''}
+  `;
+}
+
+// プロパティ変更 → オブジェクト更新 → DOM更新
+function sp(key, val) {
+  const o = objs.find(x => x.id === selId);
+  if (!o) return;
+  o[key] = val;
+  // DOMをピンポイント更新
+  const el = document.querySelector(`#certCanvas .cert-obj[data-id="${o.id}"]`);
+  if (!el) return;
+  const inner = el.querySelector('.cert-obj-inner');
+  if (['x','y','w','h'].includes(key)) {
+    el.style.left=o.x+'px'; el.style.top=o.y+'px';
+    el.style.width=o.w+'px'; el.style.height=o.h+'px';
+  } else if (key === 'objectFit') {
+    const img = el.querySelector('img.cert-obj-inner');
+    if (img) img.style.objectFit = val;
+  } else if (inner) {
+    inner.style.fontSize       = o.fontSize+'px';
+    inner.style.fontFamily     = o.fontFamily;
+    inner.style.fontWeight     = o.fontWeight;
+    inner.style.fontStyle      = o.fontStyle;
+    inner.style.color          = o.color;
+    inner.style.textAlign      = o.align;
+    inner.style.letterSpacing  = o.letterSpacing+'px';
+    inner.style.lineHeight     = o.lineHeight;
+  }
+  // 上下揃え: cert-obj 自体の align-items を更新
+  if (key === 'verticalAlign') {
+    const vaMap = {top:'flex-start', middle:'center', bottom:'flex-end'};
+    el.style.alignItems = vaMap[val] || 'center';
+    // パネルのボタンのactive更新
+    document.querySelectorAll('.align-btn[data-va]').forEach(b => {
+      b.classList.toggle('active', b.dataset.va === val);
+    });
+  }
+  // 水平揃え: ボタンのactive更新
+  if (key === 'align') {
+    document.querySelectorAll('.align-btn[data-ha]').forEach(b => {
+      b.classList.toggle('active', b.dataset.ha === val);
+    });
+  }
+}
+
+// カスタムテキスト内容の更新
+function spText(val) {
+  const o = objs.find(x => x.id === selId);
+  if (!o) return;
+  o.text = val;
+  o.preview = val;
+  const el = document.querySelector(`#certCanvas .cert-obj[data-id="${o.id}"]`);
+  if (el) {
+    const inner = el.querySelector('.cert-obj-inner');
+    if (inner) inner.textContent = val;
+  }
+}
+
+// ドラッグ中にプロパティパネルのX/Y/W/Hだけ更新
+function updatePropXYWH(o) {
+  ['x','y','w','h'].forEach(k => {
+    const el = document.getElementById('p'+k);
+    if (el) el.value = o[k];
+  });
+}
+
+// ============================================================
+// テキストオブジェクト追加
+// ============================================================
+function addTextObj() {
+  const id = 'text_' + Date.now();
+  const [cw, ch] = getCanvasSize();
+  objs.push({
+    id,
+    label: 'テキスト',
+    field: '',
+    text: 'テキスト',
+    preview: 'テキスト',
+    x: Math.round(cw * 0.1),
+    y: Math.round(ch * 0.4),
+    w: Math.round(cw * 0.8),
+    h: 60,
+    fontSize: 24,
+    fontFamily: 'serif',
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+    color: '#1a1a1a',
+    align: 'center',
+    verticalAlign: 'middle',
+    letterSpacing: 0,
+    lineHeight: 1.4,
+    isCustom: true
+  });
+  selId = id;
+  renderObjs();
+  renderObjList();
+  renderProps();
+}
+
+// ============================================================
+// 画像オブジェクト追加
+// ============================================================
+function addImageObj() {
+  const id = 'img_' + Date.now();
+  const [cw, ch] = getCanvasSize();
+  objs.push({
+    id,
+    type: 'image',
+    label: '画像',
+    imageUrl: '',
+    objectFit: 'contain',
+    x: Math.round(cw * 0.1),
+    y: Math.round(ch * 0.1),
+    w: Math.round(cw * 0.8),
+    h: Math.round(ch * 0.4),
+    isCustom: true
+  });
+  selId = id;
+  renderObjs();
+  renderObjList();
+  renderProps();
+}
+
+// 画像オブジェクトへの画像アップロード
+async function uploadImgObj(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const o = objs.find(x => x.id === selId);
+  if (!o || o.type !== 'image') return;
+
+  if (!TPL_ID) {
+    // 未保存の場合はローカルURL
+    o.imageUrl = URL.createObjectURL(file);
+    renderObjs();
+    renderProps();
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`/admin/settings/certificate-templates/${TPL_ID}/upload-bg`, {method:'POST', body:fd});
+    const d   = await res.json();
+    if (d.url) {
+      o.imageUrl = d.url;
+      renderObjs();
+      renderObjList();
+      renderProps();
+    } else {
+      alert('アップロード失敗: ' + (d.error || '不明なエラー'));
+    }
+  } catch(e) {
+    alert('アップロード中にエラーが発生しました');
+  }
+}
+
+// ============================================================
+// オブジェクト削除
+// ============================================================
+function deleteObj(id, e) {
+  if (e) e.stopPropagation();
+  if (!confirm('削除しますか？')) return;
+  objs = objs.filter(o => o.id !== id);
+  if (selId === id) {
+    selId = null;
+    renderProps();
+  }
+  renderObjs();
+  renderObjList();
+}
+
+// ============================================================
+// リセット
+// ============================================================
+function resetObjs() {
+  if (!confirm('オブジェクトの位置・スタイルをデフォルトに戻しますか？')) return;
+  objs = defaultObjs();
+  selId = null;
+  renderObjs();
+  renderObjList();
+  renderProps();
+}
+
+// ============================================================
+// 保存
+// ============================================================
+function saveAll() {
+  const layout = {
+    bg_image_url: bgUrl,
+    objects: objs
+  };
+  document.getElementById('f_name').value   = document.getElementById('tplName').value;
+  document.getElementById('f_paper').value  = document.getElementById('tplPaper').value;
+  document.getElementById('f_orient').value = document.getElementById('tplOrient').value;
+  document.getElementById('f_layout').value = JSON.stringify(layout);
+  document.getElementById('saveForm').submit();
+}
+
+// ============================================================
+// 起動
+// ============================================================
+init();
+</script>
+{% endblock %}

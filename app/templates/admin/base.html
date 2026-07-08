@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Mini4WD Race System{% endblock %}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#f4f5f7;color:#2c3e50;font-size:15px}
+a{color:#2980b9;text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ナビ */
+nav{background:#2c3e50;color:#fff;display:flex;align-items:stretch;gap:0;padding:0;flex-wrap:wrap}
+nav .brand{padding:0 12px;background:#1a252f;display:flex;align-items:center}
+nav .brand span{color:#e74c3c;margin-right:6px}
+nav .nav-group{display:flex;align-items:stretch;border-right:1px solid #3d5166}
+nav .nav-group:last-of-type{border-right:none}
+nav .nav-label{font-size:10px;color:#7f8c8d;padding:4px 12px 0;letter-spacing:.5px;text-transform:uppercase;align-self:flex-end;line-height:1}
+nav a.nav-link{color:#ecf0f1;padding:14px 16px;display:flex;align-items:center;font-size:13px;white-space:nowrap;border-bottom:3px solid transparent;transition:background .15s}
+nav a.nav-link:hover{background:#34495e;text-decoration:none}
+nav a.nav-link.active{border-bottom-color:#e74c3c;color:#fff;background:#34495e}
+nav .nav-sep{width:1px;background:#3d5166;margin:8px 0}
+nav .spacer{flex:1}
+nav .nav-viewer{margin-left:auto}
+nav a.nav-viewer-link{color:#bdc3c7;padding:14px 18px;display:flex;align-items:center;font-size:13px;white-space:nowrap;gap:6px}
+nav a.nav-viewer-link:hover{background:#34495e;color:#fff;text-decoration:none}
+
+/* メインコンテナ */
+.container{margin:20px 0 0 0;padding:0 20px}
+
+/* カード */
+.card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);margin-bottom:20px;overflow:hidden}
+.card-header{padding:14px 20px;background:#f8f9fa;border-bottom:1px solid #e9ecef;font-weight:bold;display:flex;align-items:center;gap:10px}
+.card-header .badge{background:#e74c3c;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:normal}
+.card-body{padding:20px}
+
+/* ステータスバッジ */
+.status{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold}
+.status-prepare{background:#eaf4fb;color:#2980b9}
+.status-qualifying{background:#fef9e7;color:#d68910}
+.status-final{background:#fdf2f8;color:#a93226}
+.status-finished{background:#eafaf1;color:#1e8449}
+
+/* テーブル */
+table{width:100%;border-collapse:collapse}
+th{background:#f8f9fa;padding:10px 14px;text-align:left;font-size:13px;color:#636e72;border-bottom:2px solid #dee2e6}
+td{padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:14px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8f9fa}
+
+/* ボタン */
+.btn{display:inline-block;padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-size:14px;font-weight:bold;transition:opacity .15s}
+.btn:hover{opacity:.85;text-decoration:none}
+.btn-primary{background:#2980b9;color:#fff}
+.btn-success{background:#27ae60;color:#fff}
+.btn-danger{background:#e74c3c;color:#fff}
+.btn-secondary{background:#95a5a6;color:#fff}
+.btn-warning{background:#f39c12;color:#fff}
+.btn-sm{padding:5px 12px;font-size:14px}
+
+/* フォーム */
+.form-group{margin-bottom:14px}
+label{display:block;font-size:13px;color:#636e72;margin-bottom:4px;font-weight:bold}
+input[type=text],input[type=date],input[type=number],select,textarea{
+  width:100%;padding:8px 12px;border:1px solid #ced4da;border-radius:6px;font-size:14px;
+  font-family:inherit;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#2980b9}
+textarea{min-height:80px;resize:vertical}
+select{background:#fff}
+
+/* グリッド */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+
+/* アラート */
+.alert{padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:14px}
+.alert-info{background:#eaf4fb;border-left:4px solid #2980b9;color:#1a5276}
+
+/* ページタイトル */
+.page-title{margin-bottom:20px}
+.page-title h1{font-size:22px;color:#2c3e50}
+.page-title p{color:#636e72;font-size:13px;margin-top:4px}
+
+/* 統計カード */
+.stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:#fff;border-radius:8px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.1);text-align:center}
+.stat-card .num{font-size:36px;font-weight:bold;color:#2980b9}
+.stat-card .lbl{font-size:13px;color:#636e72;margin-top:4px}
+
+@media(max-width:700px){
+  .grid-2,.grid-3{grid-template-columns:1fr}
+  nav{flex-wrap:wrap}
+  nav a.nav-link{padding:10px 12px;font-size:12px}
+  nav .brand{font-size:15px}
+}
+@media(max-width:1024px){
+  .grid-3{grid-template-columns:repeat(2,1fr)}
+  table{font-size:13px}
+}
+@media(pointer:coarse){
+  .win-btn{width:44px;height:44px;font-size:22px}
+  .slot-name{font-size:16px;padding:4px 0}
+  .rank-select{font-size:15px;padding:6px}
+  button,select,input[type=radio]{min-height:44px}
+  .seed-toggle{min-width:44px;min-height:44px}
+}
+@media(max-width:1024px){
+  /* iPad対応 */
+  .grid-3{grid-template-columns:repeat(2,1fr)}
+  table{font-size:13px}
+}
+/* タッチ操作しやすいボタンサイズ（iPad/スマホ共通） */
+@media(pointer:coarse){
+  .win-btn{width:44px;height:44px;font-size:22px}
+  .slot-name{font-size:16px;padding:4px 0}
+  .rank-select{font-size:15px;padding:6px}
+  button,select,input[type=radio]{min-height:44px}
+  .seed-toggle{min-width:44px;min-height:44px}
+}
+</style>
+{% block head %}{% endblock %}
+{% block extra_head %}{% endblock %}
+<!-- カメラスキャン共通部品（QR/CODE128・オフライン同梱）。全管理画面で1回だけ読み込む -->
+<script src="/static/js/zxing.min.js"></script>
+<script src="/static/js/camera-scan.js"></script>
+{{ render_pwa_head('admin', request)|safe }}
+</head>
+<body>
+<nav>
+  <div class="brand"><img src="{{ app_icon_src(request) }}" onerror="this.onerror=null;this.src='/logo'" style="height:38px;width:auto;display:block;"></div>
+  {% if IS_CLOUD and request.state.store %}
+  <div style="display:flex;align-items:center;padding:0 14px;color:#ecf0f1;font-weight:bold;font-size:14px;white-space:nowrap;border-right:1px solid #34495e">
+    🏬 {{ request.state.store.name }}
+  </div>
+  {% endif %}
+
+  <!-- 管理グループ -->
+  <div class="nav-group">
+    <a href="/admin/"
+       class="nav-link {% if request.url.path == '/admin/' %}active{% endif %}">
+      🏠 ダッシュボード
+    </a>
+  </div>
+
+  <div class="nav-group">
+    <a href="/admin/tournaments/"
+       class="nav-link {% if '/admin/tournaments' in request.url.path %}active{% endif %}">
+      🏆 レース一覧
+    </a>
+  </div>
+
+  <div class="nav-group">
+    <a href="/admin/racers/"
+       class="nav-link {% if '/admin/racers' in request.url.path %}active{% endif %}">
+      👤 レーサー一覧
+    </a>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="nav-group">
+    <a href="/admin/settings"
+       class="nav-link {% if '/admin/settings' in request.url.path %}active{% endif %}"
+       style="gap:6px;">
+      ⚙️ 設定
+    </a>
+  </div>
+
+  <div class="nav-group" style="padding:0 8px;display:flex;align-items:center;gap:6px">
+    <span style="font-size:11px;color:#bdc3c7;white-space:nowrap">料金区分</span>
+    <select id="dayTypeSelect"
+            style="font-size:12px;padding:4px 8px;border-radius:4px;border:none;background:#34495e;color:#ecf0f1;cursor:pointer"
+            onchange="saveDayType(this.value)">
+      <option value="weekday">平日</option>
+      <option value="saturday">土曜</option>
+      <option value="sunday">日曜</option>
+      <option value="holiday">祝日</option>
+      <option value="special">特別</option>
+    </select>
+  </div>
+
+  <div class="nav-group" style="padding:0 4px">
+    <button id="pubStatusBadge"
+            {% if IS_CLOUD %}disabled title="クラウド運用ではGCS配信を使用しません（無効固定）"{% else %}onclick="togglePubDelivery()" title="クリックで配信ON/OFFを切り替え"{% endif %}
+            style="display:flex;align-items:center;gap:7px;padding:0 14px;height:100%;color:#bdc3c7;font-size:13px;white-space:nowrap;background:none;border:none;cursor:{% if IS_CLOUD %}not-allowed;opacity:.45{% else %}pointer{% endif %}">
+      <span id="pubToggleTrack" style="position:relative;display:inline-block;width:32px;height:18px;border-radius:9px;background:#4a5568;transition:background .3s;flex-shrink:0">
+        <span id="pubToggleKnob" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .3s;display:block"></span>
+      </span>
+      配信
+      <span id="pubStatusLabel" style="font-size:11px;padding:1px 7px;border-radius:8px;background:#4a5568;color:#a0aec0;transition:all .3s">{% if IS_CLOUD %}無効{% else %}OFF{% endif %}</span>
+    </button>
+  </div>
+
+</nav>
+<div class="container">
+{% block content %}{% endblock %}
+</div>
+<script>
+// 料金区分プルダウン
+async function saveDayType(val) {
+  try {
+    await fetch('/admin/settings/day-type-api', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({day_type: val})
+    });
+  } catch(e) {}
+}
+async function initDayType() {
+  const sel = document.getElementById('dayTypeSelect');
+  if (!sel) return;
+  try {
+    const res = await fetch('/admin/settings/day-type-api');
+    const d = await res.json();
+    sel.value = d.day_type || 'weekday';
+  } catch(e) {}
+}
+initDayType();
+
+// 日付が変わったら自動で料金区分をリセット（深夜0時に再取得）
+(function scheduleDayTypeReset() {
+  const now = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const msUntilMidnight = tomorrow - now;
+  setTimeout(async function() {
+    // サーバー側の today_day_type をクリア（日付が変わるので自動判定に戻る）
+    try {
+      await fetch('/admin/settings/day-type-api', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({day_type: '__auto__'})
+      });
+    } catch(e) {}
+    // プルダウンを自動判定値で更新
+    await initDayType();
+    // 翌日以降も繰り返す
+    scheduleDayTypeReset();
+  }, msUntilMidnight);
+})();
+
+// 配信ステータスバッジ
+var PUB_IS_CLOUD = {{ 'true' if IS_CLOUD else 'false' }};
+var _pubEnabled = false;
+
+function _applyPubStatus(enabled) {
+  _pubEnabled = enabled;
+  var track = document.getElementById('pubToggleTrack');
+  var knob  = document.getElementById('pubToggleKnob');
+  var label = document.getElementById('pubStatusLabel');
+  if (!track) return;
+  if (enabled) {
+    track.style.background = '#27ae60';
+    knob.style.left = '16px';
+    label.textContent = 'ON';
+    label.style.background = '#27ae60';
+    label.style.color = '#fff';
+  } else {
+    track.style.background = '#4a5568';
+    knob.style.left = '2px';
+    label.textContent = 'OFF';
+    label.style.background = '#4a5568';
+    label.style.color = '#a0aec0';
+  }
+}
+
+function updatePubStatus() {
+  if (PUB_IS_CLOUD) return;
+  fetch('/admin/settings/public-html/status')
+    .then(function(r){ return r.json(); })
+    .then(function(d){ _applyPubStatus(d.enabled); })
+    .catch(function(){});
+}
+
+function togglePubDelivery() {
+  if (PUB_IS_CLOUD) return;
+  var next = !_pubEnabled;
+  if (next) {
+    // ONにするときだけ即座反映せず、サーバー確認後に反映
+    fetch('/admin/settings/public-html/toggle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: true})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.ok) {
+        _applyPubStatus(true);
+      } else {
+        _showPubToast(d.error || 'ONにできませんでした');
+      }
+    })
+    .catch(function(){ _showPubToast('通信エラーが発生しました'); });
+  } else {
+    // OFFは即座に反映
+    _applyPubStatus(false);
+    fetch('/admin/settings/public-html/toggle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: false})
+    })
+    .then(function(r){ return r.json(); })
+    .catch(function(){ _applyPubStatus(true); });
+  }
+}
+
+function _showPubToast(msg) {
+  var t = document.getElementById('pubToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'pubToast';
+    t.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);' +
+      'background:#e74c3c;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;' +
+      'z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);white-space:nowrap;pointer-events:none';
+    document.body.appendChild(t);
+  }
+  t.textContent = '⚠️ ' + msg;
+  t.style.display = 'block';
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function(){
+    t.style.opacity = '0';
+    setTimeout(function(){ t.style.display = 'none'; }, 300);
+  }, 3500);
+}
+
+updatePubStatus();
+
+// 管理画面のURL変化・クリック位置をviewerに通知
+(function() {
+  let lastPath = location.pathname;
+
+  function syncHost(scrollTo) {
+    const body = {url: location.pathname};
+    if (scrollTo !== undefined) body.scroll_to = scrollTo;
+    fetch('/view/host-sync', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    }).catch(() => {});
+  }
+
+  function notifyHost() {
+    if (location.pathname !== lastPath) {
+      lastPath = location.pathname;
+      syncHost();
+    }
+  }
+
+  // クリックした要素のid or data-scrollをscroll_toとして送信
+  document.addEventListener('click', function(e) {
+    const el = e.target.closest('[id],[data-scroll]');
+    if (el) {
+      const scrollId = el.dataset.scroll || el.id;
+      if (scrollId) syncHost(scrollId);
+    }
+  }, true);
+
+  // 初回通知
+  syncHost();
+  // 3秒ごとにチェック
+  setInterval(notifyHost, 3000);
+})();
+</script>
+{% if not IS_CLOUD %}
+<script>
+// ① 管理画面が開いている間、ハートビートをサーバーへ送信
+// ブラウザを閉じると送信が止まり、約20秒後にサーバーが自動終了
+(function() {
+  function sendHeartbeat() {
+    fetch('/api/admin-heartbeat', {method:'POST'}).catch(function(){});
+  }
+  sendHeartbeat();
+  setInterval(sendHeartbeat, 5000);
+  window.addEventListener('beforeunload', function() {
+    navigator.sendBeacon('/api/admin-heartbeat');
+  });
+
+  // ② サーバーの生存確認：落ちたらブラウザを自動で閉じる
+  var _serverAlive = true;
+  var _failCount = 0;
+
+  function checkServer() {
+    fetch('/health', {signal: AbortSignal.timeout(3000)})
+      .then(function(r) {
+        if (r.ok) { _failCount = 0; _serverAlive = true; }
+      })
+      .catch(function() {
+        _failCount++;
+        if (_failCount >= 2) {  // 2回連続失敗（約20秒）で終了判定
+          _serverAlive = false;
+          // 画面をブランクにしてウィンドウを閉じる
+          document.open();
+          document.write('<html><body><script>window.opener=self;window.close();<\/script></body></html>');
+          document.close();
+          // フォールバック：閉じられなかった場合
+          setTimeout(function() { window.close(); }, 500);
+          setTimeout(function() { window.location.href = 'about:blank'; }, 1000);
+        }
+      });
+  }
+  setInterval(checkServer, 10000); // 10秒ごとに確認
+})();
+</script>
+{% endif %}
+</body>
+</html>

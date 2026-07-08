@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>予約完了 | ミニ四駆レース管理システム</title>
+  <style>
+    body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:#2c3e50;
+           background:#f4f5f7; margin:0; padding:32px 16px; }
+    .wrap { max-width:480px; margin:0 auto; background:#fff; border-radius:14px; text-align:center;
+            box-shadow:0 4px 20px rgba(0,0,0,.07); padding:34px 24px; }
+    .ok { font-size:1.35rem; font-weight:800; margin:6px 0 2px; }
+    .badge { display:inline-block; font-size:2.2rem; }
+    .when { margin-top:14px; font-size:1.05rem; font-weight:700; background:#fffaf0;
+            border:1px solid #f0e2b8; border-radius:10px; padding:10px 14px; display:inline-block; }
+    .mail { margin-top:16px; color:#555; font-size:.95rem; line-height:1.7; }
+    .warn { margin-top:16px; background:#fff6e5; color:#8a5a00; padding:.8rem;
+            border-radius:9px; font-size:.9rem; }
+    .foot { margin-top:22px; color:#93a0ac; font-size:.8rem; line-height:1.6; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="badge">✅</div>
+    <p class="ok">ご予約を受け付けました</p>
+
+    {% if start %}<div class="when">{{ start }} 〜 {{ end }}</div>{% endif %}
+
+    {% if email %}
+      <p class="mail">
+        <b>{{ email }}</b> 宛に、<br>お試し用のURLをお送りしました。
+      </p>
+    {% endif %}
+
+    {% if mail_ok is defined and not mail_ok %}
+      <div class="warn">メールが届かない場合は、迷惑メールフォルダをご確認のうえ、
+        再度お申し込みください。</div>
+    {% endif %}
+
+    <p class="foot">
+      URLはご予約の時間内のみ有効です。<br>
+      時間になりましたらメールのURLからアクセスしてください。
+    </p>
+  </div>
+</body>
+</html>

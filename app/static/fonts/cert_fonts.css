@@ -1,0 +1,718 @@
+/* 賞状用フォント（ローカル同梱・完全オフライン対応）
+ * Google Fonts を fontsource 由来の woff2 で同梱。subset: japanese/latin/latin-ext
+ */
+
+@font-face {
+  font-family: 'BIZ UDPGothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/biz-udpgothic-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'BIZ UDPGothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/biz-udpgothic-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'BIZ UDPGothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/biz-udpgothic-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'BIZ UDPGothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/biz-udpgothic-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'BIZ UDPGothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/biz-udpgothic-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'BIZ UDPGothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/biz-udpgothic-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Dela Gothic One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/dela-gothic-one-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Dela Gothic One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/dela-gothic-one-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Dela Gothic One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/dela-gothic-one-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hachi Maru Pop';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/hachi-maru-pop-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hachi Maru Pop';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/hachi-maru-pop-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hachi Maru Pop';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/hachi-maru-pop-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hina Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/hina-mincho-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hina Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/hina-mincho-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hina Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/hina-mincho-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kaisei Decol';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kaisei-decol-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kaisei Decol';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kaisei-decol-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kaisei Decol';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kaisei-decol-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kaisei Decol';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/kaisei-decol-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kaisei Decol';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/kaisei-decol-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kaisei Decol';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/kaisei-decol-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kiwi Maru';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kiwi-maru-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kiwi Maru';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kiwi-maru-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kiwi Maru';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kiwi-maru-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kiwi Maru';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/kiwi-maru-japanese-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kiwi Maru';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/kiwi-maru-latin-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kiwi Maru';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/kiwi-maru-latin-ext-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kosugi Maru';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kosugi-maru-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kosugi Maru';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kosugi-maru-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Kosugi Maru';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/kosugi-maru-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 1p';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-1p-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 1p';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-1p-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 1p';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-1p-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 1p';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-1p-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 1p';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-1p-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 1p';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-1p-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 2';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-2-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 2';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-2-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 2';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-2-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 2';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-2-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 2';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-2-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS 2';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-2-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-rounded-1c-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-rounded-1c-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-rounded-1c-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-rounded-1c-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-rounded-1c-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/m-plus-rounded-1c-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/noto-sans-jp-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/noto-sans-jp-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/noto-sans-jp-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/noto-sans-jp-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/noto-sans-jp-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/noto-sans-jp-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rampart One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/rampart-one-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rampart One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/rampart-one-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rampart One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/rampart-one-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Reggae One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/reggae-one-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Reggae One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/reggae-one-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Reggae One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/reggae-one-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sawarabi Gothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/sawarabi-gothic-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sawarabi Gothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/sawarabi-gothic-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sawarabi Gothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/sawarabi-gothic-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sawarabi Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/sawarabi-mincho-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sawarabi Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/sawarabi-mincho-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sawarabi Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/sawarabi-mincho-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/shippori-mincho-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/shippori-mincho-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/shippori-mincho-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/shippori-mincho-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/shippori-mincho-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Shippori Mincho';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/shippori-mincho-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Yuji Syuku';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/yuji-syuku-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Yuji Syuku';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/yuji-syuku-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Yuji Syuku';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/yuji-syuku-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-kaku-gothic-new-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-kaku-gothic-new-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-kaku-gothic-new-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-kaku-gothic-new-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-kaku-gothic-new-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-kaku-gothic-new-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kurenaido';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-kurenaido-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kurenaido';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-kurenaido-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Kurenaido';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-kurenaido-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-maru-gothic-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-maru-gothic-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-maru-gothic-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-maru-gothic-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-maru-gothic-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-maru-gothic-latin-ext-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Old Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-old-mincho-japanese-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Old Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-old-mincho-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Old Mincho';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/zen-old-mincho-latin-ext-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Old Mincho';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-old-mincho-japanese-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Old Mincho';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-old-mincho-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Old Mincho';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/zen-old-mincho-latin-ext-700.woff2') format('woff2');
+}

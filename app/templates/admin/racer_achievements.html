@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ racer.name }} の実績</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "BIZ UDPGothic","Segoe UI","Hiragino Sans","Meiryo",sans-serif;
+         background: #f4f6f9; color: #2c3e50; padding: 20px; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #95a5a6; font-size: 13px; margin: 0 0 16px; }
+  .card { background: #fff; border: 1px solid #e3e8ef; border-radius: 10px;
+          padding: 16px 18px; margin-bottom: 16px; }
+  .filter { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .filter label { font-size: 12px; color: #636e72; display: block; margin-bottom: 3px; }
+  .filter input[type=date] { padding: 6px 8px; font-size: 14px; border: 1px solid #ced4da; border-radius: 6px; }
+  .btn { padding: 7px 16px; font-size: 14px; border: none; border-radius: 6px; cursor: pointer; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-secondary { background: #e9edf2; color: #2c3e50; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat { text-align: center; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; padding: 12px 6px; }
+  .stat .num { font-size: 26px; font-weight: bold; color: #0078d4; }
+  .stat .lbl { font-size: 12px; color: #636e72; margin-top: 2px; }
+  .lastwin { margin-top: 12px; font-size: 14px; }
+  .lastwin .badge { display: inline-block; background: #fff3cd; color: #a87a00;
+                    font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #e3e8ef; color: #636e72; font-size: 12px; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid #f1f3f5; }
+  tbody tr:hover { background: #f8fafc; }
+  .rank-1 { color: #d4a017; font-weight: bold; }
+  .rank-2 { color: #7f8c8d; font-weight: bold; }
+  .rank-3 { color: #b9772e; font-weight: bold; }
+  .rank-none { color: #c0c7d0; }
+  .empty { text-align: center; color: #95a5a6; padding: 28px 0; }
+  .date-col { white-space: nowrap; color: #636e72; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ racer.name }} さんのレース実績</h1>
+  <p class="sub">{% if racer.yomi %}{{ racer.yomi }} ／ {% endif %}結果が確定したレースのみを対象に集計しています</p>
+
+  <div class="card">
+    <form class="filter" method="get" action="/admin/racers/achievements/{{ racer.id }}">
+      <div>
+        <label>開始日</label>
+        <input type="date" name="start" value="{{ start }}">
+      </div>
+      <div style="align-self:flex-end;padding-bottom:7px;color:#95a5a6">～</div>
+      <div>
+        <label>終了日</label>
+        <input type="date" name="end" value="{{ end }}">
+      </div>
+      <button type="submit" class="btn btn-primary">表示</button>
+      <a href="/admin/racers/achievements/{{ racer.id }}" class="btn btn-secondary" style="text-decoration:none">期間リセット</a>
+    </form>
+    <p class="sub" style="margin:10px 0 0">期間：{{ start }} ～ {{ end }}（開催日で絞り込み）</p>
+  </div>
+
+  <div class="card">
+    <div class="stats">
+      <div class="stat"><div class="num">{{ race_count }}</div><div class="lbl">レース参加数</div></div>
+      <div class="stat"><div class="num">{{ win_rate }}%</div><div class="lbl">優勝率</div></div>
+      <div class="stat"><div class="num">{{ podium_rate }}%</div><div class="lbl">入賞率</div></div>
+    </div>
+    <div class="lastwin">
+      {% if last_win %}
+      <span class="badge">前回優勝</span>{{ last_win.date }}　{{ last_win.name }}
+      {% else %}
+      <span class="badge" style="background:#eef2f7;color:#95a5a6">前回優勝</span><span style="color:#95a5a6">優勝記録なし</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    {% if rows %}
+    <table>
+      <thead>
+        <tr><th style="width:130px">開催日時</th><th>レース名</th><th style="width:90px">結果</th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="date-col">{{ r.date }}</td>
+          <td>{{ r.name }}</td>
+          <td>
+            {% if r.result == '1位' %}<span class="rank-1">1位</span>
+            {% elif r.result == '2位' %}<span class="rank-2">2位</span>
+            {% elif r.result == '3位' %}<span class="rank-3">3位</span>
+            {% else %}<span class="rank-none">━</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">この期間に結果が確定したレースはありません。</div>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

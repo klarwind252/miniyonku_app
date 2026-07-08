@@ -1,0 +1,319 @@
+{% extends "admin/base.html" %}
+{% block title %}ダッシュボード - Mini4WD Race System{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ---- stat cards ---- */
+.stat-cards { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
+.stat-card  { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.1);
+              padding:20px 24px; flex:1; min-width:130px; text-align:center; }
+.stat-card .num { font-size:32px; font-weight:bold; color:#2980b9; }
+.stat-card .lbl { font-size:12px; color:#95a5a6; margin-top:4px; }
+
+/* ---- calendar ---- */
+.cal-header { border-bottom:1px solid #e9ecef; }
+.cal-nav-btn { background:#f0f0f0; border:none; border-radius:6px;
+               padding:6px 12px; cursor:pointer; font-size:14px; line-height:1; }
+.cal-nav-btn:hover { background:#dce3ea; }
+.cal-month-label { font-size:16px; font-weight:bold; color:#2c3e50; min-width:120px; text-align:center; }
+.cal-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+.cal-dow  { text-align:center; font-size:11px; font-weight:bold; color:#7f8c8d;
+            padding:8px 0; background:#f8f9fa; border-bottom:1px solid #e9ecef; }
+.cal-dow:first-child { color:#e74c3c; }
+.cal-cell {
+  min-height:72px; border-right:1px solid #f0f0f0; border-bottom:1px solid #f0f0f0;
+  padding:4px 5px; font-size:12px; vertical-align:top; cursor:pointer; position:relative;
+  transition: background .1s;
+}
+.cal-cell:hover { background:#f0f7ff; }
+.cal-cell.other-month .cal-day-num { color:#bdc3c7; }
+.cal-cell.today .cal-day-num { background:#2980b9; color:#fff; border-radius:50%;
+  width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
+.cal-day-num { font-size:12px; font-weight:bold; color:#2c3e50; display:inline-flex;
+               align-items:center; justify-content:center; width:22px; height:22px; }
+.cal-event { background:#3498db; color:#fff; border-radius:3px; padding:0 5px;
+             height:40px; line-height:40px;
+             font-size:14px; margin-top:2px; white-space:nowrap; overflow:hidden;
+             text-overflow:ellipsis; cursor:pointer; }
+.cal-event.night { background:#8e44ad; }
+.cal-event.day   { background:#27ae60; }
+.cal-event.finished { opacity:.65; }
+.cal-cell:nth-child(7n+1) .cal-day-num { color:#e74c3c; }
+.cal-cell.other-month:nth-child(7n+1) .cal-day-num { color:#f5b7b1; }
+.cal-cell:nth-child(7n) .cal-day-num { color:#3498db; }
+.cal-cell.other-month:nth-child(7n) .cal-day-num { color:#aed6f1; }
+
+/* ---- last-held table ---- */
+.last-held-table { width:100%; border-collapse:collapse; font-size:13px; }
+.last-held-table td { padding:9px 14px; border-bottom:1px solid #f0f0f0; }
+.last-held-table tr:last-child td { border-bottom:none; }
+.last-held-badge { display:inline-block; padding:2px 10px; border-radius:10px;
+                   font-size:12px; font-weight:bold; }
+.badge-held { background:#eafaf1; color:#1e8449; }
+.badge-none { background:#f0f0f0; color:#95a5a6; }
+
+/* ---- export overlay ---- */
+#exportOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5);
+                 z-index:2000; align-items:center; justify-content:center; }
+#exportOverlay.open { display:flex; }
+#exportBox { background:#fff; border-radius:10px; padding:24px; width:480px; max-width:95vw; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <h1>ダッシュボード</h1>
+  <p>レースの進行状況を確認できます</p>
+</div>
+
+<!-- ① 集計カード -->
+<div class="stat-cards">
+  <div class="stat-card">
+    <div class="num">{{ total_count }}</div>
+    <div class="lbl">Total Count</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ day_count }}</div>
+    <div class="lbl">DayRace Count</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ night_count }}</div>
+    <div class="lbl">NightRace Count</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ racer_count }}</div>
+    <div class="lbl">Registered Racers</div>
+  </div>
+</div>
+
+<!-- ② レースカレンダー -->
+<div class="card" id="calCard" style="margin-bottom:24px">
+  <div class="cal-header" style="display:flex;align-items:center;gap:8px;padding:12px 16px;flex-wrap:wrap;">
+    <button class="cal-nav-btn" onclick="moveMonth(-1)">◀</button>
+    <span class="cal-month-label" id="calLabel" style="min-width:110px;text-align:center"></span>
+    <button class="cal-nav-btn" onclick="moveMonth(1)">▶</button>
+    <select class="cal-select" id="calYear" onchange="applySelects()" style="width:90px"></select>
+    <select class="cal-select" id="calMonth" onchange="applySelects()" style="width:70px"></select>
+    <span style="font-size:12px;color:#e67e22;margin-left:12px">💡 常設開催の場合はレーサーマスタにレーサーの事前登録がおすすめです</span>
+    <div style="margin-left:auto;display:flex;gap:8px;flex-shrink:0">
+      <button class="btn btn-secondary btn-sm" onclick="openExport()" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">📷 画像出力</button>
+      <a href="/admin/tournaments/new" class="btn btn-primary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">＋ 新規レース</a>
+    </div>
+  </div>
+  <!-- 画像出力対象：曜日＋グリッド -->
+  <div id="calExportArea" style="background:#fff">
+    <div style="text-align:center;font-size:14px;font-weight:bold;padding:8px 0;color:#2c3e50">
+      <span id="calExportLabel"></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <div class="cal-grid" id="calBody" style="min-width:420px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ③ 前回開催（全レギュレーション） -->
+<div class="card" style="margin-bottom:24px">
+  <div class="card-header">🏁 前回開催</div>
+  {% if last_held %}
+  <table class="last-held-table">
+    {% for reg, dt in last_held.items() %}
+    <tr>
+      <td style="color:#2c3e50;font-weight:500">{{ reg }}</td>
+      <td>
+        {% if dt %}
+        <span class="last-held-badge badge-held">{{ dt }}</span>
+        {% else %}
+        <span class="last-held-badge badge-none">開催記録なし</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div style="padding:24px;text-align:center;color:#95a5a6;font-size:14px">
+    レギュレーションが設定に登録されていません。<br>
+    <a href="/admin/settings#defaults">⚙️ 設定 → レギュレーション</a> から追加してください。
+  </div>
+  {% endif %}
+</div>
+
+<!-- 画像エクスポートオーバーレイ -->
+<div id="exportOverlay">
+  <div id="exportBox">
+    <h3 style="margin:0 0 16px">📷 カレンダー画像出力</h3>
+    <p style="font-size:13px;color:#636e72;margin-bottom:16px">
+      現在表示中の月のカレンダーをPNG画像として保存できます。<br>
+      SNS（X・Instagram）への投稿にご利用ください。
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" onclick="closeExport()">キャンセル</button>
+      <button class="btn btn-primary btn-sm" onclick="exportCalendar()">📥 PNG保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOURNAMENTS = {{ all_tournaments_json | safe }};
+
+let curYear, curMonth;
+
+(function init() {
+  const now = new Date();
+  curYear  = now.getFullYear();
+  curMonth = now.getMonth() + 1;
+
+  // year select
+  const ys = document.getElementById('calYear');
+  for (let y = now.getFullYear()-2; y <= now.getFullYear()+3; y++) {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y + '年';
+    if (y === curYear) o.selected = true;
+    ys.appendChild(o);
+  }
+  // month select
+  const ms = document.getElementById('calMonth');
+  for (let m = 1; m <= 12; m++) {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m + '月';
+    if (m === curMonth) o.selected = true;
+    ms.appendChild(o);
+  }
+  renderCalendar();
+})();
+
+function moveMonth(d) {
+  curMonth += d;
+  if (curMonth > 12) { curMonth = 1;  curYear++; }
+  if (curMonth < 1)  { curMonth = 12; curYear--; }
+  syncSelects();
+  renderCalendar();
+}
+
+function applySelects() {
+  curYear  = parseInt(document.getElementById('calYear').value);
+  curMonth = parseInt(document.getElementById('calMonth').value);
+  renderCalendar();
+}
+
+function syncSelects() {
+  document.getElementById('calYear').value  = curYear;
+  document.getElementById('calMonth').value = curMonth;
+}
+
+function renderCalendar() {
+  document.getElementById('calLabel').textContent = curYear + '年 ' + curMonth + '月';
+  document.getElementById('calExportLabel').textContent = curYear + '年 ' + curMonth + '月';
+
+  const body    = document.getElementById('calBody');
+  body.innerHTML = '';
+  ['日','月','火','水','木','金','土'].forEach((d,i) => {
+    const dow = document.createElement('div');
+    dow.className = 'cal-dow';
+    if (i === 6) dow.style.color = '#3498db';
+    dow.textContent = d;
+    body.appendChild(dow);
+  });
+
+  const today   = new Date();
+  const firstDay = new Date(curYear, curMonth - 1, 1);
+  const lastDay  = new Date(curYear, curMonth, 0);
+  const startDow = firstDay.getDay();          // 0=日
+  const totalDays = lastDay.getDate();
+
+  // 前月の末日
+  const prevLast = new Date(curYear, curMonth - 1, 0).getDate();
+
+  // レースをdateでインデックス
+  const raceMap = {};
+  TOURNAMENTS.forEach(t => {
+    if (!raceMap[t.date]) raceMap[t.date] = [];
+    raceMap[t.date].push(t);
+  });
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+
+  // 先頭の空きを前月日付で埋める
+  for (let i = 0; i < startDow; i++) {
+    const dayNum = prevLast - startDow + 1 + i;
+    const prevMonth = curMonth === 1 ? 12 : curMonth - 1;
+    const prevYear  = curMonth === 1 ? curYear - 1 : curYear;
+    const dateStr   = `${prevYear}-${pad(prevMonth)}-${pad(dayNum)}`;
+    body.appendChild(makeCell(dayNum, dateStr, true));
+  }
+
+  // 当月
+  for (let d = 1; d <= totalDays; d++) {
+    const dateStr = `${curYear}-${pad(curMonth)}-${pad(d)}`;
+    const isToday = (today.getFullYear()===curYear && today.getMonth()+1===curMonth && today.getDate()===d);
+    body.appendChild(makeCell(d, dateStr, false, isToday));
+  }
+
+  // 末尾を翌月日付で埋める（6行=42マスになるまで）
+  const filled = startDow + totalDays;
+  const remain = filled % 7 === 0 ? 0 : 7 - (filled % 7);
+  const nextMonth = curMonth === 12 ? 1 : curMonth + 1;
+  const nextYear  = curMonth === 12 ? curYear + 1 : curYear;
+  for (let i = 1; i <= remain; i++) {
+    const dateStr = `${nextYear}-${pad(nextMonth)}-${pad(i)}`;
+    body.appendChild(makeCell(i, dateStr, true));
+  }
+
+  function makeCell(dayNum, dateStr, isOther, isToday=false) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (isOther ? ' other-month' : '') + (isToday ? ' today' : '');
+    cell.onclick = () => { if (!isOther) newRace(dateStr); };
+
+    const dn = document.createElement('div');
+    dn.className = 'cal-day-num';
+    dn.textContent = dayNum;
+    cell.appendChild(dn);
+
+    (raceMap[dateStr] || []).forEach(t => {
+      const ev = document.createElement('div');
+      ev.className = 'cal-event ' + (t.time_slot||'') + (t.status==='finished'?' finished':'');
+      ev.textContent = t.name || t.regulation;
+      ev.title = t.regulation || t.name;
+      ev.onclick = e => { e.stopPropagation(); location.href='/admin/tournaments/'+t.id; };
+      cell.appendChild(ev);
+    });
+
+    return cell;
+  }
+}
+
+function newRace(dateStr) {
+  location.href = '/admin/tournaments/new?date=' + dateStr;
+}
+
+/* ---- 画像出力 ---- */
+function openExport()  { document.getElementById('exportOverlay').classList.add('open'); }
+function closeExport() { document.getElementById('exportOverlay').classList.remove('open'); }
+
+async function exportCalendar() {
+  closeExport();
+
+  // html2canvas が読み込まれていない場合はローカル（同梱）から読み込む（完全オフライン対応）
+  if (!window.html2canvas) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/static/js/html2canvas.min.js';
+      s.onload = resolve;
+      s.onerror = () => { alert('画像生成ライブラリ（html2canvas）の読み込みに失敗しました。'); reject(); };
+      document.head.appendChild(s);
+    });
+  }
+
+  const calEl = document.getElementById('calExportArea');
+  const canvas = await html2canvas(calEl, { scale: 2, backgroundColor: '#ffffff' });
+  const link = document.createElement('a');
+  link.download = `race-calendar-${curYear}-${String(curMonth).padStart(2,'0')}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+document.getElementById('exportOverlay').addEventListener('click', function(e){
+  if (e.target === this) closeExport();
+});
+</script>
+{% endblock %}

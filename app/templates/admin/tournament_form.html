@@ -1,0 +1,953 @@
+{% extends "admin/base.html" %}
+{% import "admin/_asset_macros.html" as am %}
+{% block title %}新規レース作成{% endblock %}
+{% block head %}
+<style>
+.qual-section { display:none; }
+.qual-section.active { display:block; }
+/* 各項目の区切りを分かりやすく：フォーム直下の項目をカード化 */
+#form > .form-group{background:#f8f9fa;border:1px solid #e6e9ec;border-radius:10px;padding:14px 16px;margin-bottom:14px}
+#form > .form-group > label:first-child{display:block;font-weight:bold;color:#2c3e50;margin-bottom:8px}
+.opt-heading{font-size:15px;font-weight:bold;color:#636e72;margin:6px 0 10px;padding:8px 12px;background:#eef2f5;border-left:4px solid #95a5a6;border-radius:6px}
+.summary-box {
+  background:#eaf4fb; border-left:4px solid #2980b9;
+  border-radius:6px; padding:12px 16px; margin-top:12px;
+  font-size:14px; color:#1a5276; display:none;
+}
+.summary-box.active { display:block; }
+.heat-option-row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
+.heat-option-row .form-group { margin:0; flex:1; min-width:120px; }
+.free-input { display:none; margin-top:8px; }
+.reg-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;
+}
+.reg-option {
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border:2px solid #dee2e6; border-radius:6px; cursor:pointer;
+  transition:border-color .15s, background .15s; font-size:14px;
+}
+.reg-option:hover { border-color:#2980b9; background:#f0f7ff; }
+.reg-option input[type=radio] { accent-color:#2980b9; }
+.reg-option.selected { border-color:#2980b9; background:#eaf4fb; font-weight:bold; }
+.timeslot-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.ts-btn {
+  padding:8px 18px; border:2px solid #dee2e6; border-radius:20px;
+  cursor:pointer; font-size:14px; background:#fff; transition:all .15s;
+  font-family:inherit;
+}
+.ts-btn:hover { border-color:#2980b9; }
+.ts-btn.active { border-color:#2980b9; background:#2980b9; color:#fff; font-weight:bold; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>新規レース作成</h1>
+</div>
+
+<div class="card" style="max-width:760px">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" onsubmit="return checkBeforeSubmit()" action="/admin/tournaments/add" id="form">
+
+      <!-- 開催日 -->
+      <div class="form-group">
+        <label>開催日 *</label>
+        <input type="date" name="date" id="date" required value="{{ today }}">
+      </div>
+
+      <!-- レース名 -->
+      <div class="form-group">
+        <label>レース名 *</label>
+        <input type="text" name="name" id="name" required placeholder="時間帯とレギュレーションを選ぶと自動生成されます">
+        <div style="font-size:12px;color:#636e72;margin-top:4px">自動生成後も自由に編集できます（開催日は含まれません）</div>
+      </div>
+
+      <!-- 時間帯 -->
+      <div class="form-group">
+        <label>時間帯 *</label>
+        <input type="hidden" name="time_slot" id="time_slot" value="day">
+        <div class="timeslot-row">
+          <button type="button" class="ts-btn active" data-val="day">☀️ デイレース</button>
+          <button type="button" class="ts-btn" data-val="night">🌙 ナイトレース</button>
+          <button type="button" class="ts-btn" data-val="extended">⏰ 延長</button>
+          <button type="button" class="ts-btn" data-val="free">✏️ フリーワード</button>
+        </div>
+        <div class="free-input" id="free-input">
+          <input type="text" name="time_slot_free" id="time_slot_free" placeholder="フリーワードを入力">
+        </div>
+      </div>
+
+      <!-- レギュレーション -->
+      <div class="form-group">
+        <label>レギュレーション *</label>
+        <input type="hidden" name="regulation" id="regulation" value="">
+        <div class="reg-grid">
+          {% for key, label in regulation_labels.items() %}
+          <label class="reg-option" id="reg-opt-{{ key }}">
+            <input type="radio" name="_regulation_radio" value="{{ key }}"
+                   onchange="selectReg('{{ key }}')"> {{ label }}
+          </label>
+          {% endfor %}
+          <label class="reg-option" id="reg-opt-free_word" style="grid-column:1/-1">
+            <input type="radio" name="_regulation_radio" value="free_word"
+                   onchange="selectReg('free_word')"> ✏️ フリーワード
+          </label>
+        </div>
+        <div id="reg-free-input" style="display:none;margin-top:8px">
+          <input type="text" id="regulation_free" placeholder="レギュレーション名を入力"
+                 oninput="onRegFreeInput()">
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #e9ecef;margin:20px 0">
+
+      <!-- 予選形式 -->
+      <div class="form-group">
+        <label>予選形式 *</label>
+        <select name="qualifying_type" id="qualifying_type" onchange="onQualChange(); checkOrderType(this)">
+          <option value="none"            {% if default_qualifying=='none' %}selected{% endif %}>なし（即決勝トーナメント）</option>
+          <option value="none_roundrobin" {% if default_qualifying=='none_roundrobin' %}selected{% endif %}>なし（即決勝総当たり）</option>
+          <option value="heat_tournament" {% if default_qualifying=='heat_tournament' or not default_qualifying %}selected{% endif %}>ヒート（トーナメント）</option>
+          <option value="heat_roundrobin" {% if default_qualifying=='heat_roundrobin' %}selected{% endif %}>ヒート（総当たり）</option>
+          <option value="point"           {% if default_qualifying=='point' %}selected{% endif %}>ポイント</option>
+          <option value="roundrobin"      {% if default_qualifying=='roundrobin' %}selected{% endif %}>総当たり</option>
+          <option value="order"           {% if default_qualifying=='order' %}selected{% endif %}>並び順（ポイント制）</option>
+          <option value="order_winner"    {% if default_qualifying=='order_winner' %}selected{% endif %}>並び順（勝ち抜け）</option>
+        </select>
+
+      <!-- ヒート（トーナメント）設定 -->
+      <div class="qual-section card" id="sec-heat_tournament" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">🏆 ヒート（トーナメント）設定</div>
+          <div class="heat-option-row">
+            <div class="form-group">
+              <label>レース数（ヒート数）</label>
+              <select name="qual_heat_count" id="ht_count" onchange="calcHT()">
+                {% for i in range(1,7) %}<option value="{{ i }}" {% if i==3 %}selected{% endif %}>{{ i }} ヒート</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>グループ数</label>
+              <select name="qual_group_count" id="ht_gcount" onchange="calcHT()">
+                {% for i in range(1,5) %}<option value="{{ i }}" {% if (t is defined and t.qual_group_count == i) or (t is not defined and i == 1) %}selected{% endif %}>{{ i }} グループ</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>グループ内 上位通過人数</label>
+              <select name="qual_group_advance" id="ht_gadvance" onchange="calcHT()">
+                {% for i in range(1,7) %}<option value="{{ i }}" {% if (t is defined and t.qual_group_advance == i) or (t is not defined and i == 1) %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="form-group ht-final-row" style="margin-top:12px">
+            <label>ヒート決勝</label>
+            <div style="display:flex;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer">
+                <input type="radio" name="qual_heat_final" value="0"
+                  {% if t is not defined or not t.qual_heat_final %}checked{% endif %}
+                  onchange="calcHT()"> 行わない
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer">
+                <input type="radio" name="qual_heat_final" value="1"
+                  {% if t is defined and t.qual_heat_final %}checked{% endif %}
+                  onchange="calcHT()"> 行う
+              </label>
+            </div>
+          </div>
+          <div id="ht-final-detail" style="display:none;margin-top:8px">
+            <div class="form-group">
+              <label>ヒート決勝 上位通過人数（決勝進出人数）</label>
+              <select name="qual_heat_advance" id="ht_advance" onchange="calcHT()">
+                {% for i in range(1,5) %}<option value="{{ i }}" {% if t is defined and t.qual_heat_advance == i %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="summary-box active" id="ht-summary"></div>
+          <div style="margin-top:10px" id="ht-exclude-wrap">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+              <input type="hidden" name="qual_heat_exclude" value="0">
+              <input type="checkbox" name="qual_heat_exclude" value="1" id="ht_exclude"
+                     {% if t is defined and t.qual_heat_exclude %}checked{% endif %}>
+              <span>決勝進出済みレーサーは以降のヒートに出場しない（勝ち抜け方式）</span>
+            </label>
+            <p style="margin:4px 0 0 24px;font-size:12px;color:#95a5a6">
+              ヒートNで進出が決まったレーサーはヒートN+1以降の組み合わせから除外されます。<br>
+              ※ ヒート数が2以上のときのみ設定できます。前ヒートの結果が確定するまで次ヒートは生成できません。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ヒート（総当たり）設定 -->
+      <div class="qual-section card" id="sec-heat_roundrobin" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">🔄 ヒート（総当たり）設定</div>
+          <div class="heat-option-row">
+            <div class="form-group">
+              <label>レース数（ヒート数）</label>
+              <select name="qual_heat_count" id="rr_hcount" onchange="calcRR()">
+                {% for i in range(1,7) %}<option value="{{ i }}">{{ i }} ヒート</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>グループ数</label>
+              <select name="qual_group_count" id="rr_gcount" onchange="calcRR()">
+                {% for i in range(1,5) %}<option value="{{ i }}">{{ i }} グループ</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>グループ内 上位通過人数</label>
+              <select name="qual_group_advance" id="rr_gadvance" onchange="calcRR()">
+                {% for i in range(1,7) %}<option value="{{ i }}" {% if i==2 %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label>ヒート決勝</label>
+            <div style="display:flex;gap:16px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer">
+                <input type="radio" name="qual_heat_final" value="0" checked onchange="calcRR()"> 行わない
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer">
+                <input type="radio" name="qual_heat_final" value="1" onchange="calcRR()"> 行う
+              </label>
+            </div>
+          </div>
+          <div id="rr-final-detail" style="display:none;margin-top:8px">
+            <div class="form-group">
+              <label>ヒート決勝 上位通過人数（決勝進出人数）</label>
+              <select name="qual_heat_final_advance" id="rr_fadv" onchange="calcRR()">
+                {% for i in range(1,5) %}<option value="{{ i }}">{{ i }} 名</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="summary-box" id="rr-summary"></div>
+          <div style="margin-top:10px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+              <input type="hidden" name="qual_heat_exclude" value="0">
+              <input type="checkbox" name="qual_heat_exclude" value="1"
+                     {% if t is defined and t.qual_heat_exclude %}checked{% endif %}>
+              <span>決勝進出済みレーサーは以降のヒートに出場しない（勝ち抜け方式）</span>
+            </label>
+            <p style="margin:4px 0 0 24px;font-size:12px;color:#95a5a6">
+              ヒートNで進出が決まったレーサーはヒートN+1以降の組み合わせから除外されます
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ポイント / 総当たり 設定 -->
+      <div class="qual-section card" id="sec-point" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">📊 決勝進出人数</div>
+          <div class="form-group" style="max-width:320px">
+            <label>上位 何名が決勝へ</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="pt_advance_pick" onchange="syncAdvancePick('pt')"
+                      style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                {% for i in range(3,49) %}<option value="{{ i }}" {% if i==3 %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+                <option value="__custom__">自由入力…</option>
+              </select>
+              <input type="number" name="qual_final_advance" id="pt_advance" value="3" min="2" max="999"
+                     oninput="reflectAdvancePick('pt')"
+                     style="width:90px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px;text-align:center">
+              <span style="font-size:14px;color:#636e72">名</span>
+            </div>
+          </div>
+          <div class="summary-box active" id="pt-summary"></div>
+
+          <div style="margin-top:14px;border-top:1px solid #dee2e6;padding-top:14px">
+            <div style="font-weight:bold;margin-bottom:8px;color:#2c3e50">🏆 ポイント割り振り</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 10px;border:2px solid #dee2e6;border-radius:6px;font-size:13px">
+                <input type="radio" name="point_preset" value="3,2,1,0" onchange="applyPointPreset(this)" checked> 3-2-1-0点
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 10px;border:2px solid #dee2e6;border-radius:6px;font-size:13px">
+                <input type="radio" name="point_preset" value="5,3,1,0" onchange="applyPointPreset(this)"> 5-3-1-0点
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 10px;border:2px solid #dee2e6;border-radius:6px;font-size:13px">
+                <input type="radio" name="point_preset" value="custom" onchange="applyPointPreset(this)"> 任意設定
+              </label>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+              <label style="font-size:13px">1位 <input type="number" name="point_1st" id="point_1st" value="3" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+              <label style="font-size:13px">2位 <input type="number" name="point_2nd" id="point_2nd" value="2" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+              <label style="font-size:13px">3位 <input type="number" name="point_3rd" id="point_3rd" value="1" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+              <label style="font-size:13px">CO <input type="number" name="point_co" id="point_co" value="0" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+            
+          <div style="margin-top:14px;border-top:1px solid #dee2e6;padding-top:14px">
+            <div style="font-weight:bold;margin-bottom:8px;color:#2c3e50">🔁 予選回数</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select name="qual_round_count" id="qual_round_count" style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                {% for i in range(1,7) %}<option value="{{ i }}" {% if i==3 %}selected{% endif %}>{{ i }} 回</option>{% endfor %}
+              </select>
+              <span style="color:#636e72;font-size:13px">（全員が毎回出走、組み合わせ変更）</span>
+            </div>
+          </div></div>
+          </div>
+        </div>
+      </div>
+      <div class="qual-section card" id="sec-roundrobin" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">📊 決勝進出人数</div>
+          <div class="form-group" style="max-width:320px">
+            <label>上位 何名が決勝へ</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="rball_advance_pick" onchange="syncAdvancePick('rball')"
+                      style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                {% for i in range(3,49) %}<option value="{{ i }}" {% if i==3 %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+                <option value="__custom__">自由入力…</option>
+              </select>
+              <input type="number" name="qual_final_advance" id="rball_advance" value="3" min="2" max="999"
+                     oninput="reflectAdvancePick('rball')"
+                     style="width:90px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px;text-align:center">
+              <span style="font-size:14px;color:#636e72">名</span>
+            </div>
+          </div>
+          <div class="summary-box active" id="rball-summary"></div>
+        </div>
+      </div>
+      <div class="qual-section card" id="sec-order" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="margin-bottom:14px;padding:12px 14px;background:#fff8e1;border:1px solid #f0c36d;border-radius:8px;color:#8a6d00;font-size:13px;line-height:1.7">
+            ⚠️ <strong>QRコード／バーコード／NFCタグ</strong> いずれかが付いたエントリーカードの準備が必要です。
+          </div>
+          <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">📊 決勝進出人数</div>
+          <div class="form-group" style="max-width:320px">
+            <label>上位 何名が決勝へ</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="od_advance_pick" onchange="syncAdvancePick('od')"
+                      style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                {% for i in range(3,49) %}<option value="{{ i }}" {% if i==3 %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+                <option value="__custom__">自由入力…</option>
+              </select>
+              <input type="number" name="qual_final_advance" id="od_advance" value="3" min="2" max="999"
+                     oninput="reflectAdvancePick('od')"
+                     style="width:90px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px;text-align:center">
+              <span style="font-size:14px;color:#636e72">名</span>
+            </div>
+          </div>
+          <div class="summary-box active" id="od-summary"></div>
+
+          <div style="margin-top:14px;border-top:1px solid #dee2e6;padding-top:14px">
+            <div style="font-weight:bold;margin-bottom:8px;color:#2c3e50">🏆 ポイント割り振り</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 10px;border:2px solid #dee2e6;border-radius:6px;font-size:13px">
+                <input type="radio" name="order_point_preset" value="3,2,1,0" onchange="applyOrderPreset(this)" checked> 3-2-1-0点
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 10px;border:2px solid #dee2e6;border-radius:6px;font-size:13px">
+                <input type="radio" name="order_point_preset" value="5,3,1,0" onchange="applyOrderPreset(this)"> 5-3-1-0点
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 10px;border:2px solid #dee2e6;border-radius:6px;font-size:13px">
+                <input type="radio" name="order_point_preset" value="custom" onchange="applyOrderPreset(this)"> 任意設定
+              </label>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+              <label style="font-size:13px">1位 <input type="number" name="point_1st" value="3" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+              <label style="font-size:13px">2位 <input type="number" name="point_2nd" value="2" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+              <label style="font-size:13px">3位 <input type="number" name="point_3rd" value="1" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+              <label style="font-size:13px">CO <input type="number" name="point_co" value="0" min="-10" max="10" style="width:55px;padding:4px;border:1px solid #dee2e6;border-radius:4px;text-align:center"> 点</label>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;border-top:1px solid #dee2e6;padding-top:14px">
+            <div style="font-weight:bold;margin-bottom:8px;color:#2c3e50">🚦 走行の区切り</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:2px solid #dee2e6;border-radius:6px;font-size:14px">
+                <input type="radio" name="order_round_mode" value="round" onchange="onOrderModeChange()" checked> ラウンド制
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:2px solid #dee2e6;border-radius:6px;font-size:14px">
+                <input type="radio" name="order_round_mode" value="free" onchange="onOrderModeChange()"> フリー走行制
+              </label>
+            </div>
+            <div id="order-free-note" style="display:none;font-size:13px;color:#636e72;padding:10px 12px;background:#eef9f4;border:1px solid #cdeede;border-radius:6px">
+              ラウンドの概念なし。来た人から待機列順に走らせて積算します。1人あたりの走行回数は「走行制限数」で設定でき、上限まで走ると再スキャンできなくなります（「制限なし」にすると何回でも走れます）。管理者が任意のタイミングで「予選終了」を押して締めます。
+              <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="font-size:14px;color:#2c3e50;font-weight:bold">走行制限数</span>
+                <select name="order_free_max_runs" id="order_free_max_runs"
+                        style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                  {% for n in [1,2,3,4,5] %}<option value="{{ n }}">{{ n }} 回まで</option>{% endfor %}
+                  <option value="0" selected>制限なし</option>
+                </select>
+              </div>
+            </div>
+            <div id="order-round-detail" style="margin-top:10px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:14px;color:#2c3e50">回戦数</span>
+                <select name="order_round_count" id="order_round_count" style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                  {% for i in range(1,11) %}<option value="{{ i }}" {% if i==3 %}selected{% endif %}>{{ i }} 回戦</option>{% endfor %}
+                </select>
+                <span style="color:#636e72;font-size:13px">（全員がそのラウンドを走り終えてから次へ。走行中に「もう1回」追加も可）</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 並び順（勝ち抜け）設定 -->
+      <div class="qual-section card" id="sec-order_winner" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="margin-bottom:14px;padding:12px 14px;background:#fff8e1;border:1px solid #f0c36d;border-radius:8px;color:#8a6d00;font-size:13px;line-height:1.7">
+            ⚠️ <strong>QRコード／バーコード／NFCタグ</strong> いずれかが付いたエントリーカードの準備が必要です。
+          </div>
+
+          <div style="font-weight:bold;margin-bottom:8px;color:#2c3e50">🪜 予選段階数</div>
+          <div class="form-group" style="max-width:360px">
+            <label>何段階で予選を行うか</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="ow_stage_count_pick" onchange="owSyncStageCountPick()"
+                      style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                <option value="1">1次予選のみ</option>
+                <option value="2" selected>1・2次予選</option>
+                <option value="3">1・2・3次予選</option>
+                <option value="__custom__">自由入力…</option>
+              </select>
+              <input type="number" name="ow_stage_count" id="ow_stage_count" value="2" min="1" max="20"
+                     oninput="owReflectStageCountPick()"
+                     style="width:80px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px;text-align:center">
+              <span style="font-size:14px;color:#636e72">段階</span>
+            </div>
+            <div style="font-size:12px;color:#909a9d;margin-top:6px">最終段階の通過人数が「決勝進出人数」になります。</div>
+          </div>
+
+          <!-- 段階ブロックはJSが動的生成 -->
+          <div id="ow-stages" style="margin-top:6px"></div>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #e9ecef;margin:20px 0">
+
+      </div>{# 予選形式カード（ドロップダウン＋設定）ここまで #}
+
+      <!-- レーン数・備考 -->
+      <div class="form-group">
+      <div class="grid-2">
+        <div class="form-group">
+          <label>決勝形式</label>
+          <select name="final_type" disabled>
+            <option selected>トーナメント</option>
+          </select>
+          <input type="hidden" name="final_type" value="tournament">
+        </div>
+        <div class="form-group">
+          <label>レーン数</label>
+          <input type="hidden" name="lane_count" value="3">
+          <div style="padding:8px 12px;background:#f8f9fa;border:1px solid #ced4da;border-radius:6px;font-size:14px;color:#636e72">3レーン（固定）</div>
+        </div>
+      </div>
+      </div>
+      <div class="form-group">
+        <label style="font-weight:normal;color:#2c3e50;font-size:14px">事前エントリー</label>
+        <div style="display:flex;gap:18px;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;font-size:14px">
+            <input type="radio" name="pre_entry" value="0" checked onchange="onPreEntryChange()"
+                   style="width:16px;height:16px;margin:0;accent-color:#0078d4">
+            <span>使わない</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;font-size:14px">
+            <input type="radio" name="pre_entry" value="1" onchange="onPreEntryChange()"
+                   style="width:16px;height:16px;margin:0;accent-color:#0078d4">
+            <span>使う</span>
+          </label>
+        </div>
+        <div id="pre-entry-method" style="display:none;margin:10px 0 0 24px;padding:10px 14px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px">
+          <div style="font-size:13px;color:#2c3e50;margin-bottom:6px">エントリー方法</div>
+          <div style="display:flex;gap:18px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;font-size:14px">
+              <input type="radio" name="pre_entry_method" value="manual" checked
+                     style="width:16px;height:16px;margin:0;accent-color:#0078d4">
+              <span>手動でエントリー</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:not-allowed;font-weight:normal;font-size:14px;color:#b2bec3"
+                   title="現在この機能はご利用いただけません">
+              <input type="radio" name="pre_entry_method" value="form" disabled
+                     style="width:16px;height:16px;margin:0;accent-color:#0078d4;cursor:not-allowed">
+              <span>エントリーフォームから</span>
+              <span style="font-size:11px;color:#e17055;font-weight:bold">現在この機能はご利用いただけません</span>
+            </label>
+          </div>
+          <p style="font-size:12px;color:#95a5a6;margin:8px 0 0">
+            ※ 事前エントリーの設定はレース作成時のみ。作成後は変更できません。
+          </p>
+          <div id="pre-entry-deadline" style="display:none;margin-top:12px">
+            <div style="font-size:13px;color:#2c3e50;margin-bottom:4px">受付締切日時</div>
+            <input type="datetime-local" name="pre_entry_deadline"
+                   style="padding:8px 10px;font-size:14px;border:1px solid #cfd6dc;border-radius:6px">
+            <p style="font-size:12px;color:#95a5a6;margin:6px 0 0">
+              この日時を過ぎると公開フォームは受付終了になります。空欄なら締切なし。
+            </p>
+          </div>
+        </div>
+        <p style="font-size:12px;color:#95a5a6;margin:6px 0 0 24px">
+          事前エントリーを「使う」とレーサーマスタは使用せず、このレース専用にレーサーを登録します。
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+          <input type="hidden" name="use_racer_master" value="0">
+          <input type="checkbox" name="use_racer_master" id="use_racer_master" value="1" checked
+                 style="width:16px;height:16px;margin:0;accent-color:#0078d4">
+          <span style="font-size:14px;color:#2c3e50">レーサーマスタを使用する</span>
+        </label>
+        <p style="font-size:12px;color:#95a5a6;margin:6px 0 0 24px">
+          オフにすると、このレース専用にレーサー名を直接入力してエントリーします（マスタ・料金・来店記録に影響しません）。
+        </p>
+      </div>
+
+      <div id="finalist-error" style="display:none;margin-top:8px;padding:10px 14px;background:#fdecea;border:1px solid #e74c3c;border-radius:6px;color:#c0392b;font-size:13px;font-weight:bold"></div>
+
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button type="submit" id="submit-btn" class="btn btn-primary">レースを作成する</button>
+        <a href="/admin/tournaments/" class="btn btn-secondary">キャンセル</a>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #e9ecef;margin:24px 0 12px">
+      <div class="opt-heading">以下オプション設定（必須ではありません）</div>
+
+      <div class="form-group">
+        <label>コースレイアウト（画像・最大4枚／各画像に名前を設定できます）</label>
+        {{ am.img_slots('course', race_assets) }}
+      </div>
+
+      <div class="form-group">
+        <label>タイムスケジュール</label>
+        <textarea name="time_schedule" placeholder="タイムスケジュールをテキストで入力（任意）"></textarea>
+        <div style="font-size:12px;color:#95a5a6;margin:6px 0 0">画像でも登録できます（最大4枚）</div>
+        {{ am.img_slots('schedule', race_assets) }}
+      </div>
+
+      <div class="form-group">
+        <label>備考</label>
+        <textarea name="note" placeholder="会場・特記事項など"></textarea>
+        <div style="font-size:12px;color:#95a5a6;margin:6px 0 0">画像でも登録できます（最大4枚）</div>
+        {{ am.img_slots('remarks', race_assets) }}
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button type="submit" class="btn btn-primary">レースを作成する</button>
+        <a href="/admin/tournaments/" class="btn btn-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// ---- 時間帯 ----
+const TIME_LABELS = { day:"デイレース", night:"ナイトレース", extended:"延長", free:"" };
+let currentSlot = "day";
+
+document.querySelectorAll(".ts-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".ts-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentSlot = btn.dataset.val;
+    document.getElementById("time_slot").value = currentSlot;
+    document.getElementById("free-input").style.display = currentSlot === "free" ? "block" : "none";
+    autoGenName();
+  });
+});
+document.getElementById("time_slot_free").addEventListener("input", autoGenName);
+
+// ---- レギュレーション ----
+const REG_LABELS = {{ regulation_labels | tojson }};
+let currentReg = "";
+
+function selectReg(key) {
+  document.querySelectorAll(".reg-option").forEach(el => el.classList.remove("selected"));
+  document.getElementById("reg-opt-" + key).classList.add("selected");
+  const freeBox = document.getElementById("reg-free-input");
+  if (key === "free_word") {
+    freeBox.style.display = "block";
+    document.getElementById("regulation").value = document.getElementById("regulation_free").value;
+  } else {
+    freeBox.style.display = "none";
+    document.getElementById("regulation").value = key;
+  }
+  currentReg = key;
+  autoGenName();
+}
+
+function onRegFreeInput() {
+  const val = document.getElementById("regulation_free").value;
+  document.getElementById("regulation").value = val;
+  autoGenName();
+}
+
+// ---- レース名自動生成（開催日なし：時間帯＋レギュレーションのみ）----
+let nameEdited = false;
+document.getElementById("name").addEventListener("input", () => { nameEdited = true; });
+
+function autoGenName() {
+  if (nameEdited) return;
+  let slot = currentSlot === "free"
+    ? (document.getElementById("time_slot_free").value || "")
+    : (TIME_LABELS[currentSlot] || "");
+  let reg = "";
+  if (currentReg === "free_word") {
+    reg = document.getElementById("regulation_free").value || "";
+  } else {
+    reg = REG_LABELS[currentReg] || "";
+  }
+  if (!slot && !reg) return;
+  const parts = [];
+  if (slot) parts.push(slot);
+  if (reg) parts.push(reg);
+  document.getElementById("name").value = parts.join(" ");
+}
+
+// ---- 予選形式切り替え ----
+
+function checkOrderType(sel) {
+  // 並び順（ポイント制）は利用可能
+}
+
+// ---- 事前エントリー切り替え ----
+function onPreEntryChange() {
+  const on = document.querySelector('input[name="pre_entry"]:checked')?.value === '1';
+  const methodBox = document.getElementById('pre-entry-method');
+  const masterCb  = document.getElementById('use_racer_master');
+  if (methodBox) methodBox.style.display = on ? 'block' : 'none';
+  if (masterCb) {
+    if (on) {
+      // 事前エントリーONのときはマスタ使用を強制OFF＆操作不可
+      masterCb.checked = false;
+      masterCb.disabled = true;
+    } else {
+      masterCb.disabled = false;
+      masterCb.checked = true;
+    }
+  }
+  onPreMethodChange();
+}
+
+// ---- エントリー方法（手動／フォーム）切り替え：締切欄の表示制御 ----
+function onPreMethodChange() {
+  const preOn = document.querySelector('input[name="pre_entry"]:checked')?.value === '1';
+  const isForm = document.querySelector('input[name="pre_entry_method"]:checked')?.value === 'form';
+  const box = document.getElementById('pre-entry-deadline');
+  if (box) box.style.display = (preOn && isForm) ? 'block' : 'none';
+}
+document.querySelectorAll('input[name="pre_entry_method"]').forEach(function(el){
+  el.addEventListener('change', onPreMethodChange);
+});
+
+function checkBeforeSubmit() {
+  const qt = document.getElementById('qualifying_type').value;
+  const fc = getFinalistCount();
+  if (fc !== null && fc < 2) {
+    updateFinalistValidation();
+    alert('決勝は最低2名必要です（1レースは最低2人）。決勝進出人数が2名以上になるよう設定してください。');
+    return false;
+  }
+  return true;
+}
+
+// 現在の予選形式設定から「決勝進出人数」を算出する。
+// なし(即決勝)/順番制はエントリー数で決まるため作成時は判定しない（null）。
+function getFinalistCount() {
+  const v = document.getElementById("qualifying_type").value;
+  if (v === "heat_tournament") {
+    const hc = parseInt(document.getElementById("ht_count").value) || 1;
+    const gc = parseInt(document.getElementById("ht_gcount").value) || 1;
+    const ga = parseInt(document.getElementById("ht_gadvance").value) || 1;
+    const hasFinal = document.querySelector('input[name="qual_heat_final"]:checked')?.value === "1";
+    const fa = parseInt(document.getElementById("ht_advance")?.value) || 1;
+    const finalNotAllowed = (gc * ga === 1);
+    const actualFinal = hasFinal && !finalNotAllowed;
+    return actualFinal ? hc * fa : hc * gc * ga;
+  }
+  if (v === "heat_roundrobin") {
+    const hc = parseInt(document.getElementById("rr_hcount").value) || 1;
+    const gc = parseInt(document.getElementById("rr_gcount").value) || 1;
+    const ga = parseInt(document.getElementById("rr_gadvance").value) || 2;
+    const hasFinal = document.querySelector('input[name="qual_heat_final"]:checked')?.value === "1";
+    const fa = parseInt(document.getElementById("rr_fadv").value) || 1;
+    return hasFinal ? hc * fa : hc * gc * ga;
+  }
+  if (v === "point") return parseInt(document.getElementById("pt_advance").value) || 2;
+  if (v === "roundrobin") return parseInt(document.getElementById("rball_advance").value) || 2;
+  return null;
+}
+
+// 決勝進出が2名未満なら「レースを作成する」を押せなくし、エラーを表示する。
+function updateFinalistValidation() {
+  const fc = getFinalistCount();
+  const btn = document.getElementById('submit-btn');
+  const err = document.getElementById('finalist-error');
+  if (fc !== null && fc < 2) {
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
+    if (err) {
+      err.style.display = 'block';
+      err.textContent = '⚠️ 決勝は最低2名必要です（1レースは最低2人）。現在の決勝進出人数は ' + fc + ' 名です。設定を見直してください。';
+    }
+  } else {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; }
+    if (err) err.style.display = 'none';
+  }
+}
+
+function applyPointPreset(radio) {
+  if (radio.value === 'custom') return;
+  const [p1,p2,p3,pc] = radio.value.split(',').map(Number);
+  document.getElementById('point_1st').value = p1;
+  document.getElementById('point_2nd').value = p2;
+  document.getElementById('point_3rd').value = p3;
+  document.getElementById('point_co').value  = pc;
+}
+
+function onQualChange() {
+  const v = document.getElementById("qualifying_type").value;
+  // 全セクションを非アクティブ＆disabled
+  document.querySelectorAll(".qual-section").forEach(el => {
+    el.classList.remove("active");
+    el.querySelectorAll("input:not(.no-disable), select:not(.no-disable), textarea:not(.no-disable)").forEach(inp => inp.disabled = true);
+  });
+  // 選択されたセクションをアクティブ＆enabled
+  const sec = document.getElementById("sec-" + v);
+  if (sec) {
+    sec.classList.add("active");
+    sec.querySelectorAll("input:not(.no-disable), select:not(.no-disable), textarea:not(.no-disable)").forEach(inp => inp.disabled = false);
+  }
+  if (v === "roundrobin") {
+    const sec2 = document.getElementById("sec-roundrobin");
+    if (sec2) {
+      sec2.classList.add("active");
+      sec2.querySelectorAll("input:not(.no-disable), select:not(.no-disable), textarea:not(.no-disable)").forEach(inp => inp.disabled = false);
+    }
+  }
+  if (v === "order") {
+    onOrderModeChange();
+  }
+  calcAll();
+}
+
+function applyOrderPreset(radio){
+  const sec = document.getElementById("sec-order");
+  if(!sec) return;
+  if(radio.value === "custom") return;
+  const nums = sec.querySelectorAll('input[name="point_1st"],input[name="point_2nd"],input[name="point_3rd"],input[name="point_co"]');
+  const v = radio.value.split(",");
+  if(nums.length === 4){ nums[0].value=v[0]; nums[1].value=v[1]; nums[2].value=v[2]; nums[3].value=v[3]; }
+}
+function onOrderModeChange(){
+  const mode = document.querySelector('input[name="order_round_mode"]:checked');
+  const isRound = mode && mode.value === "round";
+  const detail = document.getElementById("order-round-detail");
+  const freeNote = document.getElementById("order-free-note");
+  if(detail) detail.style.display = isRound ? "block" : "none";
+  if(freeNote) freeNote.style.display = isRound ? "none" : "block";
+}
+
+// ---- ヒート（トーナメント）計算 ----
+function calcHT() {
+  const hc = parseInt(document.getElementById("ht_count").value) || 1;
+  const gc = parseInt(document.getElementById("ht_gcount").value) || 1;
+  const ga = parseInt(document.getElementById("ht_gadvance").value) || 1;
+  const hasFinal = document.querySelector('input[name="qual_heat_final"]:checked')?.value === "1";
+  const fa = parseInt(document.getElementById("ht_advance")?.value) || 1;
+  const finalDetail = document.getElementById("ht-final-detail");
+  const htAdvSelect = document.getElementById("ht_advance");
+    // ヒート数1のときはヒート決勝オプション自体を非表示
+  const finalRow = document.querySelector('.ht-final-row');
+  if (finalRow) finalRow.style.display = "";  // ヒート数に関係なく常に表示
+  // グループ数1 かつ グループ内上位通過1名 のときはヒート決勝「行う」を選べない。
+  // （各ヒートから1名しか通過せず、ヒート決勝が成立しないため）
+  const yesRadio = document.querySelector('input[name="qual_heat_final"][value="1"]');
+  const noRadio  = document.querySelector('input[name="qual_heat_final"][value="0"]');
+  const finalNotAllowed = (gc * ga === 1);  // グループ数×通過人数=1のとき「行う」無効
+  if (yesRadio) {
+    yesRadio.disabled = finalNotAllowed;
+    const yesLabel = yesRadio.closest('label');
+    if (yesLabel) {
+      yesLabel.style.opacity = finalNotAllowed ? '0.4' : '';
+      yesLabel.style.cursor  = finalNotAllowed ? 'not-allowed' : 'pointer';
+    }
+  }
+  // 行えない条件、またはヒート数1のときは「行わない」に強制
+  if (finalNotAllowed && noRadio) noRadio.checked = true;
+  // 強制切替後の状態で再判定
+  const hasFinalNow = document.querySelector('input[name="qual_heat_final"]:checked')?.value === "1";
+  const actualFinal = hasFinalNow && !finalNotAllowed;
+  if (finalDetail) finalDetail.style.display = actualFinal ? "block" : "none";
+  if (htAdvSelect) htAdvSelect.disabled = !actualFinal;
+  // 決勝進出済み除外オプションは「ヒート数2以上」のときのみ設定可
+  const exCb = document.getElementById("ht_exclude");
+  const exWrap = document.getElementById("ht-exclude-wrap");
+  const htSecActive = document.getElementById("sec-heat_tournament") && document.getElementById("sec-heat_tournament").classList.contains("active");
+  if (exCb && htSecActive) {
+    const allowEx = hc >= 2;
+    if (!allowEx) exCb.checked = false;
+    exCb.disabled = !allowEx;
+    if (exWrap) exWrap.style.opacity = allowEx ? '' : '0.45';
+  }
+  const el = document.getElementById("ht-summary");
+  el.classList.add("active");
+  let total, desc;
+  if (actualFinal) {
+    total = hc * fa;
+    desc = gc > 1
+      ? `各グループ上位${ga}名(${gc}グループ)→ヒート決勝→上位${fa}名<br>${hc}ヒート×${fa}名=<strong>${total}名</strong>`
+      : `ヒート決勝→上位${fa}名<br>${hc}ヒート×${fa}名=<strong>${total}名</strong>`;
+  } else {
+    total = hc * gc * ga;
+    desc = gc > 1
+      ? `${hc}ヒート × ${gc}グループ × 上位${ga}名 = <strong>${total}名</strong>`
+      : `${hc}ヒート × 上位${ga}名 = <strong>${total}名</strong>`;
+  }
+  el.innerHTML = `<strong>決勝進出：${total} 名</strong><br><span style="font-size:13px">${desc}</span>`;
+  updateFinalistValidation();
+}
+
+// ---- ヒート（総当たり）計算 ----
+function calcRR() {
+  const hc = parseInt(document.getElementById("rr_hcount").value) || 1;
+  const gc = parseInt(document.getElementById("rr_gcount").value) || 1;
+  const ga = parseInt(document.getElementById("rr_gadvance").value) || 2;
+  const hasFinal = document.querySelector('input[name="qual_heat_final"]:checked').value === "1";
+  const fa = parseInt(document.getElementById("rr_fadv").value) || 1;
+
+  document.getElementById("rr-final-detail").style.display = hasFinal ? "block" : "none";
+  const rrFadvSelect = document.getElementById("rr_fadv");
+  if (rrFadvSelect) rrFadvSelect.disabled = !hasFinal;
+
+  let total, desc;
+  if (hasFinal) {
+    const pool = gc * ga;
+    total = hc * fa;
+    desc = `各グループ上位${ga}名(${gc}グループ) = ヒート決勝${pool}名 → 上位${fa}名入賞<br>
+            ${hc}ヒート × ${fa}名 = <strong>${total}名</strong>が決勝へ`;
+  } else {
+    total = hc * gc * ga;
+    desc = `${hc}ヒート × ${gc}グループ × 上位${ga}名 = <strong>${total}名</strong>が決勝へ`;
+  }
+
+  const el = document.getElementById("rr-summary");
+  el.classList.add("active");
+  el.innerHTML = `<strong>決勝進出：${total} 名</strong><br><span style="font-size:13px">${desc}</span>`;
+  updateFinalistValidation();
+}
+
+// ---- ポイント/総当たり計算 ----
+function calcPT() {
+  const v = document.getElementById("qualifying_type").value;
+  const adv = parseInt((v === "roundrobin"
+    ? document.getElementById("rball_advance")
+    : document.getElementById("pt_advance")).value) || 2;
+  const id = v === "roundrobin" ? "rball-summary" : "pt-summary";
+  document.getElementById(id).innerHTML =
+    `<strong>決勝進出：${adv} 名</strong>（上位${adv}名が決勝トーナメントへ）`;
+  updateFinalistValidation();
+}
+
+function calcAll() { calcHT(); calcRR(); calcPT(); }
+
+// ── 決勝進出人数：プルダウン(既存) ＋ 自由入力(number) の同期 ──
+function _advReflectSelect(prefix){
+  var sel = document.getElementById(prefix + '_advance_pick');
+  var num = document.getElementById(prefix + '_advance');
+  if(!sel || !num) return;
+  var v = String(parseInt(num.value, 10) || '');
+  var matched = false;
+  for(var i=0;i<sel.options.length;i++){
+    if(sel.options[i].value === v){ matched = true; break; }
+  }
+  sel.value = matched ? v : '__custom__';
+}
+function syncAdvancePick(prefix){
+  var sel = document.getElementById(prefix + '_advance_pick');
+  var num = document.getElementById(prefix + '_advance');
+  if(!sel || !num) return;
+  if(sel.value === '__custom__'){ num.focus(); num.select(); }
+  else { num.value = sel.value; }
+  if(typeof calcAll === 'function') calcAll();
+}
+function reflectAdvancePick(prefix){
+  _advReflectSelect(prefix);
+  if(typeof calcAll === 'function') calcAll();
+}
+function initAdvancePicks(){
+  ['pt','rball','od'].forEach(function(p){ _advReflectSelect(p); });
+}
+
+// ── 並び順（勝ち抜け）：段階ブロックの動的生成 ──
+// 既存値の保持のため、描画前に現在の入力値を退避してから再構築する。
+function owReadStageValues(){
+  var vals = [];
+  document.querySelectorAll('#ow-stages .ow-stage').forEach(function(blk){
+    vals.push({
+      win_target: (blk.querySelector('.ow-win-target')||{}).value,
+      max_runs: (blk.querySelector('.ow-max-runs')||{}).value,
+      advance_count: (blk.querySelector('.ow-advance-count')||{}).value,
+    });
+  });
+  return vals;
+}
+function owStageBlockHTML(n, isLast, v){
+  v = v || {};
+  var wt = v.win_target || 1;
+  var mr = v.max_runs || 3;
+  var ac = v.advance_count || 12;
+  var advLabel = isLast ? '決勝進出人数' : '通過人数';
+  var winOpts = '';
+  for(var i=1;i<=10;i++){ winOpts += '<option value="'+i+'"'+(String(i)===String(wt)?' selected':'')+'>'+i+' 回</option>'; }
+  var runOpts = '';
+  for(var j=1;j<=20;j++){ runOpts += '<option value="'+j+'"'+(String(j)===String(mr)?' selected':'')+'>'+j+' 回</option>'; }
+  return ''
+    + '<div class="ow-stage" data-stage="'+n+'" style="margin-top:12px;border:1px solid #dee2e6;border-radius:8px;background:#fff;padding:12px 14px">'
+    +   '<div style="font-weight:bold;margin-bottom:10px;color:#2c3e50">'+ (isLast && n>1 ? '🏁 ' : '🎽 ') + n + '次予選' + (isLast ? '（最終段階）' : '') + '</div>'
+    +   '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">'
+    +     '<label style="font-size:13px">勝ち抜け勝利数<br>'
+    +       '<select name="ow_win_target_'+n+'" class="ow-win-target" style="margin-top:4px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">'+winOpts+'</select>'
+    +       '<div style="font-size:11px;color:#909a9d;margin-top:2px">1着を何回で通過</div>'
+    +     '</label>'
+    +     '<label style="font-size:13px">最大走行回数<br>'
+    +       '<select name="ow_max_runs_'+n+'" class="ow-max-runs" style="margin-top:4px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">'+runOpts+'</select>'
+    +       '<div style="font-size:11px;color:#909a9d;margin-top:2px">使い切ると敗退</div>'
+    +     '</label>'
+    +     '<label style="font-size:13px" class="ow-adv-label">'+advLabel+'<br>'
+    +       '<input type="number" name="ow_advance_count_'+n+'" class="ow-advance-count" value="'+ac+'" min="1" max="999" style="margin-top:4px;width:90px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px;text-align:center">'
+    +       '<div style="font-size:11px;color:#909a9d;margin-top:2px">'+(isLast?'この人数が決勝へ':'先着この人数で締め')+'</div>'
+    +     '</label>'
+    +   '</div>'
+    + '</div>';
+}
+function owRenderStages(initialVals){
+  var host = document.getElementById('ow-stages');
+  if(!host) return;
+  var count = parseInt(document.getElementById('ow_stage_count').value, 10);
+  if(isNaN(count) || count < 1) count = 1;
+  if(count > 20) count = 20;
+  // 既存入力値を退避（initialVals があればそれを優先＝編集画面の初期描画）
+  var prev = initialVals || owReadStageValues();
+  var html = '';
+  for(var n=1;n<=count;n++){
+    html += owStageBlockHTML(n, n===count, prev[n-1]);
+  }
+  host.innerHTML = html;
+}
+function owSyncStageCountPick(){
+  var sel = document.getElementById('ow_stage_count_pick');
+  var num = document.getElementById('ow_stage_count');
+  if(!sel || !num) return;
+  if(sel.value === '__custom__'){ num.focus(); num.select(); }
+  else { num.value = sel.value; }
+  owRenderStages();
+}
+function owReflectStageCountPick(){
+  var sel = document.getElementById('ow_stage_count_pick');
+  var num = document.getElementById('ow_stage_count');
+  if(!sel || !num) return;
+  var v = String(parseInt(num.value,10) || '');
+  var matched = false;
+  for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value === v){ matched=true; break; } }
+  sel.value = matched ? v : '__custom__';
+  owRenderStages();
+}
+
+// 初期化：非アクティブセクションをdisabledにしてから計算
+onQualChange();
+onPreEntryChange();
+initAdvancePicks();
+owRenderStages();
+</script>
+{% endblock %}

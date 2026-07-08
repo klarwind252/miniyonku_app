@@ -1,0 +1,153 @@
+{% extends "viewer/base.html" %}
+{% block title %}{{ t.name }}{% endblock %}
+{% block nav_subtitle %}{% endblock %}
+
+{% block extra_style %}
+.info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid #2c3e50;border-radius:6px;overflow:hidden}
+.info-cell{padding:8px 14px;border-bottom:1px solid #2c3e50;border-right:1px solid #2c3e50}
+.info-cell:nth-child(3n){border-right:none}
+.info-cell:nth-last-child(-n+3){border-bottom:none}
+.info-label{color:#7f8c8d;font-size:11px;margin-bottom:2px}
+.info-value{font-size:14px;font-weight:bold;color:#ecf0f1}
+.info-value.large{font-size:18px}
+/* entry-grid: 最大10列、最低幅140px、画面幅に応じて可変 */
+.entry-grid{
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  grid-auto-rows:auto;
+  gap:8px;
+  container-type:inline-size;
+}
+
+.entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:140px}
+.entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entry-yomi{font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+{% endblock %}
+
+{% block content %}
+{% if not is_public_html %}
+{% raw %}
+<button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
+<style>
+#m4-reload-btn{position:fixed;bottom:16px;right:16px;z-index:99999;width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;padding:0;background:#f39c12;color:#fff;opacity:.62;font-size:24px;line-height:44px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;transition:opacity .15s}
+#m4-reload-btn:hover,#m4-reload-btn:active{opacity:.95}
+@media print{ #m4-reload-btn{display:none} }
+</style>
+<script>
+function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
+</script>
+{% endraw %}
+{% endif %}
+{% if t %}
+
+{% endif %}
+<div class="v-section">
+  <div class="v-section-title">📋 レース情報</div>
+  <div class="info-grid">
+    <div class="info-cell">
+      <div class="info-label">レース名</div>
+      <div class="info-value large">{{ t.name }}</div>
+    </div>
+    <div class="info-cell">
+      <div class="info-label">開催日</div>
+      <div class="info-value">{{ t.date }}</div>
+    </div>
+    <div class="info-cell">
+      <div class="info-label">時間帯</div>
+      <div class="info-value">{% if t.time_slot %}{% if t.time_slot == "free" %}{{ t.time_slot_free or "-" }}{% else %}{{ time_slot_labels.get(t.time_slot, t.time_slot) }}{% endif %}{% else %}—{% endif %}</div>
+    </div>
+    <div class="info-cell">
+      <div class="info-label">レギュレーション</div>
+      <div class="info-value">{% if t.regulation %}{{ regulation_labels.get(t.regulation, t.regulation) }}{% else %}—{% endif %}</div>
+    </div>
+    <div class="info-cell">
+      <div class="info-label">予選形式</div>
+      <div class="info-value">{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type or '-') }}</div>
+    </div>
+
+    {% if t.qualifying_type in ('heat_roundrobin', 'heat_tournament') %}
+    <tr><td colspan="2">
+      <div style="background:#0f1923;border-left:3px solid #2980b9;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
+        {% if t.qualifying_type == 'heat_roundrobin' %}
+        <div style="display:flex;flex-wrap:wrap;gap:16px">
+          <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
+          <span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>
+          <span>⬆️ グループ上位 <strong>{{ t.qual_group_advance }}</strong> 名</span>
+          {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_final_advance }}</strong>名）</span>{% else %}<span style="color:#7f8c8d">🏁 ヒート決勝なし</span>{% endif %}
+          <span>🎯 勝ち抜け方式 {% if t.qual_heat_exclude %}<strong style="color:#e67e22">ON</strong>{% else %}<strong style="color:#95a5a6">OFF</strong>{% endif %}</span>
+        </div>
+        {% elif t.qualifying_type == 'heat_tournament' %}
+        <div style="display:flex;flex-wrap:wrap;gap:16px">
+          <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
+          {% if (t.qual_group_count or 1) > 1 %}<span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>{% endif %}
+          <span>⬆️ 各ヒート上位 <strong>{{ t.qual_group_advance or t.qual_heat_advance }}</strong> 名</span>
+          {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_advance }}</strong>名）</span>{% endif %}
+          <span>🎯 勝ち抜け方式 {% if t.qual_heat_exclude %}<strong style="color:#e67e22">ON</strong>{% else %}<strong style="color:#95a5a6">OFF</strong>{% endif %}</span>
+        </div>
+        {% endif %}
+        {% if finalists %}<div style="margin-top:6px;color:#2980b9;font-weight:bold">→ 決勝進出予定 {{ finalists }} 名</div>{% endif %}
+      </div>
+    </td></tr>
+    {% elif t.qualifying_type == 'point' %}
+    <tr><td colspan="2">
+      <div style="background:#0f1923;border-left:3px solid #e67e22;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:6px">
+          <span>🔁 予選 <strong>{{ t.qual_round_count or 1 }}</strong> 回</span>
+          <span>⬆️ 決勝進出 <strong>{{ finalists or t.qual_final_advance }}</strong> 名</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;color:#95a5a6">
+          <span>🏆 1位 <strong style="color:#d4a017">{{ t.point_1st if t.point_1st is not none else 3 }}pt</strong></span>
+          <span>🥈 2位 <strong style="color:#888">{{ t.point_2nd if t.point_2nd is not none else 2 }}pt</strong></span>
+          <span>🥉 3位 <strong style="color:#cd7f32">{{ t.point_3rd if t.point_3rd is not none else 1 }}pt</strong></span>
+          <span>💥 CO <strong style="color:#e74c3c">{{ t.point_co if t.point_co is not none else 0 }}pt</strong></span>
+        </div>
+      </div>
+    </td></tr>
+    {% elif t.qualifying_type == 'order' %}
+    <tr><td colspan="2">
+      <div style="background:#0f1923;border-left:3px solid #16a085;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:6px">
+          <span>🚦 走行の区切り {% if (t.order_round_mode or 'free') == 'round' %}<strong style="color:#3498db">ラウンド制</strong>{% else %}<strong style="color:#1abc9c">フリー走行制</strong>{% endif %}</span>
+          {% if (t.order_round_mode or 'free') == 'round' %}
+          <span>🔁 <strong>{{ t.order_round_count or 1 }}</strong> 回戦</span>
+          {% else %}
+          <span>🔁 走行制限数 {% if t.order_free_max_runs and t.order_free_max_runs > 0 %}<strong>{{ t.order_free_max_runs }}</strong> 回まで{% else %}<strong style="color:#1abc9c">制限なし</strong>{% endif %}</span>
+          {% endif %}
+          <span>⬆️ 決勝進出 <strong>{{ finalists or t.qual_final_advance }}</strong> 名</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;color:#95a5a6">
+          <span>🏆 1位 <strong style="color:#d4a017">{{ t.point_1st if t.point_1st is not none else 3 }}pt</strong></span>
+          <span>🥈 2位 <strong style="color:#888">{{ t.point_2nd if t.point_2nd is not none else 2 }}pt</strong></span>
+          <span>🥉 3位 <strong style="color:#cd7f32">{{ t.point_3rd if t.point_3rd is not none else 1 }}pt</strong></span>
+          <span>💥 CO <strong style="color:#e74c3c">{{ t.point_co if t.point_co is not none else 0 }}pt</strong></span>
+        </div>
+      </div>
+    </td></tr>
+    {% elif t.qualifying_type == 'roundrobin' %}
+    {% if finalists %}<tr><td>決勝進出予定</td><td><strong>{{ finalists }} 名</strong></td></tr>{% endif %}
+    {% elif t.qualifying_type and t.qualifying_type != 'none' %}
+    {% if finalists %}<tr><td>決勝進出予定</td><td><strong>{{ finalists }} 名</strong></td></tr>{% endif %}
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:16px;margin-top:8px;padding:6px 14px;font-size:13px;color:#7f8c8d">
+    <span>🏁 レーン数 <strong style="color:#ecf0f1">{{ t.lane_count }}</strong></span>
+    {% if t.note %}<span>📝 {{ t.note }}</span>{% endif %}
+  </div>
+</div>
+
+<div class="v-section">
+  <div class="v-section-title">👥 エントリー <span style="font-size:16px;color:#7f8c8d;font-weight:normal">{{ entries|length }}名</span></div>
+  <div class="entry-grid">
+    {% for e in entries %}
+    <div class="entry-card">
+      <div class="entry-name">{{ e.name }}</div>
+      {% if e.yomi %}<div class="entry-yomi">{{ e.yomi }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block auto_refresh %}
+setTimeout(() => location.reload(), 30000);
+{% endblock %}

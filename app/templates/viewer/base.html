@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}観覧画面{% endblock %} - Mini4WD Race System</title>
+<script>
+// ===== 追従ポーリング制御（最初に実行：以降の全 setInterval を登録制にする） =====
+(function(){
+  // 全 setInterval を登録して、追従OFF時に一括停止できるようにする
+  window._pollTimers = [];
+  var _origSI = window.setInterval;
+  window.setInterval = function(fn, ms){
+    var id = _origSI(fn, ms);
+    try { window._pollTimers.push(id); } catch(e){}
+    return id;
+  };
+  window.stopAllPolling = function(){
+    (window._pollTimers || []).forEach(function(id){ clearInterval(id); });
+    window._pollTimers = [];
+  };
+  // 追従状態は sessionStorage で保持（reload / ページ遷移をまたいで維持）
+  window.syncEnabled = (sessionStorage.getItem('viewSyncEnabled') !== '0');
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f1923;color:#ecf0f1;min-height:100vh}
+
+/* ナビゲーション */
+.v-nav{
+  background:#1a2535;border-bottom:2px solid #2980b9;
+  display:flex;align-items:center;padding:0 16px;height:52px;gap:8px;
+  position:sticky;top:0;z-index:100;
+}
+.v-nav .brand{font-size:18px;font-weight:bold;color:#fff;margin-right:auto}
+.v-nav .brand span{color:#e74c3c;margin-right:4px}
+.v-nav-btn{
+  padding:6px 16px;border-radius:20px;font-size:13px;font-weight:bold;
+  border:2px solid #2980b9;color:#ecf0f1;background:transparent;
+  cursor:pointer;text-decoration:none;white-space:nowrap;
+  transition:all .15s;
+}
+.v-nav-btn:hover,.v-nav-btn.active{background:#2980b9;color:#fff}
+.v-nav-btn.sync-on{background:#27ae60;border-color:#27ae60;color:#fff}
+.v-sync-dot{width:8px;height:8px;border-radius:50%;background:#27ae60;display:inline-block;margin-right:4px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* コンテンツ */
+.v-container{padding:20px 24px;max-width:100%;margin:0;position:relative;z-index:2}
+.v-section{background:#1a2535;border-radius:8px;padding:6px 8px;margin-bottom:8px;border:1px solid #2c3e50}
+.v-section-title{font-size:20px;font-weight:bold;color:#2980b9;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+@media(max-width:600px){
+  .v-container{padding:8px;max-width:100%}
+  .v-section{padding:6px;margin-bottom:6px}
+  .v-section-title{font-size:15px;margin-bottom:8px}
+  .v-nav{padding:0 8px;height:44px}
+  .v-nav .brand{font-size:13px}
+}
+
+/* 待機画面 */
+.v-waiting{
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+  min-height:auto;text-align:center;padding:18px 12px 6px;
+  position:relative;z-index:2;   /* 画像(.v-standby-images z-index:1)より必ず前面 */
+}
+.v-waiting h1{font-size:48px;color:#2980b9;margin-bottom:16px;text-shadow:0 2px 6px rgba(0,0,0,.55)}
+.v-waiting p{font-size:18px;color:#eaf2fb;text-shadow:0 1px 4px rgba(0,0,0,.75)}
+.v-waiting .dot-anim::after{content:'...';animation:dots 1.5s infinite}
+@keyframes dots{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
+
+/* 追従継続確認バナー */
+.v-sync-banner{
+  position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:#1a2535;border-bottom:3px solid #f39c12;
+  padding:20px 24px;display:none;
+  flex-direction:column;align-items:center;gap:14px;
+  box-shadow:0 6px 24px rgba(0,0,0,.5);
+}
+.v-sync-banner.show{display:flex}
+.v-sync-banner .msg{font-size:24px;font-weight:bold;color:#f39c12;text-align:center}
+.v-sync-banner .sub{font-size:15px;color:#bdc3c7}
+.v-sync-banner .btns{display:flex;gap:16px}
+.v-sync-banner button{
+  padding:12px 32px;border-radius:24px;font-size:18px;font-weight:bold;
+  border:none;cursor:pointer;
+}
+.v-sync-banner .keep{background:#27ae60;color:#fff}
+.v-sync-banner .stop{background:#566;color:#fff}
+
+{% block extra_style %}{% endblock %}
+</style>
+{% if slideshow_urls %}
+<style>
+  /* 待機画面：画面下に固定・横幅100%で静止画表示（アニメなし）。
+     URLは ?v=バージョン固定でブラウザキャッシュが効くため、リロード時に再取得されにくい */
+  .v-standby-images{
+    position:fixed;left:0;bottom:0;
+    width:100vw;max-width:100vw;
+    display:flex;flex-direction:column;align-items:stretch;gap:0;
+    margin:0;padding:0;z-index:1;pointer-events:none;
+  }
+  .v-standby-images img{
+    width:100vw;max-width:100vw;height:auto;
+    display:block;margin:0;object-fit:cover;
+  }
+</style>
+{% elif bg_url %}
+<style>
+  /* 待機画面の背景（設定ON時のみ）。view / html 双方の「お待ちください」で表示 */
+  body{
+    background-image:url('{{ bg_url }}');
+    background-size:cover;background-position:center;background-repeat:no-repeat;
+    background-attachment:fixed;
+  }
+  .v-waiting{
+    background:rgba(15,25,35,.55);
+    border-radius:18px;padding:36px 28px;
+    backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+  }
+</style>
+{% endif %}
+{% if not is_public_html %}{{ render_pwa_head('view', request)|safe }}{% endif %}
+</head>
+<body>
+<nav class="v-nav"{% if is_public_html %} style="position:fixed;top:0;left:0;width:100vw;box-sizing:border-box;z-index:9000;transform:translateZ(0);-webkit-transform:translateZ(0)"{% endif %}>
+  <div class="brand" style="display:flex;align-items:center;gap:12px">
+    {% if not is_public_html %}<img src="{{ app_icon_src(request) }}" onerror="this.onerror=null;this.src='/logo'" style="height:36px;width:auto;display:block;">{% endif %}
+    <small style="font-size:12px;color:#7f8c8d">観覧</small>
+    {% if IS_CLOUD and request.state.store %}
+    <small style="font-size:12px;color:#ecf0f1;font-weight:bold">{% if not is_public_html %}🏬 {% endif %}{{ request.state.store.name }}</small>
+    {% endif %}
+    {% if t and not is_public_html %}
+    <span style="font-size:13px;color:#bdc3c7;font-weight:normal;">
+      {{ t.name }}
+      {% block nav_subtitle %}{% endblock %}
+    </span>
+    {% endif %}
+  </div>
+  {% if is_public_html %}<div id="m4-picker-slot" style="margin-left:auto;display:flex;align-items:center;min-width:0;max-width:62%"></div>{% endif %}
+
+  {% if t %}
+  <a href="/view/tournament/{{ t.id }}" class="v-nav-btn {% if request.url.path == '/view/tournament/'~t.id %}active{% endif %}">
+    📋 レース情報
+  </a>
+  {% if t.qualifying_type != 'none_roundrobin' %}
+  <a href="/view/tournament/{{ t.id }}/qualifying" class="v-nav-btn {% if 'qualifying' in request.url.path %}active{% endif %}">
+    🏁 予選
+  </a>
+  <a href="/view/tournament/{{ t.id }}/bracket" class="v-nav-btn {% if 'bracket' in request.url.path %}active{% endif %}">
+    🏆 決勝
+  </a>
+  {% else %}
+  <a href="/view/tournament/{{ t.id }}/qualifying" class="v-nav-btn active">
+    🏆 決勝
+  </a>
+  {% endif %}
+  {% endif %}
+
+  <button class="v-nav-btn sync-on" id="sync-btn" onclick="toggleSync()" title="ホスト画面に追従">
+    <span class="v-sync-dot"></span>追従中
+  </button>
+</nav>
+
+<!-- 追従継続確認バナー（30分経過時に表示） -->
+<div class="v-sync-banner" id="syncBanner">
+  <div class="msg">追従を開始してから30分が経過しました</div>
+  <div class="sub">このまま追従を続けますか？（5分間操作がなければ自動的に停止します）</div>
+  <div class="btns">
+    <button class="keep" onclick="syncKeepGoing()">追従を続ける</button>
+    <button class="stop" onclick="syncStopNow()">停止する</button>
+  </div>
+</div>
+
+<div class="v-container">
+{% block content %}
+<div class="v-waiting">
+  {% if IS_CLOUD and request.state.store and request.state.store.name %}
+  <h1>{{ request.state.store.name }} のミニ四駆レースへようこそ！</h1>
+  {% else %}
+  <h1>ミニ四駆レースへようこそ！</h1>
+  {% endif %}
+  <p class="dot-anim">レース開始までしばらくお待ちください</p>
+</div>
+{% if slideshow_urls %}
+<div class="v-standby-images">
+  {% for u in slideshow_urls %}<img src="{{ u }}" alt="" loading="eager" decoding="async">{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+</div>
+
+<script>
+// syncEnabled は head のラッパーで window.syncEnabled として定義済み
+let lastUrl = location.pathname;
+
+// ===== 追従の自動OFFタイマー（30分経過 → 5分間の継続確認 → 停止/継続） =====
+var SYNC_TIMEOUT_MS = 30 * 60 * 1000; // 30分でバナー表示
+var SYNC_BANNER_MS  = 5 * 60 * 1000;  // バナー表示後5分で自動停止
+var _syncTimer = null;
+var _bannerTimer = null;
+
+function _startSyncTimer() {
+  _clearSyncTimers();
+  _syncTimer = setTimeout(_showSyncBanner, SYNC_TIMEOUT_MS);
+}
+function _clearSyncTimers() {
+  if (_syncTimer)   { clearTimeout(_syncTimer);   _syncTimer = null; }
+  if (_bannerTimer) { clearTimeout(_bannerTimer); _bannerTimer = null; }
+}
+function _showSyncBanner() {
+  var b = document.getElementById('syncBanner');
+  if (b) b.classList.add('show');
+  // 5分間反応がなければ自動停止
+  _bannerTimer = setTimeout(syncStopNow, SYNC_BANNER_MS);
+}
+function _hideSyncBanner() {
+  var b = document.getElementById('syncBanner');
+  if (b) b.classList.remove('show');
+}
+
+// バナー「追従を続ける」
+function syncKeepGoing() {
+  _hideSyncBanner();
+  _startSyncTimer(); // 30分タイマーをリセット
+}
+// バナー「停止する」／5分タイムアウト
+function syncStopNow() {
+  _hideSyncBanner();
+  _setSync(false);
+}
+
+// 追従状態を一括反映（ボタン表示・sessionStorage・ポーリング・タイマー）
+function _setSync(enabled) {
+  window.syncEnabled = enabled;
+  try { sessionStorage.setItem('viewSyncEnabled', enabled ? '1' : '0'); } catch(e){}
+  var btn = document.getElementById('sync-btn');
+  if (enabled) {
+    if (btn) {
+      btn.innerHTML = '<span class="v-sync-dot"></span>追従中';
+      btn.className = 'v-nav-btn sync-on';
+    }
+    _startSyncTimer();
+  } else {
+    if (btn) {
+      btn.textContent = '追従OFF';
+      btn.className = 'v-nav-btn';
+    }
+    _clearSyncTimers();
+    if (window.stopAllPolling) window.stopAllPolling(); // 全ポーリング停止
+  }
+}
+
+function toggleSync() {
+  _setSync(!window.syncEnabled);
+}
+
+// ページ読み込み時：保存された追従状態を反映
+(function _initSync(){
+  var btn = document.getElementById('sync-btn');
+  if (window.syncEnabled) {
+    if (btn) {
+      btn.innerHTML = '<span class="v-sync-dot"></span>追従中';
+      btn.className = 'v-nav-btn sync-on';
+    }
+    _startSyncTimer(); // 各ページ表示から30分（仕様どおりページ遷移でリセット）
+  } else {
+    if (btn) {
+      btn.textContent = '追従OFF';
+      btn.className = 'v-nav-btn';
+    }
+    // OFF状態で読み込まれた場合、念のため全ポーリングを止める
+    if (window.stopAllPolling) {
+      setTimeout(function(){ window.stopAllPolling(); }, 0);
+    }
+  }
+})();
+
+// スクロール追従
+let lastScrollAt = 0;
+function doScroll(scrollId) {
+  if (!scrollId) return;
+  // IDで検索
+  let el = document.getElementById(scrollId);
+  // data-scroll属性でも検索
+  if (!el) el = document.querySelector('[data-scroll="' + scrollId + '"]');
+  if (el) {
+    el.scrollIntoView({behavior: 'smooth', block: 'center'});
+    // ハイライト
+    el.style.transition = 'box-shadow 0.3s';
+    el.style.boxShadow = '0 0 0 3px #2980b9';
+    setTimeout(() => { el.style.boxShadow = ''; }, 2000);
+  }
+}
+
+// ホスト状態をポーリング（URL追従のみ、スクロール追従は廃止）
+//
+// 複数店舗（クラウド版）対応：
+//   host-state（JSON応答）は StoreResolverMiddleware の本文書き換え対象外で、
+//   かつサーバー内部は _admin_to_view() でスラグ無しの /view/... に正規化している。
+//   一方この観覧画面自身は /{slug}/view/... 配下で動くため、data.url をそのまま
+//   使うとスラグが落ちて別店舗（店舗1）の観覧画面へ飛んでしまう。
+//   そこで、現在の location.pathname から自店舗のスラグを判定し、data.url に
+//   付け直してから比較・遷移する。既定店舗（スラグ無し）は従来どおり無加工。
+function m4CurrentSlugPrefix() {
+  // 例: "/pararira/view/tournament/2" -> "/pararira"
+  //     "/view/tournament/2"          -> ""（既定店舗）
+  var segs = location.pathname.split('/').filter(Boolean);
+  if (segs.length && segs[0] !== 'view') {
+    return '/' + segs[0];
+  }
+  return '';
+}
+
+async function pollHostState() {
+  if (!window.syncEnabled) return;
+  try {
+    const res = await fetch('/view/host-state');
+    const data = await res.json();
+    // URL追従（ページ切り替えのみ）
+    if (data.url) {
+      // data.url はスラグ無し（/view/...）。自店舗スラグを付け直す。
+      var target = data.url;
+      if (target.charAt(0) === '/') {
+        target = m4CurrentSlugPrefix() + target;
+      }
+      if (target !== location.pathname) {
+        location.href = target;
+        return;
+      }
+    }
+    // スクロール追従は廃止（管理者のスクロール位置が観覧者に強制適用されるため）
+  } catch(e) {}
+}
+
+setInterval(pollHostState, 2000);
+
+// 自動更新（コンテンツ）
+{% block auto_refresh %}{% endblock %}
+</script>
+{% block extra_script %}{% endblock %}
+<script>
+/* ===== 画面スリープ抑止（Wake Lock）=====
+   iOS Safari対策：ページ表示時の自動取得は NotAllowedError で拒否されるため、
+   最初のユーザー操作（タップ/スクロール/キー）を起点に取得する。
+   ・解放後はタップで再取得 ・一度取得済みなら他アプリから戻った際に自動再取得
+   ・非対応端末／取得失敗は黙って無視（従来挙動を壊さない） */
+(function(){
+  if(!('wakeLock' in navigator)) return;   /* 非対応端末は何もしない */
+  var wakeLock = null;
+  var acquiredOnce = false;
+
+  function requestWakeLock(){
+    if(document.visibilityState !== 'visible' || wakeLock !== null) return;
+    /* ユーザー操作ハンドラ内から同期的に呼ぶこと（iOSの起動条件） */
+    navigator.wakeLock.request('screen').then(function(wl){
+      wakeLock = wl; acquiredOnce = true;
+      wakeLock.addEventListener('release', function(){ wakeLock = null; });
+    }).catch(function(){ wakeLock = null; });  /* 取得失敗は黙って無視 */
+  }
+
+  /* 最初の操作（および解放後の再操作）で取得する */
+  ['click','touchend','keydown'].forEach(function(ev){
+    document.addEventListener(ev, function(){ requestWakeLock(); }, {passive:true});
+  });
+
+  /* 一度取得できていれば、他アプリから戻ったときに自動で取り直す */
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && wakeLock === null && acquiredOnce){ requestWakeLock(); }
+  });
+})();
+</script>
+
+{% if t %}
+{% set _rc = (race_assets.get('course', []) if race_assets else []) %}
+{% set _rs = (race_assets.get('schedule', []) if race_assets else []) %}
+{% set _rr = (race_assets.get('remarks', []) if race_assets else []) %}
+{% if is_public_html and (show_info_bar|default(false)) and (_rc or _rs or _rr or t.time_schedule) %}
+{# 参加者向け：レイアウト/タイスケ/備考 固定ボトムバー＋モーダル（/viewでは非表示） #}
+<div id="m4-info-bar" style="position:fixed;left:0;bottom:0;width:100vw;z-index:9500;display:flex;gap:6px;padding:4px 8px;background:rgba(17,26,36,.92);border-top:1px solid #2c3e50;box-sizing:border-box;transform:translateZ(0)">
+  {% if _rs or t.time_schedule %}<button type="button" onclick="m4OpenInfo('schedule')" style="flex:1;padding:5px 4px;border:none;border-radius:6px;background:#16a085;color:#fff;font-weight:600;font-size:11px;line-height:1.3;cursor:pointer">🕒 タイスケ</button>{% endif %}
+  {% if _rr %}<button type="button" onclick="m4OpenInfo('remarks')" style="flex:1;padding:5px 4px;border:none;border-radius:6px;background:#8e44ad;color:#fff;font-weight:600;font-size:11px;line-height:1.3;cursor:pointer">📋 備考</button>{% endif %}
+  {% if _rc %}<button type="button" onclick="m4OpenInfo('course')" style="flex:1;padding:5px 4px;border:none;border-radius:6px;background:#2980b9;color:#fff;font-weight:600;font-size:11px;line-height:1.3;cursor:pointer">🗺️ レイアウト</button>{% endif %}
+</div>
+<div id="m4-info-overlay" style="display:none;position:fixed;inset:0;z-index:9800;background:rgba(0,0,0,.92);overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#111a24;border-bottom:1px solid #2c3e50">
+    <strong id="m4-info-title" style="color:#fff;font-size:16px"></strong>
+    <button type="button" onclick="m4CloseInfo()" style="border:none;background:#e74c3c;color:#fff;border-radius:6px;padding:8px 14px;font-weight:bold;cursor:pointer">✕ 閉じる</button>
+  </div>
+  <div id="m4-info-body" style="padding:14px 12px 48px"></div>
+</div>
+{% set nsc = namespace(items=[]) %}
+{% for a in _rc %}{% set nsc.items = nsc.items + [{'u': '/api/race-asset/' ~ t.id ~ '/course/' ~ a.seq, 'n': a.name}] %}{% endfor %}
+{% set nss = namespace(items=[]) %}
+{% for a in _rs %}{% set nss.items = nss.items + [{'u': '/api/race-asset/' ~ t.id ~ '/schedule/' ~ a.seq, 'n': a.name}] %}{% endfor %}
+{% set nsr = namespace(items=[]) %}
+{% for a in _rr %}{% set nsr.items = nsr.items + [{'u': '/api/race-asset/' ~ t.id ~ '/remarks/' ~ a.seq, 'n': a.name}] %}{% endfor %}
+{# データはscript除去の影響を受けない隠しdivに格納。m4OpenInfo本体はpublic_html.pyの注入スクリプトで定義する #}
+<div id="m4-info-data" style="display:none">{{ {'course':{'title':'🗺️ コースレイアウト','text':'','items':nsc.items},'schedule':{'title':'🕒 タイムスケジュール','text':(t.time_schedule or ''),'items':nss.items},'remarks':{'title':'📋 備考','text':'','items':nsr.items}} | tojson }}</div>
+{% endif %}
+{% endif %}
+</body>
+</html>

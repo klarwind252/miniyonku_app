@@ -1,0 +1,100 @@
+{% extends "admin/base.html" %}
+{% block title %}Race {{ heat.heat_no }} 結果入力 - {{ t.name }}{% endblock %}
+{% block head %}
+<style>
+/* 予選管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
+.win-btn { padding:10px 28px; border:2px solid #dee2e6; border-radius:8px; cursor:pointer; font-size:22px; font-weight:bold; background:#fff; transition:all .15s; font-family:inherit; }
+.win-btn.win  { border-color:#27ae60; background:#eafaf1; color:#1e8449; }
+.win-btn.lose { border-color:#e74c3c; background:#fdf2f2; color:#922b21; }
+.racer-row { background:#fff; border:1px solid #dee2e6; border-radius:10px; padding:18px 20px; margin-bottom:12px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.lane-badge { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:bold; color:#fff; flex-shrink:0; }
+.racer-name { font-size:18px; font-weight:bold; flex:1; min-width:120px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-title" style="display:flex;align-items:flex-start;justify-content:space-between">
+  <div>
+    <h1>Race {{ heat.heat_no }} 結果入力</h1>
+    <p>{{ t.name }} / 総当たり</p>
+  </div>
+  <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-secondary btn-sm">← レース一覧へ</a>
+</div>
+
+<div class="card" style="max-width:620px">
+  <div class="card-body">
+    <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/save" id="form">
+      {% for lane in lanes %}
+      {% set colors = ['#2980b9','#e74c3c','#27ae60'] %}
+      <div class="racer-row">
+        <div class="lane-badge" style="background:{{ colors[lane.lane_no - 1] }}">{{ lane.lane_no }}</div>
+        <div class="racer-name">{{ lane.name }}</div>
+
+        <!-- ○× ボタン -->
+        <div style="display:flex;gap:8px">
+          <button type="button" class="win-btn {% if lane.win == 1 %}win{% endif %}"
+                  id="btn-win-{{ lane.lane_id }}"
+                  onclick="setWin({{ lane.lane_id }}, 1)">○</button>
+          <button type="button" class="win-btn {% if lane.win == 0 %}lose{% endif %}"
+                  id="btn-lose-{{ lane.lane_id }}"
+                  onclick="setWin({{ lane.lane_id }}, 0)">×</button>
+        </div>
+        <input type="hidden" name="win_{{ lane.lane_id }}" id="win_{{ lane.lane_id }}"
+               value="{{ lane.win if lane.win is not none else '' }}">
+
+        <!-- タイム -->
+        <div style="min-width:130px">
+          <label style="font-size:12px;color:#636e72;display:block;margin-bottom:4px">タイム（秒・任意）</label>
+          <input type="number" name="time_{{ lane.lane_id }}" step="0.001" min="0"
+                 value="{{ '%.3f'|format(lane.best_time) if lane.best_time else '' }}"
+                 placeholder="例: 3.456"
+                 style="width:100%;padding:6px 10px;border:1px solid #ced4da;border-radius:6px;font-size:14px">
+        </div>
+      </div>
+      {% endfor %}
+
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button type="submit" class="btn btn-success">💾 結果を保存</button>
+        <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// lane_id のリスト（2つのみ）
+const laneIds = [{% for lane in lanes %}{{ lane.lane_id }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+function setWin(clickedId, result) {
+  const otherId = laneIds.find(id => id !== clickedId);
+
+  // クリックしたほうに result をセット
+  setOne(clickedId, result);
+  // もう一方は逆
+  setOne(otherId, 1 - result);
+}
+
+function setOne(lid, val) {
+  document.getElementById('win_' + lid).value = val;
+  const btnWin  = document.getElementById('btn-win-'  + lid);
+  const btnLose = document.getElementById('btn-lose-' + lid);
+  btnWin.classList.remove('win','lose');
+  btnLose.classList.remove('win','lose');
+  if (val === 1) btnWin.classList.add('win');
+  else           btnLose.classList.add('lose');
+}
+
+// 初期状態の復元
+{% for lane in lanes %}
+{% if lane.win is not none %}
+(function(){
+  const v = {{ lane.win }};
+  const bw = document.getElementById('btn-win-{{ lane.lane_id }}');
+  const bl = document.getElementById('btn-lose-{{ lane.lane_id }}');
+  if(v===1){ bw.classList.add('win'); }
+  else      { bl.classList.add('lose'); }
+})();
+{% endif %}
+{% endfor %}
+</script>
+{% endblock %}

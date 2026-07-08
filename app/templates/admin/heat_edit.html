@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}
+{% block title %}レース編集 - {{ t.name }}{% endblock %}
+{% block head %}
+<style>
+/* 予選管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>レース #{{ heat.heat_no }} 編集</h1>
+  <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-secondary btn-sm">← 予選管理に戻る</a>
+</div>
+
+<div class="card" style="max-width:500px">
+  <div class="card-header">コース割り当て変更</div>
+  <div class="card-body">
+    <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit">
+      {% set lc = ['#2980b9','#e74c3c','#27ae60'] %}
+      {% for lane in lanes %}
+      <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <span style="width:60px;font-weight:bold;color:{{ lc[lane.lane_no-1] }}">
+          {{ lane.lane_no }}コース
+        </span>
+        <select name="entry_{{ lane.lane_no }}" style="flex:1;padding:8px;border:1px solid #dee2e6;border-radius:6px">
+          <option value="">（空き）</option>
+          {% for e in all_entries %}
+          <option value="{{ e.id }}" {% if e.id == lane.entry_id %}selected{% endif %}>
+            {{ e.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button type="submit" class="btn btn-primary">💾 保存</button>
+        <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+# ===================================================================
+# ミニ四駆レース管理システム — systemd サービス定義（クラウド版）
+#
+# 配置: /etc/systemd/system/miniyonku.service
+# 有効化:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now miniyonku
+# ログ確認:
+#   journalctl -u miniyonku -f
+#
+# 前提:
+#   - アプリ配置先   : /opt/miniyonku/miniyonku_app
+#   - venv          : /opt/miniyonku/miniyonku_app/venv
+#   - 環境変数ファイル: /etc/miniyonku/miniyonku.env（deploy/.env.example 参照）
+#   - 実行ユーザー   : miniyonku（適宜変更）
+# ===================================================================
+[Unit]
+Description=Mini4WD Race Management System (FastAPI/uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=miniyonku
+Group=miniyonku
+WorkingDirectory=/opt/miniyonku/miniyonku_app
+EnvironmentFile=/etc/miniyonku/miniyonku.env
+# ${PORT} は EnvironmentFile から読み込まれる
+ExecStart=/opt/miniyonku/miniyonku_app/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${PORT}
+Restart=always
+RestartSec=3
+# クラウドでは常時起動が前提。ブラウザ連動終了などオンプレ専用機構は使用しない。
+
+[Install]
+WantedBy=multi-user.target

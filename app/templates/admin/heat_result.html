@@ -1,0 +1,67 @@
+{% extends "admin/base.html" %}
+{% block title %}Heat {{ heat.heat_no }} 結果入力 - {{ t.name }}{% endblock %}
+{% block head %}
+<style>
+/* 予選管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-title" style="display:flex;align-items:flex-start;justify-content:space-between">
+  <div>
+    <h1>Heat {{ heat.heat_no }} 結果入力</h1>
+    <p>{{ t.name }} / {{ t.lane_count }}レーン</p>
+  </div>
+  <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-secondary btn-sm">← 予選管理へ</a>
+</div>
+
+<div class="card" style="max-width:700px">
+  <div class="card-header">各コースの結果を入力</div>
+  <div class="card-body">
+    <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/save">
+      <table style="width:100%;margin-bottom:20px">
+        <thead>
+          <tr>
+            <th style="width:60px">コース</th>
+            <th>レーサー</th>
+            <th style="width:110px">周回数</th>
+            <th style="width:130px">ベストタイム(秒)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lane in lanes %}
+          <tr>
+            <td style="text-align:center;font-size:18px;font-weight:bold;color:#2980b9">{{ lane.lane_no }}</td>
+            <td>
+              <strong>{{ lane.name }}</strong>
+              {% if lane.yomi %}<br><span style="font-size:12px;color:#95a5a6">{{ lane.yomi }}</span>{% endif %}
+            </td>
+            <td>
+              <input type="number" name="lap_{{ lane.lane_id }}"
+                     value="{{ lane.lap_count or 0 }}" min="0" step="1"
+                     style="width:100%;text-align:center;font-size:16px;padding:6px">
+            </td>
+            <td>
+              <input type="number" name="time_{{ lane.lane_id }}"
+                     value="{{ '%.3f'|format(lane.best_time) if lane.best_time else '' }}"
+                     min="0" step="0.001" placeholder="例: 3.456"
+                     style="width:100%;text-align:center;font-size:14px;padding:6px">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="alert alert-info" style="margin-bottom:16px;font-size:13px">
+        💡 順位は「周回数（多い順）→ ベストタイム（速い順）」で自動計算されます。<br>
+        ポイント：1位=10pt / 2位=7pt / 3位=5pt / 4位=3pt / 5位=2pt / 6位=1pt
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button type="submit" class="btn btn-success">💾 結果を保存</button>
+        <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

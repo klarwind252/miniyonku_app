@@ -1,0 +1,115 @@
+{% extends "admin/base.html" %}
+{% block title %}ポストテンプレート編集 - Mini4WD Race System{% endblock %}
+{% block content %}
+<div class="page-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+  <div>
+    <h1>📋 ポストテンプレート編集</h1>
+    <p>{% if tpl %}「{{ tpl.name }}」を編集{% else %}新規テンプレートを作成{% endif %}</p>
+  </div>
+  <a href="/admin/settings#post" class="btn btn-secondary btn-sm">← 設定に戻る</a>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start">
+
+  <!-- 左：編集フォーム -->
+  <div class="card">
+    <div class="card-header">テンプレート内容</div>
+    <div class="card-body">
+      <form method="post"
+            action="/admin/settings/post-templates/{% if tpl %}{{ tpl.id }}/update{% else %}create{% endif %}">
+
+        <div class="form-group">
+          <label>テンプレート名</label>
+          <input type="text" name="name" value="{{ tpl.name if tpl else '' }}"
+                 placeholder="例：デフォルト" required>
+        </div>
+
+        <div class="form-group">
+          <label>本文</label>
+          <textarea name="body" rows="12"
+                    style="font-family:monospace;font-size:13px;line-height:1.6"
+                    placeholder="投稿する本文を入力...">{{ tpl.body if tpl else '本日もたくさんのご参加ありがとうございました。\n\n{regulation}\n🥇　{rank1} さん
+🥈　{rank2} さん
+🥉　{rank3} さん\n\n#宮崎\n#都城\n#ミニ四駆\n#ワンダフル' }}</textarea>
+        </div>
+
+        <!-- プレビュー -->
+        <div style="margin-bottom:16px">
+          <label style="font-size:13px;font-weight:bold;display:block;margin-bottom:6px">プレビュー</label>
+          <div id="preview" style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:6px;padding:14px;font-size:13px;white-space:pre-wrap;line-height:1.7;min-height:80px;color:#2c3e50"></div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button type="submit" class="btn btn-primary">💾 保存</button>
+          <a href="/admin/settings#post" class="btn btn-secondary">キャンセル</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 右：変数リファレンス -->
+  <div class="card">
+    <div class="card-header">使用できる変数</div>
+    <div class="card-body" style="padding:0">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        {% for var, desc, example in [
+          ('{race_name}', 'レース名', 'ナイトレース オープンクラス'),
+          ('{regulation}', 'レギュレーション', 'オープンクラス'),
+          ('{date}', '開催日', '2026年1月1日'),
+          ('{rank1}', '1位レーサー名', '山田 太郎'),
+          ('{rank2}', '2位レーサー名', '鈴木 花子'),
+          ('{rank3}', '3位レーサー名', '田中 一郎'),
+        ] %}
+        <tr style="border-bottom:1px solid #f0f0f0">
+          <td style="padding:10px 14px">
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px;cursor:pointer"
+                  onclick="insertVar('{{ var }}')">{{ var }}</code>
+          </td>
+          <td style="padding:10px 8px;color:#636e72">{{ desc }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div style="padding:12px 14px;font-size:12px;color:#95a5a6">
+        変数名をクリックするとカーソル位置に挿入されます
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const textarea = document.querySelector('textarea[name="body"]');
+const preview  = document.getElementById('preview');
+
+const SAMPLE = {
+  '{race_name}':   'ナイトレース オープンクラス',
+  '{regulation}':  'オープンクラス',
+  '{date}':        '2026年1月1日',
+  '{rank1}':       '山田 太郎',
+  '{rank2}':       '鈴木 花子',
+  '{rank3}':       '田中 一郎',
+};
+
+function updatePreview() {
+  let txt = textarea.value;
+  for (const [k, v] of Object.entries(SAMPLE)) {
+    txt = txt.replaceAll(k, v);
+  }
+  preview.textContent = txt;
+}
+
+function insertVar(v) {
+  const start = textarea.selectionStart;
+  const end   = textarea.selectionEnd;
+  const before = textarea.value.slice(0, start);
+  const after  = textarea.value.slice(end);
+  textarea.value = before + v + after;
+  textarea.selectionStart = textarea.selectionEnd = start + v.length;
+  textarea.focus();
+  updatePreview();
+}
+
+textarea.addEventListener('input', updatePreview);
+updatePreview();
+</script>
+{% endblock %}

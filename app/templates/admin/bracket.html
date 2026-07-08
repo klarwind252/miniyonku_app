@@ -1,0 +1,2086 @@
+{% extends "admin/base.html" %}
+{% block title %}決勝管理 - {{ t.name }}{% endblock %}
+{% block head %}
+<style>
+/* 決勝管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
+/* 上部アクションバー（レース詳細画面と同じ挙動）
+   PC(>1024px): 折り返さず1行・右寄せ（案内文が伸びてボタンを右へ）
+   タブレット/スマホ: 段組み＋ボタン均等幅  スマホ(≤700px): 全幅・余白0 */
+.detail-actionbar{position:sticky;top:0;z-index:100;background:#f4f5f7;margin:0 -20px 16px;padding:10px 20px;border-bottom:1px solid #e1e5ea;box-shadow:0 6px 10px -8px rgba(0,0,0,.25);display:flex;gap:8px;flex-wrap:nowrap;align-items:center;justify-content:flex-end}
+.detail-actionbar .btn{margin:0}
+/* 案内文：1行まるごと占有して縦積み（日本語が1文字幅に潰れる）を防ぐ */
+.detail-actionbar > span{flex:1 1 auto;min-width:0;white-space:normal;word-break:normal;overflow-wrap:normal}
+@media(max-width:1024px){
+  .detail-actionbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;align-items:stretch;justify-items:stretch}
+  .detail-actionbar > span{grid-column:1 / -1}
+  .detail-actionbar > a,.detail-actionbar > button,.detail-actionbar > div{width:100%}
+  .detail-actionbar > div > .btn{width:100%}
+}
+@media(max-width:700px){
+  .detail-actionbar{grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:6px;padding:0;margin:0 0 12px;width:100vw;max-width:100vw;margin-left:calc(50% - 50vw);border-radius:0}
+  .detail-actionbar > a,.detail-actionbar > button,.detail-actionbar > div > button{height:34px !important;min-height:34px !important;padding-left:4px !important;padding-right:4px !important}
+  .detail-actionbar .btn{font-size:0 !important}                 /* 元ラベル(絵文字含む)を隠す */
+  .detail-actionbar .btn::before{content:attr(data-short);font-size:12px;line-height:1}
+}
+.bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:16px; margin-bottom:12px; }
+.bracket-group.done { border-color:#27ae60; }
+.bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
+.bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
+.slot-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+.slot-row:last-child { border-bottom:none; }
+.slot-no { display:none; }
+.slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; }
+.win-btn { width:38px; height:38px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+.win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
+.rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
+.round-header { font-size:15px; font-weight:bold; color:#fff; padding:6px 16px; display:block; margin-bottom:14px; border-radius:6px; }
+.rh-normal { background:linear-gradient(90deg, #2980b9 0%, #5dade2 100%); }
+.rh-final { background:linear-gradient(90deg, #d4a017 0%, #f4d03f 100%); }
+.rh-third { background:#7f8c8d; }
+/* トーナメント図の決勝枠はクリックで下部の決勝結果カードへ移動できる */
+#bracket-html-container .br-group.is-final{cursor:pointer}
+#bracket-html-container .br-group.is-final:hover{box-shadow:0 0 0 2px rgba(212,160,23,.45)}
+.pattern-btn { padding:10px 20px; border:2px solid #dee2e6; border-radius:8px; cursor:pointer; font-size:14px; background:#fff; font-family:inherit; transition:all .15s; margin:4px; }
+.pattern-btn:hover { border-color:#2980b9; background:#eaf4fb; }
+.seed-badge { font-size:11px; color:#636e72; background:#f0f0f0; border-radius:4px; padding:1px 6px; margin-left:4px; }
+.tie-check { display:flex; align-items:center; gap:10px; padding:10px 14px; border:2px solid #dee2e6; border-radius:8px; margin:6px 0; cursor:pointer; transition:all .12s; }
+.tie-check:hover { border-color:#2980b9; background:#f0f7ff; }
+.tie-check input[type=checkbox] { width:18px; height:18px; accent-color:#2980b9; }
+.seed-toggle {
+  width:32px; height:32px; border:2px solid #dee2e6; border-radius:6px;
+  cursor:pointer; font-size:18px; background:#fff; font-family:inherit;
+  transition:all .12s; line-height:1;
+}
+.seed-toggle { width:32px; height:32px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:18px; background:#fff; font-family:inherit; transition:all .12s; line-height:1; }
+.seed-toggle.seeded   { border-color:#f39c12; background:#fff3cd; color:#d68910; }
+.seed-toggle.superseeded { border-color:#8e44ad; background:#f5eef8; color:#8e44ad; }
+.seed-toggle:not(.seeded):not(.superseeded) { color:#bdc3c7; }
+.seed-btn-group { display:flex; gap:4px; flex-shrink:0; }
+.seed-btn { width:32px; height:32px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:16px; font-weight:bold; background:#fff; font-family:inherit; transition:all .12s; display:inline-flex; align-items:center; justify-content:center; }
+.seed-btn.active-seed   { border-color:#f39c12; background:#fff3cd; color:#d68910; }
+.seed-btn.active-super  { border-color:#8e44ad; background:#f5eef8; color:#8e44ad; }
+.seed-btn:not(.active-seed):not(.active-super) { color:#bdc3c7; }
+</style>
+{% endblock %}
+{% block content %}
+{% raw %}
+<button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
+<style>
+#m4-reload-btn{position:fixed;bottom:16px;right:16px;z-index:99999;width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;padding:0;background:#f39c12;color:#fff;opacity:.62;font-size:24px;line-height:44px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;transition:opacity .15s}
+#m4-reload-btn:hover,#m4-reload-btn:active{opacity:.95}
+@media print{ #m4-reload-btn{display:none} }
+</style>
+<script>
+function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
+</script>
+{% endraw %}
+{% if qualifying_incomplete %}
+<div style="background:#fff3cd;border:2px solid #ffc107;border-radius:10px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px">
+  <span style="font-size:32px">⏳</span>
+  <div>
+    <div style="font-size:16px;font-weight:bold;color:#856404;margin-bottom:4px">全ヒート未完了</div>
+    <div style="font-size:14px;color:#664d03">{{ qualifying_incomplete_msg }}</div>
+    <div style="margin-top:10px">
+      <a href="/admin/tournaments/{{ t.id }}/qualifying" class="btn btn-warning" style="font-size:14px;padding:6px 16px">← 予選管理に戻る</a>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="detail-actionbar">
+  {% if not rounds %}
+  <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#c0392b">⚠️ シード権を設定した後、トーナメントを作成してください。</span>
+  {% elif has_final_result %}
+  <span style="margin-right:auto;font-size:13px;font-weight:bold;color:#1e824c">🏁 レースが終了しました。お疲れさまでした。</span>
+  {% endif %}
+  {% if has_final_result %}
+  <a href="/admin/tournaments/{{ t.id }}/certificate" target="_blank" data-short="賞状" class="btn btn-secondary btn-sm">🏅 賞状</a>
+  {% if post_templates %}
+    {% if post_templates|length == 1 %}
+    <button type="button" data-short="X" class="btn btn-secondary btn-sm" onclick="postToX(0)">𝕏 ポスト</button>
+    {% else %}
+    <div style="position:relative;display:inline-block">
+      <button type="button" data-short="X" class="btn btn-secondary btn-sm" onclick="togglePostMenu()">𝕏 ポスト ▾</button>
+      <div id="postMenu" style="display:none;position:absolute;top:100%;right:0;background:#fff;border:1px solid #dee2e6;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;min-width:180px;margin-top:4px">
+        {% for tpl in post_templates %}
+        <button type="button" onclick="postToX({{ loop.index0 }}); togglePostMenu();"
+                style="display:block;width:100%;text-align:left;padding:9px 14px;background:none;border:none;font-size:13px;color:#2c3e50;cursor:pointer;border-bottom:1px solid #f0f0f0"
+                onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='none'">{{ tpl.name }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  {% else %}
+    <button type="button" onclick="postToXDefault()" data-short="X" class="btn btn-secondary btn-sm">𝕏 ポスト</button>
+  {% endif %}
+  {% endif %}
+  <a href="/admin/tournaments/" data-short="一覧" class="btn btn-secondary btn-sm">← レース一覧</a>
+  {% if t.qualifying_type not in ('none', 'none_roundrobin') %}
+  <a href="/admin/tournaments/{{ t.id }}/qualifying" data-short="予選" class="btn btn-primary btn-sm">🏁 予選管理</a>
+  {% endif %}
+  <a href="/admin/tournaments/{{ t.id }}/edit" data-short="編集" class="btn btn-warning btn-sm">✏️ レース情報を編集</a>
+</div>
+
+<div class="page-title">
+  <h1>決勝管理</h1>
+  <p>{{ t.name }} / {{ t.date }}</p>
+</div>
+
+{% if not rounds %}
+
+{# ── 重複レーサー選択フェーズ（heat_tournament） ── #}
+{% if ht_duplicates %}
+<div class="card" style="margin-bottom:16px;border:2px solid #e67e22">
+  <div class="card-header" style="background:#fef5ec;color:#d35400;font-weight:bold">
+    ⚠️ 同一レーサーが複数ヒートで決勝進出しています
+  </div>
+  <div class="card-body">
+    {# 重複レーサー一覧を表示 #}
+    <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">
+      {% for dup in ht_duplicates %}
+      <div style="padding:8px 14px;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6;font-size:13px">
+        <strong>{{ dup.name }}</strong>：
+        {% for ap in dup.appearances %}
+        <span style="color:{% if ap.overall_rank==1 %}#d4a017{% elif ap.overall_rank==2 %}#888{% else %}#cd7f32{% endif %};font-weight:bold">
+          ヒート{{ ap.heat_no }} {{ ap.overall_rank }}位
+        </span>{% if not loop.last %}・{% endif %}
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {# レース単位で一括選択 #}
+    <form method="post" action="/admin/tournaments/{{ t.id }}/bracket/resolve-duplicates">
+      <p style="font-size:14px;color:#636e72;margin-bottom:12px">全ての該当レーサーの扱いを選択してください</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;flex:1;min-width:220px;
+                       padding:14px;border-radius:8px;border:2px solid #dee2e6;background:#fff">
+          <input type="radio" name="action_all" value="multi" checked style="margin-top:3px" onchange="switchDupMode('multi')">
+          <span>
+            <strong style="font-size:15px">複数回出場</strong>
+            <span style="display:block;font-size:12px;color:#636e72;margin-top:2px">各ヒートの進出枠でそれぞれ決勝トーナメントに出場</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;flex:1;min-width:220px;
+                       padding:14px;border-radius:8px;border:2px solid #dee2e6;background:#fff">
+          <input type="radio" name="action_all" value="single" style="margin-top:3px" onchange="switchDupMode('single')">
+          <span>
+            <strong style="font-size:15px">1回のみ出場 ＋ シード権</strong>
+            <span style="display:block;font-size:12px;color:#636e72;margin-top:2px">ラウンド1を免除してラウンド2から出場（重複分は除外）</span>
+          </span>
+        </label>
+      </div>
+      <button type="submit" class="btn btn-warning">決定して続ける →</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ── 同率選択フェーズ ── #}
+{% if tie_selection_needed %}
+<div class="card">
+  <div class="card-header" style="background:#fef9e7;color:#d68910">⚠️ 同率あり：決勝進出者を選択してください</div>
+  <div class="card-body">
+    <p style="margin-bottom:12px;font-size:14px;color:#636e72">
+      確定進出（{{ finalists|length }}名）に加え、同率{{ tie_candidates[0].rank }}位から <strong>{{ needed_from_tie }}名</strong> を選んでください。
+    </p>
+
+    {# 確定進出者 #}
+    {% if finalists %}
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:bold;color:#27ae60;margin-bottom:6px">✓ 確定進出（{{ finalists|length }}名）</div>
+      {% for f in finalists %}
+      <div style="padding:6px 14px;background:#eafaf1;border-radius:6px;margin:4px 0;font-size:14px">
+        <strong>{{ f.rank }}位</strong> {{ f.name }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# 同率選択 #}
+    <form method="post" action="/admin/tournaments/{{ t.id }}/bracket/select-tie" id="tieform">
+      {# 確定者のIDも送る #}
+      {% for f in finalists %}
+      <input type="hidden" name="selected_entry_id" value="{{ f.entry_id }}">
+      {% endfor %}
+      <div style="font-size:13px;font-weight:bold;color:#d68910;margin-bottom:8px">
+        同率{{ tie_candidates[0].rank }}位（{{ tie_candidates|length }}名中 {{ needed_from_tie }}名を選択）
+      </div>
+      {% for c in tie_candidates %}
+      {% if c.entry_id not in finalists|map(attribute='entry_id')|list %}
+      <label class="tie-check">
+        <input type="checkbox" name="selected_entry_id" value="{{ c.entry_id }}"
+               onchange="checkTieLimit({{ needed_from_tie }})">
+        <strong>{{ c.name }}</strong>
+        <span style="font-size:12px;color:#636e72;margin-left:auto">
+          {% if c.score1 is defined %}スコア: {{ c.score1 }}{% endif %}
+        </span>
+      </label>
+      {% endif %}
+      {% endfor %}
+      <div id="tie-error" style="color:#e74c3c;font-size:13px;display:none;margin-top:8px"></div>
+      <div style="margin-top:14px">
+        <button type="submit" class="btn btn-primary" onclick="return validateTie({{ needed_from_tie }})">
+          選択を確定する
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── パターン選択フェーズ ── #}
+{% else %}
+<!-- 決勝進出レーサー + シード設定 -->
+{% set rank_colors = {1:'#d4a017',2:'#636e72',3:'#cd7f32'} %}
+<div class="card">
+  <div class="card-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    決勝進出レーサー <span class="badge">{{ finalists|length }} 名</span>
+    {% if not rounds %}
+    <span style="font-size:12px;color:#c0392b;font-weight:normal">💡 シード権を設定してください。〇：R1免除　◎：R1・R2免除</span>
+    {% endif %}
+    {% if use_ht_seed %}
+    <span style="font-size:12px;color:#636e72;font-weight:normal">★ = シード権（ラウンド1免除）</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if t.qualifying_type == 'heat_roundrobin' and hr_heats_data %}
+    {# ヒート制総当たり：ヒート×グループ別列表示 #}
+    <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:16px">
+      {% for hd in hr_heats_data %}
+      <div style="border:1px solid #dee2e6;border-radius:8px;overflow:hidden">
+        <div style="font-size:13px;font-weight:bold;color:#2980b9;border-bottom:2px solid #2980b9;padding:6px 12px;background:#f0f6fb">
+          第{{ hd.heat_no }}ヒート
+        </div>
+        <div style="display:flex;padding:10px 12px;gap:0">
+          {% set ns = namespace(group_nos=[]) %}
+          {% for slot in hd.advanced %}{% if slot.group_no not in ns.group_nos %}{% set ns.group_nos = ns.group_nos + [slot.group_no] %}{% endif %}{% endfor %}
+          {% for gno in ns.group_nos %}
+          {% set group_slots = hd.advanced | selectattr('group_no','equalto',gno) | list %}
+          <div style="flex:1;{% if not loop.last %}border-right:1px solid #e9ecef;padding-right:12px;margin-right:12px{% endif %}">
+            {% if gno > 0 %}
+            <div style="font-size:11px;color:#636e72;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #eee">グループ{{ gno }}</div>
+            {% endif %}
+            {% for slot in group_slots %}
+            <div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;margin-bottom:3px">
+              <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#636e72{% endif %};min-width:28px">{{ slot.rank }}位</span>
+              <span style="font-size:13px;font-weight:bold;flex:1">{{ slot.name }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <hr style="border:none;border-top:1px solid #dee2e6;margin:12px 0">
+    {% endif %}
+    {# 決勝進出者数（JSのパターン算出用）。全予選形式で必ず描画する #}
+    <span id="total-finalists-count" data-count="{{ finalists|length }}" style="display:none"></span>
+    {% if t.qualifying_type == 'heat_tournament' and ht_per_heat_advanced %}
+    {# ヒートトーナメント：ヒートごとの列表示 #}
+    <div style="display:flex;flex-wrap:wrap;gap:16px">
+      {% for heat in ht_per_heat_advanced %}
+      <div style="flex:1;min-width:160px">
+        <div style="font-size:12px;font-weight:bold;color:#2980b9;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid #2980b9">
+          ヒート {{ heat.heat_no }}
+        </div>
+        {% for a in heat.advanced %}
+        {% set is_seeded = (use_ht_seed and ((a.entry_id, heat.heat_no) in ht_seed_keys or a.entry_id in seeded_ids)) or (not use_ht_seed and a.entry_id in seeded_ids) %}
+        <div id="frow-{{ a.entry_id }}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+                    background:#f8f9fa;border-radius:6px;border:1px solid #dee2e6;margin-bottom:4px;
+                    {% if a.entry_id in super_seeded_ids|default([]) %}border-color:#8e44ad;background:#f5eef8;{% elif is_seeded %}border-color:#f39c12;background:#fff3cd;{% endif %}">
+          <span style="font-size:12px;font-weight:bold;min-width:28px;color:{{ rank_colors.get(a.overall_rank,'#7f8c8d') }}">{{ a.overall_rank }}位</span>
+          <span style="flex:1;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.name }}</span>
+          {% if use_ht_seed %}
+          <button type="button"
+                  class="seed-toggle {% if is_seeded %}seeded{% endif %}"
+                  id="stbtn-{{ a.entry_id }}-{{ heat.heat_no }}"
+                  onclick="toggleHtSeed({{ a.entry_id }}, {{ heat.heat_no }}, {{ t.id }})">
+            {% if is_seeded %}★{% else %}☆{% endif %}
+          </button>
+          {% else %}
+          {% set seed_level = 2 if a.entry_id in super_seeded_ids|default([]) else (1 if a.entry_id in seeded_ids else 0) %}
+          <div class="seed-btn-group" id="sbg-{{ a.entry_id }}">
+            <button type="button"
+                    class="seed-btn {% if seed_level == 1 %}active-seed{% endif %}"
+                    id="sbtn-seed-{{ a.entry_id }}"
+                    title="シード権（R1免除）〇"
+                    onclick="toggleSeedNone({{ a.entry_id }}, {{ t.id }}, 1)">〇</button>
+            <button type="button"
+                    class="seed-btn {% if seed_level == 2 %}active-super{% endif %}"
+                    id="sbtn-super-{{ a.entry_id }}"
+                    title="スーパーシード権（R1・R2免除）◎"
+                    onclick="toggleSeedNone({{ a.entry_id }}, {{ t.id }}, 2)">◎</button>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    {# その他の予選形式 #}
+    <div id="finalist-rows" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">
+      {% for f in finalists %}
+      <div id="frow-{{ f.entry_id }}"
+           style="display:flex;align-items:center;gap:6px;padding:6px 10px;
+                  background:#f8f9fa;border-radius:6px;border:1px solid #dee2e6;
+                  {% if f.seeded == 2 %}border-color:#8e44ad;background:#f5eef8;{% elif f.entry_id in seeded_ids or f.seeded == 1 %}border-color:#f39c12;background:#fff3cd;{% endif %}">
+        {% if t.qualifying_type != "none" %}<span style="color:#95a5a6;font-size:11px;min-width:28px;">{{ f.rank if f.rank is defined and f.rank else (f.qual_rank if f.qual_rank is defined and f.qual_rank else loop.index) }}位</span>{% endif %}
+        <span style="flex:1;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.name }}</span>
+        <div class="seed-btn-group" id="sbg-{{ f.entry_id }}">
+          <button type="button"
+                  class="seed-btn {% if f.seeded == 1 %}active-seed{% endif %}"
+                  id="sbtn-seed-{{ f.entry_id }}"
+                  title="シード権（R1免除）〇"
+                  onclick="toggleSeedNone({{ f.entry_id }}, {{ t.id }}, 1)">〇</button>
+          <button type="button"
+                  class="seed-btn {% if f.seeded == 2 %}active-super{% endif %}"
+                  id="sbtn-super-{{ f.entry_id }}"
+                  title="スーパーシード権（R1・R2免除）◎"
+                  onclick="toggleSeedNone({{ f.entry_id }}, {{ t.id }}, 2)">◎</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if not use_ht_seed %}
+<div class="card" style="margin-bottom:12px" id="seed-summary-card">
+  <div class="card-header" style="display:flex;align-items:center;gap:12px">
+    シード設定サマリー
+    <span style="font-size:12px;color:#636e72;font-weight:normal">〇=シード（R1免除） ◎=スーパーシード（R1・R2免除）</span>
+  </div>
+  <div class="card-body" id="seed-summary-body">
+    <div id="seed-summary-content" style="font-size:14px;color:#636e72">シード権未設定</div>
+    <div id="seed-validity-warn" style="display:none;margin-top:8px;padding:8px 14px;background:#fff3cd;border-left:4px solid #ffc107;border-radius:4px;font-size:13px;color:#856404"></div>
+  </div>
+</div>
+{% endif %}
+<div class="card" id="pattern-card">
+  <div class="card-header">ラウンド1の組み合わせを選択</div>
+  <div class="card-body" id="pattern-body">
+    {% set seeded_count = ht_seeded_count if use_ht_seed else (seeded_ids|length + super_seeded_ids|default([])|length) %}
+    {% if seeded_count > 0 %}
+    <div style="margin-bottom:12px;padding:10px 14px;background:#fff3cd;border-left:4px solid #f39c12;border-radius:6px;font-size:14px">
+      ★シード権あり <strong>{{ seeded_count }}名</strong>（ラウンド1免除）→
+      残り <strong id="r1-count-label">{{ target_n_multi }}</strong>名 でラウンド1を行います
+      <span style="font-size:12px;color:#888">（複数回出場: {{ target_n_multi }}名 / 1回のみ出場: {{ target_n_single }}名）</span>
+    </div>
+    {% endif %}
+    <div style="margin-bottom:12px;font-size:14px">
+      <strong id="r1-n-label">{{ target_n_multi if (seeded_ids|length + super_seeded_ids|default([])|length) > 0 else finalists|length }}</strong>名 の組み合わせパターン
+    </div>
+    {# ── トーナメント表ビルダー ── #}
+    <div id="builder-r1">
+      <div style="font-size:13px;color:#636e72;font-weight:bold;margin-bottom:6px" id="r1-header">
+        ラウンド1（<span id="r1-n-header">{{ target_n_multi if (seeded_ids|length + super_seeded_ids|default([])|length) > 0 else finalists|length }}</span>名）
+      </div>
+      {# 複数回出場パターン #}
+      <div id="patterns-multi">
+      {% for pat in (patterns_multi if patterns_multi else patterns) %}
+      <button type="button" class="pattern-btn round1-btn" data-pat="{{ pat|join(',') }}" data-n="{{ pat|length }}"
+              onclick="selectR1(this,'{{ pat|join(',') }}',{{ pat|length }})">
+        {% for sz in pat %}
+        <span style="display:inline-block;background:{% if sz == 3 %}#27ae60{% else %}#2980b9{% endif %};color:#fff;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold">{{ sz }}名</span>
+        {% endfor %}
+        <span style="color:#636e72;font-size:12px;margin-left:6px">{{ pat|length }}グループ</span>
+      </button>
+      {% endfor %}
+      </div>
+      {# 1回のみ出場パターン #}
+      <div id="patterns-single" style="display:none">
+      {% for pat in patterns_single %}
+      <button type="button" class="pattern-btn round1-btn" data-pat="{{ pat|join(',') }}" data-n="{{ pat|length }}"
+              onclick="selectR1(this,'{{ pat|join(',') }}',{{ pat|length }})">
+        {% for sz in pat %}
+        <span style="display:inline-block;background:{% if sz == 3 %}#27ae60{% else %}#2980b9{% endif %};color:#fff;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold">{{ sz }}名</span>
+        {% endfor %}
+        <span style="color:#636e72;font-size:12px;margin-left:6px">{{ pat|length }}グループ</span>
+      </button>
+      {% endfor %}
+      </div>
+    </div>
+    <div id="next-rounds" style="margin-top:12px"></div>
+    <div id="generate-form" style="display:none;margin-top:16px">
+      <form method="post" action="/admin/tournaments/{{ t.id }}/bracket/generate" id="bracket-form">
+        <input type="hidden" name="pattern" id="r1-pattern">
+        <input type="hidden" name="all_patterns" id="all-patterns" value="">
+        <input type="hidden" name="confirmed_ids" value="{{ confirmed_ids|default('') }}">
+        <input type="hidden" name="dup_resolved" value="{{ '1' if request.query_params.get('dup_resolved') == '1' else '' }}">
+        <input type="hidden" name="dup_mode" id="dup-mode-input" value="multi">
+        <!-- 準決勝形式の選択 -->
+        <div id="bracket-mode-select" style="display:none;margin-bottom:14px;padding:12px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6;">
+          <div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#495057">準決勝の形式</div>
+          <div id="mode-losers-note" style="display:none;font-size:12px;color:#c0392b;margin-bottom:8px">※ 裏トーナメントON時は、敗者は全員裏トーナメントへ進むため、ここの形式（②③）は使用しません（3位決定戦・敗者復活戦は行いません）。決勝＝準決勝2勝者＋裏復活1名＝3名で1〜3位を決定します。</div>
+
+          <!-- ① 3グループ準決勝（準決勝3名進出）-->
+          <label id="mode-label-semi3" style="display:none;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer">
+            <input type="radio" name="bracket_mode" value="semi_3group" style="margin-top:3px" onchange="syncRevivalTarget()"
+              {% if t.bracket_mode == 'semi_3group' %}checked{% endif %}>
+            <span>
+              <strong>① 3グループ準決勝 → 決勝3名</strong>
+              <span style="display:block;font-size:12px;color:#636e72">準決勝を3グループ（2〜3名ずつ）で行い、各グループ1名が決勝へ。決勝は3名で1〜3位を決定。</span>
+            </span>
+          </label>
+
+          <!-- ② 2グループ準決勝＋敗者復活戦（決勝3名）-->
+          <label id="mode-label-revival" style="display:none;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer">
+            <input type="radio" name="bracket_mode" value="revival" style="margin-top:3px" onchange="syncRevivalTarget()"
+              {% if t.bracket_mode == 'revival' %}checked{% endif %}>
+            <span>
+              <strong>② 2グループ準決勝 → 敗者復活戦 → 決勝3名</strong>
+              <span style="display:block;font-size:12px;color:#636e72">準決勝2グループの勝者2名＋敗者復活戦の勝者1名で決勝（3名）。</span>
+            </span>
+          </label>
+
+          <!-- ③ 2グループ準決勝＋3位決定戦（決勝2名）-->
+          <label id="mode-label-third" style="display:none;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="radio" name="bracket_mode" value="third_place" style="margin-top:3px" onchange="syncRevivalTarget()"
+              {% if not t.bracket_mode or t.bracket_mode == 'third_place' %}checked{% endif %}>
+            <span>
+              <strong>③ 2グループ準決勝 → 3位決定戦 → 決勝2名</strong>
+              <span style="display:block;font-size:12px;color:#636e72">準決勝2グループの勝者2名で決勝。敗者同士で3位決定戦を行う。</span>
+            </span>
+          </label>
+        </div>
+        <!-- 裏トーナメント（敗者復活 / ルーザーズブラケット）設定 -->
+        <div style="margin-bottom:14px;padding:12px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6;">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="checkbox" name="losers_bracket" value="1" id="losers-bracket-toggle" style="margin-top:3px"
+              onchange="document.getElementById('revival-target-wrap').style.display = this.checked ? 'block' : 'none'; updateLosersAvailability();"
+              {% if t.losers_bracket %}checked{% endif %}>
+            <span>
+              <strong>裏トーナメント（敗者復活）を行う</strong>
+              <span style="display:block;font-size:12px;color:#636e72">各ラウンドの敗者全員が裏トーナメント（ルーザーズブラケット）に進み、勝ち上がった1名が決勝に復活します（決勝＝準決勝2勝者＋裏復活1名＝3名）。裏ON時は別途の3位決定戦・敗者復活戦は行いません。</span>
+              <span id="losers-unavailable-note" style="display:none;font-size:12px;color:#c0392b;margin-top:4px">※ 裏トーナメントは「準決勝の勝者が2名（準決勝が2グループ）」のときだけ設定できます。準決勝を2グループ構成にしてください（決勝＝準決勝2勝者＋裏復活1名＝3名）。</span>
+            </span>
+          </label>
+          <div id="revival-target-wrap" style="margin-top:10px;padding-left:26px;{% if not t.losers_bracket %}display:none;{% endif %}">
+            <input type="hidden" name="revival_target" value="final">
+            <span style="display:block;font-size:12px;color:#636e72">復活先：<strong>決勝</strong>（固定）。裏は最後まで完走して1名を決定し、その1名が決勝に合流します。</span>
+          </div>
+        </div>
+        <!-- 配置方法（自動配置／くじ引き） -->
+        <div style="margin-bottom:14px;padding:12px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6;">
+          <div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#495057">配置方法</div>
+          <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer">
+            <input type="radio" name="placement_method" value="auto" style="margin-top:3px"
+              {% if (t.placement_method or 'auto') != 'lottery' %}checked{% endif %}>
+            <span>
+              <strong>自動配置（ランダム）</strong>
+              <span style="display:block;font-size:12px;color:#636e72">生成と同時にレーサーを各枠へ自動配置してトーナメントを開始します（従来どおり）。</span>
+            </span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="radio" name="placement_method" value="lottery" style="margin-top:3px"
+              {% if (t.placement_method or 'auto') == 'lottery' %}checked{% endif %}>
+            <span>
+              <strong>くじ引き（手動配置）</strong>
+              <span style="display:block;font-size:12px;color:#636e72">枠だけ作成し、各枠にくじ番号を割り当てます。生成後の画面で、引いた番号の枠にレーサーをスキャン／選択して配置します。</span>
+            </span>
+          </label>
+        </div>
+        <button type="submit" class="btn btn-success" style="font-size:15px;padding:10px 24px">
+          🏆 トーナメント表を確定・開始
+        </button>
+      </form>
+      <div style="margin-top:10px;padding:10px 14px;background:#eaf4fb;border:1px solid #aed6f1;border-radius:8px;color:#1c6ea4;font-size:13px;font-weight:bold">
+        👆 組み合わせを選んでトーナメントを作成してください
+      </div>
+      <script>
+        // 準決勝（=最後に選んだ）パターンを取得
+        function getSelectedSemiPattern() {
+          var ap = document.getElementById('all-patterns');
+          if (ap && ap.value) {
+            var segs = ap.value.split('|');
+            var last = segs[segs.length - 1];
+            if (last) return last.split(',').map(Number);
+          }
+          return null;
+        }
+        // 裏トーナメント（案B）の可否を制御する。
+        //  - 裏は「準決勝の勝者が2名（=準決勝が2グループ）」のときだけ設定可。
+        //  - 復活先は決勝固定（準決勝2勝者＋裏復活1名＝決勝3名）。
+        //  - 2グループでない場合は裏チェックボックスをON不可にする。
+        function updateLosersAvailability() {
+          var toggle = document.getElementById('losers-bracket-toggle');
+          if (!toggle) return;
+          var semiPat = getSelectedSemiPattern();
+          var semiGroups = semiPat ? semiPat.length : 0;
+          var losersAvailable = (semiGroups === 2);
+          toggle.disabled = !losersAvailable;
+          var lbl = toggle.closest('label');
+          if (lbl) lbl.style.opacity = losersAvailable ? '' : '0.5';
+          var note = document.getElementById('losers-unavailable-note');
+          var wrap = document.getElementById('revival-target-wrap');
+          if (!losersAvailable) {
+            toggle.checked = false;
+            if (wrap) wrap.style.display = 'none';
+            if (note) note.style.display = 'block';
+          } else {
+            if (note) note.style.display = 'none';
+            if (wrap) wrap.style.display = toggle.checked ? 'block' : 'none';
+          }
+          // 裏ON時はモード②③の選択を無効化（裏が敗者処理を一手に担うため）
+          var lbActive = losersAvailable && toggle.checked;
+          var modeBox = document.getElementById('bracket-mode-select');
+          if (modeBox) {
+            modeBox.style.opacity = lbActive ? '0.5' : '';
+            modeBox.querySelectorAll('input[name="bracket_mode"]').forEach(function (r) { r.disabled = lbActive; });
+            var mnote = document.getElementById('mode-losers-note');
+            if (mnote) mnote.style.display = lbActive ? 'block' : 'none';
+          }
+        }
+        // 互換: 旧呼び出し名
+        function syncRevivalTarget() { updateLosersAvailability(); }
+        document.addEventListener('DOMContentLoaded', updateLosersAvailability);
+      </script>
+    </div>
+    {% if not patterns_multi and finalists %}
+    <div style="color:#e74c3c;font-size:14px">
+      ⚠️ {{ non_seeded_count if seeded_count > 0 else finalists|length }}名は2と3の組み合わせで割り切れません。シード権を調整してください。
+    </div>
+    {% elif not finalists %}
+    <div style="color:#e74c3c">決勝進出者がいません。予選管理で進出（○）を設定してください。</div>
+    {% endif %}
+  </div>
+</div>
+<script>
+// シード変更時にパターンボタンを更新（if not rounds フェーズ）
+function updateSeedSummary(tid) {
+  var totalFinalists = parseInt((document.getElementById('total-finalists-count')||{dataset:{}}).dataset.count||'0');
+  var seedCount = 0, superCount = 0;
+  document.querySelectorAll('[id^="sbtn-seed-"]').forEach(function(b){ if(b.classList.contains('active-seed')) seedCount++; });
+  document.querySelectorAll('[id^="sbtn-super-"]').forEach(function(b){ if(b.classList.contains('active-super')) superCount++; });
+  var normalCount = totalFinalists - seedCount - superCount;
+
+  var summaryEl = document.getElementById('seed-summary-content');
+  var warnEl    = document.getElementById('seed-validity-warn');
+
+  // combinations_2_3（ローカル実装）
+  function c23(n) {
+    var res = [];
+    for (var k = Math.floor(n/3); k >= 0; k--) {
+      var rem = n - 3*k;
+      if (rem >= 0 && rem % 2 === 0) {
+        var pat = [];
+        for (var i=0;i<k;i++) pat.push(3);
+        for (var i=0;i<rem/2;i++) pat.push(2);
+        if (pat.length) res.push(pat);
+      }
+    }
+    return res;
+  }
+
+  var r1Pats   = c23(normalCount);
+  var r1Groups = r1Pats.length > 0 ? r1Pats[0].length : 0;
+  var canSeed  = r1Groups >= 2;
+  var r2Total  = r1Groups + seedCount;
+  var r2Pats   = c23(r2Total);
+  var r2Groups = r2Pats.length > 0 ? r2Pats[0].length : (r2Total >= 2 ? 1 : 0);
+  var canSuperSeed = r2Groups >= 2;
+
+  // ボタンdisable制御
+  document.querySelectorAll('[id^="sbtn-seed-"]').forEach(function(btn){
+    btn.disabled = !canSeed;
+    btn.style.opacity = canSeed ? '' : '0.35';
+    btn.style.cursor  = canSeed ? '' : 'not-allowed';
+    btn.title = canSeed ? 'シード権（R1免除）〇' : 'R1が1グループのためシード設定不可';
+  });
+  document.querySelectorAll('[id^="sbtn-super-"]').forEach(function(btn){
+    btn.disabled = !canSuperSeed;
+    btn.style.opacity = canSuperSeed ? '' : '0.35';
+    btn.style.cursor  = canSuperSeed ? '' : 'not-allowed';
+    btn.title = canSuperSeed ? 'スーパーシード権（R1・R2免除）◎' : 'R2が1グループのためスーパーシード設定不可';
+  });
+
+  // サマリー更新
+  if (summaryEl) {
+    if (seedCount === 0 && superCount === 0) {
+      summaryEl.innerHTML = '<span style="color:#636e72">シード権未設定</span>';
+      if (warnEl) warnEl.style.display = 'none';
+    } else {
+      var html = '';
+      if (normalCount > 0) html += '<span style="margin-right:12px">⬛ 通常 <strong>'+normalCount+'名</strong>（R1から）</span>';
+      if (seedCount  > 0) html += '<span style="margin-right:12px;color:#d68910">〇 シード <strong>'+seedCount+'名</strong>（R2から）</span>';
+      if (superCount > 0) html += '<span style="color:#8e44ad">◎ スーパーシード <strong>'+superCount+'名</strong>（R3から）</span>';
+      html += '<div style="margin-top:8px;font-size:13px;color:#636e72">';
+      html += 'R1：通常'+normalCount+'名（'+r1Groups+'グループ）';
+      if (seedCount  > 0) html += ' → R2：R1勝者+シード'+seedCount+'名（'+r2Groups+'グループ）';
+      if (superCount > 0) {
+        var r3Total = r2Groups + superCount;
+        var r3Pats  = c23(r3Total);
+        var r3Groups = r3Pats.length > 0 ? r3Pats[0].length : (r3Total >= 2 ? 1 : 0);
+        html += ' → R3：R2勝者+スーパーシード'+superCount+'名（'+r3Groups+'グループ）';
+      }
+      html += '</div>';
+      summaryEl.innerHTML = html;
+      if (warnEl) warnEl.style.display = 'none';
+    }
+  }
+
+  // パターンボタン再生成
+  var pmDiv = document.getElementById('patterns-multi');
+  var psDiv = document.getElementById('patterns-single');
+  var nLabel = document.getElementById('r1-n-label');
+  var nHeader = document.getElementById('r1-n-header');
+  var countLabel = document.getElementById('r1-count-label');
+  var dispN = (seedCount + superCount > 0) ? normalCount : totalFinalists;
+  if (nLabel)     nLabel.textContent     = dispN;
+  if (nHeader)    nHeader.textContent    = dispN;
+  if (countLabel) countLabel.textContent = dispN;
+
+  var pats = c23(normalCount);
+  function makeBtns(pats, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    pats.forEach(function(pat) {
+      var patStr = pat.join(',');
+      var nG = pat.length;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pattern-btn round1-btn';
+      btn.dataset.pat = patStr;
+      btn.onclick = function() { selectR1(btn, patStr, nG); };
+      pat.forEach(function(n) {
+        var badge = document.createElement('span');
+        badge.style.cssText = 'display:inline-block;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold;color:#fff;background:'+(n===3?'#27ae60':'#2980b9');
+        badge.textContent = n+'名';
+        btn.appendChild(badge);
+      });
+      var grpSpan = document.createElement('span');
+      grpSpan.style = 'color:#636e72;font-size:12px;margin-left:6px';
+      grpSpan.textContent = nG+'グループ';
+      btn.appendChild(grpSpan);
+      container.appendChild(btn);
+    });
+  }
+  makeBtns(pats, pmDiv);
+  makeBtns(pats, psDiv);
+
+  // seededCount / superSeededCount 更新
+  if (typeof seededCount      !== 'undefined') seededCount      = seedCount;
+  if (typeof superSeededCount !== 'undefined') superSeededCount = superCount;
+
+  // generate-form をリセット
+  var gf = document.getElementById('generate-form');
+  var nr = document.getElementById('next-rounds');
+  if (gf) gf.style.display = 'none';
+  if (nr) nr.innerHTML = '';
+}
+
+// ページ初期表示
+updateSeedSummary(0);
+</script>
+{% endif %}
+
+{% else %}
+{# ── くじ待ち中はくじ割り当てパネル、そうでなければトーナメント進行 ── #}
+{% if lottery %}
+<div class="card" id="lottery-card">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <span>🎲 くじ引き割り当て</span>
+    <span style="font-size:13px;color:#495057">割当 {{ lottery.total_filled }} / {{ lottery.total_slots }} 枠</span>
+  </div>
+  <div class="card-body">
+
+    <!-- スキャン入力 -->
+    <div style="margin-bottom:16px;padding:12px 16px;background:#eaf4fb;border-radius:8px;border:1px solid #b8daff">
+      <div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#2c3e50">スキャンで割り当て</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <label style="font-size:12px;color:#495057">区分
+          <select id="scan-round" style="display:block;padding:6px;margin-top:2px">
+            {% for r in lottery.rounds %}
+            <option value="{{ r.round_no }}">{{ r.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="font-size:12px;color:#495057">くじ番号
+          <input type="number" id="scan-no" min="1" style="display:block;width:90px;padding:6px;margin-top:2px">
+        </label>
+        <label style="font-size:12px;color:#495057;flex:1;min-width:180px">カードをスキャン（または連番入力）
+          <input type="text" id="scan-code" autocomplete="off"
+                 placeholder="ここにフォーカスしてスキャン" style="display:block;width:100%;padding:6px;margin-top:2px">
+        </label>
+        <button type="button" id="scan-camera-btn" class="btn btn-success btn-sm" style="white-space:nowrap">📷 カメラ</button>
+      </div>
+      <div id="scan-msg" style="font-size:12px;margin-top:8px;min-height:1.2em"></div>
+    </div>
+
+    <!-- 区分ごとの枠一覧 -->
+    {% for r in lottery.rounds %}
+    <div style="margin-bottom:18px">
+      <div style="font-size:14px;font-weight:bold;margin-bottom:8px;color:#2c3e50">
+        {{ r.label }} <span style="font-weight:normal;color:#636e72">（{{ r.filled }}/{{ r.total }} 埋）</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {% for s in r.slots %}
+        <div class="lottery-slot" data-round="{{ r.round_no }}" data-no="{{ s.lottery_no }}"
+             style="border:2px solid {% if s.entry_id %}#27ae60{% else %}#dee2e6{% endif %};border-radius:8px;padding:8px 10px;min-width:150px;background:#fff">
+          <div style="font-size:12px;color:#636e72">番号 {{ s.lottery_no }}</div>
+          <div class="slot-name" style="font-size:14px;font-weight:bold;min-height:1.3em;color:{% if s.entry_id %}#27ae60{% else %}#adb5bd{% endif %}">
+            {{ s.racer_name if s.entry_id else '（未割当）' }}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <select class="slot-select" style="flex:1;font-size:12px;padding:4px">
+              <option value="">― 選択して割当 ―</option>
+              {% for u in r.candidates %}
+              <option value="{{ u.entry_id }}">{{ u.name }}{% if u.seq %}（{{ '%04d'|format(u.seq) }}）{% endif %}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm btn-secondary slot-clear"
+                    style="font-size:12px;padding:4px 8px"
+                    {% if not s.entry_id %}disabled{% endif %}>クリア</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- 確定 -->
+    <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button type="button" id="lottery-confirm-btn" class="btn btn-success"
+              style="font-size:15px;padding:10px 24px" {% if not lottery.complete %}disabled{% endif %}>
+        🏆 確定してトーナメント開始
+      </button>
+      <span id="lottery-confirm-msg" style="font-size:13px;color:#c0392b">
+        {% if not lottery.complete %}未割り当ての枠があります。すべて埋めると確定できます。{% endif %}
+      </span>
+      <form method="post" action="/admin/tournaments/{{ t.id }}/bracket/reset"
+            style="margin:0 0 0 auto"
+            onsubmit="return confirm('くじ引きの枠と割り当てをすべて破棄して、決勝生成をやり直します。よろしいですか？');">
+        <button type="submit" class="btn btn-danger" style="font-size:14px;padding:8px 18px">
+          🔄 リセット（やり直す）
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TID = {{ t.id }};
+  function post(url, data) {
+    var fd = new FormData();
+    Object.keys(data).forEach(function (k) { fd.append(k, data[k]); });
+    return fetch(url, { method: 'POST', body: fd }).then(function (r) { return r.json(); });
+  }
+  function reload() { window.location.reload(); }
+
+  var codeEl = document.getElementById('scan-code');
+  if (codeEl) {
+    codeEl.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      var code = codeEl.value.trim();
+      var rno = document.getElementById('scan-round').value;
+      var no = document.getElementById('scan-no').value;
+      var msg = document.getElementById('scan-msg');
+      if (!code) return;
+      if (!no) { msg.style.color = '#c0392b'; msg.textContent = 'くじ番号を入力してください'; return; }
+      post('/admin/tournaments/' + TID + '/bracket/lottery/assign',
+           { round_no: rno, lottery_no: no, code: code })
+        .then(function (res) {
+          if (res.ok) {
+            msg.style.color = '#27ae60';
+            msg.textContent = 'R' + res.round_no + ' 番号' + res.lottery_no + ' → ' + res.name;
+            codeEl.value = '';
+            setTimeout(reload, 400);
+          } else {
+            msg.style.color = '#c0392b';
+            msg.textContent = res.message || '割り当てに失敗しました';
+            codeEl.value = ''; codeEl.focus();
+          }
+        });
+    });
+    codeEl.focus();
+  }
+
+  // ===== カメラスキャン（外部リーダーが無い場合の内蔵カメラ割り当て）=====
+  // ブラケットは「区分・くじ番号」を先に指定する必要があるため、1枚読んだら割り当てて閉じる単発方式。
+  var camBtn = document.getElementById('scan-camera-btn');
+  if (camBtn) {
+    camBtn.addEventListener('click', function () {
+      var msg = document.getElementById('scan-msg');
+      var no = document.getElementById('scan-no').value;
+      if (!no) { msg.style.color = '#c0392b'; msg.textContent = 'くじ番号を入力してください'; return; }
+      if (typeof M4Scan === 'undefined') { alert('スキャナ部品の読み込みに失敗しました'); return; }
+      M4Scan.open({
+        title: '📷 ブラケット割り当て（カメラ）',
+        continuous: false,                 // 1枚読んだら閉じる
+        onDecode: function (text) {
+          var code = (text || '').replace(/[^0-9]/g, '');
+          var rno = document.getElementById('scan-round').value;
+          var lno = document.getElementById('scan-no').value;
+          if (!code || !lno) return;
+          post('/admin/tournaments/' + TID + '/bracket/lottery/assign',
+               { round_no: rno, lottery_no: lno, code: code })
+            .then(function (res) {
+              if (res.ok) {
+                msg.style.color = '#27ae60';
+                msg.textContent = 'R' + res.round_no + ' 番号' + res.lottery_no + ' → ' + res.name;
+                setTimeout(reload, 400);
+              } else {
+                msg.style.color = '#c0392b';
+                msg.textContent = res.message || '割り当てに失敗しました';
+              }
+            });
+        }
+      });
+    });
+  }
+
+  document.querySelectorAll('.lottery-slot').forEach(function (slot) {
+    var rno = slot.dataset.round, no = slot.dataset.no;
+    var sel = slot.querySelector('.slot-select');
+    var clr = slot.querySelector('.slot-clear');
+    if (sel) sel.addEventListener('change', function () {
+      var eid = sel.value;
+      if (!eid) return;
+      post('/admin/tournaments/' + TID + '/bracket/lottery/assign',
+           { round_no: rno, lottery_no: no, entry_id: eid })
+        .then(function (res) {
+          if (res.ok) { reload(); }
+          else { alert(res.message || '割り当てに失敗しました'); sel.value = ''; }
+        });
+    });
+    if (clr) clr.addEventListener('click', function () {
+      post('/admin/tournaments/' + TID + '/bracket/lottery/clear',
+           { round_no: rno, lottery_no: no })
+        .then(function (res) {
+          if (res.ok) { reload(); }
+          else { alert(res.message || 'クリアに失敗しました'); }
+        });
+    });
+  });
+
+  var cbtn = document.getElementById('lottery-confirm-btn');
+  if (cbtn) cbtn.addEventListener('click', function () {
+    cbtn.disabled = true;
+    post('/admin/tournaments/' + TID + '/bracket/lottery/confirm', {})
+      .then(function (res) {
+        if (res.ok) { window.location.href = res.redirect; }
+        else {
+          var m = document.getElementById('lottery-confirm-msg');
+          if (m) m.textContent = res.message || '確定に失敗しました';
+          cbtn.disabled = false;
+        }
+      });
+  });
+})();
+</script>
+{% else %}
+{# ── トーナメント進行フェーズ ── #}
+{% set normal_groups = groups_data | selectattr("round.round_type", "equalto", "normal") | list %}
+{% set final_groups  = groups_data | selectattr("round.round_type", "equalto", "final")  | list %}
+{% set third_groups  = groups_data | selectattr("round.round_type", "in", ["third","revival"]) | list %}
+
+<!-- ── トーナメント図（SVG） ── -->
+{% if rounds %}
+<div style="margin-bottom:20px;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <span>トーナメント表</span>
+    <button onclick="exportBracketImage()" class="btn btn-secondary btn-sm" style="font-size:14px;">📷 画像出力</button>
+  </div>
+  <div class="card-body" style="padding:0">
+    <div id="bracket-html-container" style="overflow:visible"></div>
+  </div>
+  <script>
+    (async function loadBracket() {
+      try {
+        const res = await fetch('/admin/tournaments/{{ t.id }}/bracket/html?t='+Date.now());
+        const html = await res.text();
+        const container = document.getElementById('bracket-html-container');
+        applyBracketHtml(container, html);
+        // 図の読込・レイアウト確定後にスクロール位置を復元する
+        // （図は非同期で後から入るため、早く復元すると短いページで下端へ飛んでしまう）
+        if (window.restoreBracketScroll) window.restoreBracketScroll();
+      } catch(e) {
+        document.getElementById('bracket-html-container').innerHTML =
+          '<div style="padding:30px;text-align:center;color:#95a5a6">読み込みに失敗しました</div>';
+        if (window.restoreBracketScroll) window.restoreBracketScroll();
+      }
+    })();
+  </script>
+
+<script>
+/* トーナメント図の「決勝」枠クリック → 下部の決勝結果入力カードへスクロール。
+   ツリーは非同期で再描画されるため、コンテナへのイベント委譲で常に効くようにする。
+   決勝グループは id="vg-{group_id}"、結果カードは id="group-{group_id}" で同一IDを共有する。 */
+document.addEventListener('click', function(e){
+  var fg = e.target.closest && e.target.closest('#bracket-html-container .br-group.is-final');
+  if(!fg) return;
+  var m = (fg.id || '').match(/^vg-(\d+)$/);
+  if(!m) return;
+  var card = document.getElementById('group-' + m[1]);
+  if(!card) return;
+  card.scrollIntoView({behavior:'smooth', block:'center'});
+  var prev = card.style.boxShadow;
+  card.style.transition = 'box-shadow .3s';
+  card.style.boxShadow = '0 0 0 4px rgba(212,160,23,.85)';
+  setTimeout(function(){ card.style.boxShadow = prev || ''; }, 1600);
+}, false);
+</script>
+
+
+<script>
+function getOffset(el, container) {
+  var x = 0, y = 0;
+  while (el && el !== container) {
+    x += el.offsetLeft - el.scrollLeft;
+    y += el.offsetTop - el.scrollTop;
+    el = el.offsetParent;
+  }
+  return {x: x, y: y};
+}
+
+// 前ラウンド(curGroups)の各グループが次ラウンド(nextGroups)のどのグループへ合流するかを返す。
+// 戻り値は nextGroups と同じ長さの配列で、res[ni] = そのグループへ合流する前ラウンドグループ要素の配列。
+// 【最優先】生成時に焼き付けた固定リンク data-advance-to-group を使う（配置と完全一致）。
+// 【後方互換】リンクが1つも無い場合のみ、非シード枠数で割り当てる。全シード組(=0)は受け皿なし＝合流なし。
+function bracketFeeders(curGroups, nextGroups) {
+  var res = nextGroups.map(function(){ return []; });
+  if (!curGroups.length || !nextGroups.length) return res;
+  var hasLinks = curGroups.some(function(g){ return g.getAttribute('data-advance-to-group') !== null; });
+  if (hasLinks) {
+    curGroups.forEach(function(g){
+      var a = g.getAttribute('data-advance-to-group');
+      if (a === null) return;                 // リンクなし（末尾の空き枠等）は接続しない
+      var ni = parseInt(a, 10);
+      if (ni >= 0 && ni < res.length) res[ni].push(g);
+    });
+    return res;
+  }
+  var counts = nextGroups.map(function(g){
+    return g.querySelectorAll('.br-slot:not([data-is-seed="true"])').length;   // クランプしない（全シード=0）
+  });
+  var curIdx = 0;
+  for (var ni2 = 0; ni2 < nextGroups.length; ni2++) {
+    var count = Math.min(counts[ni2], curGroups.length - curIdx);
+    if (count < 0) count = 0;
+    for (var k = 0; k < count && curIdx < curGroups.length; k++) { res[ni2].push(curGroups[curIdx]); curIdx++; }
+  }
+  if (curIdx < curGroups.length) {   // 端数は受け皿を持つ最後の組へ
+    var lastRecv = -1;
+    for (var q = nextGroups.length - 1; q >= 0; q--) { if (counts[q] > 0) { lastRecv = q; break; } }
+    if (lastRecv < 0) lastRecv = nextGroups.length - 1;
+    while (curIdx < curGroups.length) { res[lastRecv].push(curGroups[curIdx]); curIdx++; }
+  }
+  return res;
+}
+
+function drawBracketConnectors(bracketHtml) {
+  bracketHtml.querySelectorAll('.br-connector-svg').forEach(function(e){ e.remove(); });
+  var rounds = Array.from(bracketHtml.querySelectorAll('.br-round'));
+  if (rounds.length < 2) return;
+
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'br-connector-svg');
+  svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;overflow:visible;';
+  svg.style.width  = bracketHtml.scrollWidth  + 'px';
+  svg.style.height = bracketHtml.scrollHeight + 'px';
+  bracketHtml.style.position = 'relative';
+  bracketHtml.appendChild(svg);
+
+  for (var ri = 0; ri < rounds.length - 1; ri++) {
+    var curGroups  = Array.from(rounds[ri].querySelectorAll('.br-group'));
+    var nextGroups = Array.from(rounds[ri + 1].querySelectorAll('.br-group'));
+    if (!curGroups.length || !nextGroups.length) continue;
+
+    var feeders = bracketFeeders(curGroups, nextGroups);
+    for (var ni = 0; ni < nextGroups.length; ni++) {
+      var group = feeders[ni];
+      if (!group.length) continue;   // 受け皿を持たない組（全シード等）は結線しない
+
+      var no = getOffset(nextGroups[ni], bracketHtml);
+      var nextMidY = no.y + nextGroups[ni].offsetHeight / 2;
+      var nextX    = no.x;
+      var nextWinnerName = nextGroups[ni].dataset.winnerName || '';
+
+      var midYs = [], rightX = 0;
+      for (var gi = 0; gi < group.length; gi++) {
+        var cg = group[gi];
+        var co = getOffset(cg, bracketHtml);
+        var cy = co.y + cg.offsetHeight / 2;
+        var cx = co.x + cg.offsetWidth;
+        rightX = Math.max(rightX, cx);
+        midYs.push({y: cy, grp: cg});
+
+        var curWinnerName = cg.dataset.winnerName || '';
+        var isOnWinPath = curWinnerName !== '' && nextWinnerName !== '' && curWinnerName === nextWinnerName;
+        var hColor = isOnWinPath ? '#27ae60' : '#adb5bd';
+        line(svg, cx, cy, cx + 20, cy, hColor);
+      }
+
+      var vX = rightX + 20;
+      var anyOnPath = midYs.some(function(m){
+        return m.grp.dataset.winnerName && m.grp.dataset.winnerName === nextWinnerName;
+      });
+      var vc = anyOnPath ? '#27ae60' : '#adb5bd';
+
+      var allY = midYs.map(function(m){ return m.y; });
+      if (allY.length > 1) {
+        // 全midYsとnextMidYを含む範囲で縦線
+        var allWithNext = allY.concat([nextMidY]);
+        var topY = Math.min.apply(null, allWithNext);
+        var botY = Math.max.apply(null, allWithNext);
+        line(svg, vX, topY, vX, botY, vc);
+        // nextGroupの中心Yへ横線
+        line(svg, vX, nextMidY, nextX, nextMidY, vc);
+      } else {
+        // 単独合流でも次グループ中心Yへ段差ルーティング（真横に引くと別組へ刺さって見えるため）
+        if (Math.abs(allY[0] - nextMidY) >= 2) {
+          line(svg, vX, Math.min(allY[0], nextMidY), vX, Math.max(allY[0], nextMidY), vc);
+        }
+        line(svg, vX, nextMidY, nextX, nextMidY, vc);
+      }
+
+      var nc = nextGroups[ni].dataset.winnerName ? '#1e8449' : '#adb5bd';
+      line(svg, nextX - 20, nextMidY, nextX, nextMidY, nc);
+    }
+  }
+}
+
+function line(svg,x1,y1,x2,y2,color){
+  var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+  l.setAttribute('x1',x1);l.setAttribute('y1',y1);
+  l.setAttribute('x2',x2);l.setAttribute('y2',y2);
+  l.setAttribute('stroke',color);l.setAttribute('stroke-width','2');
+  svg.appendChild(l);
+}
+
+function applyBracketHtml(container, html) {
+  // 差し替え中にコンテナ高さが0へ潰れてページが縮み、スクロールが飛んで
+  // ちらつくのを防ぐため、旧高さを一時的に固定してから差し替える。
+  var prevH = container.offsetHeight;
+  if (prevH > 0) { container.style.minHeight = prevH + 'px'; }
+  container.innerHTML = html;
+  // innerHTML内のscriptは実行されないため手動で再実行
+  container.querySelectorAll('script').forEach(function(oldScript) {
+    const newScript = document.createElement('script');
+    newScript.textContent = oldScript.textContent;
+    document.head.appendChild(newScript);
+    document.head.removeChild(newScript);
+  });
+  // layoutRounds+drawConnectorsが登録されるまで待機してから実行
+  setTimeout(function() {
+    if (window._bracketDrawConnectors) {
+      window._bracketDrawConnectors();
+    } else {
+      initBracketConnectors();
+    }
+    // レイアウトで高さが確定した後に一時固定を解除
+    setTimeout(function() { container.style.minHeight = ''; }, 400);
+  }, 200);
+}
+
+function initBracketConnectors(){
+  document.querySelectorAll('.bracket-html').forEach(function(c){ drawBracketConnectors(c); });
+}
+window.initBracketConnectors = initBracketConnectors;
+</script>
+</div>
+
+
+{% endif %}
+
+<div id="admin-input-cards">
+{% if normal_groups %}
+{% set rounds_list = normal_groups | map(attribute='round.round_no') | unique | list %}
+{% for rno in rounds_list | sort %}
+{% set rg = normal_groups | selectattr("round.round_no", "equalto", rno) | list %}
+{% set rnd_label = rg[0].round.label if rg and rg[0].round.label is defined else "ラウンド" ~ rno %}
+<div style="margin-bottom:6px">
+  <span class="round-header {% if rnd_label == '決勝' %}rh-final{% else %}rh-normal{% endif %}">
+    {{ rnd_label }}
+  </span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px">
+  {% for gd in rg %}
+  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
+  <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
+    <div style="font-size:14px;color:#333333;margin-bottom:8px">
+      グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
+    </div>
+    {% for slot in slots %}
+    <div class="slot-row">
+      <div class="slot-no">{{ slot.slot_no }}</div>
+      {% if slot.name %}
+      <div class="slot-name" style="cursor:pointer;user-select:none;"
+           onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">
+        {{ slot.name }}
+        {% if slot.qual_rank and t.qualifying_type != 'heat_roundrobin' and t.qualifying_type != 'none' %}
+        <span class="seed-badge">予選{{ slot.qual_rank }}位</span>
+        {% endif %}
+      </div>
+      <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
+              id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
+              onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">○</button>
+      {% else %}
+      <div class="slot-name" style="color:#bdc3c7;font-style:italic">
+        <span style="font-size:11px">（R1勝者）</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if third_groups %}
+{% set third_round_nos = third_groups | map(attribute='round.round_no') | unique | list %}
+{% for rno in third_round_nos | sort %}
+{% set rg = third_groups | selectattr('round.round_no', 'equalto', rno) | list %}
+<div style="margin-bottom:6px">
+  <span class="round-header rh-third">
+    {% set rnd_type = (rg | first).round.round_type %}
+    {% if rnd_type == "revival" %}
+      {% if third_round_nos|length > 1 %}敗者復活戦 R{{ rno }}{% else %}敗者復活戦{% endif %}
+    {% else %}
+      {% if third_round_nos|length > 1 %}3位決定戦 R{{ rno }}{% else %}3位決定戦{% endif %}
+    {% endif %}
+  </span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px">
+  {% for gd in rg %}
+  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
+  <div class="bracket-group third-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
+    <div style="font-size:12px;color:#7f8c8d;margin-bottom:8px">
+      グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
+    </div>
+    {% for slot in slots %}
+    <div class="slot-row">
+      <div class="slot-no" style="background:#7f8c8d">{{ slot.slot_no }}</div>
+      {% if slot.name %}
+      <div class="slot-name" style="cursor:pointer;user-select:none;"
+           onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">{{ slot.name }}</div>
+      <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
+              id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
+              onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">○</button>
+      {% else %}
+      <div class="slot-name" style="color:#bdc3c7">-</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if final_groups %}
+<div style="margin-bottom:6px"><span class="round-header rh-final">🏆 決勝</span></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:20px">
+  {% for gd in final_groups %}
+  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
+  <div class="bracket-group final-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
+    <div style="font-size:12px;color:#d4a017;margin-bottom:8px;font-weight:bold">
+      決勝{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span>{% endif %}
+    </div>
+    {% for slot in slots %}
+    {% set cur_rank = ranks.get(slot.slot_id) %}
+    <div class="slot-row">
+      <div class="slot-no" style="background:#d4a017">{{ slot.slot_no }}</div>
+      {% if slot.name %}
+      <div class="slot-name" style="cursor:pointer;user-select:none;color:inherit;">{{ slot.name }}</div>
+      {% else %}
+      <div class="slot-name" style="color:#bdc3c7">-</div>
+      {% endif %}
+      {% if slot.name %}
+      <select class="rank-select" id="rank-{{ g.id }}-{{ slot.slot_id }}">
+        <option value="">-</option>
+        {% for r in range(1, slots|length + 1) %}
+        <option value="{{ r }}" {% if cur_rank == r %}selected{% endif %}>{{ r }}位</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <div style="margin-top:12px">
+      <button class="btn btn-success btn-sm"
+              onclick="saveFinal({{ g.id }}, {{ t.id }}, [{% for s in slots %}{% if s.name %}{{ s.slot_id }}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}])">
+        💾 決勝結果を保存
+      </button>
+      {% if gd.ranks %}
+      <button class="btn btn-danger btn-sm" style="margin-left:8px"
+              onclick="resetFinal({{ g.id }}, {{ t.id }})">
+        🔄 取り消し
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% for gd in final_groups %}{% set ranks = gd.ranks %}{% if ranks %}
+{% set winner_slot_id = (ranks.items() | sort(attribute='1') | first)[0] %}
+{% for slot in gd.slots %}{% if slot.slot_id == winner_slot_id %}
+{# 優勝ボックスは廃止（上部ツールバーに「レースが終了しました」を表示） #}
+{% endif %}{% endfor %}{% endif %}{% endfor %}
+{% endif %}
+
+<div style="margin-top:8px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    {# 決勝結果取消：いつでも使用可 #}
+    {% if has_final_result %}
+    <form method="post" action="/admin/tournaments/{{ t.id }}/bracket/clear-final-result"
+          onsubmit="return confirm('決勝の結果をクリアします。トーナメント構成は残ります。よろしいですか？')">
+      <button type="submit" class="btn btn-warning btn-sm">↩️ 決勝結果を取消</button>
+    </form>
+    {% endif %}
+    {# リセット：常に可能 #}
+    <form method="post" action="/admin/tournaments/{{ t.id }}/bracket/reset"
+          onsubmit="return confirm('トーナメントと入力結果がリセットされます。本当にリセットしますか？')">
+      <button type="submit" class="btn btn-danger btn-sm">🔄 トーナメントをリセット</button>
+    </form>
+  </div>
+</div>
+</div>
+{% endif %}{# 進行フェーズ（if lottery の else）を閉じる #}
+{% endif %}{# if not rounds を閉じる → 以降のスクリプトは常にグローバル #}
+
+<script>
+function checkTieLimit(needed) {}
+
+function validateTie(needed) {
+  const checked = document.querySelectorAll('input[name="selected_entry_id"][type="checkbox"]:checked').length;
+  if (checked !== needed) {
+    document.getElementById('tie-error').style.display = 'block';
+    document.getElementById('tie-error').textContent = `${needed}名を選択してください（現在${checked}名）`;
+    return false;
+  }
+  return true;
+}
+
+async function setRank(groupId, slotId, rank, tid) {
+  const form = new FormData();
+  form.append('slot_id', slotId);
+  form.append('rank', rank);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/group/${groupId}/set-rank`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) {
+      // 決勝の結果確定＝レース終了。上部ツールバー（賞状/ポスト/終了表示）を
+      // 反映するためページ全体を更新する（F5不要化）。
+      if (data.finalized) { m4ForceReload(); return; }
+      fetch('/view/host-sync', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: location.pathname, scroll_to: 'vg-' + groupId})
+      }).catch(()=>{});
+      reloadSvg(tid);
+      // フルリロードせずその場更新（ちらつき防止）
+      reloadBracketHtml(tid);
+      refreshInputCards(tid);
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function setWinner(groupId, slotId, tid) {
+  // ○ボタンのUI即時更新
+  document.querySelectorAll(`[id^="wbtn-${groupId}-"]`).forEach(b => b.classList.remove('sel'));
+  const wb = document.getElementById(`wbtn-${groupId}-${slotId}`);
+  if (wb) wb.classList.add('sel');
+  const form = new FormData();
+  form.append('winner_slot_id', slotId);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/group/${groupId}/save`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) {
+      // 決勝の結果確定＝レース終了。上部ツールバーを反映するため全体更新（F5不要化）。
+      if (data.finalized) { m4ForceReload(); return; }
+      // 結果入力カードに完了マーク
+      document.getElementById(`group-${groupId}`)?.classList.add('done');
+      // 観覧側に通知
+      fetch('/view/host-sync', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: location.pathname, scroll_to: 'vg-' + groupId})
+      }).catch(()=>{});
+      if (data.advanced || data.reviver_inserted) {
+        // 次ラウンド生成 or 裏優勝者の決勝差し込み：フルリロードせず、
+        // ブラケット図と入力カードをその場で更新（ちらつき・スクロール飛び防止）
+        reloadBracketHtml(tid);
+        refreshInputCards(tid);
+      } else {
+        // 通常はブラケット表示だけ更新（スクロール位置そのまま）
+        reloadBracketHtml(tid);
+      }
+    }
+  } catch(e) { console.error(e); }
+}
+
+function reloadBracketHtml(tid) {
+  const curY = window.scrollY;  // 更新前のスクロール位置を保存
+  fetch(`/admin/tournaments/${tid}/bracket/html?t=` + Date.now())
+    .then(r => r.text())
+    .then(html => {
+      const c = document.getElementById('bracket-html-container');
+      if (c) {
+        applyBracketHtml(c, html);
+        // ブラケット更新後もスクロール位置を維持
+        requestAnimationFrame(function() {
+          window.scrollTo(0, curY);
+          setTimeout(function() { window.scrollTo(0, curY); }, 350);
+        });
+      }
+    }).catch(()=>{});
+}
+
+// 入力カード（準々決勝〜決勝のフォーム群）をフルリロードせずその場で更新する。
+// 次ラウンド生成や裏優勝者の決勝差し込みで新しいカードを出すときに使う。
+// （カード内のボタンは inline onclick でグローバル関数を呼ぶため、再実行は不要）
+function refreshInputCards(tid) {
+  const curY = window.scrollY;
+  fetch(location.href, { headers: { 'X-Requested-With': 'fetch' } })
+    .then(r => r.text())
+    .then(html => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const fresh = doc.getElementById('admin-input-cards');
+      const cur = document.getElementById('admin-input-cards');
+      if (fresh && cur) {
+        cur.innerHTML = fresh.innerHTML;
+        requestAnimationFrame(function() { window.scrollTo(0, curY); });
+      }
+    }).catch(()=>{});
+}
+
+function reloadSvg(tid) {
+  const img = document.getElementById('bracket-svg-img');
+  if (!img) return;
+  // src を一旦空にしてからセットすることでキャッシュを確実に回避
+  img.src = '';
+  // HTML版に切り替え：再読み込み
+  fetch(`/admin/tournaments/${tid}/bracket/html?t=${Date.now()}`)
+    .then(r => r.text())
+    .then(html => {
+      const c = document.getElementById('bracket-html-container');
+      if (c) { applyBracketHtml(c, html); }
+    });
+}
+
+async function resetGroupResult(groupId, tid) {
+  if (!confirm('この結果を取り消しますか？')) return;
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/group/${groupId}/reset-final`, {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      reloadSvg(tid);
+      reloadBracketHtml(tid);
+      refreshInputCards(tid);
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function resetFinal(groupId, tid) {
+  if (!confirm('決勝結果を取り消しますか？')) return;
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/group/${groupId}/reset-final`, {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      reloadSvg(tid);
+      reloadBracketHtml(tid);
+      refreshInputCards(tid);
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function saveFinal(groupId, tid, slotIds) {
+  let winnerId = null;
+  const form = new FormData();
+  for (const sid of slotIds) {
+    const sel = document.getElementById(`rank-${groupId}-${sid}`);
+    if (sel) { form.append(`rank_${sid}`, sel.value); if (sel.value==='1') winnerId = sid; }
+  }
+  if (!winnerId) { alert('1位を選択してください'); return; }
+  form.append('winner_slot_id', winnerId);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/group/${groupId}/save`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById(`group-${groupId}`).classList.add('done');
+      fetch('/view/host-sync', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: location.pathname, scroll_to: 'vg-' + groupId})
+      }).catch(()=>{});
+      reloadSvg({{ t.id }});
+      // フルリロードせずその場更新（ちらつき防止）
+      reloadBracketHtml(tid);
+      refreshInputCards(tid);
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ── シード権切り替え ────────────────────────────────────────
+// ── トーナメント表ビルダー ──────────────────────────────
+let seededCount = {{ ht_seeded_count if use_ht_seed else seeded_ids|length }};
+// ページ読み込み後にボタン状態を初期化（スクリプト末尾で直接呼び出し）
+let superSeededCount = {{ super_seeded_ids|default([])|length }};
+let selectedPatterns = [];
+
+function combinations23(n) {
+  const results = new Set();
+  for (let a = 0; a <= Math.floor(n / 3); a++) {
+    const rem = n - 3 * a;
+    if (rem >= 0 && rem % 2 === 0) {
+      const b = rem / 2;
+      const arr = [...Array(a).fill(3), ...Array(b).fill(2)].sort((x,y) => y - x);
+      if (arr.length) results.add(arr.join(','));
+    }
+  }
+  return [...results].map(s => s.split(',').map(Number))
+    .sort((a, b) => a.length - b.length || a[0] - b[0]);
+}
+
+function combinations23(n) {
+  const results = new Set();
+  for (let a = 0; a <= Math.floor(n/3); a++) {
+    const rem = n - 3*a;
+    if (rem >= 0 && rem % 2 === 0) {
+      const b = rem / 2;
+      const g = Array(a).fill(3).concat(Array(b).fill(2)).sort((x,y)=>y-x);
+      if (g.length) results.add(JSON.stringify(g));
+    }
+  }
+  return [...results].map(s=>JSON.parse(s)).sort((a,b)=>a.length-b.length||JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
+
+function calcFinalSlots(nGroups) {
+  // nGroupsの勝者が次ラウンドへ → 決勝まで辿り着いたときのスロット数
+  let n = nGroups;
+  while (n > 1) {
+    const pats = combinations23(n);
+    if (!pats.length) break;
+    n = pats[0].length;  // 次ラウンドのグループ数 = 勝者数
+    if (n === 1) break;  // 1グループ = 決勝
+  }
+  // 決勝のスロット数
+  const finalPats = combinations23(nGroups);
+  // 最終的に何人が決勝に来るか計算
+  let cur = nGroups;
+  while (true) {
+    const pats = combinations23(cur);
+    if (!pats.length) break;
+    const pat = pats[0];
+    if (pat.length === 1) return pat[0];  // 決勝1グループのスロット数
+    cur = pat.length;
+  }
+  return 2;
+}
+
+function switchDupMode(mode) {
+  var pm = document.getElementById('patterns-multi');
+  var ps = document.getElementById('patterns-single');
+  var countLabel = document.getElementById('r1-count-label');
+  var nLabel = document.getElementById('r1-n-label');
+  var nHeader = document.getElementById('r1-n-header');
+  var nMulti = {{ target_n_multi | default(0) }};
+  var nSingle = {{ target_n_single | default(0) }};
+  if (mode === 'single') {
+    if (pm) pm.style.display = 'none';
+    if (ps) ps.style.display = '';
+    if (countLabel) countLabel.textContent = nSingle;
+    if (nLabel) nLabel.textContent = nSingle;
+    if (nHeader) nHeader.textContent = nSingle;
+  } else {
+    if (pm) pm.style.display = '';
+    if (ps) ps.style.display = 'none';
+    if (countLabel) countLabel.textContent = nMulti;
+    if (nLabel) nLabel.textContent = nMulti;
+    if (nHeader) nHeader.textContent = nMulti;
+  }
+  // パターン選択をリセット
+  var dm = document.getElementById('dup-mode-input');
+  if (dm) dm.value = mode;
+  document.querySelectorAll('.round1-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('r1-pattern').value = '';
+  document.getElementById('next-rounds').innerHTML = '';
+  document.getElementById('generate-form').style.display = 'none';
+}
+
+function selectR1(btn, pat, nGroups) {
+  document.querySelectorAll('.round1-btn').forEach(b => {
+    b.style.background = ''; b.style.borderColor = '';
+  });
+  btn.style.background = '#eaf4fb'; btn.style.borderColor = '#2980b9';
+  document.getElementById('r1-pattern').value = pat;
+
+  // R2以降の選択UIをリセット
+  document.getElementById('next-rounds').innerHTML = '';
+  document.getElementById('generate-form').style.display = 'none';
+  selectedPatterns = [pat.split(',').map(Number)];
+
+  // R2へ（R1の勝者数 = R1グループ数 + シード数のみ）
+  // スーパーシードはR3から参加するため seededCount にはシード(seeded=1)のみ含む
+  buildNextRound(nGroups + seededCount, 2);
+}
+
+function updateBracketModeUI(semiGroups) {
+  // semiGroups: 最終ラウンドのグループ数 = 決勝参加人数
+  // 3グループ準決勝 → 決勝3名
+  // 2グループ準決勝 → 決勝2名（+revival or 3位決定）
+  // 1グループ or 0 → 形式選択不要（そのラウンドが決勝）
+  const canSemi3 = semiGroups === 3;
+  const canSemi2 = semiGroups === 2;
+
+  const modeSelect = document.getElementById('bracket-mode-select');
+  if (!modeSelect) return;
+
+  const l3 = document.getElementById('mode-label-semi3');
+  const lr = document.getElementById('mode-label-revival');
+  const lt = document.getElementById('mode-label-third');
+  l3.style.display = 'none';
+  lr.style.display = 'none';
+  lt.style.display = 'none';
+
+  let showAny = false;
+
+  if (canSemi3) {
+    l3.style.display = 'flex';
+    showAny = true;
+  }
+  if (canSemi2) {
+    lr.style.display = 'flex';
+    lt.style.display = 'flex';
+    showAny = true;
+  }
+
+  modeSelect.style.display = showAny ? 'block' : 'none';
+
+  // 既にvisibleなラジオがcheckedならそのまま（ユーザーが選んだ値を尊重）
+  const checkedNow = modeSelect.querySelector('input[type=radio]:checked');
+  const checkedVisible = checkedNow &&
+    checkedNow.closest('label').style.display !== 'none';
+
+  if (!checkedVisible) {
+    // DB値が反映されたラジオを優先、なければthird_place → semi_3group → revival の順
+    const priority = canSemi2
+      ? ['third_place', 'semi_3group', 'revival']
+      : ['semi_3group', 'third_place', 'revival'];
+    for (const val of priority) {
+      const radio = modeSelect.querySelector(`input[value="${val}"]`);
+      if (radio && radio.closest('label').style.display !== 'none') {
+        radio.checked = true;
+        break;
+      }
+    }
+  }
+}
+
+function roundLabel(roundNo, totalRounds) {
+  // totalRounds: 決勝含む全normalラウンド数
+  // diff = totalRounds - roundNo で決勝からの距離
+  // ただし確定前は総ラウンド数不明なので、後ろから数える方式をfinalizePatterns側で処理
+  return `ラウンド${roundNo}`;
+}
+
+function buildNextRound(nWinners, roundNo) {
+  const container = document.getElementById('next-rounds');
+
+  // 1名以下 or 1グループしか作れない = 準決勝として選ばせず確定へ
+  if (nWinners <= 1) {
+    finalizePatterns(nWinners);
+    return;
+  }
+
+  const pats = combinations23(nWinners);
+  if (!pats.length) {
+    finalizePatterns(nWinners);
+    return;
+  }
+
+  // 全パターンが「1グループ」しかない = 決勝そのもの = 準決勝選択不要 → 確定へ
+  const multiGroupPats = pats.filter(p => p.length >= 2);
+  if (multiGroupPats.length === 0) {
+    finalizePatterns(nWinners);
+    return;
+  }
+
+  const div = document.createElement('div');
+  div.id = `round-${roundNo}`;
+  div.style.marginBottom = '12px';
+
+  // シード／スーパーシードが合流するラウンドを、サマリーと同じ色の枠で囲む
+  if (roundNo === 2 && seededCount > 0) {
+    div.style.border = '2px solid #f39c12';
+    div.style.borderRadius = '8px';
+    div.style.background = '#fffdf5';
+    div.style.padding = '10px';
+  } else if (roundNo === 3 && superSeededCount > 0) {
+    div.style.border = '2px solid #8e44ad';
+    div.style.borderRadius = '8px';
+    div.style.background = '#faf5fc';
+    div.style.padding = '10px';
+  }
+
+  const header = document.createElement('div');
+  header.id = `round-label-${roundNo}`;
+  header.style.cssText = 'font-size:13px;color:#636e72;font-weight:bold;margin-bottom:6px';
+  header.textContent = `ラウンド${roundNo}（${nWinners}名）`;
+  div.appendChild(header);
+
+  multiGroupPats.forEach(pat => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pattern-btn';
+    btn.style.margin = '4px';
+    btn.innerHTML =
+      pat.map(sz => `<span class="pat-sz" data-sz="${sz}" style="display:inline-block;background:${sz === 3 ? '#27ae60' : '#2980b9'};color:#fff;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold">${sz}名</span>`).join('') +
+      `<span style="color:#636e72;font-size:12px;margin-left:6px">${pat.length}グループ</span>`;
+
+    btn.onclick = () => {
+      div.querySelectorAll('button').forEach(b => { b.style.background = ''; b.style.borderColor = ''; });
+      btn.style.background = '#eaf4fb'; btn.style.borderColor = '#2980b9';
+
+      selectedPatterns = selectedPatterns.slice(0, roundNo - 1);
+      selectedPatterns.push(pat);
+
+      // 後続ラウンドをクリア
+      for (let r = roundNo + 1; document.getElementById(`round-${r}`); r++) {
+        document.getElementById(`round-${r}`).remove();
+      }
+      document.getElementById('generate-form').style.display = 'none';
+      document.getElementById('bracket-mode-select').style.display = 'none';
+
+      // このパターンの勝者数が次のラウンドへ
+      // R2→R3の場合はスーパーシードを加算
+      var nextN = pat.length;
+      if (roundNo === 2 && superSeededCount > 0) nextN += superSeededCount;
+      const nextPats = combinations23(nextN).filter(p => p.length >= 2);
+      if (nextPats.length === 0 || nextN <= 1) {
+        finalizePatterns(nextN); // 決勝参加人数を渡す
+      } else {
+        buildNextRound(nextN, roundNo + 1);
+      }
+    };
+    div.appendChild(btn);
+  });
+
+  container.appendChild(div);
+
+  // 準決勝構成・モードに応じて裏トーナメントの可否/復活先・ラベルを更新
+  updateLosersAvailability();
+
+  // デフォルト: ①3グループがあればそれ、なければ最初
+  const defaultPat = multiGroupPats.find(p => p.length === 3) || multiGroupPats[0];
+  const defaultIdx = multiGroupPats.indexOf(defaultPat);
+  const defaultBtn = div.querySelectorAll('button')[defaultIdx];
+  if (multiGroupPats.length === 1) {
+    setTimeout(() => div.querySelectorAll('button')[0].click(), 0);
+  } else {
+    if (defaultBtn) setTimeout(() => defaultBtn.click(), 0);
+  }
+}
+
+function finalizePatterns(nFinalSlots) {
+  // nFinalSlots: 決勝参加人数（buildNextRoundから渡される）
+  const total = selectedPatterns.length; // 全ラウンド数（決勝前まで）
+
+  // 各ラウンドのラベルを決勝からの距離で付与
+  selectedPatterns.forEach((pat, i) => {
+    const rno = i + 1;
+    const el = document.getElementById(`round-label-${rno}`);
+    if (!el) return;
+
+    let nW;
+    let countLabel; // 内訳付きの人数表示文字列
+
+    if (rno === 1) {
+      nW = pat.reduce((s,v)=>s+v, 0);
+      countLabel = `${nW}名`;
+    } else if (rno === 2) {
+      const prevWinners = selectedPatterns[0].length;
+      nW = prevWinners + seededCount;
+      countLabel = seededCount > 0
+        ? `${prevWinners}名＋シード${seededCount}名`
+        : `${nW}名`;
+    } else if (rno === 3) {
+      const prevWinners = selectedPatterns[i - 1].length;
+      nW = prevWinners + superSeededCount;
+      countLabel = superSeededCount > 0
+        ? `${prevWinners}名＋スーパーシード${superSeededCount}名`
+        : `${nW}名`;
+    } else {
+      nW = selectedPatterns[i - 1].length;
+      countLabel = `${nW}名`;
+    }
+
+    // 決勝からの距離: diff = total - i (i=0始まり、iが最大=準決勝)
+    const diff = total - i; // 1=準決勝, 2=準々決勝, 3=...
+    let lbl;
+    if (diff === 1) lbl = '準決勝';
+    else if (diff === 2) lbl = '準々決勝';
+    else if (diff === 3) lbl = '準々々決勝';
+    else lbl = `R=決勝-${diff}`;
+    el.textContent = `${lbl}（${countLabel}）`;
+  });
+
+  // 決勝参加人数で準決勝形式UIを更新
+  // nFinalSlots が渡されていればそれを使い、なければ最終ラウンドのグループ数
+  const lastPat = selectedPatterns[selectedPatterns.length - 1];
+  const semiGroups = (typeof nFinalSlots === 'number' && nFinalSlots > 0)
+    ? nFinalSlots
+    : (lastPat ? lastPat.length : 0);
+  updateBracketModeUI(semiGroups);
+
+  document.getElementById('all-patterns').value = selectedPatterns.map(p => p.join(',')).join('|');
+  document.getElementById('generate-form').style.display = 'block';
+  // 準決勝構成・モードに応じて裏トーナメントの可否/復活先を制御
+  updateLosersAvailability();
+}
+
+// ===== none qualifying_type: シード・スーパーシード設定 =====
+async function toggleSeedNone(entryId, tid, level) {
+  const seedBtn  = document.getElementById(`sbtn-seed-${entryId}`);
+  const superBtn = document.getElementById(`sbtn-super-${entryId}`);
+  const row      = document.getElementById(`frow-${entryId}`);
+
+  // disabledのボタンは無視
+  if (level === 1 && seedBtn  && seedBtn.disabled)  return;
+  if (level === 2 && superBtn && superBtn.disabled)  return;
+
+  // 現在の状態を取得
+  const curSeed  = seedBtn.classList.contains('active-seed');
+  const curSuper = superBtn.classList.contains('active-super');
+
+  // トグル判定（同じボタンを押したらOFF、違うボタンはON）
+  let next = level;
+  if (level === 1 && curSeed)  next = 0;
+  if (level === 2 && curSuper) next = 0;
+
+  // API呼び出し
+  const form = new FormData();
+  form.append('seeded', next);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/set-seeded/${entryId}`, {
+      method: 'POST', body: form
+    });
+    if (!res.ok) { console.error('seed update failed'); return; }
+  } catch(e) { console.error(e); return; }
+
+  // UIを更新
+  seedBtn.classList.remove('active-seed');
+  superBtn.classList.remove('active-super');
+  if (row) {
+    row.style.borderColor = '';
+    row.style.background = '';
+  }
+  if (next === 1) {
+    seedBtn.classList.add('active-seed');
+    if (row) { row.style.borderColor = '#f39c12'; row.style.background = '#fff3cd'; }
+  } else if (next === 2) {
+    superBtn.classList.add('active-super');
+    if (row) { row.style.borderColor = '#8e44ad'; row.style.background = '#f5eef8'; }
+  }
+
+  // サマリー更新
+  updateSeedSummary(tid);
+}
+
+function updateSeedSummary(tid) {
+  const totalFinalists = parseInt(document.getElementById('total-finalists-count')?.dataset.count || '0');
+  let seedCount = 0, superCount = 0;
+  document.querySelectorAll('[id^="sbtn-seed-"]').forEach(btn => {
+    if (btn.classList.contains('active-seed')) seedCount++;
+  });
+  document.querySelectorAll('[id^="sbtn-super-"]').forEach(btn => {
+    if (btn.classList.contains('active-super')) superCount++;
+  });
+  const normalCount = totalFinalists - seedCount - superCount;
+
+  const summaryEl = document.getElementById('seed-summary-content');
+  const warnEl    = document.getElementById('seed-validity-warn');
+  if (!summaryEl) return;
+
+  // ── ラウンド成立チェック ──────────────────────────────────
+  // R1: normalCount人を2・3で割れるグループ数
+  const r1Pats = combinations_2_3_js(normalCount);
+  const r1Groups = r1Pats.length > 0 ? r1Pats[0].length : 0; // 最小グループ数で判定
+
+  // R1が1グループ以下 → シード設定不可（R1が決勝になる）
+  const canSeed      = r1Groups >= 2;
+  // R2グループ数 = R1グループ数 + シード数 → combinations_2_3 で何グループ作れるか
+  const r2Total      = r1Groups + seedCount;
+  const r2Pats       = combinations_2_3_js(r2Total);
+  const r2Groups     = r2Pats.length > 0 ? r2Pats[0].length : (r2Total >= 2 ? 1 : 0);
+  // R2が1グループ以下 → スーパーシード設定不可（R2が決勝になる）
+  const canSuperSeed = r2Groups >= 2;
+
+  // ── ボタンのdisable制御 ──────────────────────────────────
+  document.querySelectorAll('[id^="sbtn-seed-"]').forEach(btn => {
+    if (!canSeed) {
+      btn.disabled = true;
+      btn.style.opacity = '0.35';
+      btn.style.cursor  = 'not-allowed';
+      btn.title = 'R1が1グループのためシード設定不可';
+    } else {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      btn.style.cursor  = '';
+      btn.title = 'シード権（R1免除）〇';
+    }
+  });
+  document.querySelectorAll('[id^="sbtn-super-"]').forEach(btn => {
+    if (!canSuperSeed) {
+      btn.disabled = true;
+      btn.style.opacity = '0.35';
+      btn.style.cursor  = 'not-allowed';
+      btn.title = 'R2が1グループのためスーパーシード設定不可';
+    } else {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      btn.style.cursor  = '';
+      btn.title = 'スーパーシード権（R1・R2免除）◎';
+    }
+  });
+
+  // ── サマリー表示 ──────────────────────────────────────────
+  let warn = '';
+
+  if (seedCount === 0 && superCount === 0) {
+    summaryEl.innerHTML = '<span style="color:#636e72">シード権未設定</span>';
+    warnEl.style.display = 'none';
+    // ボタンdisableの更新は継続
+    seededCount = 0; superSeededCount = 0;
+    updatePatternButtons(normalCount, 0, 0);
+    return;
+  }
+
+  // 設定済みシード・スーパーシードの成立チェック
+  if (seedCount > 0 && !canSeed) {
+    warn = `⚠️ R1が${r1Groups}グループのためシードを設定できません（R1は2グループ以上必要）`;
+  } else if (superCount > 0 && !canSuperSeed) {
+    warn = `⚠️ R2が${r2Groups}グループのためスーパーシードを設定できません（R2は2グループ以上必要）`;
+  }
+
+  let html = '';
+  if (normalCount > 0) html += `<span style="margin-right:12px">⬛ 通常 <strong>${normalCount}名</strong>（R1から）</span>`;
+  if (seedCount > 0)   html += `<span style="margin-right:12px;color:#d68910">〇 シード <strong>${seedCount}名</strong>（R2から）</span>`;
+  if (superCount > 0)  html += `<span style="color:#8e44ad">◎ スーパーシード <strong>${superCount}名</strong>（R3から）</span>`;
+
+  html += '<div style="margin-top:8px;font-size:13px;color:#636e72">';
+  html += `R1：通常${normalCount}名（${r1Groups}グループ）`;
+  if (seedCount > 0) html += ` → R2：R1勝者+シード${seedCount}名（${r2Groups}グループ）`;
+  if (superCount > 0) {
+    const r3Total  = r2Groups + superCount;
+    const r3Pats   = combinations_2_3_js(r3Total);
+    const r3Groups = r3Pats.length > 0 ? r3Pats[0].length : (r3Total >= 2 ? 1 : 0);
+    html += ` → R3：R2勝者+スーパーシード${superCount}名（${r3Groups}グループ）`;
+  }
+  html += '</div>';
+
+  summaryEl.innerHTML = html;
+
+  if (warn) {
+    warnEl.textContent = warn;
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  // シード数が変わったらパターンボタンと人数ラベルを再生成
+  seededCount = seedCount;
+  superSeededCount = superCount;
+  updatePatternButtons(normalCount, seedCount, superCount);
+}
+
+// ── パターンボタン動的再生成 ──────────────────────────────
+function combinations_2_3_js(n) {
+  // nをすべて2・3の組み合わせで分割するパターン一覧を返す
+  var results = [];
+  // 3がk個、2が(n-3k)/2個
+  var maxK = Math.floor(n / 3);
+  for (var k = maxK; k >= 0; k--) {
+    var rem = n - 3 * k;
+    if (rem >= 0 && rem % 2 === 0) {
+      var twos = rem / 2;
+      var pat = [];
+      for (var i = 0; i < k;    i++) pat.push(3);
+      for (var i = 0; i < twos; i++) pat.push(2);
+      if (pat.length > 0) results.push(pat);
+    }
+  }
+  return results;
+}
+
+function updatePatternButtons(normalCount, seedCount, superCount) {
+  // patterns-multi と patterns-single を再生成
+  var pmDiv = document.getElementById('patterns-multi');
+  var psDiv = document.getElementById('patterns-single');
+  var countLabel  = document.getElementById('r1-count-label');
+  var nLabel      = document.getElementById('r1-n-label');
+  var nHeader     = document.getElementById('r1-n-header');
+
+  if (!pmDiv) return;
+
+  // ラベル更新
+  var hasSeed = (seedCount + superCount) > 0;
+  var dispN = hasSeed ? normalCount : (normalCount + seedCount + superCount);
+  if (countLabel) countLabel.textContent = dispN;
+  if (nLabel)     nLabel.textContent     = dispN;
+  if (nHeader)    nHeader.textContent    = dispN;
+
+  // パターン生成
+  var pats = combinations_2_3_js(normalCount);
+
+  function makeBtns(pats, container) {
+    container.innerHTML = '';
+    pats.forEach(function(pat) {
+      var patStr = pat.join(',');
+      var nG = pat.length;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pattern-btn round1-btn';
+      btn.dataset.pat = patStr;
+      btn.dataset.n   = nG;
+      btn.onclick = function() { selectR1(btn, patStr, nG); };
+      // ボタン内のバッジ
+      pat.forEach(function(n) {
+        var badge = document.createElement('span');
+        badge.style.cssText = 'display:inline-block;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold;color:#fff;background:' + (n === 3 ? '#27ae60' : '#2980b9');
+        badge.textContent = n + '名';
+        btn.appendChild(badge);
+      });
+      var grpSpan = document.createElement('span');
+      grpSpan.style = 'color:#636e72;font-size:12px;margin-left:6px';
+      grpSpan.textContent = nG + 'グループ';
+      btn.appendChild(grpSpan);
+      container.appendChild(btn);
+    });
+  }
+
+  makeBtns(pats, pmDiv);
+  // single も同じパターン（シード除外版）で更新
+  if (psDiv) makeBtns(pats, psDiv);
+
+  // generate-form をリセット
+  document.getElementById('generate-form').style.display = 'none';
+  document.getElementById('next-rounds').innerHTML = '';
+}
+
+async function toggleSeed(entryId, tid) {
+  const btn = document.getElementById(`stbtn-${entryId}`) || document.querySelector(`[id^="stbtn-${entryId}-"]`);
+  if (!btn) { console.error('seed toggle button not found:', entryId); return; }
+  const isSeeded = btn.classList.contains('seeded');
+  const next = isSeeded ? 0 : 1;
+  const form = new FormData();
+  form.append('seeded', next);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/set-seeded/${entryId}`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) {
+      sessionStorage.setItem('bracketScrollY', window.scrollY);
+      setTimeout(() => location.reload(), 200);
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function toggleHtSeed(entryId, heatNo, tid) {
+  const btn = document.getElementById(`stbtn-${entryId}-${heatNo}`);
+  const isSeeded = btn.classList.contains('seeded');
+  const next = isSeeded ? 0 : 1;
+  const form = new FormData();
+  form.append('seeded', next);
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/bracket/set-ht-seeded/${entryId}/${heatNo}`, { method:'POST', body:form });
+    const data = await res.json();
+    if (data.ok) {
+      sessionStorage.setItem('bracketScrollY', window.scrollY);
+      setTimeout(() => location.reload(), 200);
+    }
+  } catch(e) { console.error(e); }
+}
+// リロード後のスクロール位置復元：ブラケット図は非同期で後から読み込まれ、
+// レイアウト(initWithRetry)も~300msで高さを確定する。早く復元すると短いページで
+// 下端（決勝カード）へ飛ぶため、loadBracket完了後に複数回当てて確実に戻す。
+if ('scrollRestoration' in history) { try { history.scrollRestoration = 'manual'; } catch(e) {} }
+window.restoreBracketScroll = function() {
+  const savedY = sessionStorage.getItem('bracketScrollY');
+  if (savedY === null) return;
+  sessionStorage.removeItem('bracketScrollY');
+  const y = parseInt(savedY) || 0;
+  [0, 120, 360, 600].forEach(function(d){ setTimeout(function(){ window.scrollTo(0, y); }, d); });
+};
+
+// ── トーナメント表 画像出力 ──────────────────────────────
+function exportBracketImage() {
+  const container = document.getElementById('bracket-html-container');
+  if (!container) { alert('トーナメント表が見つかりません'); return; }
+
+  function doCapture() {
+    const btn = document.querySelector('[onclick="exportBracketImage()"]');
+    if (btn) { btn.textContent = '⏳ 出力中...'; btn.disabled = true; }
+
+    html2canvas(container, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      scrollX: 0,
+      scrollY: 0,
+      width: container.scrollWidth,
+      height: container.scrollHeight,
+      windowWidth: container.scrollWidth + 40,
+      logging: false,
+    }).then(function(canvas) {
+      const link = document.createElement('a');
+      const now = new Date();
+      const ts = now.getFullYear() +
+                 ('0'+(now.getMonth()+1)).slice(-2) +
+                 ('0'+now.getDate()).slice(-2) + '_' +
+                 ('0'+now.getHours()).slice(-2) +
+                 ('0'+now.getMinutes()).slice(-2);
+      link.download = 'tournament_' + ts + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      if (btn) { btn.textContent = '📷 画像出力'; btn.disabled = false; }
+    }).catch(function(e) {
+      console.error(e);
+      alert('画像出力に失敗しました');
+      if (btn) { btn.textContent = '📷 画像出力'; btn.disabled = false; }
+    });
+  }
+
+  if (window.html2canvas) {
+    doCapture();
+  } else {
+    const s = document.createElement('script');
+    s.src = '/static/js/html2canvas.min.js';
+    s.onload = doCapture;
+    s.onerror = function() { alert('画像生成ライブラリ（html2canvas）の読み込みに失敗しました。'); };
+    document.head.appendChild(s);
+  }
+}
+
+// ページ初期化
+updateSeedSummary({{ t.id if t is defined else 0 }});
+</script>
+{% endif %}
+
+{% if has_final_result %}
+<script>
+{# 決勝の最終順位（rank→name）を算出 #}
+{% set podium = {} %}
+{% for gd in (final_groups or []) %}{% if gd.ranks %}{% for slot in gd.slots %}{% if slot.slot_id in gd.ranks %}{% if podium.update({gd.ranks[slot.slot_id]: slot.name}) %}{% endif %}{% endif %}{% endfor %}{% endif %}{% endfor %}
+const POST_VARS = {
+  '{race_name}':  {{ t.name | tojson }},
+  '{regulation}': {{ (t.regulation or '') | tojson }},
+  '{date}':       {{ (t.date or '') | tojson }},
+  '{rank1}':      {{ (podium.get(1,'')) | tojson }},
+  '{rank2}':      {{ (podium.get(2,'')) | tojson }},
+  '{rank3}':      {{ (podium.get(3,'')) | tojson }},
+};
+const POST_TEMPLATES = {{ post_templates | tojson if post_templates else '[]' }};
+function applyVars(body){ let txt=body; for(const [k,v] of Object.entries(POST_VARS)){ txt=txt.replaceAll(k,v); } return txt; }
+function postToX(idx){ if(!POST_TEMPLATES[idx]) return; const text=applyVars(POST_TEMPLATES[idx].body);
+  window.open('https://twitter.com/intent/tweet?text='+encodeURIComponent(text),'_blank','width=600,height=500'); }
+function postToXDefault(){ const text=['🏁【レース結果】'+POST_VARS['{race_name}'],'','🥇 1位：'+POST_VARS['{rank1}'],'🥈 2位：'+POST_VARS['{rank2}'],'🥉 3位：'+POST_VARS['{rank3}'],'','#ミニ四駆'].join('\n');
+  window.open('https://twitter.com/intent/tweet?text='+encodeURIComponent(text),'_blank','width=600,height=500'); }
+function togglePostMenu(){ const m=document.getElementById('postMenu'); if(m) m.style.display=(m.style.display==='none'?'block':'none'); }
+document.addEventListener('click',function(e){ const m=document.getElementById('postMenu'); if(m && !m.parentElement.contains(e.target)) m.style.display='none'; });
+</script>
+{% endif %}
+{% endblock %}

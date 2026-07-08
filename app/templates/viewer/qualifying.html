@@ -1,0 +1,999 @@
+{% extends "viewer/base.html" %}
+{% block title %}{% if is_none_roundrobin %}決勝{% else %}予選{% endif %} - {{ t.name }}{% endblock %}
+{% block nav_subtitle %}
+  <span style="font-size:11px;color:#7f8c8d;margin-left:6px">
+    {% if is_none_roundrobin %}決勝管理（総当たり）
+    {% elif qualifying_type == 'roundrobin' %}予選（総当たり）
+    {% elif qualifying_type == 'heat_roundrobin' %}予選（ヒート制総当たり）
+    {% elif qualifying_type == 'heat_tournament' %}予選（ヒートトーナメント）
+    {% elif qualifying_type == 'point' %}予選（ポイント制）
+    {% else %}予選{% endif %}
+  </span>
+{% endblock %}
+
+{% block extra_style %}
+.schedule-table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
+.schedule-table th:first-child,.schedule-table td:first-child{width:30px}
+.schedule-table th{background:#1e3a5f;padding:8px 12px;text-align:left;color:#9fb3c8;font-size:12px;font-weight:normal}
+.schedule-table tr.race-row{transition:background .2s}
+.schedule-table tr.done{background:#0d2014}
+.schedule-table td{padding:8px 12px}
+/* 薄い枠で全セルを罫線表示（暗背景でも見えるライトグレー） */
+.schedule-table th,.schedule-table td{border:1px solid rgba(255,255,255,.16)}
+.heat-no{color:#7f8c8d;font-weight:bold;font-size:13px}
+.lane-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
+.racer-cell{display:flex;align-items:center;font-size:15px;font-weight:bold;min-width:0}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:bold;line-height:1;margin-left:6px;flex-shrink:0}
+.rr-name{flex:1;min-width:0;line-height:1.25;overflow-wrap:anywhere}
+.status-done{color:#27ae60;font-size:12px;font-weight:bold}
+.status-pending{color:#7f8c8d;font-size:12px}
+
+/* 順位表 */
+.standings-table{width:100%;border-collapse:collapse}
+.standings-table th{background:#1e3a5f;padding:8px 12px;text-align:left;font-size:12px;color:#7f8c8d;font-weight:normal}
+.standings-table td{padding:10px 12px;border-bottom:1px solid #2c3e50;font-size:15px}
+.standings-table tr:first-child td{background:#1a2a10}
+.rank-col{font-size:20px;font-weight:bold;width:40px}
+.adv-yes{color:#27ae60;font-weight:bold}
+.adv-no{color:#e74c3c}
+
+/* 勝敗表 */
+.wl-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+.wl-table th{background:#1e3a5f;padding:4px 2px;text-align:center;color:#7f8c8d;font-weight:normal;font-size:12px}
+.wl-table th.wl-th-vert{writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;height:72px;vertical-align:bottom;padding-bottom:6px;width:28px}
+.wl-table td{padding:5px 4px;text-align:center;border:1px solid #1a2535;font-weight:bold;font-size:14px}
+.wl-table td.wl-name{text-align:left;font-size:12px;color:#ecf0f1;background:#0f1923;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wl-td-self{background:#1a2535;color:#3d5166}
+.wl-td-w{background:#0d2a14;color:#27ae60}
+.wl-td-l{background:#2a0d0d;color:#e74c3c}
+.wl-td-none{background:#0f1923;color:#3d5166}
+.v-cols{display:grid;grid-template-columns:1fr 200px;gap:16px;align-items:start}.v-cols.single{grid-template-columns:1fr}
+@media(max-width:900px){.v-cols{grid-template-columns:1fr}}
+/* ヒート制総当たり：グループ内「レーススケジュール｜星取表」。スマホ(<=900px)では縦積み（スケジュールの下に星取表） */
+.hr-grp-cols{display:grid;grid-template-columns:3fr 2fr;gap:0}
+.hr-grp-cols>.hr-sched{border-right:1px solid #1e3a5f}
+@media(max-width:900px){.hr-grp-cols{grid-template-columns:1fr}.hr-grp-cols>.hr-sched{border-right:none;border-bottom:1px solid #1e3a5f}}
+@media(max-width:600px){
+  .schedule-table{font-size:12px}
+  .schedule-table th,.schedule-table td{padding:4px 6px}
+  .group-card{min-width:120px;padding:8px 10px}
+  .standings-table{font-size:12px}
+}
+/* エントリー縮小 */
+.entry-sm{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #1e2d3d;font-size:12px}
+/* グループカード大きく */
+.group-card{background:#0f1923;border:1px solid #2c3e50;border-radius:8px;padding:12px 16px;min-width:160px;flex:1}
+.group-card-title{font-size:12px;color:#7f8c8d;margin-bottom:8px;font-weight:bold}
+.group-slot{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:16px}
+.group-slot-no{color:#7f8c8d;width:20px;text-align:right;font-size:12px}
+/* スケジュール未生成時のエントリーカード（即決勝トーナメントと同デザイン） */
+.q-entry-grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:auto;gap:8px;width:100%}
+.q-entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.q-entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
+.q-entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+/* 参加者向けhtml用の標準エントリーカード（bracket.htmlと同じクラス名）。
+   実際の名前14px/読み仮名10px・横並びはpublic_html.pyのCSS注入で上書きされる。
+   レーサー選択プルダウンのJSが.entry-nameを参照するため、この命名が必須。 */
+.entry-grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:auto;gap:8px;width:100%}
+.entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
+.entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+{% endblock %}
+
+{% macro finalist_block() %}
+{% if (finalists_list or ht_advanced_by_heat) and all_heats_complete %}
+{% set rank_c = {1:'#d4a017',2:'#636e72',3:'#cd7f32'} %}
+<div style="background:#0d1e12;border:2px solid #27ae60;border-radius:8px;padding:12px 16px;margin-bottom:12px">
+  <div style="font-size:13px;font-weight:bold;color:#27ae60;margin-bottom:10px">
+    🏆 決勝進出レーサー {% if ht_advanced_by_heat %}{{ ht_advanced_by_heat | sum(attribute='advanced') | length if false else (ht_advanced_by_heat | map(attribute='advanced') | sum(start=[]) | list | length) }}{% else %}{{ finalists_list|length }}{% endif %}名
+  </div>
+  {% if ht_advanced_by_heat %}
+  {# ヒートトーナメント：ヒートごとの列表示 #}
+  <div style="display:flex;{% if is_public_html %}flex-direction:column;gap:10px{% else %}flex-wrap:wrap;gap:16px{% endif %}">
+    {% for heat in ht_advanced_by_heat %}
+    <div style="{% if is_public_html %}width:100%{% else %}flex:1;min-width:160px{% endif %}">
+      <div style="font-size:12px;font-weight:bold;color:#2980b9;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid #2980b9">
+        ヒート {{ heat.heat_no }}
+      </div>
+      {% for a in heat.advanced %}
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+                  background:#0f2a1e;border:1px solid #27ae60;border-radius:6px;margin-bottom:4px">
+        <span style="font-weight:bold;font-size:13px;min-width:28px;color:{{ rank_c.get(a.overall_rank,'#7f8c8d') }}">{{ a.overall_rank }}位</span>
+        <span style="font-weight:bold;font-size:14px;flex:1;color:#ecf0f1">{{ a.name }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {# その他の予選形式：横並び #}
+  <div style="display:flex;flex-wrap:wrap;gap:6px">
+    {% for f in finalists_list %}
+    <div style="background:#0f2a1a;border:1px solid #27ae60;border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:8px;min-width:140px">
+      <span style="color:#27ae60;font-weight:bold;font-size:13px;width:24px">{{ f.qual_rank }}位</span>
+      <span style="font-weight:bold;font-size:14px;color:#ecf0f1">{{ f.name }}</span>
+      {% if f.seeded %}<span style="color:#d4a017;font-size:13px" title="シード">★</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+{% if not is_public_html %}
+{% raw %}
+<button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
+<style>
+#m4-reload-btn{position:fixed;bottom:16px;right:16px;z-index:99999;width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;padding:0;background:#f39c12;color:#fff;opacity:.62;font-size:24px;line-height:44px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;transition:opacity .15s}
+#m4-reload-btn:hover,#m4-reload-btn:active{opacity:.95}
+@media print{ #m4-reload-btn{display:none} }
+</style>
+<script>
+function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
+</script>
+{% endraw %}
+{% endif %}
+{% if is_public_html and entries %}
+{# レーサー選択フィルタ用：このレースの全エントリーを隠しDOMに常時出力する。
+   collectNames() が .entry-name を収集するため、予選スキャン（走行）や受付の状況に関わらず、
+   このレースにエントリーしている全員がフィルタの選択肢に並ぶ。 #}
+<div id="m4-all-entrants" style="display:none" aria-hidden="true">
+  {% for e in entries %}<div class="entry-card"><span class="entry-name">{{ e.name }}</span>{% if e.yomi %}<span class="entry-yomi">{{ e.yomi }}</span>{% endif %}</div>{% endfor %}
+</div>
+{% endif %}
+{# 表示コース列。総当たり系（roundrobin/heat_roundrobin/none_roundrobin）は
+   1vs1 のため 1コース・2コースの2列。ポイント制・ヒートトーナメント等は3列。 #}
+{% set course_cols = [1, 2] if (is_none_roundrobin or qualifying_type in ['roundrobin', 'heat_roundrobin']) else [1, 2, 3] %}
+{% if t %}
+<div style="background:#1a2535;border-bottom:1px solid #2c3e50;padding:12px 20px;font-size:18px;font-weight:bold;color:#ecf0f1">
+  {{ t.name }}
+  <span style="color:#7f8c8d;font-weight:normal;margin-left:8px;font-size:14px">{% if is_none_roundrobin %}決勝{% else %}予選{% endif %}</span>
+</div>
+{% if qualifying_type in ('heat_roundrobin','heat_tournament') %}
+<div style="background:#0f1923;border-bottom:1px solid #2c3e50;padding:8px 20px;font-size:13px;color:#ecf0f1;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+  <span style="color:#3498db;font-weight:bold">{% if qualifying_type == 'heat_tournament' %}ヒート（トーナメント）{% elif qualifying_type == 'heat_roundrobin' %}ヒート（総当たり）{% endif %}</span>
+  {% if qualifying_type == 'heat_roundrobin' %}
+  <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
+  <span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>
+  <span>⬆️ グループ上位 <strong>{{ t.qual_group_advance }}</strong> 名</span>
+  {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_final_advance }}</strong>名）</span>{% else %}<span style="color:#7f8c8d">🏁 ヒート決勝なし</span>{% endif %}
+  {% elif qualifying_type == 'heat_tournament' %}
+  <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
+  {% if (t.qual_group_count or 1) > 1 %}<span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>{% endif %}
+  <span>⬆️ 各ヒート上位 <strong>{{ t.qual_group_advance or t.qual_heat_advance }}</strong> 名</span>
+  {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_advance }}</strong>名）</span>{% endif %}
+  {% endif %}
+  <span>🎯 勝ち抜け方式 {% if t.qual_heat_exclude %}<strong style="color:#e67e22">ON</strong>{% else %}<strong style="color:#95a5a6">OFF</strong>{% endif %}</span>
+  {% if finalists %}<span style="color:#5aa3d6;font-weight:bold">→ 決勝進出予定 {{ finalists }} 名</span>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% set lc = ['#2980b9','#e74c3c','#27ae60'] %}
+{% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
+
+{% if qualifying_type == "heat_tournament" %}
+{# ── 決勝進出レーサー（各ヒートのヒート決勝の本戦進出者、完了ヒートから順次）── #}
+{% set hf_done_heats = [] %}
+{% for hd in ht_heats_data %}
+  {% if ht_has_heat_final %}{% if hd.hf_done and hd.hf_advancers %}{% if hf_done_heats.append(hd) %}{% endif %}{% endif %}
+  {% else %}{% if hd.advanced %}{% if hf_done_heats.append(hd) %}{% endif %}{% endif %}{% endif %}
+{% endfor %}
+{% set medal = {1:'🏆',2:'🥈',3:'🥉'} %}
+{% set rkc = {1:'#d4a017',2:'#aab',3:'#cd7f32',4:'#95a5a6'} %}
+<div style="margin:{% if is_public_html %}6px 8px 8px{% else %}12px 16px 16px{% endif %};background:#0d1e12;border:2px solid #27ae60;border-radius:10px;overflow:hidden">
+  <div style="background:#0f2a1e;padding:{% if is_public_html %}6px 16px{% else %}12px 16px{% endif %};font-size:{% if is_public_html %}14px{% else %}16px{% endif %};font-weight:bold;color:#27ae60;border-bottom:1px solid #27ae60">
+    🏆 決勝進出レーサー{% if is_public_html %}<br>{% endif %}（各ヒート上位{{ ht_heat_advance }}名 × {{ ht_heat_count }}ヒート＝{{ ht_heat_advance * ht_heat_count }}名）
+  </div>
+  <div style="padding:{% if is_public_html %}7px 16px{% else %}14px 16px{% endif %}">
+    {% if not hf_done_heats %}
+    <div style="font-size:14px;color:#7f8c8d">まだ決勝進出者は決まっていません。{% if ht_has_heat_final %}各ヒートのヒート決勝が完了すると表示されます。{% else %}各ヒート・グループの順位が確定すると表示されます。{% endif %}</div>
+    {% else %}
+    <div style="display:flex;{% if is_public_html %}flex-direction:column;gap:12px{% else %}flex-wrap:wrap;gap:24px{% endif %}">
+      {% for hd in hf_done_heats %}
+      {% set adv_list = (hd.hf_advancers | selectattr('is_advance') | list) if ht_has_heat_final else hd.advanced %}
+      <div style="{% if is_public_html %}width:100%{% else %}flex:1;min-width:220px{% endif %}">
+        <div style="font-size:14px;font-weight:bold;color:#5aa3d6;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #2980b9">ヒート {{ hd.heat_no }}</div>
+        {% for a in adv_list %}
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;margin-bottom:6px;border-radius:8px;
+                    {% if a.is_advance or not ht_has_heat_final %}background:#13351f;border:2px solid {{ rkc.get(a.rank,'#555') }}{% else %}background:#16202c;border:1px solid #2c3e50{% endif %}">
+          <span style="font-size:17px;min-width:1.6em">{{ medal.get(a.rank,'') }}</span>
+          <span style="font-weight:bold;font-size:14px;min-width:3.2em;color:{{ rkc.get(a.rank,'#9aa') }}">第{{ a.rank }}位</span>
+          <span style="font-weight:bold;font-size:17px;flex:1;color:#ecf0f1">{{ a.name }}</span>
+          {% if a.is_advance or not ht_has_heat_final %}<span style="font-size:12px;color:#27ae60;font-weight:bold">✔ 決勝進出</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% elif not is_none_roundrobin and qualifying_type != "heat_roundrobin" %}{{ finalist_block() }}{% endif %}
+
+{% if qualifying_type == "heat_roundrobin" and all_heats_complete %}
+{% set completed_heats = hr_heats_data | selectattr("is_complete") | list %}
+<div style="margin:12px 16px 16px;background:#0d1923;border:2px solid #27ae60;border-radius:10px;overflow:hidden">
+  <div style="background:#0f2a1e;padding:10px 16px;font-size:14px;font-weight:bold;color:#27ae60;border-bottom:1px solid #27ae60">
+    🏆 決勝進出レーサー　<span style="font-size:12px;color:#7f8c8d;font-weight:normal">各ヒート・グループ上位通過者</span>
+  </div>
+  <div style="padding:12px 16px;display:flex;flex-direction:column;gap:16px">
+    {% for hd in completed_heats %}
+    <div style="border:1px solid #1e3a5f;border-radius:8px;overflow:hidden">
+      <div style="background:#162840;padding:7px 14px;font-size:13px;font-weight:bold;color:#2980b9;border-bottom:1px solid #1e3a5f">
+        第{{ hd.heat_no }}ヒート
+      </div>
+      <div style="display:flex;padding:10px 12px;gap:0">
+        {% set ns = namespace(group_nos=[]) %}
+        {% for slot in hd.advanced %}{% if slot.group_no not in ns.group_nos %}{% set ns.group_nos = ns.group_nos + [slot.group_no] %}{% endif %}{% endfor %}
+        {% for gno in ns.group_nos %}
+        {% set group_slots = hd.advanced | selectattr('group_no','equalto',gno) | list %}
+        <div style="flex:1;{% if not loop.last %}border-right:1px solid #1e3a5f;padding-right:12px;margin-right:12px{% endif %}">
+          {% if gno > 0 %}
+          <div style="font-size:11px;color:#7f8c8d;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #1e3a5f">グループ{{ gno }}</div>
+          {% endif %}
+          {% for slot in group_slots %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1a2535">
+            <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %};min-width:28px">{{ slot.rank }}位</span>
+            <span style="font-size:14px;font-weight:bold;color:#ecf0f1">{{ slot.name }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# none_roundrobin: 表彰台をページ上部に表示 #}
+{% if is_none_roundrobin and is_confirmed_nr and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
+<div style="margin:12px 16px 16px;padding:24px 16px;background:linear-gradient(135deg,#0d1e12,#0f2318);border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};border-radius:12px;text-align:center">
+  <div style="font-size:14px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-bottom:16px">
+    {% if is_confirmed_nr %}🏆 最終結果{% else %}🏅 現在の順位{% endif %}
+  </div>
+  <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px">
+    <div style="text-align:center">
+      <div style="font-size:26px">🥈</div>
+      <div style="font-size:12px;color:#7f8c8d;margin-top:4px">2位</div>
+      <div style="font-size:16px;font-weight:bold;color:#ecf0f1;margin-top:6px">{{ top3_nr[1].name if top3_nr[1] else '—' }}</div>
+      {% if top3_nr[1] %}<div style="font-size:12px;color:#7f8c8d;margin-top:2px">{{ top3_nr[1].wins }}勝{{ top3_nr[1].losses }}負</div>{% endif %}
+    </div>
+    <div style="text-align:center;padding:14px 24px;background:#1a3a20;border-radius:12px;border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %}">
+      <div style="font-size:36px">🥇</div>
+      <div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:4px">1位</div>
+      <div style="font-size:20px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:6px">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
+      {% if top3_nr[0] %}<div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:2px">{{ top3_nr[0].wins }}勝{{ top3_nr[0].losses }}負</div>{% endif %}
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:26px">🥉</div>
+      <div style="font-size:12px;color:#7f8c8d;margin-top:4px">3位</div>
+      <div style="font-size:16px;font-weight:bold;color:#ecf0f1;margin-top:6px">{{ top3_nr[2].name if top3_nr[2] else '—' }}</div>
+      {% if top3_nr[2] %}<div style="font-size:12px;color:#7f8c8d;margin-top:2px">{{ top3_nr[2].wins }}勝{{ top3_nr[2].losses }}負</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="v-cols{% if qualifying_type == 'heat_roundrobin' %} single{% endif %}">
+  <!-- 左：スケジュール -->
+  <div>
+    <div class="v-section">
+      <div class="v-section-title">🏁 レーススケジュール
+        <span style="font-size:14px;color:#7f8c8d;font-weight:normal">{% if qualifying_type == 'order' and order_round_mode == 'round' %}{{ heats | selectattr('round_no','equalto',order_current_round) | list | length }}{% elif qualifying_type == 'order_winner' %}{{ heats | selectattr('round_no','equalto',ow_stage_no) | list | length }}レース（{{ ow_stage_no }}次予選）{% else %}{{ heats|length }}レース{% endif %}</span>
+      </div>
+
+      {% if all_heats_complete %}
+      <div style="margin:6px 0 14px;padding:14px 16px;background:#0f2a1e;border:2px solid #27ae60;border-radius:8px;text-align:center;color:#27ae60;font-weight:bold;font-size:15px">
+        🏁 予選終了　決勝をお待ちください
+      </div>
+      {% endif %}
+
+      {% if qualifying_type == 'order_winner' %}
+      {# ── 並び順（勝ち抜け）：段階進捗・通過状況・待機列・走行中の組 ── #}
+      <div style="margin:6px 0 14px;padding:12px 14px;background:#f4ecf9;border:1px solid #e0cef0;border-radius:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <span style="font-weight:bold;font-size:15px;color:#6c3483">{{ ow_stage_no }}次予選{% if ow_is_last_stage %}（最終）{% endif %}</span>
+          <span style="font-size:12px;color:#7f8c8d">全{{ ow_stage_count }}段階</span>
+          {% if ow_stage_status == 'closed' %}
+          <span style="font-size:12px;padding:2px 10px;background:#c0392b;color:#fff;border-radius:10px;font-weight:bold">終了</span>
+          {% endif %}
+          <span style="margin-left:auto;font-size:14px;font-weight:bold;color:#2c3e50">
+            通過 <span style="color:#27ae60">{{ ow_passed }}</span> / {{ ow_advance_count }}名
+          </span>
+        </div>
+
+        {% if ow_stages|length > 1 %}
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">
+          {% for s in ow_stages %}
+          <span style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;
+                       {% if s.stage_no == ow_stage_no %}background:#8e44ad;color:#fff{% elif s.status=='closed' %}background:#d5f5e3;color:#1e8449{% else %}background:#eee;color:#95a5a6{% endif %}">
+            {{ s.stage_no }}次{% if s.status=='closed' %} ✓{% endif %}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if ow_pending %}
+        <div style="font-weight:bold;font-size:12px;color:#6c3483;margin-bottom:4px">⏳ 出走待ち（先着順）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+          {% for p in ow_pending %}
+          <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#fff;border:1px solid #e0cef0;border-radius:16px;font-size:13px;color:#1f2d3d;font-weight:bold">
+            <span style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;background:#8e44ad;color:#fff;border-radius:50%;font-size:11px;font-weight:bold">{{ loop.index }}</span>
+            {{ p.name }}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if ow_open_heats %}
+        <div style="font-weight:bold;font-size:12px;color:#6c3483;margin-bottom:4px">🏁 走行中</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+          {% for h in ow_open_heats %}
+          <span style="padding:4px 10px;background:#fff;border:1px solid #e0cef0;border-radius:16px;font-size:12px;color:#6c3483">
+            第{{ h.heat_no }}レース：{{ h.names|join('・') }}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if ow_passed_list %}
+        <div style="font-weight:bold;font-size:12px;color:#1e8449;margin-bottom:4px">✅ 通過者</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          {% for x in ow_passed_list %}
+          <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#eafaf1;border:1px solid #abebc6;border-radius:16px;font-size:13px;color:#1e8449;font-weight:bold">
+            <span style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:11px;font-weight:bold">{{ x.passed_seq }}</span>
+            {{ x.name }}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if not heats and not ht_rounds_data %}
+      {# スケジュール未生成 → エントリー一覧を大きく表示 #}
+      <div style="padding:24px 16px">
+        <div style="color:#7f8c8d;font-size:13px;margin-bottom:16px">組み合わせはまだ決定していません</div>
+        {% if is_public_html %}
+        {# 参加者向けhtml：標準のentry-card（public_html.pyのCSS注入で名前14px/読み仮名10px・横並び。レーサー選択プルダウンのJSも.entry-nameを参照） #}
+        <div class="entry-grid">
+          {% for e in entries %}
+          <div class="entry-card">
+            <span class="entry-name">{{ e.name }}</span>
+            {% if e.yomi %}<span class="entry-yomi">{{ e.yomi }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        {# view（FHD）：即決勝トーナメントと同じエントリーカード（名前24px・読み仮名12px） #}
+        <div class="q-entry-grid">
+          {% for e in entries %}
+          <div class="q-entry-card">
+            <span class="q-entry-name">{{ e.name }}</span>
+            {% if e.yomi %}<span class="q-entry-yomi">{{ e.yomi }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% elif qualifying_type == 'heat_tournament' %}
+      {# ヒートトーナメント：グループ別にトーナメント表＋結果を表示 #}
+      {% set rank_colors = {1:'#d4a017',2:'#636e72',3:'#cd7f32'} %}
+
+      {% for heat_data in ht_heats_data %}
+      {% set hno = heat_data.heat_no %}
+      <div style="margin-bottom:{% if not loop.last %}32px{% else %}8px{% endif %};border:3px solid #1a3a5f;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.4)">
+        <div id="heat-{{ hno }}" style="background:linear-gradient(90deg,#1a3a5f,#2c5a8f);padding:12px 18px;font-weight:bold;font-size:20px;color:#fff;letter-spacing:1px">
+          🏁 ヒート {{ hno }}
+          {% if heat_data.hf_done %}
+          {% set hf_in = heat_data.hf_advancers | selectattr('is_advance') | list %}
+          <span style="font-size:14px;font-weight:normal;margin-left:14px;color:#7ee0a0">
+            🏆 決勝進出：{% for a in hf_in %}{{ a.name }}{% if not loop.last %}・{% endif %}{% endfor %}
+          </span>
+          {% endif %}
+        </div>
+        <div style="background:#131e2b;padding:14px">
+          {% if not heat_data.sections and not heat_data.heat_final_section %}
+          <div style="color:#7f8c8d;font-size:14px;padding:10px;text-align:center">⏳ このヒートはまだ生成されていません</div>
+          {% endif %}
+          {% for sec in heat_data.sections %}
+          {% if heat_data.group_count > 1 %}
+          <div style="font-size:18px;font-weight:bold;color:#7fb3d3;margin:{% if not loop.first %}18px{% else %}0{% endif %} 0 8px;padding:6px 14px;background:#0d1e30;border-left:5px solid #2980b9;border-radius:4px;display:block;width:100%;box-sizing:border-box">
+            ヒート{{ hno }}　グループ{{ sec.label }}
+            {% set sec_adv = heat_data.advanced | selectattr('section_no','equalto',sec.section_no) | list %}
+            {% if sec_adv %}
+            <span style="font-size:13px;font-weight:normal;color:#27ae60;margin-left:8px">
+              ✅ {% for a in sec_adv %}{{ a.name }}{% if not loop.last %}・{% endif %}{% endfor %}
+            </span>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div id="viewer-ht-bracket-{{ hno }}-{{ sec.section_no }}" style="background:#131e2b;overflow-x:auto;width:100%;padding:4px;margin-bottom:8px">
+            <div style="color:#7f8c8d;font-size:12px;padding:8px">読み込み中...</div>
+          </div>
+          {% if not loop.last %}<hr style="border:none;border-top:1px solid #2c3e50;margin:12px 0">{% endif %}
+          {% endfor %}
+
+          {# ── ヒート決勝進出者（各グループ上位n名）一覧 ── #}
+          {% if heat_data.group_advancers %}
+          <div style="margin-top:16px;padding:12px 16px;background:#0d2436;border:1px solid #2980b9;border-radius:8px">
+            <div style="font-size:15px;font-weight:bold;color:#7fb3d3;margin-bottom:10px">🎫 ヒート決勝進出者（各グループ上位{{ ht_group_advance }}名）</div>
+            <div style="display:flex;gap:32px;flex-wrap:wrap">
+              {% for sec_no, advs in heat_data.group_advancers.items() %}
+              <div style="min-width:180px">
+                <div style="font-size:14px;font-weight:bold;color:#5aa3d6;margin-bottom:6px">グループ{{ "ABCDEFG"[sec_no-1] }}</div>
+                {% for a in advs %}
+                <div style="font-size:15px;padding:3px 0;color:#ecf0f1"><span style="display:inline-block;width:2.6em;color:#e8a33d;font-weight:bold">{{ a.rank }}位</span>{{ a.name }}</div>
+                {% endfor %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          {# ── ヒート決勝（各グループ優勝者によるトーナメント） ── #}
+          {% if heat_data.heat_final_section %}
+          <div style="margin-top:18px;border:2px solid #d4a017;border-radius:8px;overflow:hidden">
+            <div style="width:100%;box-sizing:border-box;background:linear-gradient(90deg,#5a4a10,#8a6f1a);padding:10px 16px;font-size:17px;font-weight:bold;color:#ffe9a0">
+              🏆 ヒート{{ hno }} 決勝
+              {% if heat_data.hf_done %}
+              {% set hf_in = heat_data.hf_advancers | selectattr('is_advance') | list %}
+              <span style="font-size:13px;font-weight:normal;color:#7ee0a0;margin-left:10px">
+                ✅ 進出：{% for a in hf_in %}{{ a.name }}{% if not loop.last %}・{% endif %}{% endfor %}
+              </span>
+              {% endif %}
+            </div>
+            <div id="viewer-ht-bracket-{{ hno }}-0" style="background:#131e2b;overflow-x:auto;width:100%;padding:8px">
+              <div style="color:#7f8c8d;font-size:12px;padding:8px">読み込み中...</div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      <script>
+      // コネクタ線
+      function getOffset_htv(el,ct){var x=0,y=0;while(el&&el!==ct){x+=el.offsetLeft-el.scrollLeft;y+=el.offsetTop-el.scrollTop;el=el.offsetParent;}return{x:x,y:y};}
+      function drawConnectors_htv(bh){
+        bh.querySelectorAll('.br-connector-svg').forEach(function(e){e.remove();});
+        var rs=Array.from(bh.querySelectorAll('.br-round'));if(rs.length<2)return;
+        var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+        svg.setAttribute('class','br-connector-svg');svg.style.cssText='position:absolute;top:0;left:0;pointer-events:none;overflow:visible;';
+        svg.style.width=bh.scrollWidth+'px';svg.style.height=bh.scrollHeight+'px';bh.style.position='relative';bh.appendChild(svg);
+        for(var ri=0;ri<rs.length-1;ri++){
+          var cg=Array.from(rs[ri].querySelectorAll('.br-group')),ng=Array.from(rs[ri+1].querySelectorAll('.br-group'));
+          if(!cg.length||!ng.length)continue;var ci2=0;
+          for(var ni=0;ni<ng.length;ni++){
+            var sc=ng[ni].querySelectorAll('.br-slot').length,cnt=Math.min(sc,cg.length-ci2);if(cnt<=0)continue;
+            var no2=getOffset_htv(ng[ni],bh),nmy=no2.y+ng[ni].offsetHeight/2,nx=no2.x,mYs=[],rx=0;
+            for(var ci=ci2;ci<ci2+cnt;ci++){var co2=getOffset_htv(cg[ci],bh),cy=co2.y+cg[ci].offsetHeight/2,cx=co2.x+cg[ci].offsetWidth;rx=Math.max(rx,cx);mYs.push(cy);var col=cg[ci].classList.contains('has-winner')?'#27ae60':'#adb5bd';line_htv(svg,cx,cy,cx+20,cy,col);}
+            var vx=rx+20,anyW=cg.slice(ci2,ci2+cnt).some(function(g){return g.classList.contains('has-winner');});var vc=anyW?'#27ae60':'#adb5bd';
+            if(mYs.length>1){var ty=Math.min.apply(null,mYs.concat([nmy])),by=Math.max.apply(null,mYs.concat([nmy]));line_htv(svg,vx,ty,vx,by,vc);line_htv(svg,vx,nmy,nx,nmy,vc);}
+            else{line_htv(svg,vx,mYs[0],nx,mYs[0],'#adb5bd');}
+            var nc=ng[ni].classList.contains('has-winner')?'#1e8449':'#adb5bd';line_htv(svg,nx-20,nmy,nx,nmy,nc);ci2+=cnt;
+          }
+        }
+      }
+      function line_htv(svg,x1,y1,x2,y2,c){var l=document.createElementNS('http://www.w3.org/2000/svg','line');l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);l.setAttribute('stroke',c);l.setAttribute('stroke-width','2');svg.appendChild(l);}
+
+      // ブラケットHTMLキャッシュ（差分があるときだけ更新）
+      var _htBracketCache = {};
+
+      function _updateBracket(c, html, afterLoad) {
+        var cid = c.id;
+        if (_htBracketCache[cid] === html) return; // 変化なし→更新しない
+        _htBracketCache[cid] = html;
+        c.innerHTML = html;
+        // レイアウト用スクリプトは未定義のときだけ1回実行（毎回はリーク）
+        if(!window._bracketDrawConnectors){
+          c.querySelectorAll('script').forEach(function(oldScript){
+            var s=document.createElement('script'); s.textContent=oldScript.textContent;
+            document.head.appendChild(s); document.head.removeChild(s);
+          });
+        }
+        setTimeout(function(){
+          if(window._bracketDrawConnectors) window._bracketDrawConnectors();
+          else c.querySelectorAll('.bracket-html').forEach(function(el){ drawConnectors_htv(el); });
+          if(afterLoad) afterLoad();
+        }, 200);
+      }
+
+      function loadHtBracket(tid, hno, afterLoad) {
+        fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?compact=2')
+          .then(function(r){return r.text();})
+          .then(function(html){
+            var c = document.getElementById('viewer-ht-bracket-'+hno);
+            if(c) _updateBracket(c, html, afterLoad);
+          }).catch(function(){});
+      }
+
+      function applyHtScroll() {
+        fetch('/view/host-state').then(function(r){return r.json();}).then(function(d){
+          if(d.scroll_to){
+            var el=document.getElementById(d.scroll_to);
+            if(el){
+              var pos = (d.scroll_to.indexOf('heat-')===0) ? 'start' : 'center';
+              // ロード時は瞬時に位置合わせ（先頭から滑るアニメーションを出さない）
+              el.scrollIntoView({behavior:'instant',block:pos});
+            }
+          }
+        }).catch(function(){});
+      }
+
+      function loadHtBracketSection(tid, hno, sec_no, afterLoad) {
+        var url = '/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?compact=2&section_no='+sec_no;
+        if(sec_no === 0) url += '&heat_final=1';
+        fetch(url).then(function(r){return r.text();}).then(function(html){
+          var c = document.getElementById('viewer-ht-bracket-'+hno+'-'+sec_no);
+          if(c) _updateBracket(c, html, afterLoad);
+        }).catch(function(){});
+      }
+
+      function reloadAllHtBrackets(tid, afterLoad) {
+        document.querySelectorAll('[id^="viewer-ht-bracket-"]').forEach(function(el){
+          var parts = el.id.split('-');
+          if(parts.length === 5){
+            var hno = parseInt(parts[3]), sec = parseInt(parts[4]);
+            if(!isNaN(hno)&&!isNaN(sec)) loadHtBracketSection(tid,hno,sec,afterLoad);
+          } else if(parts.length === 4){
+            var hno2 = parseInt(parts[3]);
+            if(!isNaN(hno2)) loadHtBracket(tid,hno2,afterLoad);
+          }
+        });
+      }
+      (function(){
+        var tid={{ tid }};
+        reloadAllHtBrackets(tid, applyHtScroll);
+      })();
+      setInterval(function(){ reloadAllHtBrackets({{ tid }}); }, 5000);
+      </script>
+
+    {% elif qualifying_type in ('point', 'order') %}
+        {% set round_nos = [] %}
+        {% for h in heats %}{% if h.round_no and h.round_no not in round_nos %}{% set _ = round_nos.append(h.round_no) %}{% endif %}{% endfor %}
+        {# 並び順（ポイント制）・ラウンド制は「現在のラウンドだけ」表示してHTMLの肥大を防ぐ #}
+        {% if qualifying_type == 'order' and order_round_mode == 'round' %}
+          {% set round_nos = round_nos | select('equalto', order_current_round) | list %}
+        {% else %}
+          {% set round_nos = round_nos | sort %}
+        {% endif %}
+        {% for rno in round_nos %}
+        {% if qualifying_type == 'order' and order_round_mode == 'round' %}
+        <div style="background:#16293f;border:1px solid #2980b9;border-radius:8px;padding:10px 14px;margin-bottom:8px;{% if not loop.first %}margin-top:12px{% endif %};display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:baseline;gap:6px">
+            <span style="font-size:12px;color:#7fb3d3;font-weight:bold">ラウンド</span>
+            <span style="font-size:26px;font-weight:bold;color:#fff;line-height:1">{{ rno }}</span>
+            <span style="font-size:14px;color:#5f7488">/ {{ order_round_count }}</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            {% for i in range(1, order_round_count + 1) %}
+            <span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:{% if i < rno %}#27ae60{% elif i == rno %}#3498db{% else %}#3d5166{% endif %}"></span>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:13px;color:#2980b9;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
+          予選 {{ rno }} 回目
+        </div>
+        {% endif %}
+        <table class="schedule-table">
+          <thead><tr><th>#</th><th>1コース</th><th>2コース</th><th>3コース</th></tr></thead>
+          <tbody>
+          {% for heat in heats if heat.round_no == rno %}
+          {% set lanes = heat_lanes.get(heat.id, []) %}
+          <tr id="heat-{{ heat.heat_no }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
+            <td class="heat-no">{{ heat.heat_no }}</td>
+            {% for col in [1,2,3] %}
+            {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
+            {% if ld %}{% set lane = ld[0] %}
+            <td>
+              <div class="racer-cell">
+                {# 総当たり系の○×は名前の左に配置。viewのみ18px bold、htmlは従来サイズ #}
+                {% if lane.win == 1 and is_rr_type %}
+                <span class="rank-badge" style="background:#27ae60;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">○</span>
+                {% elif lane.win == 0 and is_rr_type %}
+                <span class="rank-badge" style="background:#e74c3c;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">×</span>
+                {% endif %}
+                {% if lane.is_co %}
+                <span class="rank-badge" style="background:#333333;color:#FFFFFF;box-sizing:border-box;font-size:9px;margin-left:0;margin-right:2px">CO</span>
+                {% elif lane.rank %}
+                <span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>
+                {% endif %}
+                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
+              </div>
+            </td>
+            {% else %}<td style="color:#3d5166">—</td>{% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endfor %}
+      {% elif qualifying_type == 'heat_roundrobin' %}
+        {# ヒート制総当たり：ヒート×グループ単位で構成 #}
+        {% for heat_data in hr_heats_data %}
+        <div style="margin-bottom:32px">
+          {# ヒートヘッダー #}
+          <div id="heat-{{ heat_data.heat_no }}" style="background:#1a3a5f;padding:12px 18px;font-weight:bold;font-size:20px;color:#7fb3d3;border-radius:8px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+            🏁 ヒート {{ heat_data.heat_no }}
+          </div>
+
+          {% for grp in heat_data.groups %}
+          {# グループブロック #}
+          <div id="hr-group-{{ heat_data.heat_no }}-{{ grp.group_no }}" style="margin-bottom:20px;background:#0d1923;border:1px solid #1e3a5f;border-radius:8px;overflow:hidden">
+            <div style="background:#162840;padding:8px 16px;font-size:15px;font-weight:bold;color:#2980b9;border-bottom:1px solid #1e3a5f">
+              グループ {{ grp.group_no }}
+            </div>
+            <div class="hr-grp-cols">
+
+              {# 左：レーススケジュール #}
+              <div class="hr-sched" style="padding:10px 12px">
+                <div style="font-size:13px;color:#7f8c8d;margin-bottom:8px;letter-spacing:1px;font-weight:bold">レーススケジュール</div>
+                <table style="width:100%;border-collapse:collapse;font-size:16px">
+                  <thead>
+                    <tr style="color:#7f8c8d;font-size:11px">
+                      <th style="text-align:left;padding:3px 4px">#</th>
+                      {% set _hr_lc = {1:'#2980b9', 2:'#e74c3c', 3:'#27ae60'} %}
+                      {% for c in course_cols %}
+                      <th style="text-align:left;padding:3px 4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{ _hr_lc[c] }};margin-right:2px"></span>{{ c }}コース</th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% for heat in grp.heats %}
+                  {% set lanes = grp.lanes.get(heat.id, []) %}
+                  <tr id="heat-{{ heat.heat_no }}" style="border-top:1px solid #1a2535;{% if heat.status=='done' %}opacity:0.8{% endif %}">
+                    <td style="padding:6px 8px;color:#7f8c8d;font-size:15px;font-weight:bold">{{ heat.heat_no }}</td>
+                    {% for col in course_cols %}
+                    {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
+                    {% if ld %}{% set lane = ld[0] %}
+                    <td style="padding:4px">
+                      {# 総当たり系の○×は名前の左に配置。viewは正方形18px＋右10px、htmlは正方形12px＋右5px #}
+                      {% if lane.win == 1 %}<span style="background:#27ae60;color:#fff;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;{% if is_public_html %}font-size:12px;width:22px;height:22px;margin-right:5px;vertical-align:middle{% else %}font-size:18px;width:28px;height:28px;margin-right:10px;vertical-align:middle{% endif %}">○</span>
+                      {% elif lane.win == 0 %}<span style="background:#e74c3c;color:#fff;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;{% if is_public_html %}font-size:12px;width:22px;height:22px;margin-right:5px;vertical-align:middle{% else %}font-size:18px;width:28px;height:28px;margin-right:10px;vertical-align:middle{% endif %}">×</span>{% endif %}
+                      {% if is_public_html %}<span class="rr-name" style="color:#ecf0f1;font-size:18px;font-weight:bold">{{ lane.name }}</span>{% else %}<span style="color:#ecf0f1;font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
+                    </td>
+                    {% else %}<td style="padding:4px;color:#3d5166">—</td>{% endif %}
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              {# 右：星取表 #}
+              <div style="padding:10px 12px">
+                <div style="font-size:13px;color:#7f8c8d;margin-bottom:8px;letter-spacing:1px;font-weight:bold">星取表</div>
+                {% set entries_h = grp.hoshitori_entries %}
+                {% set matrix_h = grp.hoshitori_matrix %}
+                {% if entries_h %}
+                <table style="width:100%;border-collapse:collapse;font-size:14px">
+                  <thead>
+                    <tr>
+                      <th style="padding:3px 4px;color:#7f8c8d;text-align:left">順</th>
+                      <th style="padding:3px 4px;color:#7f8c8d;text-align:left">レーサー</th>
+                      {% for e in entries_h %}
+                      <th style="padding:2px 3px;color:#7f8c8d;text-align:center;writing-mode:vertical-rl;height:48px;font-size:10px">{{ e.name }}</th>
+                      {% endfor %}
+                      <th style="padding:3px 4px;color:#27ae60;text-align:center">勝</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% for st in grp.standings %}
+                  <tr style="border-top:1px solid #1a2535">
+                    <td style="padding:6px 8px;color:{% if st.rank==1 %}#d4a017{% elif st.rank==2 %}#888{% elif st.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %};font-weight:bold;font-size:15px">{{ st.rank }}</td>
+                    <td style="padding:6px 8px;color:#ecf0f1;font-weight:bold;font-size:15px;white-space:nowrap">{{ st.name }}</td>
+                    {% for e in entries_h %}
+                    {% set cell = matrix_h.get(st.name, {}).get(e.name, '—') %}
+                    <td style="text-align:center;padding:5px 4px;
+                      {% if cell == 'W' %}background:#0d2a14;color:#27ae60;font-weight:bold
+                      {% elif cell == 'L' %}background:#2a0d0d;color:#e74c3c
+                      {% elif cell == '—' and st.name == e.name %}background:#1a2535;color:#3d5166
+                      {% else %}color:#555{% endif %}">
+                      {% if cell == 'W' %}○{% elif cell == 'L' %}×{% elif st.name == e.name %}—{% else %}{% endif %}
+                    </td>
+                    {% endfor %}
+                    <td style="text-align:center;padding:4px;color:#27ae60;font-weight:bold">{{ st.wins }}</td>
+                  </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+                {% else %}
+                <div style="color:#555;font-size:12px;padding:8px 0">結果待ち</div>
+                {% endif %}
+              </div>
+
+            </div>{# end grid #}
+          </div>{# end group #}
+          {% endfor %}
+
+          {# このヒートの決勝進出者（ヒート決勝ありの場合のみ） #}
+          {% if t.qual_heat_final and heat_data.final_slots %}
+          {% set hf_adv = (t.qual_heat_advance or t.qual_heat_final_advance or 1) %}
+          {% set ranked_slots = heat_data.final_slots | selectattr('deciding_rank') | list | sort(attribute='deciding_rank') %}
+          {% if ranked_slots %}
+          <div style="margin-top:8px;background:#131e2b;border:1px solid #1e3a5f;border-radius:8px">
+            <div style="background:#1a3a5f;padding:7px 14px;font-size:13px;font-weight:bold;color:#7fb3d3;border-radius:7px 7px 0 0">
+              🏆 ヒート{{ heat_data.heat_no }} 決勝進出
+            </div>
+            <div style="padding:10px 14px;display:flex;flex-direction:column;gap:6px">
+              {% set rcolors = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
+              {% for slot in ranked_slots %}
+              <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;
+                          border:1px solid {% if slot.deciding_rank <= hf_adv %}#27ae60{% else %}#2c3e50{% endif %};
+                          border-radius:6px;background:{% if slot.deciding_rank <= hf_adv %}#0f2a1e{% else %}#1a2d3e{% endif %}">
+                <span style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;
+                             background:{{ rcolors.get(slot.deciding_rank, '#636e72') }};color:#fff">{{ slot.deciding_rank }}</span>
+                <span style="font-size:14px;font-weight:bold;color:{% if slot.deciding_rank <= hf_adv %}#27ae60{% else %}#ecf0f1{% endif %}">
+                  {{ slot.name }}
+                </span>
+                {% if slot.deciding_rank <= hf_adv %}
+                <span style="font-size:11px;color:#27ae60;margin-left:auto">✅ 決勝進出</span>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% endif %}
+
+        </div>{# end heat_data #}
+        {% endfor %}
+
+      {% else %}
+        {# その他：レース結果も表示 #}
+        <table class="schedule-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              {% set _rr_lc = {1:'#2980b9', 2:'#e74c3c', 3:'#27ae60'} %}
+              {% for c in course_cols %}
+              <th><span class="lane-dot" style="background:{{ _rr_lc[c] }};display:inline-block"></span>{{ c }}コース</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+          {% for heat in heats %}
+          {% set lanes = heat_lanes.get(heat.id, []) %}
+          <tr id="heat-{{ heat.heat_no }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
+            <td class="heat-no">{{ heat.heat_no }}</td>
+            {% for col in course_cols %}
+            {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
+            {% if ld %}{% set lane = ld[0] %}
+            <td>
+              <div class="racer-cell">
+                {# 総当たり系の○×は名前の左に配置。viewのみ18px bold、htmlは従来サイズ #}
+                {% if lane.win == 1 and is_rr_type %}
+                <span class="rank-badge" style="background:#27ae60;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">○</span>
+                {% elif lane.win == 0 and is_rr_type %}
+                <span class="rank-badge" style="background:#e74c3c;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">×</span>
+                {% endif %}
+                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
+                {% if lane.is_co %}
+                <span class="rank-badge" style="background:#e67e22;color:#fff">CO</span>
+                {% elif lane.rank %}
+                <span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff">
+                  {{ lane.rank }}位
+                </span>
+                {% endif %}
+              </div>
+            </td>
+            {% else %}<td style="color:#3d5166">—</td>{% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+
+    {# 出走待ち（先着順）：レーススケジュールと予選順位の間に、他セクションと同じ別枠で表示 #}
+    {% if qualifying_type == 'order' and order_status != 'closed' and order_pending %}
+    <div class="v-section">
+      <div class="v-section-title" style="font-size:15px">⏳ 出走待ち（先着順）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for p in order_pending %}
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#12283d;border:1px solid #2c3e50;border-radius:16px;font-size:13px;color:#ecf0f1;font-weight:bold">
+          <span style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;background:#2980b9;color:#fff;border-radius:50%;font-size:11px;font-weight:bold">{{ loop.index }}</span>
+          {{ p.name }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- 右：順位表＋エントリー -->
+  {% if qualifying_type != 'heat_roundrobin' %}
+  <div>
+    {% if standings %}
+    <div class="v-section">
+      <div class="v-section-title">📊 予選順位</div>
+      <table class="standings-table">
+        <thead>
+          <tr>
+            <th style="color:#555;font-weight:normal">#</th>
+            <th>順位</th><th>レーサー</th>
+            {% if is_none_roundrobin %}<th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th>
+            {% elif qualifying_type in ('heat_roundrobin','roundrobin') %}<th>勝</th>
+            {% else %}<th>Pt</th>{% if qualifying_type in ('point','order') %}<th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>{% endif %}{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in standings %}
+        <tr style="{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}">
+          <td style="color:#555;font-size:11px">{{ loop.index }}</td>
+          <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">
+            {{ s.rank }}
+          </td>
+          <td style="font-weight:bold;font-size:13px">{{ s.name }}</td>
+          <td>
+            {% if is_none_roundrobin %}
+            {{ s.wins }}
+            {% elif qualifying_type in ('heat_roundrobin', 'roundrobin') %}<span style="background:#2980b9;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:11px">{{ s.wins }}勝</span>
+            {% else %}<span style="background:#2980b9;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:11px">{{ s.total_points }}pt</span>{% endif %}
+          </td>
+          {% if is_none_roundrobin %}
+          <td style="color:#e74c3c">{{ s.losses }}</td>
+          {% endif %}
+          {% if qualifying_type in ('point', 'order') %}
+          <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.race_count or 0 }}</td>
+          <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.finish_count or 0 }}</td>
+          <td style="color:#7f8c8d;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if qualifying_type == "roundrobin" %}
+    <div class="v-section-title">🏆 順位</div>
+    {% endif %}
+
+    {% if win_matrix %}
+    <div class="v-section" style="margin-top:12px">
+      <div class="v-section-title">⚔️ 勝敗表</div>
+      <div style="overflow-x:auto">
+        <table class="wl-table">
+          <thead>
+            <tr>
+              <th style="width:90px"></th>
+              {% for r in win_matrix %}
+              <th class="wl-th-vert" title="{{ r.name }}">{{ r.name }}</th>
+              {% endfor %}
+              <th style="width:36px">勝</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for row in win_matrix %}
+          {% set wins = row.row | selectattr("result","equalto","W") | list | length %}
+          <tr>
+            <td class="wl-name" title="{{ row.name }}">{{ row.name }}</td>
+            {% for cell in row.row %}
+              {% if cell.result == "—" %}
+              <td class="wl-td-self">—</td>
+              {% elif cell.result == "W" %}
+              <td class="wl-td-w">○</td>
+              {% elif cell.result == "L" %}
+              <td class="wl-td-l">×</td>
+              {% else %}
+              <td class="wl-td-none"></td>
+              {% endif %}
+            {% endfor %}
+            <td style="color:#27ae60;font-weight:bold">{{ wins }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:#7f8c8d;padding:6px 4px">
+        <span style="color:#27ae60">○</span>=勝　<span style="color:#e74c3c">×</span>=負　縦軸が対象レーサー
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="v-section" style="position:sticky;top:8px">
+      <div style="font-size:13px;font-weight:bold;color:#7f8c8d;padding:8px 12px;border-bottom:1px solid #2c3e50">
+        👥 エントリー {{ entries|length }}名
+      </div>
+      <div style="max-height:80vh;overflow-y:auto">
+      {% for e in entries %}
+      <div class="entry-sm">
+        <span>{{ e.name }}</span>
+      </div>
+      {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}{# /heat_roundrobin右カラム #}
+</div>
+{% if qualifying_type != 'heat_tournament' and not is_none_roundrobin %}{{ finalist_block() }}{% endif %}
+{% endblock %}
+
+{% if qualifying_type == 'heat_roundrobin' %}
+<div style="margin-top:24px;background:#0d1923;border:1px solid #1e3a5f;border-radius:8px;overflow:hidden">
+  <div style="background:#162840;padding:8px 16px;font-size:13px;font-weight:bold;color:#7f8c8d;border-bottom:1px solid #1e3a5f">
+    👥 エントリー {{ entries|length }}名
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px">
+    {% for e in entries %}
+    <div style="background:#0f1923;border:1px solid #2c3e50;border-radius:6px;padding:6px 14px;font-size:14px;font-weight:bold;color:#ecf0f1">
+      {{ e.name }}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if qualifying_type == 'heat_roundrobin' and hr_heats_data and t.qual_heat_final %}
+<script>
+(function() {
+  var TID = {{ tid }};
+  var heatNos = [{% for hd in hr_heats_data %}{{ hd.heat_no }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+  var _hrBracketCache = {};
+  function loadHrBracket(hno) {
+    fetch('/admin/tournaments/' + TID + '/qualifying/heat-roundrobin/' + hno + '/bracket/html')
+      .then(function(r){ return r.text(); })
+      .then(function(html) {
+        var el = document.getElementById('viewer-hr-bracket-' + hno);
+        if (!el) return;
+        var content = (html && html.trim().length > 50) ? html : '<div style="color:#555;font-size:12px;padding:8px">トーナメント未開始</div>';
+        if (_hrBracketCache[hno] === content) return;
+        _hrBracketCache[hno] = content;
+        el.innerHTML = content;
+        el.querySelectorAll('script').forEach(function(os) {
+          var ns = document.createElement('script');
+          ns.textContent = os.textContent;
+          document.head.appendChild(ns);
+          document.head.removeChild(ns);
+        });
+        setTimeout(function(){ if (window._bracketDrawConnectors) window._bracketDrawConnectors(); }, 200);
+      }).catch(function() {});
+  }
+
+  heatNos.forEach(loadHrBracket);
+  setInterval(function(){ heatNos.forEach(loadHrBracket); }, 5000);
+})();
+</script>
+{% endif %}
+
+{% block auto_refresh %}
+(function() {
+  // ページロード時刻（これより古いscroll_atは無視）
+  var pageLoadAt = Date.now();
+  var lastScrollAt = pageLoadAt;
+  var lastReloadAt = pageLoadAt;
+
+  function pollHostState() {
+    fetch('/view/host-state').then(function(r){ return r.json(); }).then(function(d) {
+      // スクロール追従：ページロード後に発生したscroll_atのみ処理
+      var scrollAtMs = d.scroll_at ? d.scroll_at * 1000 : 0;
+      if (d.scroll_to && scrollAtMs > lastScrollAt) {
+        lastScrollAt = scrollAtMs;
+        var el = document.getElementById(d.scroll_to);
+        if (el) {
+          var pos = (d.scroll_to.indexOf('heat-')===0) ? 'start' : 'center';
+          el.scrollIntoView({behavior: 'smooth', block: pos});
+        }
+      }
+      // 10秒ごとにリロード
+      if (Date.now() - lastReloadAt > 10000) {
+        location.reload();
+      }
+    }).catch(function() {
+      if (Date.now() - lastReloadAt > 10000) {
+        location.reload();
+      }
+    });
+  }
+
+  setInterval(pollHostState, 1500);
+})();
+{% endblock %}

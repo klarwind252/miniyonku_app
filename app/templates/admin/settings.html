@@ -1,0 +1,1301 @@
+{% extends "admin/base.html" %}
+{% block title %}設定 - Mini4WD Race System{% endblock %}
+
+{% block extra_head %}
+<style>
+/* この設定画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn {
+  height: 40px !important;
+  min-height: 40px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.settings-menu {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.1);
+  overflow: hidden;
+  position: sticky;
+  top: 20px;
+}
+.settings-menu-label {
+  padding: 10px 16px 6px;
+  font-size: 11px;
+  color: #95a5a6;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  font-weight: bold;
+  border-bottom: 1px solid #f0f0f0;
+  background: #f8f9fa;
+}
+.settings-menu-item {
+  display: block;
+  padding: 11px 16px;
+  color: #2c3e50;
+  font-size: 14px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid #f0f0f0;
+  text-decoration: none;
+  transition: background .12s;
+  white-space: nowrap;
+}
+.settings-menu-item:last-child { border-bottom: none; }
+.settings-menu-item:hover { background: #f8f9fa; text-decoration: none; }
+.settings-menu-item.active {
+  background: #eaf4fb;
+  border-left-color: #2980b9;
+  color: #1a6a9a;
+  font-weight: bold;
+}
+
+/* セクション */
+.settings-section { margin-bottom: 24px; }
+.section-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #7f8c8d;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+/* レギュレーションタグ */
+.reg-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.reg-tag {
+  background: #eaf4fb;
+  color: #1a6a9a;
+  border: 1px solid #aed6f1;
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.reg-tag-del {
+  background: none;
+  border: none;
+  color: #7fb3d3;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+}
+.reg-tag-del:hover { color: #e74c3c; }
+.reg-add-area {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.reg-add-area input {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+/* テンプレート行 */
+.template-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 10px;
+}
+.template-row:last-of-type { border-bottom: none; }
+.template-row:hover { background: #f8f9fa; }
+.template-icon { font-size: 18px; flex-shrink: 0; }
+.template-info { flex: 1; min-width: 0; }
+.template-name { font-size: 14px; font-weight: bold; color: #2c3e50; }
+.template-meta { font-size: 12px; color: #95a5a6; margin-top: 2px; }
+.template-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.coming-soon {
+  display: inline-block;
+  font-size: 11px;
+  background: #f0f0f0;
+  color: #95a5a6;
+  border-radius: 10px;
+  padding: 2px 10px;
+  margin-left: 8px;
+  font-weight: normal;
+  vertical-align: middle;
+}
+.add-row {
+  padding: 12px 16px;
+  border-top: 1px dashed #dee2e6;
+}
+
+/* モーダル */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+  width: 420px;
+  max-width: 95vw;
+  overflow: hidden;
+  animation: modal-in .15s ease;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.modal-header {
+  padding: 16px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 16px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #95a5a6;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+}
+.modal-close:hover { color: #2c3e50; }
+.modal-body { padding: 20px; }
+.modal-footer {
+  padding: 12px 20px;
+  background: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title" style="display:flex;align-items:center;margin-bottom:24px">
+  <div>
+    <h1>⚙️ 設定</h1>
+    <p>アプリの各種設定・テンプレートを管理します</p>
+  </div>
+</div>
+
+<div class="settings-layout">
+
+  <!-- 左サイドメニュー（縦並び） -->
+  <nav class="settings-menu">
+    <div class="settings-menu-label">設定項目</div>
+    <a href="#defaults"  class="settings-menu-item" id="menu-defaults">🎛️ 初期値</a>
+    <a href="#pricing"   class="settings-menu-item" id="menu-pricing">💴 利用料金</a>
+    <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 賞状テンプレート</a>
+    <a href="#card"      class="settings-menu-item" id="menu-card">📇 QR/バーコード印刷テンプレート</a>
+    <a href="#post"      class="settings-menu-item" id="menu-post">𝕏 ポストテンプレート</a>
+    <a href="#public-html" class="settings-menu-item" id="menu-public-html">🌐 参加者向け配信</a>
+    {% if IS_CLOUD %}
+    <a href="#pwa" class="settings-menu-item" id="menu-pwa">📱 ホーム画面アイコン</a>
+    {% endif %}
+    {% if IS_CLOUD and is_default_store %}
+    <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 複数店舗展開</a>
+    {% endif %}
+  </nav>
+
+  <!-- 右コンテンツ -->
+  <div>
+
+    <!-- 初期値 -->
+    <div class="settings-section" id="defaults">
+      <div class="section-title">🎛️ 初期値設定</div>
+      <div class="card">
+        <div class="card-header">レギュレーション</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:#636e72;margin-bottom:12px">
+            レース作成・編集時の選択肢として表示されます。<br>
+            タグをクリックして削除、下のフォームから追加できます。
+          </p>
+
+          <!-- タグ表示 -->
+          <div class="reg-tags" id="regTags">
+            {% for reg in regulations %}
+            <span class="reg-tag" data-val="{{ reg }}">
+              {{ reg }}
+              <button class="reg-tag-del" onclick="removeReg(this)" title="削除">×</button>
+            </span>
+            {% endfor %}
+          </div>
+
+          <!-- 追加フォーム -->
+          <div class="reg-add-area">
+            <input type="text" id="regInput" placeholder="レギュレーション名を入力（Enterで追加）"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();addReg();}">
+            <button class="btn btn-primary btn-sm" onclick="addReg()">＋ 追加</button>
+          </div>
+
+          <!-- 保存フォーム（hiddenで送る） -->
+          <form id="regForm" method="post" action="/admin/settings/regulations/save" style="margin-top:16px">
+            <input type="hidden" name="regulations_text" id="regHidden">
+            <button type="button" class="btn btn-success" onclick="saveRegs()">💾 保存</button>
+            <span id="regSaved" style="display:none;margin-left:10px;color:#27ae60;font-size:13px">✅ 保存しました</span>
+          </form>
+        </div>
+      </div>
+
+      <!-- 予選形式の初期値 -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">予選形式の初期値</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:#636e72;margin-bottom:12px">
+            新規レース作成・編集時の予選形式の初期選択値を設定します。
+          </p>
+          <form method="post" action="/admin/settings/default-qualifying/save" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <select name="default_qualifying" style="padding:7px 12px;border:1px solid #ced4da;border-radius:6px;font-size:14px;min-width:220px">
+              {% for val, label in qualifying_labels.items() %}
+              <option value="{{ val }}" {% if val == default_qualifying %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-success">💾 保存</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- 利用料金 -->
+    <div class="settings-section" id="pricing">
+      <div class="section-title">💴 利用料金設定</div>
+      <form method="post" action="/admin/settings/pricing/save">
+        <div class="card">
+          <div class="card-body">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e9ecef">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:bold;font-size:15px">
+                <input type="checkbox" name="pricing_enabled" id="pricingEnabled"
+                       {% if pricing_enabled %}checked{% endif %}
+                       onchange="togglePricingForm()"
+                       style="width:18px;height:18px;accent-color:#0078d4">
+                料金計算を使用する
+              </label>
+            </div>
+            <div id="pricingForm" style="{% if not pricing_enabled %}opacity:0.4;pointer-events:none{% endif %}">
+              <div style="margin-bottom:20px;display:flex;align-items:center;gap:12px">
+                <label style="font-size:13px;font-weight:bold;white-space:nowrap">時間超過の端数処理：</label>
+                <select name="pricing_rounding" style="padding:6px 12px;border:1px solid #ced4da;border-radius:6px;font-size:13px">
+                  <option value="floor" {% if pricing_rounding == 'floor' %}selected{% endif %}>切り捨て</option>
+                  <option value="ceil"  {% if pricing_rounding == 'ceil'  %}selected{% endif %}>繰り上げ</option>
+                </select>
+              </div>
+              {% set days   = [("weekday","平日"),("saturday","土曜"),("sunday","日曜"),("holiday","祝日"),("special","特別")] %}
+              {% set ptypes = [("hour","1時間"),("free","フリー"),("race","レース")] %}
+              {% set groups = [("adult","大人"),("child","子供")] %}
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead>
+                    <tr style="background:#f4f5f7">
+                      <th style="padding:8px 12px;border:1px solid #dee2e6;text-align:left">区分</th>
+                      <th style="padding:8px 12px;border:1px solid #dee2e6;text-align:left">種別</th>
+                      {% for _,dlabel in days %}
+                      <th style="padding:8px 12px;border:1px solid #dee2e6;text-align:center">{{ dlabel }}</th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for gkey, glabel in groups %}
+                    {% for tkey, tlabel in ptypes %}
+                    <tr style="{% if loop.index == 1 %}border-top:2px solid #ced4da{% endif %}">
+                      {% if loop.index == 1 %}
+                      <td rowspan="3" style="padding:8px 12px;border:1px solid #dee2e6;font-weight:bold;vertical-align:middle;text-align:center;background:#f8f9fa">{{ glabel }}</td>
+                      {% endif %}
+                      <td style="padding:8px 12px;border:1px solid #dee2e6;white-space:nowrap;color:#636e72">{{ tlabel }}</td>
+                      {% for dkey, _ in days %}
+                      <td style="padding:6px 8px;border:1px solid #dee2e6;text-align:center">
+                        <div style="display:flex;align-items:center;justify-content:center;gap:4px">
+                          <input type="number" name="pricing_{{ gkey }}_{{ dkey }}_{{ tkey }}"
+                                 value="{{ pricing_table.get(gkey, {}).get(dkey, {}).get(tkey, '') }}"
+                                 placeholder="—" min="0" step="1"
+                                 style="width:72px;padding:4px 6px;border:1px solid #ced4da;border-radius:4px;font-size:13px;text-align:right">
+                          <span style="font-size:12px;color:#636e72">円</span>
+                        </div>
+                      </td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <button type="submit" class="btn btn-success">💾 保存</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 賞状テンプレート -->
+    <div class="settings-section" id="cert">
+      <div class="section-title">🏅 賞状テンプレート</div>
+      <div class="card">
+        {% if cert_templates %}
+          {% for tpl in cert_templates %}
+          <div class="template-row">
+            <div class="template-icon">📄</div>
+            <div class="template-info">
+              <div class="template-name">{{ tpl.name }}</div>
+              <div class="template-meta">{{ tpl.paper_size }} / {% if tpl.orientation == 'portrait' %}縦{% else %}横{% endif %} — 更新: {{ tpl.updated_at[:10] if tpl.updated_at else '—' }}</div>
+            </div>
+            <div class="template-actions">
+              <a href="/admin/settings/certificate-templates/{{ tpl.id }}/edit"
+                 class="btn btn-primary btn-sm">✏️ 編集</a>
+              <button class="btn btn-danger btn-sm"
+                      onclick="confirmDelete({{ tpl.id }}, '{{ tpl.name }}')">🗑️ 削除</button>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="padding:24px 16px;color:#95a5a6;font-size:14px;text-align:center">
+            テンプレートがありません。「新規追加」から作成してください。
+          </div>
+        {% endif %}
+        <div class="add-row">
+          <a href="/admin/settings/certificate-templates/new"
+             class="btn btn-success btn-sm">＋ 新規追加</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR/バーコード印刷テンプレート -->
+    <div class="settings-section" id="card">
+      <div class="section-title">📇 QR/バーコード印刷テンプレート</div>
+      <div class="card">
+        {% if card_templates %}
+          {% for tpl in card_templates %}
+          <div class="template-row">
+            <div class="template-icon">📇</div>
+            <div class="template-info">
+              <div class="template-name">{{ tpl.name }}</div>
+              <div class="template-meta">{% if tpl.card_size == 'official' %}公式大会(95×90){% else %}名刺(91×55){% endif %} / {% if tpl.code_type == 'code128' %}バーコード{% else %}QR{% endif %} — 更新: {{ tpl.updated_at[:10] if tpl.updated_at else '—' }}</div>
+            </div>
+            <div class="template-actions">
+              <a href="/admin/settings/card-templates/{{ tpl.id }}/edit"
+                 class="btn btn-primary btn-sm">✏️ 編集</a>
+              <button class="btn btn-danger btn-sm"
+                      onclick="confirmDeleteCard({{ tpl.id }}, '{{ tpl.name }}')">🗑️ 削除</button>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="padding:24px 16px;color:#95a5a6;font-size:14px;text-align:center">
+            テンプレートがありません。「新規追加」から作成してください。
+          </div>
+        {% endif %}
+        <div class="add-row">
+          <a href="/admin/settings/card-templates/new"
+             class="btn btn-success btn-sm">＋ 新規追加</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ポスト -->
+    <div class="settings-section" id="post">
+      <div class="section-title">📋 ポストテンプレート</div>
+      <div class="card">
+        <div class="card-body">
+          <p style="font-size:13px;color:#636e72;margin-bottom:12px">
+            各レースの「𝕏 ポスト」ボタンを押したときの投稿文テンプレートです。<br>
+            変数は自動的に置き換えられます：
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px">{race_name}</code>
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px">{regulation}</code>
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px">{date}</code>
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px">{rank1}</code>
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px">{rank2}</code>
+            <code style="background:#eaf4fb;color:#1a6a9a;padding:2px 6px;border-radius:4px;font-size:12px">{rank3}</code>
+          </p>
+          <form method="post" action="/admin/settings/post-template/save">
+            <input type="hidden" name="template_id" value="{{ post_template_id or '' }}">
+            <textarea name="body" rows="12"
+                      style="width:100%;font-family:monospace;font-size:13px;line-height:1.7;padding:10px 12px;border:1px solid #ced4da;border-radius:6px;box-sizing:border-box;resize:vertical"
+                      placeholder="投稿する本文を入力...">{{ post_template_body }}</textarea>
+            <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+              <button type="submit" class="btn btn-success">💾 保存</button>
+              <span style="font-size:12px;color:#95a5a6">変数はポスト時に実際の値に置き換えられます</span>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 参加者向けHTML配信 -->
+    <div class="settings-section" id="public-html">
+      <div class="section-title">🌐 参加者向け配信</div>
+
+      <!-- ON/OFFカード -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">配信機能</div>
+        <div class="card-body">
+          {% if IS_CLOUD %}
+          <p style="font-size:13px;color:#636e72;margin-bottom:16px">
+            クラウド運用では、観覧ページをこのサーバー（VPS）が参加者へ直接配信します。<br>
+            Google Cloud Storage（GCS/GCP）は使用しないため、配信先の設定は不要です。<br>
+            参加者向けのURL・QRコードは下のカードに表示されます。
+          </p>
+          <div style="padding:12px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #e9ecef;font-size:13px;color:#636e72">
+            🔒 GCS配信設定はクラウド運用では無効化されています（ヘッダーの配信トグルも無効固定）。
+          </div>
+          {% else %}
+          <p style="font-size:13px;color:#636e72;margin-bottom:16px">
+            レース結果が更新されるたびに静的HTMLを自動生成し、Google Cloud Storageへアップロードします。<br>
+            参加者（最大200人規模）はCloud StorageのURLにアクセスするだけで観覧できます。<br>
+            <strong style="color:#e67e22">※ Cloud Run環境でのみ動作します。ローカル環境では無効にしてください。</strong>
+          </p>
+          <form method="post" action="/admin/settings/public-html/save">
+            <!-- ON/OFF トグル -->
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px;padding:14px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #e9ecef">
+              <label style="position:relative;display:inline-block;width:48px;height:26px;flex-shrink:0;cursor:pointer">
+                <input type="checkbox" name="public_html_enabled" id="publicHtmlEnabled"
+                       {% if public_html_enabled %}checked{% endif %}
+                       style="opacity:0;width:0;height:0"
+                       onchange="togglePublicHtml()">
+                <span id="toggleSlider" style="position:absolute;cursor:pointer;inset:0;background:{% if public_html_enabled %}#27ae60{% else %}#bdc3c7{% endif %};border-radius:26px;transition:.3s">
+                  <span id="toggleKnob" style="position:absolute;height:20px;width:20px;left:{% if public_html_enabled %}24px{% else %}3px{% endif %};bottom:3px;background:#fff;border-radius:50%;transition:.3s;display:block"></span>
+                </span>
+              </label>
+              <div>
+                <div style="font-size:14px;font-weight:bold;color:#2c3e50">参加者向けHTML配信を有効にする</div>
+                <div style="font-size:12px;color:#95a5a6;margin-top:2px">ONにするとレース結果更新時に自動でCloud Storageへ配信されます</div>
+              </div>
+            </div>
+
+            <!-- クラウド設定フィールド群 -->
+            <div id="cloudFields" style="{% if not public_html_enabled %}opacity:.45;pointer-events:none{% endif %}">
+
+              <!-- GCPプロジェクトID -->
+              <div style="margin-bottom:18px">
+                <label style="display:block;font-size:13px;font-weight:bold;color:#2c3e50;margin-bottom:6px">
+                  GCPプロジェクトID <span style="color:#e74c3c">*</span>
+                </label>
+                <input type="text" name="public_html_gcp_project"
+                       value="{{ public_html_gcp_project }}"
+                       placeholder="例: my-project-123456"
+                       style="width:100%;max-width:480px;padding:8px 12px;border:1px solid #ced4da;border-radius:6px;font-size:14px;font-family:monospace">
+                <div style="font-size:12px;color:#95a5a6;margin-top:4px">GCPコンソール上部に表示されているプロジェクトID</div>
+              </div>
+
+              <!-- GCSバケット名 -->
+              <div style="margin-bottom:18px">
+                <label style="display:block;font-size:13px;font-weight:bold;color:#2c3e50;margin-bottom:6px">
+                  GCSバケット名 <span style="color:#e74c3c">*</span>
+                </label>
+                <input type="text" name="public_html_gcs_bucket"
+                       value="{{ public_html_gcs_bucket }}"
+                       placeholder="例: my-miniyonku-public"
+                       style="width:100%;max-width:480px;padding:8px 12px;border:1px solid #ced4da;border-radius:6px;font-size:14px;font-family:monospace">
+                <div style="font-size:12px;color:#95a5a6;margin-top:4px">Cloud Storageで作成したバケット名（gs:// は不要）</div>
+              </div>
+
+              <!-- 更新タイミング説明 -->
+              <div style="margin-bottom:20px;padding:12px 16px;background:#eafaf1;border-radius:8px;border:1px solid #a9dfbf;font-size:13px">
+                <div style="font-weight:bold;color:#1e8449;margin-bottom:6px">📤 自動更新タイミング</div>
+                <ul style="margin:0;padding-left:18px;color:#1a6a3a;line-height:1.9">
+                  <li>表示ページが切り替わった時</li>
+                  <li>レースの結果が保存されたとき</li>
+                  <li>組み合わせ（対戦表・トーナメント表）が決まった時</li>
+                  <li>管理者が手動更新ボタンを押したとき</li>
+                </ul>
+              </div>
+
+            </div><!-- /cloudFields -->
+
+            <!-- ボタン -->
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button type="submit" class="btn btn-success">💾 保存</button>
+              <button type="button" class="btn btn-primary"
+                      id="publishNowBtn"
+                      style="{% if not public_html_enabled %}opacity:.45;pointer-events:none{% endif %}"
+                      onclick="manualPublish()">📤 今すぐ手動更新</button>
+              <span id="publishMsg" style="display:none;font-size:13px;color:#27ae60"></span>
+            </div>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- クラウド版アクセスURL・QRカード（管理用／観覧用／レーサー用） -->
+      {% if participant_url %}
+      <div class="card">
+        <div class="card-header">クラウド版アクセスURL・QR</div>
+        <div class="card-body" style="padding:16px">
+          <div style="font-size:13px;color:#636e72;margin-bottom:6px">
+            管理用・観覧用・レーサー用それぞれのアクセスQRを生成できます。
+          </div>
+          <div style="font-size:12px;color:#a33;background:#fdeaea;border:1px solid #f3c4c4;border-radius:6px;padding:8px 12px;margin-bottom:16px;line-height:1.7">
+            ⚠ <b>管理用・観覧用のQRには認証キーが埋め込まれています</b>。読み取った人は鍵入力なしで管理／観覧画面に入れます。
+            （管理用は結果の書き換え権限を持ちます）。配布・印刷・画面共有は<b>信頼できる相手だけ</b>に限定してください。
+          </div>
+
+          <div id="qr3wrap" style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            {% for t in qr_targets %}
+            <div style="text-align:center">
+              <div style="font-size:13px;font-weight:bold;color:#2c3e50;margin-bottom:6px">
+                {{ t.label }}{% if t.sensitive %} <span style="font-size:10px;color:#a33;font-weight:normal">🔑鍵付き</span>{% endif %}
+              </div>
+              <div style="position:relative;width:200px;height:200px;border:1px solid #e9ecef;border-radius:6px;overflow:hidden;background:#fff">
+                <div class="qrCanvas3" data-screen="{{ t.screen }}" style="line-height:0"></div>
+              </div>
+              <button type="button"
+                      class="btn btn-primary btn-sm qrdl3"
+                      data-screen="{{ t.screen }}"
+                      data-caption="{{ t.caption|e }}"
+                      data-url="{{ t.url|e }}"
+                      data-logo="{{ t.logo_url|e }}"
+                      style="margin-top:8px;width:200px">⬇️ DL（高解像度）</button>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div style="font-size:12px;color:#95a5a6;margin-top:14px;line-height:1.8">
+            ※ダウンロードは余白を詰めた高解像度PNG。見出しは「店舗名＋画面名」で印字されます。<br>
+            {% if not pwa_icon_ver %}※共通アイコン未登録のため、中央ロゴなしで生成されます（「ホーム画面アイコン」で登録すると各QRの中央にロゴが入ります）。{% endif %}
+          </div>
+
+          <span id="copyMsg" style="display:none;font-size:12px;color:#27ae60;margin-top:6px;display:block"></span>
+        </div>
+      </div>
+
+      <!-- 3QRデータ（JSから参照） -->
+      <script type="application/json" id="qr3data">
+        {{ qr_targets|tojson }}
+      </script>
+
+      <script>
+      // 3画面QR（管理用＝admin鍵付き／観覧用＝view鍵付き／レーサー用＝/enter）
+      var QR3 = JSON.parse(document.getElementById('qr3data').textContent || '[]');
+      var _qr3logos = {};   // screen -> Image|null（中央ロゴ）
+
+      function _qr3LoadLogo(t){
+        return new Promise(function(resolve){
+          if(!t.logo_url){ _qr3logos[t.screen] = null; resolve(); return; }
+          var im = new Image();
+          im.crossOrigin = 'anonymous';
+          im.onload  = function(){ _qr3logos[t.screen] = im;  resolve(); };
+          im.onerror = function(){ _qr3logos[t.screen] = null; resolve(); };
+          im.src = t.logo_url;
+        });
+      }
+
+      function _qr3BuildPreviews(){
+        QR3.forEach(function(t){
+          var wrap = document.querySelector('.qrCanvas3[data-screen="'+t.screen+'"]');
+          if(!wrap) return;
+          wrap.innerHTML = '';
+          new QRCode(wrap, {
+            text: t.url, width: 1300, height: 1300,
+            colorDark: '#000000', colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+          });
+          // プレビューは200pxへ縮小 + 中央ロゴをcanvasに重ねる
+          setTimeout(function(){
+            Array.prototype.forEach.call(wrap.children, function(el){
+              el.style.width = '200px'; el.style.height = '200px';
+            });
+            // ロゴを中央に重ねる（canvas が生成されていれば）
+            var logo = _qr3logos[t.screen];
+            if(!logo) return;
+            var cvs = wrap.querySelector('canvas');
+            if(!cvs) return;
+            var ctx = cvs.getContext('2d');
+            var W = cvs.width, H = cvs.height;
+            var L = Math.round(W * 0.20);
+            var pad = Math.round(L * 0.14);
+            var cx = W/2, cy = H/2;
+            var box = L + pad*2;
+            ctx.fillStyle = '#ffffff';
+            _roundRect(ctx, cx - box/2, cy - box/2, box, box, Math.round(box*0.18));
+            ctx.fill();
+            ctx.drawImage(logo, cx - L/2, cy - L/2, L, L);
+          }, 120);
+        });
+      }
+
+      function _qr3DownloadByScreen(screen){
+        var btn = document.querySelector('.qrdl3[data-screen="'+screen+'"]');
+        var wrap = document.querySelector('.qrCanvas3[data-screen="'+screen+'"]');
+        if(!btn || !wrap) return;
+        var srcEl = wrap.querySelector('canvas') || wrap.querySelector('img');
+        if(!srcEl){ alert('QRコードがまだ生成されていません'); return; }
+        var caption = btn.getAttribute('data-caption') || '';
+        var url = btn.getAttribute('data-url') || '';
+        _renderQrCanvas(srcEl, caption, url, _qr3logos[screen] || null, caption || ('qr_' + screen));
+      }
+
+      (function(){
+        function start(){
+          // 先に各画面のロゴを読み込んでから QR を生成
+          Promise.all(QR3.map(_qr3LoadLogo)).then(function(){
+            _qr3BuildPreviews();
+            document.querySelectorAll('.qrdl3').forEach(function(b){
+              b.addEventListener('click', function(){ _qr3DownloadByScreen(b.getAttribute('data-screen')); });
+            });
+          });
+        }
+        if(window.QRCode){ start(); return; }
+        var s = document.createElement('script');
+        s.src = '{{ pwa_icon_prefix }}/static/js/qrcode.min.js';
+        s.onload = start;
+        s.onerror = function(){ alert('QRコード生成ライブラリ（qrcode.js）の読み込みに失敗しました。'); };
+        document.body.appendChild(s);
+      })();
+      </script>
+
+      <script>
+      // QR画像の描画ヘルパ群（3画面QRの _qr3DownloadByScreen から呼ばれる）
+      function _wrapText(ctx, text, cx, y, maxW, lineH){
+        var line = '', chars = text.split('');
+        for(var i=0;i<chars.length;i++){
+          var test = line + chars[i];
+          if(ctx.measureText(test).width > maxW && line !== ''){
+            ctx.fillText(line, cx, y); line = chars[i]; y += lineH;
+          } else { line = test; }
+        }
+        if(line) ctx.fillText(line, cx, y);
+        return y + lineH;
+      }
+      function _roundRect(ctx, x, y, w, h, r){
+        ctx.beginPath();
+        ctx.moveTo(x+r, y);
+        ctx.arcTo(x+w, y,   x+w, y+h, r);
+        ctx.arcTo(x+w, y+h, x,   y+h, r);
+        ctx.arcTo(x,   y+h, x,   y,   r);
+        ctx.arcTo(x,   y,   x+w, y,   r);
+        ctx.closePath();
+      }
+
+      function _splitLines(ctx, text, maxW){
+        var lines = [], line = '', chars = text.split('');
+        for(var i=0;i<chars.length;i++){
+          var t = line + chars[i];
+          if(ctx.measureText(t).width > maxW && line !== ''){ lines.push(line); line = chars[i]; }
+          else { line = t; }
+        }
+        if(line !== '') lines.push(line);
+        return lines;
+      }
+
+      // QR＋見出し＋URL＋中央ロゴを合成して PNG をダウンロードする共通関数
+      function _renderQrCanvas(srcEl, caption, url, logo, fileBase) {
+        // 内容に合わせてキャンバスサイズを決める（余白を最小化）
+        var qrSize = 1300, side = 70;
+        var W = qrSize + side * 2;            // 横: QR幅＋左右の細余白
+        var textMaxW = W - 140;
+        var padTop = 64, padBottom = 56;
+        var capFont = 'bold 84px sans-serif', capLH = 104;
+        var urlFont = '40px monospace', urlLH = 54;
+        var gapCapQR = 36, gapQRUrl = 56;
+
+        caption = (caption || '').trim();
+        url = (url || '').trim();
+
+        // 行数を先に計測して高さを確定
+        var m = document.createElement('canvas').getContext('2d');
+        m.font = capFont; var capLines = caption ? _splitLines(m, caption, textMaxW) : [];
+        m.font = urlFont; var urlLines = _splitLines(m, url, textMaxW);
+
+        var capBlockH = capLines.length ? capLines.length * capLH : 0;
+        var urlBlockH = urlLines.length * urlLH;
+        var H = padTop + capBlockH + (capLines.length ? gapCapQR : 0)
+              + qrSize + gapQRUrl + urlBlockH + padBottom;
+
+        var out = document.createElement('canvas');
+        out.width = W; out.height = H;
+        var ctx = out.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center';
+
+        var y = padTop;
+
+        // 見出し（必須・既定は店舗名）
+        if (capLines.length) {
+          ctx.fillStyle = '#2c3e50';
+          ctx.font = capFont;
+          for (var i = 0; i < capLines.length; i++) { ctx.fillText(capLines[i], W/2, y + 78); y += capLH; }
+          y += gapCapQR;
+        }
+
+        // QR本体（原寸を保つためスムージング無効）
+        var qrX = (W - qrSize) / 2, qrY = y;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(srcEl, qrX, qrY, qrSize, qrSize);
+        ctx.imageSmoothingEnabled = true;
+
+        // 中央ロゴ（任意）。誤り訂正レベルHのため中央を覆っても読み取り可。
+        if (logo) {
+          var L = Math.round(qrSize * 0.20);
+          var pad = Math.round(L * 0.14);
+          var cx = W/2, cy = qrY + qrSize/2;
+          var box = L + pad*2;
+          ctx.fillStyle = '#ffffff';
+          _roundRect(ctx, cx - box/2, cy - box/2, box, box, Math.round(box*0.18));
+          ctx.fill();
+          ctx.drawImage(logo, cx - L/2, cy - L/2, L, L);
+        }
+
+        // URL（参加者向け）
+        y = qrY + qrSize + gapQRUrl;
+        ctx.fillStyle = '#2c3e50';
+        ctx.font = urlFont;
+        for (var j = 0; j < urlLines.length; j++) { ctx.fillText(urlLines[j], W/2, y + 40); y += urlLH; }
+
+        var a = document.createElement('a');
+        a.href = out.toDataURL('image/png');
+        a.download = 'qr_' + (fileBase || 'miniyonku').replace(/[^\w\-ぁ-んァ-ヶ一-龠]+/g, '_') + '.png';
+        a.click();
+      }
+      </script>
+      {% endif %}
+
+    </div>
+
+    {% if IS_CLOUD %}
+    <!-- ホーム画面アイコン（Webアプリ） -->
+    <div class="settings-section" id="pwa">
+      <div class="section-title">📱 ホーム画面アイコン（Webアプリ）</div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">基本設定</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:#636e72;margin-bottom:16px">
+            アクセス用URLをスマホ／タブレットの「ホーム画面に追加」すると、ブラウザのバーが消えた
+            アプリのような全画面で起動できます。アイコンは admin / view / html 共通の1枚を使い、
+            アイコン下の表示名だけ画面ごとに変えられます。
+          </p>
+          <form method="post" action="/admin/settings/pwa/save">
+            <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:18px">
+              <input type="checkbox" name="pwa_enabled" {% if pwa.pwa_enabled == '1' %}checked{% endif %}
+                     style="width:18px;height:18px">
+              <b>この機能を有効にする</b>
+            </label>
+
+            <table style="margin-bottom:16px">
+              <thead>
+                <tr><th>画面</th><th>アイコン下の表示名</th><th>テーマ色</th><th>key埋め込み起動</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>管理用</b><br><small style="color:#95a5a6">admin</small></td>
+                  <td><input type="text" name="pwa_name_admin" value="{{ pwa.pwa_name_admin }}"
+                             style="width:140px;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></td>
+                  <td><input type="color" name="pwa_theme_admin" value="{{ pwa.pwa_theme_admin }}"
+                             style="width:48px;height:34px;border:1px solid #ced4da;border-radius:6px;background:#fff"></td>
+                  <td><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+                    <input type="checkbox" name="pwa_keylaunch_admin" {% if pwa.pwa_keylaunch_admin == '1' %}checked{% endif %}
+                           style="width:16px;height:16px">有効</label></td>
+                </tr>
+                <tr>
+                  <td><b>観覧用</b><br><small style="color:#95a5a6">view</small></td>
+                  <td><input type="text" name="pwa_name_view" value="{{ pwa.pwa_name_view }}"
+                             style="width:140px;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></td>
+                  <td><input type="color" name="pwa_theme_view" value="{{ pwa.pwa_theme_view }}"
+                             style="width:48px;height:34px;border:1px solid #ced4da;border-radius:6px;background:#fff"></td>
+                  <td><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+                    <input type="checkbox" name="pwa_keylaunch_view" {% if pwa.pwa_keylaunch_view == '1' %}checked{% endif %}
+                           style="width:16px;height:16px">有効</label></td>
+                </tr>
+                <tr>
+                  <td><b>レーサー用</b><br><small style="color:#95a5a6">html</small></td>
+                  <td><input type="text" name="pwa_name_html" value="{{ pwa.pwa_name_html }}"
+                             style="width:140px;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></td>
+                  <td><input type="color" name="pwa_theme_html" value="{{ pwa.pwa_theme_html }}"
+                             style="width:48px;height:34px;border:1px solid #ced4da;border-radius:6px;background:#fff"></td>
+                  <td><small style="color:#95a5a6">—（認証なし）</small></td>
+                </tr>
+              </tbody>
+            </table>
+            <p style="font-size:12px;color:#95a5a6;margin-bottom:16px">
+              ※「key埋め込み起動」を有効にすると、ホーム画面アイコンから起動した際に自動で再認証されます
+              （iOSでアイコン起動時にCookieが切れても観覧/管理に入れます）。
+              この端末のアイコンに鍵が保存されるため、共用端末では取り扱いに注意してください。
+            </p>
+            <button type="submit" class="btn btn-primary">💾 保存</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">ホーム画面用アイコン</div>
+        <div class="card-body">
+          <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            <div style="text-align:center">
+              {% if pwa_icon_ver %}
+              <div style="display:flex;gap:14px;align-items:flex-start">
+                <div style="text-align:center">
+                  <div style="width:96px;height:96px;border:1px solid #e9ecef;border-radius:20px;overflow:hidden;background:#f8f9fa">
+                    <img src="{{ pwa_icon_prefix }}/pwa/icon-admin-512.png?v={{ pwa_icon_ver }}" alt="管理用アイコン" style="width:100%;height:100%;object-fit:cover">
+                  </div>
+                  <div style="font-size:11px;color:#95a5a6;margin-top:6px">管理用<br>（ゴールド枠）</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="width:96px;height:96px;border:1px solid #e9ecef;border-radius:20px;overflow:hidden;background:#f8f9fa">
+                    <img src="{{ pwa_icon_prefix }}/pwa/icon-view-512.png?v={{ pwa_icon_ver }}" alt="観覧用アイコン" style="width:100%;height:100%;object-fit:cover">
+                  </div>
+                  <div style="font-size:11px;color:#95a5a6;margin-top:6px">観覧用<br>（シルバー枠）</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="width:96px;height:96px;border:1px solid #e9ecef;border-radius:20px;overflow:hidden;background:#f8f9fa">
+                    <img src="{{ pwa_icon_prefix }}/pwa/icon-html-512.png?v={{ pwa_icon_ver }}" alt="レーサー用アイコン" style="width:100%;height:100%;object-fit:cover">
+                  </div>
+                  <div style="font-size:11px;color:#95a5a6;margin-top:6px">レーサー用<br>（枠なし）</div>
+                </div>
+              </div>
+              {% else %}
+              <div style="width:120px;height:120px;border:1px solid #e9ecef;border-radius:24px;background:#f8f9fa;display:flex;align-items:center;justify-content:center">
+                <span style="color:#bdc3c7;font-size:12px">未設定</span>
+              </div>
+              <div style="font-size:11px;color:#95a5a6;margin-top:6px">プレビュー</div>
+              {% endif %}
+            </div>
+            <div style="flex:1;min-width:240px">
+              <form method="post" action="/admin/settings/pwa/icon" enctype="multipart/form-data">
+                <label style="font-size:13px;color:#636e72;display:block;margin-bottom:8px">
+                  画像ファイル（PNG / JPG / WebP・正方形推奨）
+                  <input type="file" name="icon" accept="image/png,image/jpeg,image/webp" required
+                         style="display:block;margin-top:6px;font-size:13px">
+                </label>
+                <p style="font-size:12px;color:#95a5a6;margin-bottom:12px">
+                  アップロード時に、枠なし元画像＋管理用（ゴールド枠）／観覧用（シルバー枠）／レーサー用（枠なし）の
+                  各サイズ（512 / 192 / 180 Apple）を自動生成します。正方形でない場合は中央を正方形に切り抜きます。
+                  QRコードの中央ロゴには枠なし元画像が使われます。
+                </p>
+                <button type="submit" class="btn btn-success">📤 アイコンをアップロード</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">アプリ用アイコン</div>
+        <div class="card-body">
+          <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            <div style="text-align:center">
+              {% if app_icon_ver %}
+              <div style="width:96px;height:96px;border:1px solid #e9ecef;border-radius:12px;overflow:hidden;background:#f8f9fa;display:flex;align-items:center;justify-content:center">
+                <img src="{{ pwa_icon_prefix }}/pwa/icon-app-38.png?v={{ app_icon_ver }}" alt="アプリ用アイコン" style="image-rendering:pixelated">
+              </div>
+              <div style="font-size:11px;color:#95a5a6;margin-top:6px">アプリ用<br>（枠なし・長辺38px）</div>
+              {% else %}
+              <div style="width:96px;height:96px;border:1px solid #e9ecef;border-radius:12px;background:#f8f9fa;display:flex;align-items:center;justify-content:center">
+                <span style="color:#bdc3c7;font-size:12px">未設定</span>
+              </div>
+              <div style="font-size:11px;color:#95a5a6;margin-top:6px">プレビュー</div>
+              {% endif %}
+            </div>
+            <div style="flex:1;min-width:240px">
+              <form method="post" action="/admin/settings/pwa/app-icon" enctype="multipart/form-data">
+                <label style="font-size:13px;color:#636e72;display:block;margin-bottom:8px">
+                  画像ファイル（PNG / JPG / WebP）
+                  <input type="file" name="app_icon" accept="image/png,image/jpeg,image/webp" required
+                         style="display:block;margin-top:6px;font-size:13px">
+                </label>
+                <p style="font-size:12px;color:#95a5a6;margin-bottom:12px">
+                  画像1枚をアップロードします。枠は付けず、アップロード時に自動で長辺38pxへ縮小して登録します
+                  （アスペクト比は保持します）。
+                </p>
+                <button type="submit" class="btn btn-success">📤 アプリ用アイコンをアップロード</button>
+              </form>
+            </div>
+          </div>
+
+          <hr style="border:none;border-top:1px solid #eee;margin:20px 0">
+
+          <!-- スライドショー（view / html の待機画面） -->
+          <div style="font-weight:bold;color:#2c3e50;margin-bottom:8px">スライドショー（view / html の待機画面）</div>
+          <form method="post" action="/admin/settings/pwa/slideshow" enctype="multipart/form-data">
+            <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:12px">
+              <input type="checkbox" name="slideshow_enabled" {% if slideshow_enabled == '1' %}checked{% endif %} style="width:18px;height:18px">
+              <b>待機画面でスライドショーを流す（ON）</b>
+            </label>
+
+            {% if slideshow_previews %}
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+              {% for u in slideshow_previews %}
+              <div style="width:110px;height:72px;border:1px solid #e9ecef;border-radius:8px;overflow:hidden;background:#f8f9fa;position:relative">
+                <img src="{{ u }}" alt="スライド{{ loop.index }}" style="width:100%;height:100%;object-fit:cover">
+                <span style="position:absolute;top:2px;left:2px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;border-radius:4px;padding:0 5px">{{ loop.index }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            <div style="font-size:12px;color:#95a5a6;margin-bottom:10px">現在 {{ slideshow_previews|length }} 枚登録済み（最大10枚）</div>
+            {% else %}
+            <div style="font-size:12px;color:#bdc3c7;margin-bottom:10px">スライド未登録</div>
+            {% endif %}
+
+            <label style="font-size:13px;color:#636e72;display:block;margin-bottom:8px">
+              画像ファイル（PNG / JPG / WebP・最大10枚まとめて選択）
+              <input type="file" name="slides" accept="image/png,image/jpeg,image/webp" multiple
+                     style="display:block;margin-top:6px;font-size:13px">
+            </label>
+            <p style="font-size:12px;color:#95a5a6;margin-bottom:12px">
+              画像を選ぶと登録済みスライドを丸ごと差し替えます（最大10枚。画像名などの設定は不要）。
+              アップロード時に各画像を自動で長辺最大1200pxへ縮小します。
+              ONのとき、view と 参加者向け(html) の待機画面（「お待ちください」）で順番に流れます。
+              ※ON/OFFだけ変更したい場合は、画像を選ばずに保存してください。
+            </p>
+            <button type="submit" class="btn btn-success">💾 スライドショーを保存</button>
+          </form>
+          {% if slideshow_previews %}
+          <form method="post" action="/admin/settings/pwa/slideshow/clear" style="margin-top:10px"
+                onsubmit="return confirm('登録済みのスライド画像をすべて削除します。よろしいですか？');">
+            <button type="submit" class="btn btn-secondary btn-sm">🗑️ スライドをすべて削除</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+    {% endif %}
+
+    {% if IS_CLOUD and is_default_store %}
+    <div class="settings-section" id="stores">
+      <div class="section-title">🏬 複数店舗展開</div>
+
+      <div class="card">
+        <div class="card-header">登録店舗（最大 {{ max_stores }} 店舗）</div>
+        <div class="card-body" style="padding:16px">
+          <p style="font-size:13px;color:#636e72;margin-bottom:14px">
+            店舗ごとに専用のデータベースとアクセスURLが割り当てられます。<br>
+            各店舗のadmin/view用URL（鍵付き）と参加者向けQRを下に表示します。
+            URLを書き換えただけでは他店舗には入れません（鍵が必要）。
+          </p>
+
+          {% for s in stores_info %}
+          <div style="border:1px solid #e9ecef;border-radius:8px;padding:14px;margin-bottom:14px;{% if not s.enabled %}opacity:.55;background:#f8f9fa{% endif %}">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+              <span style="font-weight:bold;font-size:15px;color:#2c3e50">{{ s.name }}</span>
+              <code style="font-size:12px;background:#f4f5f7;padding:2px 8px;border-radius:5px;border:1px solid #e9ecef">{{ '/' + s.slug if s.slug else '(既定・スラッグなし)' }}</code>
+              {% if s.is_default %}<span style="font-size:11px;background:#dff3ff;color:#1c6ea4;padding:2px 8px;border-radius:10px">店舗1</span>{% endif %}
+              {% if not s.enabled %}<span style="font-size:11px;background:#f1d1d1;color:#a33;padding:2px 8px;border-radius:10px">無効</span>{% endif %}
+              {% if not s.is_default and s.restrict_hours %}
+                {% if s.is_open %}
+                <span style="font-size:11px;background:#dff5e1;color:#1e824c;padding:2px 8px;border-radius:10px">営業中（{{ s.access_start }}〜{{ s.access_end }}）</span>
+                {% else %}
+                <span style="font-size:11px;background:#fdecea;color:#c0392b;padding:2px 8px;border-radius:10px">時間外（{{ s.access_start }}〜{{ s.access_end }}）</span>
+                {% endif %}
+              {% endif %}
+            </div>
+
+            {% if not s.is_default %}
+            <div style="margin-bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+              <div style="width:64px;height:64px;border:1px solid #e9ecef;border-radius:14px;overflow:hidden;background:#f8f9fa;flex:0 0 auto">
+                {% if s.icon_ver %}
+                <img src="{{ s.icon_prefix }}/pwa/icon-src-192.png?v={{ s.icon_ver }}" alt="共通アイコン" style="width:100%;height:100%;object-fit:cover">
+                {% else %}
+                <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#bdc3c7;font-size:11px">未設定</div>
+                {% endif %}
+              </div>
+              <form method="post" action="/admin/settings/pwa/icon/store" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <input type="hidden" name="store_id" value="{{ s.id }}">
+                <label style="font-size:12px;color:#636e72">
+                  ホーム画面/QRアイコン（PNG / JPG / WebP・正方形推奨）
+                  <input type="file" name="icon" accept="image/png,image/jpeg,image/webp" required style="display:block;margin-top:4px;font-size:12px">
+                </label>
+                <button type="submit" class="btn btn-success btn-sm">📤 アイコン登録</button>
+              </form>
+            </div>
+            {% endif %}
+
+            <div style="display:grid;grid-template-columns:80px 1fr;gap:6px 10px;font-size:12px;align-items:center">
+              <div style="color:#95a5a6">admin</div>
+              <code style="background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.admin_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+              <div style="color:#95a5a6">view</div>
+              <code style="background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.view_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+              <div style="color:#95a5a6">参加者QR</div>
+              <code style="background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.qr_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+              <div style="color:#95a5a6">QR画像</div>
+              <div>
+                <button type="button"
+                        class="btn btn-secondary btn-sm"
+                        onclick="downloadStoreQr({{ s.id }}, '{{ s.name|e }}', '{{ s.qr_url|e }}', '{{ s.slug|e }}')"
+                        {% if not s.qr_url %}disabled title="PUBLIC_BASE_URL未設定"{% endif %}>
+                  ⬇️ 参加者QRをDL（高解像度）
+                </button>
+              </div>
+            </div>
+
+            {% if not s.is_default %}
+            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+              <form method="post" action="/admin/stores/update" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="store_id" value="{{ s.id }}">
+                <input type="text" name="name" value="{{ s.name }}" placeholder="店舗名" style="padding:5px 8px;border:1px solid #ced4da;border-radius:5px;font-size:12px;width:120px">
+                <input type="text" name="slug" value="{{ s.slug }}" placeholder="スラッグ" style="padding:5px 8px;border:1px solid #ced4da;border-radius:5px;font-size:12px;width:120px">
+                <select name="enabled" style="padding:5px 8px;border:1px solid #ced4da;border-radius:5px;font-size:12px">
+                  <option value="1" {% if s.enabled %}selected{% endif %}>有効</option>
+                  <option value="0" {% if not s.enabled %}selected{% endif %}>無効</option>
+                </select>
+                <label style="font-size:11px;color:#636e72;display:flex;align-items:center;gap:4px">
+                  <input type="checkbox" name="restrict_hours" value="1" {% if s.restrict_hours %}checked{% endif %} style="width:14px;height:14px">
+                  時間制限
+                </label>
+                <input type="time" name="access_start" value="{{ s.access_start }}" style="padding:5px 6px;border:1px solid #ced4da;border-radius:5px;font-size:12px;width:90px">
+                <span style="font-size:11px;color:#95a5a6">〜</span>
+                <input type="time" name="access_end" value="{{ s.access_end }}" style="padding:5px 6px;border:1px solid #ced4da;border-radius:5px;font-size:12px;width:90px">
+                <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('保存します。スラッグを変更すると参加者QR・URLが変わります。よろしいですか？')">💾 保存</button>
+              </form>
+              <p style="font-size:11px;color:#95a5a6;margin:2px 0 0">「時間制限」ONの場合、開始・終了時刻の両方を入力してください（例: 10:00〜19:00）。範囲外は admin/view/参加者画面すべてアクセス不可になります。日をまたぐ設定（例: 20:00〜02:00）も可能です。</p>
+              <form method="post" action="/admin/stores/regenerate-tokens" onsubmit="return confirm('admin/viewのトークンを再生成します。既存の配布URLは無効になります。よろしいですか？')">
+                <input type="hidden" name="store_id" value="{{ s.id }}">
+                <button type="submit" class="btn btn-secondary btn-sm">🔑 トークン再生成</button>
+              </form>
+              <form method="post" action="/admin/stores/delete" onsubmit="return confirm('この店舗を削除します。DBと配信データはアーカイブ（_archive/）へ退避され、物理削除はされません。よろしいですか？')">
+                <input type="hidden" name="store_id" value="{{ s.id }}">
+                <button type="submit" class="btn btn-danger btn-sm">🗃️ 削除（アーカイブ）</button>
+              </form>
+            </div>
+            {% else %}
+            <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <form method="post" action="/admin/stores/update" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="store_id" value="{{ s.id }}">
+                <input type="text" name="name" value="{{ s.name }}" placeholder="店舗名" style="padding:5px 8px;border:1px solid #ced4da;border-radius:5px;font-size:12px;width:160px">
+                <button type="submit" class="btn btn-success btn-sm">💾 名称を保存</button>
+              </form>
+              <span style="font-size:11px;color:#95a5a6">※店舗1は名称のみ変更可（スラッグ変更・無効化・削除は不可）。名称はヘッダー表示にも反映されます。</span>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+
+          {% if stores_info|length < max_stores %}
+          <div style="border-top:1px dashed #dee2e6;padding-top:14px;margin-top:6px">
+            <div style="font-weight:bold;font-size:14px;color:#2c3e50;margin-bottom:8px">＋ 店舗を追加</div>
+            <form method="post" action="/admin/stores/add" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="text" name="name" placeholder="店舗名（例：店舗2）" style="padding:7px 10px;border:1px solid #ced4da;border-radius:6px;font-size:13px;width:160px">
+              <input type="text" name="slug" placeholder="スラッグ（例：store2）" style="padding:7px 10px;border:1px solid #ced4da;border-radius:6px;font-size:13px;width:160px">
+              <button type="submit" class="btn btn-primary">＋ 追加</button>
+            </form>
+            <p style="font-size:11px;color:#95a5a6;margin-top:8px">
+              スラッグは英小文字・数字・ハイフンのみ。admin / view / static / api 等の予約語は使えません。
+            </p>
+          </div>
+          {% else %}
+          <p style="font-size:12px;color:#a33">店舗数が上限（{{ max_stores }}）に達しています。追加するには既存店舗を削除してください。</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <script>
+      // 店舗別の参加者QRを生成してDL（共通アイコン＝枠なし元画像を中央に合成）
+      function downloadStoreQr(storeId, storeName, qrUrl, slug){
+        if(!qrUrl){ alert('PUBLIC_BASE_URL が未設定のため生成できません。'); return; }
+        var prefix = slug ? ('/' + slug) : '';
+        var iconVer = '{{ pwa_icon_ver }}';
+        // 一時 div に QR を生成
+        var holder = document.createElement('div');
+        holder.style.position = 'fixed';
+        holder.style.left = '-99999px';
+        document.body.appendChild(holder);
+
+        function build(){
+          holder.innerHTML = '';
+          new QRCode(holder, {
+            text: qrUrl, width: 1300, height: 1300,
+            colorDark: '#000000', colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+          });
+          setTimeout(function(){
+            var srcEl = holder.querySelector('canvas') || holder.querySelector('img');
+            if(!srcEl){ alert('QR生成に失敗しました'); document.body.removeChild(holder); return; }
+            // ロゴ（店舗別の枠なしアイコン）を読み込んでから合成
+            var doRender = function(logo){
+              _renderQrCanvas(srcEl, storeName, qrUrl, logo, storeName || ('store_' + storeId));
+              document.body.removeChild(holder);
+            };
+            if(iconVer){
+              var im = new Image();
+              im.crossOrigin = 'anonymous';
+              im.onload = function(){ doRender(im); };
+              im.onerror = function(){ doRender(null); };
+              im.src = prefix + '/pwa/icon-src-512.png?v=' + iconVer;
+            } else {
+              doRender(null);
+            }
+          }, 80);
+        }
+        if(window.QRCode){ build(); return; }
+        var s = document.createElement('script');
+        s.src = '{{ pwa_icon_prefix }}/static/js/qrcode.min.js';
+        s.onload = build;
+        s.onerror = function(){ alert('QRコード生成ライブラリの読み込みに失敗しました。'); document.body.removeChild(holder); };
+        document.body.appendChild(s);
+      }
+      </script>
+    </div>
+    {% endif %}
+
+  </div><!-- /右コンテンツ -->
+</div>
+
+<!-- 削除確認モーダル -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>🗑️ テンプレートの削除</span>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:15px;margin-bottom:8px">
+        「<strong id="deleteName"></strong>」を削除してもよいですか？
+      </p>
+      <p style="font-size:13px;color:#e74c3c;">この操作は取り消せません。</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal()">キャンセル</button>
+      <form id="deleteForm" method="post">
+        <button type="submit" class="btn btn-danger btn-sm">削除する</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- レギュレーション編集 ---------- */
+function addReg() {
+  const input = document.getElementById('regInput');
+  const val = input.value.trim();
+  if (!val) return;
+  // 重複チェック
+  const existing = [...document.querySelectorAll('#regTags .reg-tag')].map(t => t.dataset.val);
+  if (existing.includes(val)) { input.value = ''; return; }
+  const tag = document.createElement('span');
+  tag.className = 'reg-tag';
+  tag.dataset.val = val;
+  tag.innerHTML = val + ' <button class="reg-tag-del" onclick="removeReg(this)" title="削除">×</button>';
+  document.getElementById('regTags').appendChild(tag);
+  input.value = '';
+  input.focus();
+}
+
+function removeReg(btn) {
+  btn.closest('.reg-tag').remove();
+}
+
+function saveRegs() {
+  const vals = [...document.querySelectorAll('#regTags .reg-tag')].map(t => t.dataset.val);
+  document.getElementById('regHidden').value = vals.join('\n');
+  document.getElementById('regForm').submit();
+}
+
+/* ---------- 賞状テンプレート削除 ---------- */
+function confirmDelete(id, name) {
+  document.getElementById('deleteName').textContent = name;
+  document.getElementById('deleteForm').action = '/admin/settings/certificate-templates/delete/' + id;
+  document.getElementById('deleteModal').classList.add('open');
+}
+
+/* ---------- ポストテンプレート削除 ---------- */
+function confirmDeletePost(id, name) {
+  document.getElementById('deleteName').textContent = name;
+  document.getElementById('deleteForm').action = '/admin/settings/post-templates/delete/' + id;
+  document.getElementById('deleteModal').classList.add('open');
+}
+
+/* ---------- カードテンプレート削除 ---------- */
+function confirmDeleteCard(id, name) {
+  document.getElementById('deleteName').textContent = name;
+  document.getElementById('deleteForm').action = '/admin/settings/card-templates/delete/' + id;
+  document.getElementById('deleteModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('deleteModal').classList.remove('open');
+}
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+/* ---------- 参加者向けHTML配信 ---------- */
+function togglePublicHtml() {
+  const cb     = document.getElementById('publicHtmlEnabled');
+  const fields = document.getElementById('cloudFields');
+  const slider = document.getElementById('toggleSlider');
+  const knob   = document.getElementById('toggleKnob');
+  const pubBtn = document.getElementById('publishNowBtn');
+  if (cb.checked) {
+    fields.style.opacity = '1'; fields.style.pointerEvents = '';
+    slider.style.background = '#27ae60';
+    knob.style.left = '24px';
+    pubBtn.style.opacity = '1'; pubBtn.style.pointerEvents = '';
+  } else {
+    fields.style.opacity = '.45'; fields.style.pointerEvents = 'none';
+    slider.style.background = '#bdc3c7';
+    knob.style.left = '3px';
+    pubBtn.style.opacity = '.45'; pubBtn.style.pointerEvents = 'none';
+  }
+}
+
+async function manualPublish() {
+  const btn = event.target;
+  const msg = document.getElementById('publishMsg');
+  btn.disabled = true;
+  btn.textContent = '配信中...';
+  try {
+    const r = await fetch('/admin/settings/public-html/publish-now', {method:'POST'});
+    const d = await r.json();
+    msg.textContent = d.ok ? '✅ 配信しました' : ('❌ ' + (d.error || 'エラー'));
+    msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 4000);
+  } catch(e) {
+    msg.textContent = '❌ 通信エラー';
+    msg.style.display = 'inline';
+  }
+  btn.disabled = false;
+  btn.textContent = '📤 今すぐ手動更新';
+}
+
+/* ---------- サイドメニュー スクロール連動 ---------- */
+const sections = ['defaults', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores'];
+function updateMenu() {
+  let current = sections[0];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.getBoundingClientRect().top <= 100) current = id;
+  });
+  document.querySelectorAll('.settings-menu-item').forEach(a => {
+    a.classList.toggle('active', a.id === 'menu-' + current);
+  });
+}
+window.addEventListener('scroll', updateMenu);
+updateMenu();
+
+function togglePricingForm() {
+  const cb = document.getElementById('pricingEnabled');
+  const form = document.getElementById('pricingForm');
+  form.style.opacity = cb.checked ? '1' : '0.4';
+  form.style.pointerEvents = cb.checked ? 'auto' : 'none';
+}
+</script>
+{% endblock %}

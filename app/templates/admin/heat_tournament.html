@@ -1,0 +1,1096 @@
+{% extends "admin/base.html" %}
+{% block title %}ヒートトーナメント - {{ t.name }}{% endblock %}
+{% block extra_head %}
+<style>
+/* 予選管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
+.btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
+.ht-section{border:2px solid #dee2e6;border-radius:12px;margin-bottom:32px;overflow:hidden}
+.ht-header{background:#2980b9;color:#fff;padding:10px 18px;font-size:18px;font-weight:bold;display:flex;align-items:center;justify-content:space-between}
+.ht-header.done{background:#27ae60}
+.pattern-btn{padding:10px 18px;border:2px solid #dee2e6;border-radius:8px;cursor:pointer;font-size:14px;background:#fff;font-family:inherit;margin:4px}
+.pattern-btn:hover{border-color:#2980b9;background:#eaf4fb}
+.hr-divider{border:none;border-top:3px dashed #dee2e6;margin:32px 0}
+.round-header{display:inline-block;padding:3px 14px;border-radius:12px;font-size:13px;font-weight:bold;color:#fff;margin:12px 0 8px}
+.rh-normal{background:#2980b9}.rh-final{background:#d4a017}.rh-third{background:#cd7f32}
+.bracket-group{background:#fff;border:2px solid #dee2e6;border-radius:10px;padding:14px}
+.bracket-group.done{border-color:#27ae60}
+.bracket-group.is-final{border-color:#d4a017;background:#fffde7}
+/* トーナメント図の決勝枠はクリックで下部の決勝結果カードへ移動できる */
+[id^="ht-bracket-"] .br-group.is-final{cursor:pointer}
+.bracket-group.is-third{border-color:#cd7f32;background:#fff8f0}
+.slot-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #f0f0f0}
+.slot-row:last-child{border-bottom:none}
+.slot-no{width:26px;height:26px;border-radius:50%;background:#2980b9;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0}
+.slot-name{font-weight:bold;font-size:14px;flex:1;cursor:pointer;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot-name:hover{color:#2980b9;text-decoration:underline}
+.win-btn{width:40px;height:36px;border-radius:6px;font-size:18px;font-weight:bold;cursor:pointer;border:2px solid #dee2e6;background:#fff;color:#95a5a6;font-family:inherit;transition:all .1s}
+.win-btn.sel{border-color:#27ae60;background:#eafaf1;color:#27ae60}
+.grp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:8px}
+/* 上部アクションバー（レース詳細画面と同じデザイン・スクロール追従） */
+.detail-actionbar{position:sticky;top:0;z-index:100;background:#f4f5f7;margin:0 -20px 16px;padding:10px 20px;border-bottom:1px solid #e1e5ea;box-shadow:0 6px 10px -8px rgba(0,0,0,.25);display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.detail-actionbar .btn{margin:0}
+@media(max-width:700px){
+  .detail-actionbar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 20px;justify-content:flex-start}
+  .detail-actionbar > a,.detail-actionbar > form{flex:0 0 auto}
+  .detail-actionbar a,.detail-actionbar button{white-space:nowrap}
+}
+/* 全予選終了時：決勝管理ボタンを点滅グローで強調 */
+@keyframes m4DecisionPulse{0%,100%{box-shadow:0 0 0 0 rgba(39,174,96,.6)}50%{box-shadow:0 0 0 7px rgba(39,174,96,0)}}
+.btn-decision-hl{animation:m4DecisionPulse 1.4s ease-out infinite;font-weight:bold!important}
+</style>
+{% endblock %}
+
+{% block content %}
+{# ヒート決勝あり設定のとき、全ヒートのヒート決勝が完了しているか #}
+{% set hf_ns = namespace(all_done=true) %}
+{% for heat in all_heats %}
+  {% if heat.hf_enabled and heat.sections_data %}
+    {% set has_groups = heat.sections_data | selectattr('section_no','greaterthan',0) | list %}
+    {% if has_groups and not heat.hf_done %}{% set hf_ns.all_done = false %}{% endif %}
+  {% endif %}
+{% endfor %}
+{% set hf_all_done = hf_ns.all_done %}
+{# 全予選終了判定：全ヒートが完了しているか（ヒート決勝ありはhf_done、なしはadvancer数で判定） #}
+{% set pd_ns = namespace(all=true) %}
+{% for heat in all_heats %}
+  {% if heat.hf_enabled %}
+    {% if not heat.hf_done %}{% set pd_ns.all = false %}{% endif %}
+  {% else %}
+    {% if (heat.advanced|length) < (group_advance * group_count) %}{% set pd_ns.all = false %}{% endif %}
+  {% endif %}
+{% endfor %}
+{% set all_prelim_done = pd_ns.all and (all_heats|length > 0) %}
+<div class="detail-actionbar">
+  {% if all_prelim_done %}
+  <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#1e824c">✅ すべての予選が終了しました。結果を確認して「決勝管理」に進んでください。</span>
+  {% else %}
+  <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#c0392b">⚠️ 各ヒートのトーナメントを作成し、結果を確定してください。</span>
+  {% endif %}
+  <a href="/admin/tournaments/{{ t.id }}" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">← レース管理</a>
+  {% if all_prelim_done %}
+  <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success btn-sm btn-decision-hl" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">🏆 決勝管理</a>
+  {% else %}
+  <button type="button" class="btn btn-secondary btn-sm"
+          title="すべての予選が終了していません"
+          onclick="alert('すべての予選が終了していません。各ヒートのトーナメントを作成し、結果を確定してから決勝管理に進んでください。')"
+          style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1;cursor:not-allowed;opacity:.6">🏆 決勝管理</button>
+  {% endif %}
+  <a href="/admin/tournaments/{{ t.id }}/edit" class="btn btn-warning btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">✏️ レース情報を編集</a>
+</div>
+
+<div class="page-title">
+  <h1>{{ t.name }}</h1>
+  <p>{{ t.date }} — 上位{{ group_advance }}名 × {{ heat_count }}ヒート{% if group_count > 1 %} × {{ group_count }}グループ{% endif %} = 計{{ group_advance * heat_count * group_count }}名が決勝進出</p>
+</div>
+
+{% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32',4:'#95a5a6'} %}
+
+{# ── エントリーレーサー一覧 ── #}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header">👥 エントリーレーサー {{ entries|length }}名</div>
+  <div class="card-body">
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      {% for e in entries %}
+      <div style="padding:6px 14px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;font-weight:bold;font-size:14px">{{ e.name }}</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ── 決勝進出者一覧（＝各ヒートのヒート決勝の最終順位）── #}
+{% set hf_done_heats = [] %}
+{% for heat in all_heats %}
+  {% if t.qual_heat_final %}{% if heat.hf_done and heat.hf_advancers %}{% if hf_done_heats.append(heat) %}{% endif %}{% endif %}
+  {% else %}{% if heat.advanced %}{% if hf_done_heats.append(heat) %}{% endif %}{% endif %}{% endif %}
+{% endfor %}
+{% set medal = {1:'🏆',2:'🥈',3:'🥉'} %}
+{% set rank_c = {1:'#d4a017',2:'#636e72',3:'#cd7f32',4:'#95a5a6'} %}
+<div class="card" style="margin-bottom:24px;border:2px solid #27ae60">
+  <div class="card-header" style="background:#27ae60;color:#fff;font-weight:bold">
+    {% set ht_per = (t.qual_heat_advance or 1) if t.qual_heat_final else (group_count * group_advance) %}
+    🏆 決勝進出レーサー（各ヒート上位{{ ht_per }}名 × {{ heat_count }}ヒート＝{{ ht_per * heat_count }}名）
+  </div>
+  <div class="card-body">
+    {% if not hf_done_heats %}
+    <div style="font-size:13px;color:#636e72">
+      まだ決勝進出者は決まっていません。{% if t.qual_heat_final %}各ヒートのヒート決勝トーナメントが完了すると表示されます。{% else %}各ヒート・グループの順位が確定すると表示されます。{% endif %}
+    </div>
+    {% else %}
+    <div style="display:flex;flex-wrap:wrap;gap:20px">
+      {% for heat in hf_done_heats %}
+      {% set adv_list = (heat.hf_advancers | selectattr('is_advance') | list) if t.qual_heat_final else heat.advanced %}
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:12px;font-weight:bold;color:#2980b9;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #2980b9">
+          ヒート {{ heat.heat_no }}
+        </div>
+        {% for a in adv_list %}
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:6px;border-radius:8px;
+                    {% if a.is_advance or not t.qual_heat_final %}background:#fff8e1;border:2px solid {{ rank_c.get(a.rank,'#bbb') }}{% else %}background:#f5f6fa;border:1px solid #dfe4ea{% endif %}">
+          <span style="font-size:15px;min-width:1.6em">{{ medal.get(a.rank,'') }}</span>
+          <span style="font-weight:bold;font-size:13px;min-width:3em;color:{{ rank_c.get(a.rank,'#7f8c8d') }}">第{{ a.rank }}位</span>
+          <span style="font-weight:bold;font-size:15px;flex:1">{{ a.name }}</span>
+          {% if a.is_advance or not t.qual_heat_final %}<span style="font-size:11px;color:#27ae60;font-weight:bold">✔ 決勝進出</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% for heat in all_heats %}
+{% set hno = heat.heat_no %}
+{% set rounds = heat.rounds %}
+{% set groups_data = heat.groups_data %}
+{% set advanced = heat.advanced %}
+{% set expected_adv = group_advance * group_count %}
+{% set is_heat_done = advanced|length >= expected_adv %}
+
+<div class="ht-section" id="ht-section-{{ hno }}">
+  <div class="ht-header {% if is_heat_done %}done{% endif %}" style="flex-wrap:wrap;gap:4px 12px">
+    <span>ヒート {{ hno }}</span>
+    {% if rounds and not heat.locked %}
+    <span style="font-size:12px;font-weight:normal;color:#eaf6ff">
+      勝者のレーサー名をクリック　<a href="javascript:void(0)" onclick="scrollToHeatFinal({{ hno }})" style="color:#fff;text-decoration:underline;font-weight:bold">決勝の結果はこちらから入力</a>
+    </span>
+    {% endif %}
+    {% if heat.hf_done %}
+    {% set hf_in = heat.hf_advancers | selectattr('is_advance') | list %}
+    <span style="font-size:13px;font-weight:normal">🏆 決勝進出：{% for a in hf_in %}{{ a.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>
+    {% else %}
+    <span style="font-size:12px;font-weight:normal;opacity:0.8">
+      {% if group_count > 1 %}各グループ上位{{ group_advance }}名 × {{ group_count }}グループ{% else %}上位{{ group_advance }}名{% endif %}が決勝進出
+    </span>
+    {% endif %}
+  </div>
+
+
+  {% if not rounds %}
+  <div style="padding:16px">
+    {% if t.qual_heat_exclude and hno > 1 and not heat.prev_heat_done %}
+    <div style="margin:8px 0;padding:12px 16px;text-align:center;color:#c0392b;font-size:14px;font-weight:bold;background:#fdecea;border:1px solid #f5b7b1;border-radius:8px">
+      ⏳ ヒート{{ hno - 1 }}の結果が確定するとスケジュールを生成できます
+    </div>
+    {% else %}
+
+    {% if t.qual_heat_exclude and hno > 1 %}
+    {% set excluded = [] %}
+    {% for prev_heat in all_heats %}
+      {% if prev_heat.heat_no < hno %}
+        {% if t.qual_heat_final %}
+          {# ヒート決勝あり：ヒート決勝で決勝進出が確定した人(is_advance)のみ除外。グループ通過者は除外しない #}
+          {% for a in prev_heat.hf_advancers %}{% if a.is_advance %}{% if excluded.append({'heat_no': prev_heat.heat_no, 'overall_rank': a.rank, 'name': a.name}) %}{% endif %}{% endif %}{% endfor %}
+        {% else %}
+          {# ヒート決勝なし：各グループ通過者が直接決勝進出 #}
+          {% for a in prev_heat.advanced %}{% if excluded.append(a) %}{% endif %}{% endfor %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {% if excluded %}
+    <div style="margin-bottom:12px;padding:10px 14px;background:#fef9e7;border-left:4px solid #f39c12;border-radius:6px;font-size:13px">
+      <div style="font-weight:bold;color:#d68910;margin-bottom:6px">🚫 出場除外（前ヒート決勝進出済み）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for a in excluded %}
+        <span style="padding:2px 10px;border-radius:12px;background:#fff3cd;border:1px solid #f39c12;font-size:12px;font-weight:bold">
+          H{{ a.heat_no }} {{ a.overall_rank }}位 {{ a.name }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if group_count > 1 %}
+    <div style="font-size:14px;margin-bottom:16px">
+      <strong>{{ heat.heat_n }}名</strong> を <strong>{{ group_count }}グループ</strong> に分けてトーナメント<br>
+      <span style="font-size:12px;color:#636e72">各グループの組み合わせを選択してから生成してください</span>
+    </div>
+    <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/heat-tournament/{{ hno }}/generate"
+          id="gen-form-{{ hno }}" onsubmit="saveScrollForHeat({{ hno }})">
+      {% for sp in heat.patterns %}
+      <input type="hidden" id="hpat-{{ hno }}-{{ sp.section_no }}" name="pattern_{{ sp.section_no }}" value="">
+      <div style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:bold;color:#2980b9;margin-bottom:6px">
+          グループ{{ sp.label }}（{{ sp.size }}名）
+        </div>
+        <div>
+          {% for pat in sp.patterns %}
+          <button type="button" class="pattern-btn gpat-btn"
+                  data-hno="{{ hno }}" data-sec="{{ sp.section_no }}" data-pat="{{ pat|join(',') }}"
+                  style="margin:0 4px 4px 0">
+            {% for sz in pat %}<span style="display:inline-block;background:#2980b9;color:#fff;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold">{{ sz }}名</span>{% endfor %}
+            <span style="color:#636e72;font-size:12px;margin-left:4px">{{ pat|length }}グループ</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      <button type="submit" class="gen-submit-btn" data-hno="{{ hno }}" disabled
+              style="margin-top:8px;padding:8px 24px;font-size:15px;font-weight:bold;border-radius:6px;background:#ccc;color:#fff;border:none;cursor:not-allowed">
+        ⚡ 生成
+      </button>
+    </form>
+    {% else %}
+    <div style="font-size:14px;margin-bottom:10px"><strong>{{ heat.heat_n }}名</strong> の組み合わせを選択（決勝は自動。準決勝まで選んでください）</div>
+    <div class="ht-pattern-picker" data-hno="{{ hno }}" data-n="{{ heat.heat_n }}" data-adv="{{ group_advance }}">
+      <div class="ht-pp-rounds"></div>
+      <div class="ht-pp-mode" style="display:none;margin:12px 0;padding:12px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6">
+        <div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#495057">準決勝の形式</div>
+        <label class="ht-pp-m-semi3" style="display:none;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer">
+          <input type="radio" name="htmode-{{ hno }}" value="semi_3group" style="margin-top:3px">
+          <span><strong>① 3グループ準決勝 → 決勝3名</strong>
+            <span style="display:block;font-size:12px;color:#636e72">準決勝を3グループで行い、各グループ1名が決勝へ。決勝は3名で1〜3位を決定。</span></span>
+        </label>
+        <label class="ht-pp-m-final2" style="display:none;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer">
+          <input type="radio" name="htmode-{{ hno }}" value="third_place" style="margin-top:3px">
+          <span><strong>④ 2グループ準決勝 → 決勝2名</strong>
+            <span style="display:block;font-size:12px;color:#636e72">準決勝2グループの勝者2名で決勝。上位{{ group_advance }}名のみ決定（3位決定戦・敗者復活戦なし）。</span></span>
+        </label>
+        <label class="ht-pp-m-revival" style="display:none;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer">
+          <input type="radio" name="htmode-{{ hno }}" value="revival" style="margin-top:3px">
+          <span><strong>② 2グループ準決勝 → 敗者復活戦 → 決勝3名</strong>
+            <span style="display:block;font-size:12px;color:#636e72">準決勝2グループの勝者2名＋敗者復活戦の勝者1名で決勝（3名）。</span></span>
+        </label>
+        <label class="ht-pp-m-third" style="display:none;align-items:flex-start;gap:8px;cursor:pointer">
+          <input type="radio" name="htmode-{{ hno }}" value="third_place" style="margin-top:3px">
+          <span><strong>③ 2グループ準決勝 → 3位決定戦 → 決勝2名</strong>
+            <span style="display:block;font-size:12px;color:#636e72">準決勝2グループの勝者2名で決勝。敗者同士で3位決定戦を行う。</span></span>
+        </label>
+      </div>
+      <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/heat-tournament/{{ hno }}/generate"
+            class="ht-pp-form" style="display:none;margin-top:8px" onsubmit="htGenerateSync({{ hno }})">
+        <input type="hidden" name="pattern" class="ht-pp-r1" value="">
+        <input type="hidden" name="all_patterns" class="ht-pp-all" value="">
+        <input type="hidden" name="bracket_mode" class="ht-pp-mode-val" value="third_place">
+        <button type="submit" class="pattern-btn ht-pp-gen"
+                style="background:#27ae60;color:#fff;border-color:#27ae60;font-weight:bold">🏆 トーナメント表を確定・開始</button>
+      </form>
+    </div>
+    {% endif %}
+    <div style="margin-top:10px;padding:10px 14px;background:#eaf4fb;border:1px solid #aed6f1;border-radius:8px;color:#1c6ea4;font-size:13px;font-weight:bold">
+      👆 組み合わせを選んでトーナメントを作成してください
+    </div>
+    {% endif %}
+  </div>
+
+  {% else %}
+  <div style="display:flex;align-items:center;justify-content:flex-end;padding:8px 16px 0">
+    <button onclick="exportHeatBracket({{ hno }})" class="btn btn-secondary btn-sm" style="font-size:14px">📷 画像出力</button>
+  </div>
+  {# ── トーナメント表 ── #}
+  {% if group_count > 1 and heat.sections_data %}
+  {# グループA→B順に：トーナメント表→結果入力。section_no=0はヒート決勝として最後に表示。 #}
+  {% for sec in heat.sections_data %}{% if sec.section_no > 0 %}
+  <div style="padding:12px 16px 4px">
+    <div style="font-size:18px;font-weight:bold;color:#2980b9;margin-bottom:6px;padding:4px 10px;background:#e8f4fd;border-radius:6px;display:block;width:100%;box-sizing:border-box">
+      グループ{{ sec.label }}
+      {% set sec_adv = advanced | selectattr('section_no','equalto',sec.section_no) | list %}
+      {% if sec_adv|length >= group_advance %}
+      <span style="font-size:12px;font-weight:normal;margin-left:8px;color:#27ae60">✅ 進出：{% for a in sec_adv %}{{ a.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>
+      {% endif %}
+    </div>
+    <div id="ht-bracket-{{ hno }}-{{ sec.section_no }}" style="background:#fafbfc;border-radius:8px;overflow-x:auto;padding:4px;margin-bottom:10px">
+      <div style="color:#95a5a6;font-size:12px;padding:8px">読み込み中...</div>
+    </div>
+  </div>
+  <div id="ht-cards-{{ hno }}-{{ sec.section_no }}" style="padding:0 16px 12px">
+    {% set sec_rounds = sec.rounds %}
+    {% set sorted_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list)
+                         + (sec_rounds | selectattr('round_type','equalto','third') | list)
+                         + (sec_rounds | selectattr('round_type','equalto','final') | list) %}
+    {% for rnd in sorted_rounds %}
+    {% set is_final_rnd = rnd.round_type == 'final' %}
+    {% set is_third_rnd = rnd.round_type == 'third' %}
+    {% set is_rank_rnd = is_final_rnd or is_third_rnd %}
+    {% if is_third_rnd %}{% set rlabel='3位決定戦' %}{% set rbg='rh-third' %}
+    {% elif is_final_rnd %}{% set rlabel='決勝' %}{% set rbg='rh-final' %}
+    {% elif rnd.round_type == 'revival' %}{% set rlabel='敗者復活戦' %}{% set rbg='rh-normal' %}
+    {% else %}
+      {% set final_round = sec_rounds | selectattr('round_type','equalto','final') | list %}
+      {% set final_rno = final_round[0].round_no if final_round else 999 %}
+      {% if rnd.round_no == final_rno - 1 %}{% set rlabel='準決勝' %}
+      {% elif rnd.round_no == final_rno - 2 %}{% set rlabel='準々決勝' %}
+      {% else %}{% set rlabel='ラウンド' ~ rnd.round_no %}{% endif %}
+      {% set rbg='rh-normal' %}
+    {% endif %}
+    <span class="round-header {{ rbg }}">{{ rlabel }}</span>
+    <div class="grp-grid">
+    {% for gd in sec.groups_data if gd.round.id == rnd.id %}
+    {% set g=gd.group %}{% set slots=gd.slots %}{% set result=gd.result %}{% set ranks=gd.ranks %}
+    {% set n_slots=slots|length %}
+    <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
+         id="group-{{ g.id }}">
+      <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:{% if is_third_rnd %}#cd7f32{% elif is_final_rnd %}#d4a017{% else %}#636e72{% endif %}">
+        グループ{{ g.group_no }}
+        {% if result %}<span style="margin-left:6px;font-size:11px;color:#27ae60">✓完了</span>{% endif %}
+      </div>
+      {% set use_rank = is_rank_rnd and n_slots >= 3 %}
+      {% for slot in slots %}
+      {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
+      {% set cr = ranks.get(slot.slot_id) %}
+      <div class="slot-row">
+        <div class="slot-no" style="background:{% if is_rank_rnd and cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}">
+          {% if is_rank_rnd and cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
+        </div>
+        <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
+          {{ slot.name or '—' }}
+        </div>
+        {% if slot.name %}
+        {% if use_rank %}
+        <select id="sel-{{ g.id }}-{{ slot.slot_id }}" style="padding:4px 6px;border-radius:6px;border:2px solid #dee2e6;font-size:13px;width:90px;flex-shrink:0"
+                onchange="onRankSelect({{ g.id }},{{ slot.slot_id }},this.value,{{ t.id }},{{ hno }},{{ n_slots }},false)">
+          <option value="">-- 順位 --</option>
+          {% for rn in range(1, n_slots+1) %}<option value="{{ rn }}" {% if cr==rn %}selected{% endif %}>{{ rn }}位</option>{% endfor %}
+        </select>
+        {% else %}
+        <button type="button" class="win-btn {% if is_winner %}sel{% endif %}"
+                id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
+                onclick="setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }})">○</button>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% if use_rank and not result %}
+      <button id="save-btn-{{ g.id }}" disabled
+              style="margin-top:10px;height:40px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:#27ae60;color:#fff;border:none;font-weight:bold;cursor:not-allowed;opacity:0.4"
+              onclick="saveHtRanks({{ g.id }},{{ t.id }},{{ hno }},{{ n_slots }})">💾 保存</button>
+      {% endif %}
+    </div>
+    {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if not loop.last %}<hr style="border:none;border-top:2px dashed #dee2e6;margin:0 16px 12px">{% endif %}
+  {% endif %}{# sec.section_no > 0 #}
+  {% endfor %}
+
+  {# ── ヒート決勝（section_no=0）：生成ボタン / 警告 / トーナメント表 ── #}
+  {% if heat.hf_enabled %}
+  <hr style="border:none;border-top:3px solid #d4a017;margin:12px 16px">
+  {# ── ヒート決勝進出者（各グループの上位者）一覧 ── #}
+  {% if heat.group_advancers %}
+  <div style="margin:0 16px 14px;padding:12px 14px;background:#f0f9ff;border:1px solid #90caf9;border-radius:8px">
+    <div style="font-size:13px;font-weight:bold;color:#1565c0;margin-bottom:8px">🎫 ヒート決勝進出者（各グループ上位{{ group_advance }}名）</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      {% for sec_no, advs in heat.group_advancers.items() %}
+      <div style="min-width:160px">
+        <div style="font-size:12px;font-weight:bold;color:#1976d2;margin-bottom:4px">グループ{{ "ABCDEFG"[sec_no-1] }}</div>
+        {% for a in advs %}
+        <div style="font-size:13px;padding:2px 0"><span style="display:inline-block;width:2.4em;color:#e67e22;font-weight:bold">{{ a.rank }}位</span>{{ a.name }}</div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if not heat.hf_generated %}
+  <div style="margin:0 16px 16px;padding:16px;background:#fffde7;border:2px solid #d4a017;border-radius:8px">
+    <div style="font-size:18px;font-weight:bold;color:#d4a017;margin-bottom:8px">🏆 ヒート決勝トーナメント</div>
+    {% if heat.hf_can_generate %}
+    <div style="font-size:13px;color:#636e72;margin-bottom:10px">全グループの順位が確定しました。ヒート決勝トーナメントを生成できます。</div>
+    <button class="btn btn-warning" onclick="generateHeatFinal({{ hno }})">🏆 ヒート決勝トーナメントを生成</button>
+    {% else %}
+    <div style="font-size:13px;color:#c0392b;font-weight:bold">⚠️ 全グループの対戦結果（上位{{ group_advance }}名の順位）が出ていません。各グループの順位決定戦まで完了するとヒート決勝トーナメントを生成できます。</div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {# ── ヒート決勝（section_no=0）を最後に表示 #}
+  {% for sec in heat.sections_data %}{% if sec.section_no == 0 %}
+  <hr style="border:none;border-top:3px solid #d4a017;margin:12px 16px">
+  <div style="margin:0 16px 8px;padding:8px 14px;background:#fffde7;border:2px solid #d4a017;border-radius:8px;font-size:14px;font-weight:bold;color:#d4a017">
+    🏆 ヒート決勝
+    <span style="font-size:12px;font-weight:normal;color:#636e72;margin-left:8px">各グループの上位{{ group_advance }}名が出場・上位{{ heat_advance }}名が決勝進出</span>
+    {% set hf_adv = advanced | selectattr('section_no','equalto',0) | list %}
+    {% if hf_adv %}
+    <span style="font-size:12px;font-weight:normal;margin-left:8px;color:#27ae60">✅ 進出：{% for a in hf_adv %}{{ a.name }}{% if not loop.last %}・{% endif %}{% endfor %}</span>
+    {% endif %}
+  </div>
+  <div style="padding:4px 16px 4px">
+    <div id="ht-bracket-{{ hno }}-0" style="background:#fafbfc;border-radius:8px;overflow-x:auto;padding:4px;margin-bottom:10px">
+      <div style="color:#95a5a6;font-size:12px;padding:8px">読み込み中...</div>
+    </div>
+  </div>
+  <div id="ht-cards-{{ hno }}-0" style="padding:0 16px 12px">
+    {% set sec_rounds = sec.rounds %}
+    {% set sorted_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list)
+                         + (sec_rounds | selectattr('round_type','equalto','third') | list)
+                         + (sec_rounds | selectattr('round_type','equalto','final') | list) %}
+    {% for rnd in sorted_rounds %}
+    {% set is_final_rnd = rnd.round_type == 'final' %}
+    {% set is_third_rnd = rnd.round_type == 'third' %}
+    {% set is_rank_rnd = is_final_rnd or is_third_rnd %}
+    {% set rlabel = '決勝' if is_final_rnd else '3位決定戦' if is_third_rnd else 'ラウンド' ~ rnd.round_no %}
+    {% set rbg = 'rh-final' if is_final_rnd else 'rh-third' if is_third_rnd else 'rh-normal' %}
+    <div style="margin:8px 0 4px">
+      <span class="round-header {{ rbg }}" style="margin:0">{{ rlabel }}</span>
+    </div>
+    <div class="grp-grid">
+    {% for entry in sec.groups_data %}{% if entry.round.id == rnd.id %}
+    {% set g = entry.group %}{% set slots = entry.slots %}{% set result = entry.result %}{% set ranks = entry.ranks %}
+    {% set n_slots = slots | length %}
+    {% set use_rank = is_rank_rnd and n_slots >= 3 %}
+    {% set rc = {1:'#d4a017',2:'#aaa',3:'#cd7f32'} %}
+    <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
+         id="vg-{{ g.id }}" data-gid="{{ g.id }}">
+      <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:#d4a017">
+        グループ{{ g.group_no }}{% if result %} <span style="color:#27ae60;font-weight:normal">✓完了</span>{% endif %}
+      </div>
+      {% for slot in slots %}
+      {% set cr = ranks.get(slot.slot_id) %}
+      {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
+      <div class="slot-row">
+        <div class="slot-no" style="background:{% if is_rank_rnd and cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}">
+          {% if is_rank_rnd and cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
+        </div>
+        <div class="slot-name">{{ slot.name or '—' }}</div>
+        {% if slot.name %}
+        {% if use_rank %}
+        <select style="padding:4px 6px;border-radius:6px;border:2px solid #dee2e6;font-size:13px;width:90px;flex-shrink:0"
+                id="sel-{{ g.id }}-{{ slot.slot_id }}"
+                onchange="onRankSelect({{ g.id }},{{ slot.slot_id }},this.value,{{ t.id }},{{ hno }},{{ n_slots }},false)">
+          <option value="">-- 順位 --</option>
+          {% for r in range(1, n_slots+1) %}<option value="{{ r }}" {% if cr == r %}selected{% endif %}>{{ r }}位</option>{% endfor %}
+          <option value="0" {% if cr == 0 %}selected{% endif %}>コースアウト</option>
+        </select>
+        {% else %}
+        <button type="button" class="win-btn {% if is_winner %}selected{% endif %}"
+                onclick="setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }})"
+                style="{% if is_winner %}background:#27ae60;color:#fff;border-color:#27ae60{% endif %}">○</button>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% if use_rank and not result %}
+      <button onclick="saveHtRanks({{ g.id }},{{ t.id }},{{ hno }})" disabled
+              id="save-btn-{{ g.id }}"
+              style="margin-top:8px;height:40px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:#ccc;color:#fff;border:none;cursor:not-allowed;font-size:13px;width:100%">
+        💾 保存
+      </button>
+      {% endif %}
+    </div>
+    {% endif %}{% endfor %}
+    </div>
+    {% endfor %}
+    <div style="margin-top:12px;text-align:right">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="regenHeatFinal({{ hno }})">🔄 ヒート決勝を再生成</button>
+    </div>
+  </div>
+  {% endif %}{% endfor %}
+
+  {% else %}
+  {# group_count == 1: 従来表示 #}
+  <div style="padding:12px 16px 4px">
+    <div style="font-size:13px;font-weight:bold;color:#636e72;margin-bottom:6px">トーナメント表</div>
+    <div id="ht-bracket-{{ hno }}" style="background:#fafbfc;border-radius:8px;overflow-x:auto;padding:4px">
+      <div style="color:#95a5a6;font-size:12px;padding:12px">読み込み中...</div>
+    </div>
+  </div>
+
+  <div id="ht-cards-{{ hno }}" style="padding:8px 16px 4px">
+  {% set sorted_rounds = (rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list)
+                       + (rounds | selectattr('round_type','equalto','third') | list)
+                       + (rounds | selectattr('round_type','equalto','final') | list) %}
+  {% for rnd in sorted_rounds %}
+  {% set is_final_rnd = rnd.round_type == 'final' %}
+  {% set is_third_rnd = rnd.round_type == 'third' %}
+  {% set is_rank_rnd = is_final_rnd or is_third_rnd %}
+  {% if is_third_rnd %}{% set rlabel='3位決定戦' %}{% set rbg='rh-third' %}
+  {% elif is_final_rnd %}{% set rlabel='決勝' %}{% set rbg='rh-final' %}
+  {% elif rnd.round_type == 'revival' %}{% set rlabel='敗者復活戦' %}{% set rbg='rh-normal' %}
+  {% else %}
+    {% set final_round = rounds | selectattr('round_type','equalto','final') | list %}
+    {% set final_rno = final_round[0].round_no if final_round else 999 %}
+    {% if rnd.round_no == final_rno - 1 %}{% set rlabel='準決勝' %}
+    {% elif rnd.round_no == final_rno - 2 %}{% set rlabel='準々決勝' %}
+    {% else %}{% set rlabel='ラウンド' ~ rnd.round_no %}{% endif %}
+    {% set rbg='rh-normal' %}
+  {% endif %}
+  <span class="round-header {{ rbg }}">{{ rlabel }}</span>
+  <div class="grp-grid">
+  {% for gd in groups_data if gd.round.id == rnd.id %}
+  {% set g=gd.group %}{% set slots=gd.slots %}{% set result=gd.result %}{% set ranks=gd.ranks %}
+  {% set n_slots=slots|length %}
+  <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
+       id="group-{{ g.id }}">
+    <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:{% if is_third_rnd %}#cd7f32{% elif is_final_rnd %}#d4a017{% else %}#636e72{% endif %}">
+      グループ{{ g.group_no }}
+      {% if result %}<span style="margin-left:6px;font-size:11px;color:#27ae60">✓完了</span>{% endif %}
+    </div>
+    {% set use_rank = is_rank_rnd and n_slots >= 3 %}
+    {% for slot in slots %}
+    {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
+    {% set cr = ranks.get(slot.slot_id) %}
+    <div class="slot-row">
+      <div class="slot-no" style="background:{% if is_rank_rnd and cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}">
+        {% if is_rank_rnd and cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
+      </div>
+      <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
+        {{ slot.name or '—' }}
+      </div>
+      {% if slot.name %}
+      {% if use_rank %}
+      <select id="sel-{{ g.id }}-{{ slot.slot_id }}" style="padding:4px 6px;border-radius:6px;border:2px solid #dee2e6;font-size:13px;width:90px;flex-shrink:0"
+              onchange="onRankSelect({{ g.id }},{{ slot.slot_id }},this.value,{{ t.id }},{{ hno }},{{ n_slots }},false)">
+        <option value="">-- 順位 --</option>
+        {% for rn in range(1, n_slots+1) %}<option value="{{ rn }}" {% if cr==rn %}selected{% endif %}>{{ rn }}位</option>{% endfor %}
+      </select>
+      {% else %}
+      <button type="button" class="win-btn {% if is_winner %}sel{% endif %}"
+              id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
+              onclick="setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }})">○</button>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if use_rank and not result %}
+    <button id="save-btn-{{ g.id }}" disabled
+            style="margin-top:10px;height:40px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:#27ae60;color:#fff;border:none;font-weight:bold;cursor:not-allowed;opacity:0.4"
+            onclick="saveHtRanks({{ g.id }},{{ t.id }},{{ hno }},{{ n_slots }})">💾 保存</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+  </div>
+  {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if heat.locked %}
+  <div style="margin:0 16px 12px;padding:12px 16px;background:#fdecea;border:2px solid #e74c3c;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div style="font-weight:bold;color:#c0392b;font-size:14px">
+      🔒 このヒートは結果確定済み（ロック中）です。編集するには「結果を取消」してください。
+    </div>
+    <button type="button" class="btn btn-warning"
+            style="white-space:nowrap;font-weight:bold"
+            onclick="unlockHeat({{ t.id }},{{ hno }})">↩️ 結果を取消</button>
+  </div>
+  {% endif %}
+  <div style="padding:4px 16px 16px">
+    <button type="button" class="btn btn-danger btn-sm" onclick="resetHt({{ t.id }},{{ hno }})">🔄 ヒート{{ hno }}のトーナメント表をリセット</button>
+  </div>
+  {% endif %}
+</div>
+{% if not loop.last %}<hr class="hr-divider">{% endif %}
+{% endfor %}
+
+<script>
+// ヒート単位でトーナメント表（SVG）を画像出力
+function exportHeatBracket(hno){
+  var sec = document.getElementById('ht-section-' + hno);
+  if(!sec){ alert('ヒートが見つかりません'); return; }
+  var brackets = sec.querySelectorAll('[id^="ht-bracket-' + hno + '-"]');
+  if(!brackets.length){ alert('トーナメント表が見つかりません'); return; }
+  var target, temp = null;
+  if(brackets.length === 1){ target = brackets[0]; }
+  else {
+    temp = document.createElement('div');
+    temp.style.cssText = 'background:#fff;padding:8px;position:fixed;left:-99999px;top:0';
+    brackets.forEach(function(b){ temp.appendChild(b.cloneNode(true)); });
+    document.body.appendChild(temp);
+    target = temp;
+  }
+  function cleanup(){ if(temp) temp.remove(); }
+  function cap(){
+    html2canvas(target, {backgroundColor:'#ffffff', scale:2, useCORS:true,
+      width:target.scrollWidth, height:target.scrollHeight, windowWidth:target.scrollWidth + 40, logging:false})
+    .then(function(canvas){
+      var n = new Date();
+      var ts = n.getFullYear() + ('0'+(n.getMonth()+1)).slice(-2) + ('0'+n.getDate()).slice(-2) + '_' + ('0'+n.getHours()).slice(-2) + ('0'+n.getMinutes()).slice(-2);
+      var link = document.createElement('a');
+      link.download = 'heat' + hno + '_' + ts + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      cleanup();
+    }).catch(function(e){ console.error(e); alert('画像出力に失敗しました'); cleanup(); });
+  }
+  if(window.html2canvas){ cap(); }
+  else {
+    var s = document.createElement('script');
+    s.src = '/static/js/html2canvas.min.js';
+    s.onload = cap;
+    s.onerror = function(){ alert('画像生成ライブラリ（html2canvas）の読み込みに失敗しました。'); cleanup(); };
+    document.head.appendChild(s);
+  }
+}
+// ヒートヘッダの「決勝の結果はこちらから入力」リンク → そのヒートの決勝カードへスクロール
+function scrollToHeatFinal(hno){
+  var sec = document.getElementById('ht-section-' + hno);
+  if(!sec) return;
+  var el = sec.querySelector('.bracket-group.is-final');
+  if(!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  el.style.transition = 'box-shadow .3s';
+  el.style.boxShadow = '0 0 0 4px rgba(212,160,23,.55)';
+  setTimeout(function(){ el.style.boxShadow = ''; }, 1600);
+}
+/* トーナメント図の「決勝」枠クリック → 下部の決勝結果入力カードへスクロール。
+   図の決勝グループは id="vg-{group_id}"、結果カードは id="group-{group_id}" で
+   同一IDを共有する（決勝管理画面と同方式）。図は非同期で再描画されるためイベント委譲。 */
+document.addEventListener('click', function(e){
+  var fg = e.target.closest && e.target.closest('[id^="ht-bracket-"] .br-group.is-final');
+  if(!fg) return;
+  var m = (fg.id || '').match(/^vg-(\d+)$/);
+  if(!m) return;
+  var card = document.getElementById('group-' + m[1]);
+  if(!card) return;
+  card.scrollIntoView({behavior:'smooth', block:'center'});
+  var prev = card.style.boxShadow;
+  card.style.transition = 'box-shadow .3s';
+  card.style.boxShadow = '0 0 0 4px rgba(212,160,23,.85)';
+  setTimeout(function(){ card.style.boxShadow = prev || ''; }, 1600);
+}, false);
+// グループパターン選択
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.gpat-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var hno = btn.dataset.hno;
+      var sec = btn.dataset.sec;
+      var pat = btn.dataset.pat;
+      // hidden field に値セット
+      document.getElementById('hpat-' + hno + '-' + sec).value = pat;
+      // 同グループ内のボタンのスタイルをリセット
+      btn.closest('div').querySelectorAll('.gpat-btn').forEach(function(b) {
+        b.style.outline = '';
+        b.style.boxShadow = '';
+      });
+      btn.style.outline = '3px solid #e74c3c';
+      btn.style.boxShadow = '0 0 0 3px rgba(231,76,60,0.3)';
+      // 全グループ選択済みか確認して生成ボタンを有効化
+      var form = document.getElementById('gen-form-' + hno);
+      if (!form) return;
+      var inputs = form.querySelectorAll('input[type="hidden"]');
+      var allSet = Array.from(inputs).every(function(i) { return i.value !== ''; });
+      var genBtn = form.querySelector('.gen-submit-btn');
+      if (genBtn) {
+        genBtn.disabled = !allSet;
+        genBtn.style.background = allSet ? '#2980b9' : '#ccc';
+        genBtn.style.cursor = allSet ? 'pointer' : 'not-allowed';
+      }
+    });
+  });
+});
+
+// execScripts removed (prevented memory leak)
+// ブラケットHTML内のレイアウト用スクリプトは「未定義のときだけ1回」実行して
+// window._bracketDrawConnectors を定義する（毎回実行するとリークするため）。
+// 以降は _bracketDrawConnectors() を呼べばグループの絶対配置と高さ確定が走る。
+function _htEnsureBracketScript(c) {
+  if (window._bracketDrawConnectors) return;
+  c.querySelectorAll('script').forEach(function(oldScript){
+    var s = document.createElement('script');
+    s.textContent = oldScript.textContent;
+    document.head.appendChild(s);
+    document.head.removeChild(s);
+  });
+}
+function loadHtBracket(tid, hno) {
+  var c=document.getElementById('ht-bracket-'+hno);
+  if(!c) return;
+  fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html')
+    .then(function(r){return r.text();})
+    .then(function(html){
+      // 差し替え中に高さが潰れてページが動く（スクロールしたような動作）のを防ぐ：
+      // 旧高さを minHeight で固定し、位置確定まで非表示にしてから表示する。
+      var prevH = c.offsetHeight;
+      if(prevH > 0) c.style.minHeight = prevH + 'px';
+      c.style.visibility = 'hidden';
+      c.innerHTML=html;
+      _htEnsureBracketScript(c);
+      setTimeout(function(){
+        if(window._bracketDrawConnectors){
+          window._bracketDrawConnectors();
+        } else {
+          c.querySelectorAll('.bracket-html').forEach(function(el){
+            if(typeof drawBracketConnectors==='function')drawBracketConnectors(el);
+          });
+        }
+        setTimeout(function(){ c.style.visibility=''; setTimeout(function(){ c.style.minHeight=''; },60); }, 60);
+      },120);
+    }).catch(function(){ c.style.visibility=''; c.style.minHeight=''; });
+}
+function loadHtBracketSection(tid, hno, sec_no) {
+  var cid = 'ht-bracket-' + hno + '-' + sec_no;
+  var c = document.getElementById(cid);
+  if(!c) return;
+  var url = '/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?section_no='+sec_no;
+  fetch(url).then(function(r){return r.text();}).then(function(html){
+    var prevH = c.offsetHeight;
+    if(prevH > 0) c.style.minHeight = prevH + 'px';
+    c.style.visibility = 'hidden';
+    c.innerHTML = html;
+    _htEnsureBracketScript(c);
+    setTimeout(function(){
+      if(window._bracketDrawConnectors){
+        window._bracketDrawConnectors();
+      } else {
+        c.querySelectorAll('.bracket-html').forEach(function(el){
+          if(typeof drawBracketConnectors==='function')drawBracketConnectors(el);
+        });
+      }
+      setTimeout(function(){ c.style.visibility=''; setTimeout(function(){ c.style.minHeight=''; },60); }, 60);
+    },120);
+  }).catch(function(){ c.style.visibility=''; c.style.minHeight=''; });
+}
+(function(){
+  var tid={{ t.id }};
+  {% for heat in all_heats %}
+  {% if group_count > 1 %}
+  {% for sec in heat.sections_data %}
+  if(document.getElementById('ht-bracket-{{ heat.heat_no }}-{{ sec.section_no }}'))
+    loadHtBracketSection(tid, {{ heat.heat_no }}, {{ sec.section_no }});
+  {% endfor %}
+  {% else %}
+  loadHtBracket(tid, {{ heat.heat_no }});
+  {% endif %}
+  {% endfor %}
+})();
+
+function getOffset(el,ct){var x=0,y=0;while(el&&el!==ct){x+=el.offsetLeft-el.scrollLeft;y+=el.offsetTop-el.scrollTop;el=el.offsetParent;}return{x:x,y:y};}
+function drawBracketConnectors(bh){
+  bh.querySelectorAll('.br-connector-svg').forEach(function(e){e.remove();});
+  var rs=Array.from(bh.querySelectorAll('.br-round'));if(rs.length<2)return;
+  var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('class','br-connector-svg');svg.style.cssText='position:absolute;top:0;left:0;pointer-events:none;overflow:visible;';
+  svg.style.width=bh.scrollWidth+'px';svg.style.height=bh.scrollHeight+'px';bh.style.position='relative';bh.appendChild(svg);
+  for(var ri=0;ri<rs.length-1;ri++){
+    var cg=Array.from(rs[ri].querySelectorAll('.br-group')),ng=Array.from(rs[ri+1].querySelectorAll('.br-group'));
+    if(!cg.length||!ng.length)continue;var ci2=0;
+    for(var ni=0;ni<ng.length;ni++){
+      var sc=ng[ni].querySelectorAll('.br-slot').length,cnt=Math.min(sc,cg.length-ci2);if(cnt<=0)continue;
+      var no2=getOffset(ng[ni],bh),nmy=no2.y+ng[ni].offsetHeight/2,nx=no2.x,mYs=[],rx=0;
+      for(var ci=ci2;ci<ci2+cnt;ci++){var co2=getOffset(cg[ci],bh),cy=co2.y+cg[ci].offsetHeight/2,cx=co2.x+cg[ci].offsetWidth;rx=Math.max(rx,cx);mYs.push(cy);var col=cg[ci].classList.contains('has-winner')?'#27ae60':'#adb5bd';line(svg,cx,cy,cx+20,cy,col);}
+      var vx=rx+20,anyW=cg.slice(ci2,ci2+cnt).some(function(g){return g.classList.contains('has-winner');});var vc=anyW?'#27ae60':'#adb5bd';
+      if(mYs.length>1){var ty=Math.min.apply(null,mYs.concat([nmy])),by=Math.max.apply(null,mYs.concat([nmy]));line(svg,vx,ty,vx,by,vc);line(svg,vx,nmy,nx,nmy,vc);}
+      else{line(svg,vx,mYs[0],nx,mYs[0],'#adb5bd');}
+      var nc=ng[ni].classList.contains('has-winner')?'#1e8449':'#adb5bd';line(svg,nx-20,nmy,nx,nmy,nc);ci2+=cnt;
+    }
+  }
+}
+function line(svg,x1,y1,x2,y2,c){var l=document.createElementNS('http://www.w3.org/2000/svg','line');l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);l.setAttribute('stroke',c);l.setAttribute('stroke-width','2');svg.appendChild(l);}
+
+const selectedRanks={};
+function onRankSelect(gid,sid,rv,tid,hn,ns,_auto){
+  if(!selectedRanks[gid])selectedRanks[gid]={};const rk=parseInt(rv);
+  if(!rv){delete selectedRanks[gid][sid];}
+  else{
+    // 重複チェック・クリア
+    for(const[s,r]of Object.entries(selectedRanks[gid])){
+      if(r===rk&&parseInt(s)!==sid){
+        delete selectedRanks[gid][s];
+        const o=document.getElementById(`sel-${gid}-${s}`);
+        if(o)o.value='';
+      }
+    }
+    selectedRanks[gid][sid]=rk;
+    // n-1個選択済みなら最後の1枠を自動セット
+    if(!_auto){
+      const sel=selectedRanks[gid]||{};
+      const nSel=Object.keys(sel).length;
+      if(nSel===ns-1){
+        const usedRanks=Object.values(sel).map(Number);
+        const lastRank=Array.from({length:ns},(_,i)=>i+1).find(r=>!usedRanks.includes(r));
+        const allSels=document.querySelectorAll(`select[id^="sel-${gid}-"]`);
+        for(const el of allSels){
+          const slotId=parseInt(el.id.replace(`sel-${gid}-`,''));
+          if(!sel[slotId]){
+            el.value=String(lastRank);
+            onRankSelect(gid,slotId,String(lastRank),tid,hn,ns,true);
+            break;
+          }
+        }
+      }
+    }
+  }
+  const btn=document.getElementById(`save-btn-${gid}`);
+  if(btn){const rdy=Object.keys(selectedRanks[gid]).length===ns;btn.disabled=!rdy;btn.style.opacity=rdy?'1':'0.4';btn.style.cursor=rdy?'pointer':'not-allowed';}
+}
+// ブラケット表のスロットも、その場で勝者ハイライトする（再描画せず＝チラつかない）。
+// グループ vg-{gid} 内の .br-slot を onclick の slot_id で照合し、勝者に winner クラス＋✓を付与。
+function _htHighlightBracketWinner(gid, sid){
+  var vg = document.getElementById('vg-'+gid);
+  if(!vg) return;
+  vg.classList.add('has-winner');
+  vg.querySelectorAll('.br-slot').forEach(function(sl){
+    var oc = sl.getAttribute('onclick') || '';
+    var m = oc.match(/setHtWinner\((\d+),(\d+)/);
+    var slotSid = m ? parseInt(m[2]) : null;
+    if(slotSid === sid){
+      sl.classList.add('winner');
+      if(!sl.querySelector('.br-slot-mark')){
+        var mk = document.createElement('span'); mk.className='br-slot-mark'; mk.textContent='✓';
+        sl.appendChild(mk);
+      }
+    } else if(slotSid !== null){
+      sl.classList.remove('winner');
+      var ex = sl.querySelector('.br-slot-mark'); if(ex) ex.remove();
+    }
+  });
+}
+// DOM差し替え（カード/ブラケット）の前後でスクロール位置を保持する。
+// 差し替えに伴うレイアウト変化でページが一瞬スクロールして戻る現象を防ぐ。
+function _htKeepScroll(fn){
+  const se = document.scrollingElement || document.documentElement;
+  const y = se.scrollTop;
+  let stop = false;
+  const restore = function(){ if(!stop) se.scrollTop = y; };
+  // 非同期レイアウト確定の各タイミングで位置を戻し続ける
+  [0,16,32,60,120,200,320,480,650].forEach(function(d){ setTimeout(restore, d); });
+  // 余分な復元で操作を阻害しないよう700msで打ち切り
+  setTimeout(function(){ stop = true; }, 700);
+  try { fn(); } catch(e){ console.error(e); }
+  restore();
+}
+// 入力カードだけをAJAXで差し替え（全画面リロードのチカチカを防ぐ）。
+// インラインの onclick はHTML属性なので差し替え後も有効。
+async function refreshHtCards(tid, hn){
+  try{
+    const res = await fetch(location.href, {cache:'no-store', headers:{'X-Requested-With':'fetch'}});
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const replace = function(el){
+      const fresh = doc.getElementById(el.id);
+      if(!fresh) return;
+      // 差し替えで一瞬縮んでページがガクッと動くのを防ぐため高さを一時固定
+      const h = el.offsetHeight;
+      if(h > 0) el.style.minHeight = h + 'px';
+      el.innerHTML = fresh.innerHTML;
+      requestAnimationFrame(function(){ setTimeout(function(){ el.style.minHeight = ''; }, 80); });
+    };
+    const single = document.getElementById('ht-cards-'+hn);
+    if(single) replace(single);
+    document.querySelectorAll('[id^="ht-cards-'+hn+'-"]').forEach(replace);
+    // 差し替えで rank 選択状態はサーバ値で再構築されるためクリア
+    try{ for(const k in selectedRanks) delete selectedRanks[k]; }catch(e){}
+  }catch(e){ console.error(e); }
+}
+async function saveHtRanks(gid,tid,hn,ns){
+  const ranks=selectedRanks[gid]||{};if(Object.keys(ranks).length<ns)return;
+  const form=new FormData();for(const[s,r]of Object.entries(ranks))form.append(`rank_${s}`,r);
+  try{const res=await fetch(`/admin/tournaments/${tid}/qualifying/heat-tournament/${hn}/group/${gid}/save`,{method:'POST',body:form});
+    if(res.status===409){const d=await res.json().catch(()=>({}));alert(d.error||'このヒートはロックされています。');return;}
+    const data=await res.json();
+    if(!data.ok) return;
+    _htKeepScroll(function(){
+      if(data.is_final_done){
+        // 決勝/3位決定戦が確定：上部の決勝進出者表示を更新するため1回だけリロード
+        sessionStorage.setItem('htScrollY',window.scrollY);
+        setTimeout(()=>location.reload(),400);
+      } else if(data.round_done){
+        // このラウンドが完了：次ラウンドのカードを表示＋ブラケット更新
+        reloadBracketForHeat(tid,hn);
+        refreshHtCards(tid,hn);
+      } else {
+        // 途中保存（ラウンド未完了）でも、サーバ側で勝者は次ラウンドへ繰り上げ済み。
+        // トーナメント表を再取得して、次ラウンドの枠へ即時反映する。
+        reloadBracketForHeat(tid,hn);
+      }
+    });
+  }catch(e){console.error(e);}
+}
+async function setHtWinner(gid,sid,tid,hn){
+  const form=new FormData();form.append('winner_slot_id',sid);
+  try{const res=await fetch(`/admin/tournaments/${tid}/qualifying/heat-tournament/${hn}/group/${gid}/save`,{method:'POST',body:form});
+    if(res.status===409){const d=await res.json().catch(()=>({}));alert(d.error||'このヒートはロックされています。');return;}
+    const data=await res.json();
+    if(!data.ok) return;
+    _htKeepScroll(function(){
+      // クリックした勝者をその場でハイライト（即時フィードバック・再取得しないので消えない）
+      document.getElementById(`group-${gid}`)?.classList.add('done');
+      document.querySelectorAll(`[id^="wbtn-${gid}-"]`).forEach(b=>b.classList.remove('sel'));
+      const wb=document.getElementById(`wbtn-${gid}-${sid}`);if(wb)wb.classList.add('sel');
+      // 上のトーナメント表（ブラケット）も同時にその場でハイライト
+      _htHighlightBracketWinner(gid, sid);
+      fetch('/view/host-sync',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url:location.pathname,scroll_to:'vg-'+gid})}).catch(()=>{});
+      if(data.is_final_done){
+        // ヒート完了：上部の決勝進出者表示を更新するため1回だけリロード
+        sessionStorage.setItem('htScrollY',window.scrollY);
+        setTimeout(()=>location.reload(),500);
+      } else if(data.round_done){
+        // このラウンドが完了：次ラウンドのカードを表示＋ブラケット更新
+        reloadBracketForHeat(tid,hn);
+        refreshHtCards(tid,hn);
+      } else {
+        // 途中クリック（ラウンド未完了）でも、サーバ側で勝者は次ラウンドへ繰り上げ済み。
+        // トーナメント表を再取得して、次ラウンドの枠へ即時反映する。
+        reloadBracketForHeat(tid,hn);
+      }
+    });
+  }catch(e){console.error(e);}
+}
+function reloadBracketForHeat(tid,hn){
+  var secEls=document.querySelectorAll('[id^="ht-bracket-'+hn+'-"]');
+  if(secEls.length>0){
+    secEls.forEach(function(el){
+      var sec=parseInt(el.id.split('-').pop());
+      if(!isNaN(sec))loadHtBracketSection(tid,hn,sec);
+    });
+  } else {
+    loadHtBracket(tid,hn);
+  }
+}
+async function generateHeatFinal(hn){
+  const r = await fetch(`/admin/tournaments/{{ t.id }}/qualifying/heat-tournament/${hn}/heat-final/generate`,{method:'POST'});
+  const d = await r.json().catch(()=>({ok:false,error:'通信エラー'}));
+  if(!d.ok){ alert(d.error || 'ヒート決勝トーナメントを生成できませんでした。'); return; }
+  location.reload();
+}
+async function regenHeatFinal(hn){
+  if(!confirm('ヒート'+hn+'のヒート決勝トーナメントを再生成しますか？\n現在のヒート決勝の対戦結果は消去されます。'))return;
+  const r = await fetch(`/admin/tournaments/{{ t.id }}/qualifying/heat-tournament/${hn}/heat-final/generate`,{method:'POST'});
+  const d = await r.json().catch(()=>({ok:false,error:'通信エラー'}));
+  if(!d.ok){ alert(d.error || '再生成できませんでした。'); return; }
+  location.reload();
+}
+async function resetHt(tid,hn){
+  if(!confirm('ヒート'+hn+'のトーナメント表と結果がリセットされます。本当にリセットしますか？'))return;
+  const r=await fetch(`/admin/tournaments/${tid}/qualifying/heat-tournament/${hn}/reset`,{method:'POST'});
+  if(r.status===409){const d=await r.json().catch(()=>({}));alert(d.error||'このヒートはロックされています。');return;}
+  location.reload();
+}
+async function unlockHeat(tid,hn){
+  if(!confirm('ヒート'+hn+'の結果を取消してロックを解除しますか？\n（順位などの結果データは保持され、再編集が可能になります）'))return;
+  const r=await fetch(`/admin/tournaments/${tid}/qualifying/heat-tournament/${hn}/unlock`,{method:'POST'});
+  const d=await r.json().catch(()=>({ok:false}));
+  if(!d.ok){alert('解除に失敗しました。');return;}
+  location.reload();
+}
+(function(){
+  const y=sessionStorage.getItem('htScrollY');
+  if(y){
+    // 結果保存によるリロード：保存前のスクロール位置を厳密に復元する。
+    // この場合は htFocusHeat（生成時のヒートフォーカス）を使わない（飛び防止）。
+    sessionStorage.removeItem('htScrollY');
+    sessionStorage.removeItem('htFocusHeat');
+    window.scrollTo(0,parseInt(y));
+    return;
+  }
+  const hn=sessionStorage.getItem('htFocusHeat');
+  if(hn){sessionStorage.removeItem('htFocusHeat');const el=document.getElementById('ht-section-'+hn);if(el)el.scrollIntoView({behavior:'auto',block:'start'});}
+})();
+function saveScrollForHeat(hno){sessionStorage.setItem('htFocusHeat',hno);}
+
+// トーナメント生成時：観覧側を該当ヒートの位置へスクロールさせる（viewerの id="heat-{hno}"）
+function htGenerateSync(hno){
+  saveScrollForHeat(hno);
+  try{
+    var blob=new Blob([JSON.stringify({url:location.pathname, scroll_to:'heat-'+hno})],{type:'application/json'});
+    if(navigator.sendBeacon){ navigator.sendBeacon('/view/host-sync', blob); }
+    else { fetch('/view/host-sync',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({url:location.pathname,scroll_to:'heat-'+hno}),keepalive:true}).catch(()=>{}); }
+  }catch(e){}
+}
+
+// ── 全ラウンド組み合わせピッカー（ヒートごと・即決勝と同じ事前選択方式）──
+(function(){
+  function c23(num){
+    var res=[];
+    for(var k=Math.floor(num/3);k>=0;k--){
+      var rem=num-3*k;
+      if(rem>=0 && rem%2===0){
+        var pat=[];var i;
+        for(i=0;i<k;i++)pat.push(3);
+        for(i=0;i<rem/2;i++)pat.push(2);
+        if(pat.length)res.push(pat);
+      }
+    }
+    return res;
+  }
+  function badge(x){
+    var s=document.createElement('span');
+    s.style.cssText='display:inline-block;border-radius:4px;padding:2px 8px;margin:0 2px;font-weight:bold;color:#fff;background:'+(x===3?'#27ae60':'#2980b9');
+    s.textContent=x+'名';return s;
+  }
+  document.querySelectorAll('.ht-pattern-picker').forEach(function(pk){
+    var n=parseInt(pk.dataset.n)||0;
+    var roundsBox=pk.querySelector('.ht-pp-rounds');
+    var form=pk.querySelector('.ht-pp-form');
+    var modeBox=pk.querySelector('.ht-pp-mode');
+    var inR1=pk.querySelector('.ht-pp-r1');
+    var inAll=pk.querySelector('.ht-pp-all');
+    var inMode=pk.querySelector('.ht-pp-mode-val');
+    var lblSemi3=pk.querySelector('.ht-pp-m-semi3');
+    var lblFinal2=pk.querySelector('.ht-pp-m-final2');
+    var lblRevival=pk.querySelector('.ht-pp-m-revival');
+    var lblThird=pk.querySelector('.ht-pp-m-third');
+    var adv=parseInt(pk.dataset.adv)||1; // グループ内 上位通過人数
+    var chosen=[]; // 各ラウンドの選択（準決勝まで。決勝は含めない）
+
+    function patEq(a,b){ return a.length===b.length && a.every(function(x,i){return x===b[i];}); }
+    function multi(num){ return c23(num).filter(function(p){return p.length>=2;}); }
+
+    function render(){
+      roundsBox.innerHTML='';
+      var done = chosen.length>0 && multi(chosen[chosen.length-1].length).length===0;
+      for(var ri=0;;ri++){
+        var people=(ri===0)?n:chosen[ri-1].length; // このラウンドの人数 = 前ラウンドのグループ数
+        if(people<1) break;
+        var opts=multi(people);
+        if(opts.length===0) break; // この回は決勝(1グループ)のみ → 表示しない（自動）
+
+        var wrap=document.createElement('div'); wrap.style.cssText='margin-bottom:10px';
+        var lbl=document.createElement('div'); lbl.style.cssText='font-size:13px;font-weight:bold;color:#636e72;margin-bottom:4px';
+        // ラベル：R1は固定、以降は確定後に準決勝/準々決勝…
+        var text;
+        if(ri===0){ text='ラウンド1（'+people+'名）'; }
+        else if(done){
+          var diff=chosen.length-ri; // 1=準決勝,2=準々決勝,3=準々々決勝
+          text=(diff===1?'準決勝':diff===2?'準々決勝':diff===3?'準々々決勝':'ラウンド'+(ri+1))+'（'+people+'名）';
+        } else { text='ラウンド'+(ri+1)+'（'+people+'名）'; }
+        lbl.textContent=text; wrap.appendChild(lbl);
+
+        opts.forEach(function(pat){
+          var b=document.createElement('button'); b.type='button'; b.className='pattern-btn'; b.style.margin='4px';
+          pat.forEach(function(x){b.appendChild(badge(x));});
+          var gg=document.createElement('span'); gg.style.cssText='color:#636e72;font-size:12px;margin-left:6px';
+          gg.textContent=pat.length+'グループ'; b.appendChild(gg);
+          if(ri<chosen.length && patEq(pat,chosen[ri])){ b.style.background='#eaf4fb'; b.style.borderColor='#2980b9'; }
+          (function(idx,p){ b.onclick=function(){ chosen=chosen.slice(0,idx); chosen.push(p); update(); }; })(ri,pat);
+          wrap.appendChild(b);
+        });
+        roundsBox.appendChild(wrap);
+        if(ri>=chosen.length) break; // 現ラウンド（未選択）まで表示したら停止
+      }
+    }
+
+    function update(){
+      render();
+      var done = chosen.length>0 && multi(chosen[chosen.length-1].length).length===0;
+      if(!done){ modeBox.style.display='none'; form.style.display='none'; return; }
+      // 準決勝確定 → 決勝の取り扱いを「準決勝グループ数」と「上位通過人数」で出し分け
+      var semiGroups=chosen[chosen.length-1].length; // 2 or 3
+      lblSemi3.style.display='none'; lblFinal2.style.display='none';
+      lblRevival.style.display='none'; lblThird.style.display='none';
+      var radios=modeBox.querySelectorAll('input[type=radio]');
+      radios.forEach(function(r){r.checked=false;});
+      if(semiGroups===3){
+        // ① 3グループ準決勝 → 決勝3名
+        lblSemi3.style.display='flex';
+        lblSemi3.querySelector('input').checked=true;
+      } else if(adv<=2){
+        // 上位1〜2名のみ決定 → ④ 決勝2名（3位決定・敗者復活なし）
+        lblFinal2.style.display='flex';
+        lblFinal2.querySelector('input').checked=true;
+      } else {
+        // 上位3名以上を決定 → ②（既定）/③
+        lblRevival.style.display='flex';
+        lblThird.style.display='flex';
+        lblRevival.querySelector('input').checked=true; // 既定②（敗者復活戦→決勝3名）
+      }
+      modeBox.style.display='block';
+      // ラジオ→hidden bracket_mode 同期
+      radios.forEach(function(r){ r.onchange=function(){ inMode.value=r.value; }; });
+      var ck=modeBox.querySelector('input[type=radio]:checked'); inMode.value=ck?ck.value:'third_place';
+      inR1.value=chosen[0].join(',');
+      inAll.value=chosen.map(function(p){return p.join(',');}).join('|'); // 準決勝まで（決勝は含めない）
+      form.style.display='block';
+    }
+    update();
+  });
+})();
+
+</script>
+
+{% endblock %}

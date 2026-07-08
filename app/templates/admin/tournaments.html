@@ -1,0 +1,198 @@
+{% extends "admin/base.html" %}
+{% block title %}レース一覧{% endblock %}
+
+{% block extra_head %}
+<style>
+.cal-header { border-bottom:1px solid #e9ecef; }
+.cal-nav-btn { background:#f0f0f0; border:none; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:14px; line-height:1; }
+.cal-nav-btn:hover { background:#dce3ea; }
+.cal-month-label { font-size:16px; font-weight:bold; color:#2c3e50; min-width:120px; text-align:center; }
+.cal-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+.cal-dow { text-align:center; font-size:11px; font-weight:bold; color:#7f8c8d; padding:8px 0; background:#f8f9fa; border-bottom:1px solid #e9ecef; }
+.cal-dow:first-child { color:#e74c3c; }
+.cal-cell { min-height:72px; border-right:1px solid #f0f0f0; border-bottom:1px solid #f0f0f0; padding:4px 5px; font-size:12px; vertical-align:top; cursor:pointer; position:relative; transition:background .1s; }
+.cal-cell:hover { background:#f0f7ff; }
+.cal-cell.other-month .cal-day-num { color:#bdc3c7; }
+.cal-cell.today .cal-day-num { background:#2980b9; color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; }
+.cal-day-num { font-size:12px; font-weight:bold; color:#2c3e50; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; }
+.cal-event { background:#3498db; color:#fff; border-radius:3px; padding:0 5px; height:40px; line-height:40px; font-size:14px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.cal-event.night { background:#8e44ad; }
+.cal-event.day   { background:#27ae60; }
+.cal-event.finished { opacity:.65; }
+.cal-cell:nth-child(7n+1) .cal-day-num { color:#e74c3c; }
+.cal-cell.other-month:nth-child(7n+1) .cal-day-num { color:#f5b7b1; }
+.cal-cell:nth-child(7n) .cal-day-num { color:#3498db; }
+.cal-cell.other-month:nth-child(7n) .cal-day-num { color:#aed6f1; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title" style="display:flex;align-items:center;justify-content:space-between">
+  <div>
+    <h1>レース一覧</h1>
+    <p>登録されているすべてのレース</p>
+  </div>
+</div>
+
+<!-- レースカレンダー -->
+<div class="card" style="margin-bottom:24px">
+  <div class="cal-header" style="display:flex;align-items:center;gap:8px;padding:12px 16px;flex-wrap:wrap;">
+    <button class="cal-nav-btn" onclick="moveMonth(-1)">◀</button>
+    <span class="cal-month-label" id="calLabel" style="min-width:110px;text-align:center"></span>
+    <button class="cal-nav-btn" onclick="moveMonth(1)">▶</button>
+    <select class="cal-select" id="calYear" onchange="applySelects()" style="width:90px"></select>
+    <select class="cal-select" id="calMonth" onchange="applySelects()" style="width:70px"></select>
+    <span style="font-size:12px;color:#e67e22;margin-left:12px">💡 常設開催の場合はレーサーマスタにレーサーの事前登録がおすすめです</span>
+    <div style="margin-left:auto;flex-shrink:0">
+      <a href="/admin/tournaments/new" class="btn btn-primary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">＋ 新規レース作成</a>
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <div class="cal-grid" id="calBody" style="min-width:420px;"></div>
+  </div>
+</div>
+
+<script>
+const TOURNAMENTS = {{ all_tournaments_json | safe }};
+let curYear, curMonth;
+(function init() {
+  const now = new Date();
+  curYear  = now.getFullYear();
+  curMonth = now.getMonth() + 1;
+  const ys = document.getElementById('calYear');
+  for (let y = now.getFullYear()-2; y <= now.getFullYear()+3; y++) {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y + '年';
+    if (y === curYear) o.selected = true;
+    ys.appendChild(o);
+  }
+  const ms = document.getElementById('calMonth');
+  for (let m = 1; m <= 12; m++) {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m + '月';
+    if (m === curMonth) o.selected = true;
+    ms.appendChild(o);
+  }
+  renderCalendar();
+})();
+
+function moveMonth(d) {
+  curMonth += d;
+  if (curMonth > 12) { curMonth = 1;  curYear++; }
+  if (curMonth < 1)  { curMonth = 12; curYear--; }
+  syncSelects(); renderCalendar();
+}
+function applySelects() {
+  curYear  = parseInt(document.getElementById('calYear').value);
+  curMonth = parseInt(document.getElementById('calMonth').value);
+  renderCalendar();
+}
+function syncSelects() {
+  document.getElementById('calYear').value  = curYear;
+  document.getElementById('calMonth').value = curMonth;
+}
+function renderCalendar() {
+  document.getElementById('calLabel').textContent = curYear + '年 ' + curMonth + '月';
+  const body = document.getElementById('calBody');
+  body.innerHTML = '';
+  ['日','月','火','水','木','金','土'].forEach((d,i) => {
+    const dow = document.createElement('div');
+    dow.className = 'cal-dow';
+    if (i === 6) dow.style.color = '#3498db';
+    dow.textContent = d;
+    body.appendChild(dow);
+  });
+  const today    = new Date();
+  const firstDay = new Date(curYear, curMonth - 1, 1);
+  const lastDay  = new Date(curYear, curMonth, 0);
+  const startDow = firstDay.getDay();
+  const totalDays = lastDay.getDate();
+  const prevLast = new Date(curYear, curMonth - 1, 0).getDate();
+  const raceMap = {};
+  TOURNAMENTS.forEach(t => {
+    if (!raceMap[t.date]) raceMap[t.date] = [];
+    raceMap[t.date].push(t);
+  });
+  function pad(n){ return String(n).padStart(2,'0'); }
+  for (let i = 0; i < startDow; i++) {
+    const dayNum = prevLast - startDow + 1 + i;
+    const pm = curMonth === 1 ? 12 : curMonth - 1;
+    const py = curMonth === 1 ? curYear - 1 : curYear;
+    body.appendChild(makeCell(dayNum, `${py}-${pad(pm)}-${pad(dayNum)}`, true));
+  }
+  for (let d = 1; d <= totalDays; d++) {
+    const dateStr = `${curYear}-${pad(curMonth)}-${pad(d)}`;
+    const isToday = (today.getFullYear()===curYear && today.getMonth()+1===curMonth && today.getDate()===d);
+    body.appendChild(makeCell(d, dateStr, false, isToday));
+  }
+  const filled = startDow + totalDays;
+  const remain = filled % 7 === 0 ? 0 : 7 - (filled % 7);
+  const nm = curMonth === 12 ? 1 : curMonth + 1;
+  const ny = curMonth === 12 ? curYear + 1 : curYear;
+  for (let i = 1; i <= remain; i++) {
+    body.appendChild(makeCell(i, `${ny}-${pad(nm)}-${pad(i)}`, true));
+  }
+  function makeCell(dayNum, dateStr, isOther, isToday=false) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (isOther ? ' other-month' : '') + (isToday ? ' today' : '');
+    cell.onclick = () => { if (!isOther) location.href = '/admin/tournaments/new?date=' + dateStr; };
+    const dn = document.createElement('div');
+    dn.className = 'cal-day-num';
+    dn.textContent = dayNum;
+    cell.appendChild(dn);
+    (raceMap[dateStr] || []).forEach(t => {
+      const ev = document.createElement('div');
+      ev.className = 'cal-event ' + (t.time_slot||'') + (t.status==='finished'?' finished':'');
+      ev.textContent = t.name || t.regulation;
+      ev.title = t.regulation || t.name;
+      ev.onclick = e => { e.stopPropagation(); location.href='/admin/tournaments/'+t.id; };
+      cell.appendChild(ev);
+    });
+    return cell;
+  }
+}
+</script>
+
+<div class="card">
+  <div class="card-body" style="padding:0;overflow-x:auto;">
+    {% if tournaments %}
+    <table style="white-space:nowrap;">
+      <thead>
+        <tr>
+          <th>レース名</th><th>開催日</th><th>予選形式</th>
+          <th>エントリー数</th><th>結果</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tournaments %}
+        <tr>
+          <td style="white-space:normal;min-width:120px;"><strong>{{ t.name }}</strong>
+            {% if t.regulation %}<br><span style="font-size:12px;color:#636e72">{{ t.regulation }}</span>{% endif %}
+          </td>
+          <td>{{ t.date }}</td>
+          <td>{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type or '-') }}</td>
+          <td>{{ t.entry_count }} 名</td>
+          <td>
+            {% set res = results_map.get(t.id, {}) %}
+            {% if res %}
+            <span style="font-size:12px">
+              {% if res.get(1) %}<span style="color:#d4a017;font-weight:bold">🥇{{ res[1] }}</span>{% endif %}
+              {% if res.get(2) %}<span style="color:#888;margin-left:6px">🥈{{ res[2] }}</span>{% endif %}
+              {% if res.get(3) %}<span style="color:#cd7f32;margin-left:6px">🥉{{ res[3] }}</span>{% endif %}
+            </span>
+            {% else %}<span style="color:#dee2e6;font-size:12px">－</span>{% endif %}
+          </td>
+          <td><a href="/admin/tournaments/{{ t.id }}" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1">管理</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:40px;text-align:center;color:#95a5a6">
+      レースがまだ登録されていません。<a href="/admin/tournaments/new">最初のレースを作成する</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
