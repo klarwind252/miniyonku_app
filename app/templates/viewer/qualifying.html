@@ -5,7 +5,7 @@
     {% if is_none_roundrobin %}決勝管理（総当たり）
     {% elif qualifying_type == 'roundrobin' %}予選（総当たり）
     {% elif qualifying_type == 'heat_roundrobin' %}予選（ヒート制総当たり）
-    {% elif qualifying_type == 'heat_tournament' %}予選（ヒートトーナメント）
+    {% elif qualifying_type in ('heat_tournament','heat_tournament_garappa') %}予選（ヒートトーナメント）
     {% elif qualifying_type == 'point' %}予選（ポイント制）
     {% else %}予選{% endif %}
   </span>
@@ -151,15 +151,15 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   {{ t.name }}
   <span style="color:#7f8c8d;font-weight:normal;margin-left:8px;font-size:14px">{% if is_none_roundrobin %}決勝{% else %}予選{% endif %}</span>
 </div>
-{% if qualifying_type in ('heat_roundrobin','heat_tournament') %}
+{% if qualifying_type in ('heat_roundrobin','heat_tournament','heat_tournament_garappa') %}
 <div style="background:#0f1923;border-bottom:1px solid #2c3e50;padding:8px 20px;font-size:13px;color:#ecf0f1;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
-  <span style="color:#3498db;font-weight:bold">{% if qualifying_type == 'heat_tournament' %}ヒート（トーナメント）{% elif qualifying_type == 'heat_roundrobin' %}ヒート（総当たり）{% endif %}</span>
+  <span style="color:#3498db;font-weight:bold">{% if qualifying_type in ('heat_tournament','heat_tournament_garappa') %}ヒート（トーナメント）{% elif qualifying_type == 'heat_roundrobin' %}ヒート（総当たり）{% endif %}</span>
   {% if qualifying_type == 'heat_roundrobin' %}
   <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
   <span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>
   <span>⬆️ グループ上位 <strong>{{ t.qual_group_advance }}</strong> 名</span>
   {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_final_advance }}</strong>名）</span>{% else %}<span style="color:#7f8c8d">🏁 ヒート決勝なし</span>{% endif %}
-  {% elif qualifying_type == 'heat_tournament' %}
+  {% elif qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
   <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
   {% if (t.qual_group_count or 1) > 1 %}<span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>{% endif %}
   <span>⬆️ 各ヒート上位 <strong>{{ t.qual_group_advance or t.qual_heat_advance }}</strong> 名</span>
@@ -173,7 +173,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {% set lc = ['#2980b9','#e74c3c','#27ae60'] %}
 {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
 
-{% if qualifying_type == "heat_tournament" %}
+{% if qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
 {# ── 決勝進出レーサー（各ヒートのヒート決勝の本戦進出者、完了ヒートから順次）── #}
 {% set hf_done_heats = [] %}
 {% for hd in ht_heats_data %}
@@ -380,7 +380,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% endif %}
       </div>
 
-      {% elif qualifying_type == 'heat_tournament' %}
+      {% elif qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
       {# ヒートトーナメント：グループ別にトーナメント表＋結果を表示 #}
       {% set rank_colors = {1:'#d4a017',2:'#636e72',3:'#cd7f32'} %}
 
@@ -913,7 +913,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   {% endif %}{# /heat_roundrobin右カラム #}
 </div>
-{% if qualifying_type != 'heat_tournament' and not is_none_roundrobin %}{{ finalist_block() }}{% endif %}
+{% if qualifying_type not in ('heat_tournament','heat_tournament_garappa') and not is_none_roundrobin %}{{ finalist_block() }}{% endif %}
 {% endblock %}
 
 {% if qualifying_type == 'heat_roundrobin' %}

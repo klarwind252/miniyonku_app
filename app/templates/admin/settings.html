@@ -213,6 +213,9 @@
   <nav class="settings-menu">
     <div class="settings-menu-label">設定項目</div>
     <a href="#defaults"  class="settings-menu-item" id="menu-defaults">🎛️ 初期値</a>
+    {% if not IS_CLOUD %}
+    <a href="#store-name" class="settings-menu-item" id="menu-store-name">🏪 店舗名</a>
+    {% endif %}
     <a href="#pricing"   class="settings-menu-item" id="menu-pricing">💴 利用料金</a>
     <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 賞状テンプレート</a>
     <a href="#card"      class="settings-menu-item" id="menu-card">📇 QR/バーコード印刷テンプレート</a>
@@ -229,6 +232,27 @@
 
   <!-- 右コンテンツ -->
   <div>
+
+    {% if not IS_CLOUD %}
+    <!-- 店舗名（オンプレ版／店舗1の名称） -->
+    <div class="settings-section" id="store-name">
+      <div class="section-title">🏪 店舗名</div>
+      <div class="card">
+        <div class="card-header">店舗名（店舗1）</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:#636e72;margin-bottom:12px">
+            一部の予選形式の選択肢の出し分け等に使用します。<br>
+            例：「がらっぱ堂」と設定すると、レース作成・編集の予選形式に
+            「ヒート（トーナメント）[がらっぱ堂]」が追加で選べるようになります。
+          </p>
+          <form method="post" action="/admin/settings/store-name/save" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" name="store_name" value="{{ onprem_store_name }}" placeholder="店舗名" style="padding:7px 10px;border:1px solid #ced4da;border-radius:6px;font-size:13px;width:220px">
+            <button type="submit" class="btn btn-success btn-sm">💾 名称を保存</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <!-- 初期値 -->
     <div class="settings-section" id="defaults">
@@ -1369,7 +1393,7 @@ async function manualPublish() {
 }
 
 /* ---------- サイドメニュー スクロール連動 ---------- */
-const sections = ['defaults', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores'];
+const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores'];
 function updateMenu() {
   let current = sections[0];
   sections.forEach(id => {

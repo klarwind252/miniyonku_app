@@ -107,6 +107,7 @@
           <option value="none"            {% if default_qualifying=='none' %}selected{% endif %}>なし（即決勝トーナメント）</option>
           <option value="none_roundrobin" {% if default_qualifying=='none_roundrobin' %}selected{% endif %}>なし（即決勝総当たり）</option>
           <option value="heat_tournament" {% if default_qualifying=='heat_tournament' or not default_qualifying %}selected{% endif %}>ヒート（トーナメント）</option>
+          {% if garappa_enabled %}<option value="heat_tournament_garappa" {% if default_qualifying=='heat_tournament_garappa' %}selected{% endif %}>ヒート（トーナメント）[がらっぱ堂]</option>{% endif %}
           <option value="heat_roundrobin" {% if default_qualifying=='heat_roundrobin' %}selected{% endif %}>ヒート（総当たり）</option>
           <option value="point"           {% if default_qualifying=='point' %}selected{% endif %}>ポイント</option>
           <option value="roundrobin"      {% if default_qualifying=='roundrobin' %}selected{% endif %}>総当たり</option>
@@ -645,7 +646,8 @@ function checkBeforeSubmit() {
 // 現在の予選形式設定から「決勝進出人数」を算出する。
 // なし(即決勝)/順番制はエントリー数で決まるため作成時は判定しない（null）。
 function getFinalistCount() {
-  const v = document.getElementById("qualifying_type").value;
+  let v = document.getElementById("qualifying_type").value;
+  if (v === "heat_tournament_garappa") v = "heat_tournament";
   if (v === "heat_tournament") {
     const hc = parseInt(document.getElementById("ht_count").value) || 1;
     const gc = parseInt(document.getElementById("ht_gcount").value) || 1;
@@ -696,7 +698,8 @@ function applyPointPreset(radio) {
 }
 
 function onQualChange() {
-  const v = document.getElementById("qualifying_type").value;
+  let v = document.getElementById("qualifying_type").value;
+  if (v === "heat_tournament_garappa") v = "heat_tournament";
   // 全セクションを非アクティブ＆disabled
   document.querySelectorAll(".qual-section").forEach(el => {
     el.classList.remove("active");

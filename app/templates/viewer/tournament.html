@@ -65,7 +65,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div class="info-value">{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type or '-') }}</div>
     </div>
 
-    {% if t.qualifying_type in ('heat_roundrobin', 'heat_tournament') %}
+    {% if t.qualifying_type in ('heat_roundrobin', 'heat_tournament', 'heat_tournament_garappa') %}
     <tr><td colspan="2">
       <div style="background:#0f1923;border-left:3px solid #2980b9;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
         {% if t.qualifying_type == 'heat_roundrobin' %}
@@ -76,7 +76,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_final_advance }}</strong>名）</span>{% else %}<span style="color:#7f8c8d">🏁 ヒート決勝なし</span>{% endif %}
           <span>🎯 勝ち抜け方式 {% if t.qual_heat_exclude %}<strong style="color:#e67e22">ON</strong>{% else %}<strong style="color:#95a5a6">OFF</strong>{% endif %}</span>
         </div>
-        {% elif t.qualifying_type == 'heat_tournament' %}
+        {% elif t.qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
         <div style="display:flex;flex-wrap:wrap;gap:16px">
           <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
           {% if (t.qual_group_count or 1) > 1 %}<span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>{% endif %}

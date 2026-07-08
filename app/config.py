@@ -19,6 +19,16 @@ DEPLOY_MODE = os.environ.get("DEPLOY_MODE", "onprem").lower()   # "onprem" | "cl
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 IS_CLOUD = DEPLOY_MODE == "cloud"
 
+# 予選形式「ヒート（トーナメント）」系の内部タイプ一覧。
+# 「ヒート（トーナメント）[がらっぱ堂]」（heat_tournament_garappa）は
+# 表示名だけが異なり、挙動はヒート（トーナメント）と完全に同一。
+HEAT_TOURNAMENT_TYPES = ("heat_tournament", "heat_tournament_garappa")
+
+# 「ヒート（トーナメント）[がらっぱ堂]」を選べるようにする条件となる店舗1の名称。
+# 店舗1（既定店舗）の名称がこの値と一致するときだけ、作成・編集画面に
+# 当該予選形式の選択肢を表示する。
+GARAPPA_STORE_NAME = "がらっぱ堂"
+
 # 固定トークン（クラウド時のみ使用。複数店舗化では店舗1初期値としてレジストリへ移行）
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 VIEW_TOKEN = os.environ.get("VIEW_TOKEN", "")

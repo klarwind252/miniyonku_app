@@ -17,7 +17,7 @@ from app.models.database import get_db
 
 router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "../templates"))
-from app.config import inject_globals
+from app.config import inject_globals, HEAT_TOURNAMENT_TYPES
 inject_globals(templates)
 
 
@@ -717,7 +717,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     qualifying_incomplete_msg = ""
 
     # heat_tournament でヒート決勝ありの場合: 全ヒートのヒート決勝が完了しているか
-    if t_dict.get("qualifying_type") == "heat_tournament" and bool(t_dict.get("qual_heat_final", 0)):
+    if t_dict.get("qualifying_type") in HEAT_TOURNAMENT_TYPES and bool(t_dict.get("qual_heat_final", 0)):
         from app.routers.qualifying import _ht_heat_final_section_no
         heat_count = int(t_dict.get("qual_heat_count") or 1)
         for hno in range(1, heat_count + 1):
@@ -773,7 +773,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     # ※ heat_tournament でまだ決勝トーナメント未生成の場合、entries.advanced が
     #   旧ロジック（グループ通過者）のまま残っていることがあるため、ここで最新化する。
     _has_rounds_chk = await _get_rounds(tid, db)
-    if dict(t).get("qualifying_type") == "heat_tournament" and not [r for r in _has_rounds_chk if r["round_type"] != "losers"]:
+    if dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES and not [r for r in _has_rounds_chk if r["round_type"] != "losers"]:
         try:
             from app.routers.qualifying import _ht_update_advanced
             await _ht_update_advanced(tid, db)
@@ -864,9 +864,9 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
                 "total_filled": total_filled,
                 "complete": total_filled == total_slots and total_slots > 0,
             }
-    elif advanced_entries or dict(t).get("qualifying_type") == "heat_tournament":
+    elif advanced_entries or dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES:
         # advanced=1 が未設定でも heat_tournament はランクから直接進出者を再構成（レース管理を開かなくても反映）
-        if dict(t).get("qualifying_type") == "heat_tournament":
+        if dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES:
             # ヒートトーナメント：ht_per_heat_advancedを使って重複込みでフラット化
             ht_adv_flat = await _get_ht_per_heat_advanced(tid, db)
             finalists = []
@@ -1053,8 +1053,8 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     ht_duplicates = []
     dup_resolved = request.query_params.get("dup_resolved") == "1"
     is_hr_heat_final = (dict(t).get("qualifying_type") == "heat_roundrobin" and bool(t_dict.get("qual_heat_final")))
-    if (dict(t).get("qualifying_type") == "heat_tournament" or is_hr_heat_final) and not rounds and not dup_resolved:
-        if dict(t).get("qualifying_type") == "heat_tournament":
+    if (dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES or is_hr_heat_final) and not rounds and not dup_resolved:
+        if dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES:
             ht_adv = await _get_ht_per_heat_advanced(tid, db)
             from collections import defaultdict
             racer_heat_map = defaultdict(list)
@@ -1088,14 +1088,14 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     seeded_ids, super_seeded_ids = await _get_seeded_ids(tid, db)
     # ht複数回出場時は枠単位(entry_id+heat_no)でシード判定
     ht_seed_keys = set()
-    is_ht_multi = ((dict(t).get("qualifying_type") == "heat_tournament" or is_hr_heat_final) and not dup_resolved)
+    is_ht_multi = ((dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES or is_hr_heat_final) and not dup_resolved)
     # dup_resolved=1（複数回出場確定後）かつdup処理でmultiを選んだ場合も枠単位を使う
     # シードIDが存在しかつfinalistsに重複entry_idがある場合 = 複数回出場+任意シード
     entry_id_counts = {}
     for f in finalists:
         entry_id_counts[f["entry_id"]] = entry_id_counts.get(f["entry_id"], 0) + 1
     has_ht_duplicates = any(v > 1 for v in entry_id_counts.values())
-    use_ht_seed = dict(t).get("qualifying_type") == "heat_tournament" and has_ht_duplicates
+    use_ht_seed = dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES and has_ht_duplicates
     if use_ht_seed:
         ht_seed_keys = await _get_ht_finalist_seed_keys(tid, db)
     # finalistsにseededフラグを付与
@@ -1258,7 +1258,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
         "post_templates": post_templates,
         "qualifying_incomplete": qualifying_incomplete,
         "qualifying_incomplete_msg": qualifying_incomplete_msg,
-        "ht_per_heat_advanced": await _get_ht_per_heat_advanced(tid, db) if dict(t).get("qualifying_type") == "heat_tournament" else [],
+        "ht_per_heat_advanced": await _get_ht_per_heat_advanced(tid, db) if dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES else [],
         "ht_duplicates": ht_duplicates,
         "hr_heats_data": hr_heats_data_br,
         "ht_seed_keys": list(ht_seed_keys),
@@ -1699,7 +1699,7 @@ async def bracket_generate(
         qt_row = await cur.fetchone()
     qt_gen = qt_row["qualifying_type"] if qt_row else ""
 
-    if qt_gen == "heat_tournament":
+    if qt_gen in HEAT_TOURNAMENT_TYPES:
         # ヒートトーナメント：ht_per_heat_advancedをフラット化（重複込み）
         ht_adv_gen = await _get_ht_per_heat_advanced(tid, db)
         finalists = []
@@ -3170,7 +3170,7 @@ async def _get_advanced_entries(tid: int, db: aiosqlite.Connection) -> list[dict
                         if qual_heat_exclude_hr:
                             seen_hr.add(eid)
                         picked += 1
-    elif qual_type == "heat_tournament":
+    elif qual_type in HEAT_TOURNAMENT_TYPES:
         # ヒート制トーナメント：ヒート1の1位→2位→3位→ヒート2の1位...の順
         from app.routers.qualifying import _ht_get_advanced as _htga
         t_row = dict(t)
@@ -3332,7 +3332,7 @@ async def _get_all_standings(tid: int, db: aiosqlite.Connection) -> list[dict]:
             (tid, tid),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
-    elif qual_type == "heat_tournament":
+    elif qual_type in HEAT_TOURNAMENT_TYPES:
         # ヒート制トーナメント：1位=100pt, 2位=10pt, 3位=1pt × ヒート数の合計で順位決定
         async with db.execute(
             """SELECT hs.entry_id, r.name,

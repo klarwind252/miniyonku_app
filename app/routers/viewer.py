@@ -65,6 +65,7 @@ async def _load_race_assets_v(tid, db) -> dict:
         pass
     return out
 from app.config import inject_globals as _inject_globals
+from app.config import HEAT_TOURNAMENT_TYPES
 _inject_globals(templates)
 
 # ホストの現在画面を保持（メモリ）。複数店舗化のため店舗IDごとに分離。
@@ -555,7 +556,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     ht_rounds_data = []
     ht_advanced_by_heat = []
     ht_heats_data = []
-    if qt == "heat_tournament":
+    if qt in HEAT_TOURNAMENT_TYPES:
         try:
             from app.routers.qualifying import _ht_get_advanced as _htga
             heat_count = int(dict(t).get("qual_heat_count") or 1)
@@ -727,7 +728,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     # none_roundrobin は決勝画面なので finalists_list 不要
     if qt == "none_roundrobin":
         finalists_list = []
-    elif qt == "heat_tournament":
+    elif qt in HEAT_TOURNAMENT_TYPES:
         finalists_list = await _ht_get_finalists_ordered(tid, db)
     else:
         if qt == "roundrobin":
@@ -911,7 +912,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
     qt = dict(t).get("qualifying_type", "")
 
     # 決勝進出予定レーサー（heat_tournament は決勝結果から順位付け、それ以外は advanced=1 のポイント順）
-    if qt == "heat_tournament":
+    if qt in HEAT_TOURNAMENT_TYPES:
         finalists_list = await _ht_get_finalists_ordered(tid, db)
         from app.routers.qualifying import _ht_get_advanced as _htga2
         from app.routers.qualifying import _ht_get_heatfinal_advancers as _hfa2

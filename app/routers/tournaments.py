@@ -13,7 +13,7 @@ from app.services.barcode import build_code
 
 router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "../templates"))
-from app.config import inject_globals
+from app.config import inject_globals, HEAT_TOURNAMENT_TYPES, GARAPPA_STORE_NAME, IS_CLOUD
 inject_globals(templates)
 
 
@@ -72,6 +72,7 @@ QUALIFYING_LABELS = {
     "none": "なし（即決勝トーナメント）",
     "none_roundrobin": "なし（即決勝総当たり）",
     "heat_tournament": "ヒート（トーナメント）",
+    "heat_tournament_garappa": "ヒート（トーナメント）[がらっぱ堂]",
     "heat_roundrobin": "ヒート（総当たり）",
     "point": "ポイント",
     "roundrobin": "総当たり",
@@ -80,11 +81,33 @@ QUALIFYING_LABELS = {
 }
 
 
+async def _get_store1_name(db) -> str:
+    """店舗1（既定店舗）の表示名を返す。
+
+    クラウド版：店舗レジストリ（control.db）の既定店舗名。
+    オンプレ版：メインDBの app_settings キー 'store_name'。
+    未設定・失敗時は空文字。
+    """
+    if IS_CLOUD:
+        try:
+            from app import registry
+            st = registry.get_default_store()
+            return (st.name or "") if st else ""
+        except Exception:
+            return ""
+    try:
+        async with db.execute("SELECT value FROM app_settings WHERE key='store_name'") as cur:
+            row = await cur.fetchone()
+        return (row["value"] if row else "") or ""
+    except Exception:
+        return ""
+
+
 def calc_finalists(qual_type: str, data: dict) -> int | None:
     """決勝進出予定人数を計算"""
     if qual_type in ("none", "none_roundrobin"):
         return None
-    if qual_type == "heat_tournament":
+    if qual_type in HEAT_TOURNAMENT_TYPES:
         hc = data.get("qual_heat_count", 1) or 1
         gc = data.get("qual_group_count", 1) or 1
         ga = data.get("qual_group_advance", 2) or 2
@@ -219,7 +242,7 @@ async def tournament_list(request: Request, db: aiosqlite.Connection = Depends(g
             if nr_result:
                 results_map[tid] = nr_result
 
-        elif qt == "heat_tournament":
+        elif qt in HEAT_TOURNAMENT_TYPES:
             # 決勝トーナメント（bracket）が完了していれば bracket_slot_ranks から取得
             ht_result = {}
             async with db.execute(
@@ -396,6 +419,7 @@ async def tournament_new(request: Request, db: aiosqlite.Connection = Depends(ge
     async with db.execute("SELECT value FROM app_settings WHERE key='default_qualifying'") as cur:
         dq_row = await cur.fetchone()
     default_qualifying = dq_row["value"] if dq_row else "heat_tournament"
+    garappa_enabled = (await _get_store1_name(db)).strip() == GARAPPA_STORE_NAME
     return templates.TemplateResponse("admin/tournament_form.html", {
         "request": request,
         "today": initial_date,
@@ -404,6 +428,7 @@ async def tournament_new(request: Request, db: aiosqlite.Connection = Depends(ge
         "regulation_labels": reg_labels,
         "qualifying_labels": QUALIFYING_LABELS,
         "default_qualifying": default_qualifying,
+        "garappa_enabled": garappa_enabled,
         "race_assets": {k: [] for k in _ASSET_KINDS},
     })
 
@@ -778,7 +803,7 @@ async def _is_result_finalized(tid: int, db) -> bool:
     #    （heat_roundrobin等の他形式は ht_rounds を使わないため影響なし）
     async with db.execute("SELECT qualifying_type FROM tournaments WHERE id=?", (tid,)) as cur:
         _qt_row = await cur.fetchone()
-    _is_heat_tour = bool(_qt_row and _qt_row["qualifying_type"] == "heat_tournament")
+    _is_heat_tour = bool(_qt_row and _qt_row["qualifying_type"] in HEAT_TOURNAMENT_TYPES)
     if not _is_heat_tour:
         # ht_slot_ranksに1位がある（ヒートトーナメント以外で ht を使う形式の保険）
         async with db.execute(
@@ -1502,6 +1527,8 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
         entry_count = (await cur.fetchone())["cnt"]
     # 並び順（勝ち抜け）の既存段階設定（編集画面の初期描画用にJSONで渡す）
     ow_stages = await load_order_winner_stages(tid, db)
+    garappa_enabled = ((await _get_store1_name(db)).strip() == GARAPPA_STORE_NAME) \
+        or (t["qualifying_type"] == "heat_tournament_garappa")
     return templates.TemplateResponse("admin/tournament_edit.html", {
         "request": request,
         "t": t,
@@ -1510,6 +1537,7 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
         "regulation_labels": await get_regulation_labels(db),
         "qualifying_labels": QUALIFYING_LABELS,
         "order_winner_stages_json": json.dumps(ow_stages, ensure_ascii=False),
+        "garappa_enabled": garappa_enabled,
         "race_assets": await _load_race_assets(tid, db),
     })
 

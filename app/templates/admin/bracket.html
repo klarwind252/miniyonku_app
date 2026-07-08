@@ -275,7 +275,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {% endif %}
     {# 決勝進出者数（JSのパターン算出用）。全予選形式で必ず描画する #}
     <span id="total-finalists-count" data-count="{{ finalists|length }}" style="display:none"></span>
-    {% if t.qualifying_type == 'heat_tournament' and ht_per_heat_advanced %}
+    {% if t.qualifying_type in ('heat_tournament','heat_tournament_garappa') and ht_per_heat_advanced %}
     {# ヒートトーナメント：ヒートごとの列表示 #}
     <div style="display:flex;flex-wrap:wrap;gap:16px">
       {% for heat in ht_per_heat_advanced %}

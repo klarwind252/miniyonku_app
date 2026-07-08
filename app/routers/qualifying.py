@@ -17,7 +17,7 @@ from app.routers.tournaments import QUALIFYING_LABELS, calc_finalists
 
 router = APIRouter()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "../templates"))
-from app.config import inject_globals
+from app.config import inject_globals, HEAT_TOURNAMENT_TYPES
 inject_globals(templates)
 
 
@@ -70,7 +70,7 @@ async def _ht_heat_finalized(tid: int, heat_no: int, db) -> bool:
         (tid,),
     ) as cur:
         t = await cur.fetchone()
-    if not t or t["qualifying_type"] != "heat_tournament":
+    if not t or t["qualifying_type"] not in HEAT_TOURNAMENT_TYPES:
         return False
     heat_advance = int((t["qual_heat_advance"] or 1))
     if bool(t["qual_heat_final"]):
@@ -564,7 +564,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     ow = dict(t).get("qualifying_type") == "order_winner"
 
     # ヒート（トーナメント）の場合はheat_tournament画面へ
-    if dict(t).get("qualifying_type") == "heat_tournament":
+    if dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES:
         return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying/heat-tournament/1", status_code=303)
     standings = await _calc_standings_none_rr(tid, db) if nr else (await _calc_standings_rr(tid, db) if rr else await _calc_standings(tid, db))
     finalist_n = calc_finalists(dict(t).get("qualifying_type",""), dict(t))

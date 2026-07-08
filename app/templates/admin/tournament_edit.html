@@ -91,6 +91,7 @@
           <option value="none" {% if t.qualifying_type=='none' %}selected{% endif %}>なし（即決勝トーナメント）</option>
           <option value="none_roundrobin" {% if t.qualifying_type=='none_roundrobin' %}selected{% endif %}>なし（即決勝総当たり）</option>
           <option value="heat_tournament" {% if t.qualifying_type=='heat_tournament' %}selected{% endif %}>ヒート（トーナメント）</option>
+          {% if garappa_enabled %}<option value="heat_tournament_garappa" {% if t.qualifying_type=='heat_tournament_garappa' %}selected{% endif %}>ヒート（トーナメント）[がらっぱ堂]</option>{% endif %}
           <option value="heat_roundrobin" {% if t.qualifying_type=='heat_roundrobin' %}selected{% endif %}>ヒート（総当たり）</option>
           <option value="point" {% if t.qualifying_type=='point' %}selected{% endif %}>ポイント</option>
           <option value="roundrobin" {% if t.qualifying_type=='roundrobin' %}selected{% endif %}>総当たり</option>
@@ -99,7 +100,7 @@
         </select>
 
       <!-- ヒート（トーナメント）-->
-      <div class="qual-section card {% if t.qualifying_type=='heat_tournament' %}active{% endif %}"
+      <div class="qual-section card {% if t.qualifying_type in ('heat_tournament','heat_tournament_garappa') %}active{% endif %}"
            id="sec-heat_tournament" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
         <div class="card-body">
           <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">🏆 ヒート（トーナメント）設定</div>
@@ -566,7 +567,8 @@ function checkBeforeSubmit() {
 // 現在の予選形式設定から「決勝進出人数」を算出する。
 // なし(即決勝)/順番制はエントリー数で決まるため変更時は判定しない（null）。
 function getFinalistCount() {
-  const v = document.getElementById("qualifying_type").value;
+  let v = document.getElementById("qualifying_type").value;
+  if (v === "heat_tournament_garappa") v = "heat_tournament";
   if (v === "heat_tournament") {
     const hc = parseInt(document.getElementById("ht_count").value) || 1;
     const gc = parseInt(document.getElementById("ht_gcount").value) || 1;
@@ -616,7 +618,8 @@ function applyPointPreset(radio) {
 }
 
 function onQualChange() {
-  const v = document.getElementById("qualifying_type").value;
+  let v = document.getElementById("qualifying_type").value;
+  if (v === "heat_tournament_garappa") v = "heat_tournament";
   document.querySelectorAll(".qual-section").forEach(el => {
     el.classList.remove("active");
     // 非アクティブセクションのinput/selectをdisabledにして送信から除外
