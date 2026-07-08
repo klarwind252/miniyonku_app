@@ -125,6 +125,7 @@ QUALIFYING_LABELS = {
     "none":           "なし（即決勝トーナメント）",
     "none_roundrobin":"なし（即決勝総当たり）",
     "heat_tournament":"ヒート（トーナメント）",
+    "heat_tournament_garappa":"ヒート（トーナメント）[がらっぱ堂]",
     "heat_roundrobin":"ヒート（総当たり）",
     "point":          "ポイント",
     "roundrobin":     "総当たり",
@@ -153,6 +154,11 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     async with db.execute("SELECT value FROM app_settings WHERE key='default_qualifying'") as cur:
         dq_row = await cur.fetchone()
     default_qualifying = dq_row["value"] if dq_row else "heat_tournament"
+
+    # 店舗名（オンプレ版で店舗1の名称を設定するための値。app_settings に保持）
+    async with db.execute("SELECT value FROM app_settings WHERE key='store_name'") as cur:
+        _sn_row = await cur.fetchone()
+    onprem_store_name = (_sn_row["value"] if _sn_row else "") or ""
 
     # ポストテンプレートは1件目のbodyだけ使う
     async with db.execute("SELECT id, body FROM post_templates ORDER BY id LIMIT 1") as cur:
@@ -326,6 +332,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
         "card_templates": card_templates,
         "regulations": regulations,
         "default_qualifying": default_qualifying,
+        "onprem_store_name": onprem_store_name,
         "qualifying_labels": QUALIFYING_LABELS,
         "post_template_body": post_template_body,
         "post_template_id": post_template_id,
@@ -369,6 +376,20 @@ async def save_default_qualifying(request: Request, db: aiosqlite.Connection = D
     )
     await db.commit()
     return RedirectResponse(url="/admin/settings#defaults", status_code=303)
+
+
+@router.post("/settings/store-name/save", response_class=HTMLResponse)
+async def save_store_name(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """店舗1の店舗名を保存（オンプレ版設定画面用。app_settings 'store_name'）"""
+    from fastapi.responses import RedirectResponse
+    form = await request.form()
+    name = (form.get("store_name") or "").strip()
+    await db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('store_name', ?)",
+        (name,)
+    )
+    await db.commit()
+    return RedirectResponse(url="/admin/settings#store-name", status_code=303)
 
 
 @router.post("/settings/post-template/save", response_class=HTMLResponse)

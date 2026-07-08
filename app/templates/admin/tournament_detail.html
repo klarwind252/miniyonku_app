@@ -150,7 +150,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <td>{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type or '-') }}</td></tr>
 
         {# 予選形式別の詳細設定 #}
-        {% if t.qualifying_type == 'heat_tournament' %}
+        {% if t.qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">ヒート数</td>
             <td><strong>{{ t.qual_heat_count }}</strong> ヒート</td></tr>
         {% if (t.qual_group_count or 1) > 1 %}
