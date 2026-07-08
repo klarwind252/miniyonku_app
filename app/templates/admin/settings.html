@@ -217,6 +217,7 @@
     <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 賞状テンプレート</a>
     <a href="#card"      class="settings-menu-item" id="menu-card">📇 QR/バーコード印刷テンプレート</a>
     <a href="#post"      class="settings-menu-item" id="menu-post">𝕏 ポストテンプレート</a>
+    <a href="#bgm"       class="settings-menu-item" id="menu-bgm">🎵 BGM</a>
     <a href="#public-html" class="settings-menu-item" id="menu-public-html">🌐 参加者向け配信</a>
     {% if IS_CLOUD %}
     <a href="#pwa" class="settings-menu-item" id="menu-pwa">📱 ホーム画面アイコン</a>
@@ -446,6 +447,82 @@
               <span style="font-size:12px;color:#95a5a6">変数はポスト時に実際の値に置き換えられます</span>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- BGM -->
+    <div class="settings-section" id="bgm">
+      <div class="section-title">🎵 BGM</div>
+      <div class="card">
+        <div class="card-body">
+          <p style="font-size:13px;color:#636e72;margin-bottom:14px">
+            ヘッダーの「🎵 BGM」ボタンから、登録した曲を選んでループ再生できます。<br>
+            曲は最大 <strong>{{ bgm_rows|length }}</strong> 曲まで、<strong>mp3</strong> 形式で登録できます（1曲あたり最大30MB）。<br>
+            <span style="color:#95a5a6">保存先：{% if IS_CLOUD %}クラウドの公開ディレクトリ（<code>&lt;public_dir&gt;/bgm/</code>）{% else %}ローカル（<code>app/static/bgm/</code>）{% endif %}</span>
+          </p>
+
+          <form method="post" action="/admin/settings/bgm/save" enctype="multipart/form-data">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              {% for row in bgm_rows %}
+              <div style="display:grid;grid-template-columns:34px 1.4fr 1fr auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid #e9ecef;border-radius:8px;background:{% if row.registered %}#f7fcf9{% else %}#fff{% endif %}">
+                <!-- スロット番号 -->
+                <div style="font-weight:bold;color:#7f8c8d;font-size:13px;text-align:center">{{ row.slot }}</div>
+
+                <!-- ファイル選択 -->
+                <div>
+                  {% if row.registered %}
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    <button type="button"
+                            onclick="testBgm({{ row.slot }})"
+                            style="flex-shrink:0;padding:4px 10px;border:1px solid #27ae60;border-radius:6px;background:#eafaf1;color:#1e8449;font-size:12px;cursor:pointer">▶ 試聴</button>
+                    <span style="font-size:12px;color:#2c3e50;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ row.name }}">🎵 {{ row.name }}</span>
+                  </div>
+                  {% endif %}
+                  <input type="file" name="bgm_file_{{ row.slot }}" accept=".mp3,audio/mpeg"
+                         style="font-size:12px;width:100%">
+                  {% if row.registered %}
+                  <div style="font-size:11px;color:#95a5a6;margin-top:2px">別のファイルを選ぶと差し替わります</div>
+                  {% endif %}
+                </div>
+
+                <!-- シーン選択＋備考 -->
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <select name="bgm_scene_{{ row.slot }}"
+                          style="font-size:13px;padding:6px 8px;border:1px solid #ced4da;border-radius:6px">
+                    <option value="">シーン（未選択）</option>
+                    {% for sc in bgm_scenes %}
+                    <option value="{{ sc }}" {% if row.scene == sc %}selected{% endif %}>{{ sc }}</option>
+                    {% endfor %}
+                  </select>
+                  <input type="text" name="bgm_note_{{ row.slot }}" value="{{ row.note }}"
+                         placeholder="備考（曲名・メモなど）" maxlength="100"
+                         style="font-size:13px;padding:6px 8px;border:1px solid #ced4da;border-radius:6px">
+                </div>
+
+                <!-- 削除 -->
+                <div style="text-align:center">
+                  {% if row.registered %}
+                  <label style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:#e74c3c;cursor:pointer">
+                    <input type="checkbox" name="bgm_delete_{{ row.slot }}" value="1">
+                    削除
+                  </label>
+                  {% else %}
+                  <span style="font-size:11px;color:#cfd6dc">―</span>
+                  {% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+
+            <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+              <button type="submit" class="btn btn-success">💾 保存</button>
+              <span style="font-size:12px;color:#95a5a6">mp3以外・空欄の行は無視されます。削除にチェックした行は曲が消えます。</span>
+            </div>
+          </form>
+
+          <!-- 試聴用（設定画面内） -->
+          <audio id="bgmTestAudio" preload="none"></audio>
         </div>
       </div>
     </div>
@@ -1182,6 +1259,21 @@
 </div>
 
 <script>
+/* ---------- BGM 試聴（設定画面内） ---------- */
+(function(){
+  var _bgmPrefix = "{{ ('/' ~ request.state.store.slug) if (request.state.store and request.state.store.slug) else '' }}";
+  var _bgmVer = "{{ bgm_ver }}";
+  var _bgmTestSlot = null;
+  window.testBgm = function(slot){
+    var a = document.getElementById('bgmTestAudio');
+    if(!a) return;
+    if(_bgmTestSlot === slot && !a.paused){ a.pause(); _bgmTestSlot = null; return; }
+    a.src = _bgmPrefix + '/admin/bgm/file/' + slot + (_bgmVer ? ('?v=' + _bgmVer) : '');
+    a.loop = true;
+    a.play().then(function(){ _bgmTestSlot = slot; }).catch(function(){});
+  };
+})();
+
 /* ---------- レギュレーション編集 ---------- */
 function addReg() {
   const input = document.getElementById('regInput');

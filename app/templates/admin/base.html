@@ -159,6 +159,18 @@ select{background:#fff}
 
   <div class="spacer"></div>
 
+  <!-- BGM（クリックでポップアップ→1曲選択→ループ再生） -->
+  <div class="nav-group">
+    <button type="button" id="bgmBtn"
+            data-prefix="{{ ('/' ~ request.state.store.slug) if (request.state.store and request.state.store.slug) else '' }}"
+            onclick="openBgmPopup()"
+            title="BGMを再生"
+            style="display:flex;align-items:center;gap:6px;color:#ecf0f1;padding:14px 16px;font-size:13px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
+      <span id="bgmBtnIcon">🎵</span> BGM
+      <span id="bgmNowPlaying" style="display:none;font-size:11px;padding:1px 8px;border-radius:8px;background:#27ae60;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis"></span>
+    </button>
+  </div>
+
   <div class="nav-group">
     <a href="/admin/settings"
        class="nav-link {% if '/admin/settings' in request.url.path %}active{% endif %}"
@@ -403,5 +415,126 @@ updatePubStatus();
 })();
 </script>
 {% endif %}
+
+<!-- ============ BGM ポップアップ（全admin画面共通） ============ -->
+<audio id="bgmAudio" loop preload="none"></audio>
+<div id="bgmOverlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;align-items:center;justify-content:center"
+     onclick="if(event.target===this)closeBgmPopup()">
+  <div style="background:#fff;border-radius:12px;width:min(440px,92vw);max-height:80vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.35)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eee">
+      <div style="font-weight:bold;font-size:15px;color:#2c3e50">🎵 BGMを選択</div>
+      <button type="button" onclick="closeBgmPopup()"
+              style="background:none;border:none;font-size:20px;line-height:1;color:#95a5a6;cursor:pointer">×</button>
+    </div>
+    <div id="bgmList" style="padding:10px 14px">
+      <div style="color:#95a5a6;font-size:13px;padding:16px 4px">読み込み中…</div>
+    </div>
+    <div style="padding:10px 18px 16px;border-top:1px solid #eee;display:flex;gap:10px;align-items:center">
+      <button type="button" id="bgmStopBtn" onclick="stopBgm()"
+              style="padding:8px 16px;border:none;border-radius:6px;background:#e74c3c;color:#fff;font-size:13px;cursor:pointer">■ 停止</button>
+      <span id="bgmStatus" style="font-size:12px;color:#95a5a6"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var btn   = document.getElementById('bgmBtn');
+  var prefix = (btn && btn.dataset.prefix) || '';
+  var audio = document.getElementById('bgmAudio');
+  var curSlot = null;
+
+  window.openBgmPopup = function(){
+    var overlay = document.getElementById('bgmOverlay');
+    overlay.style.display = 'flex';
+    loadBgmList();
+  };
+  window.closeBgmPopup = function(){
+    document.getElementById('bgmOverlay').style.display = 'none';
+  };
+
+  function loadBgmList(){
+    var box = document.getElementById('bgmList');
+    box.innerHTML = '<div style="color:#95a5a6;font-size:13px;padding:16px 4px">読み込み中…</div>';
+    fetch(prefix + '/admin/bgm/list', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ renderBgmList(d.tracks || [], d.ver || ''); })
+      .catch(function(){
+        box.innerHTML = '<div style="color:#e74c3c;font-size:13px;padding:16px 4px">一覧の取得に失敗しました。</div>';
+      });
+  }
+
+  function renderBgmList(tracks, ver){
+    var box = document.getElementById('bgmList');
+    if(!tracks.length){
+      box.innerHTML = '<div style="color:#95a5a6;font-size:13px;padding:16px 4px">'
+        + '登録されたBGMがありません。<br>「設定 → 🎵 BGM」から登録してください。</div>';
+      return;
+    }
+    box.innerHTML = '';
+    tracks.forEach(function(t){
+      var playing = (curSlot === t.slot);
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;'
+        + 'padding:10px 12px;margin:4px 0;border:1px solid ' + (playing?'#27ae60':'#e9ecef') + ';'
+        + 'border-radius:8px;background:' + (playing?'#eafaf1':'#fff') + ';cursor:pointer;font-size:13px';
+      var scene = t.scene ? ('<span style="flex-shrink:0;font-size:11px;padding:2px 8px;border-radius:8px;background:#eaf4fb;color:#1a6a9a">'+esc(t.scene)+'</span>') : '';
+      var note  = t.note  ? ('<div style="font-size:11px;color:#95a5a6;margin-top:2px">'+esc(t.note)+'</div>') : '';
+      row.innerHTML = '<span style="font-size:16px">'+(playing?'⏸':'▶️')+'</span>'
+        + '<span style="flex:1;min-width:0"><div style="font-weight:bold;color:#2c3e50;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+        + esc(t.name) + '</div>' + note + '</span>' + scene;
+      row.onclick = function(){
+        if(curSlot === t.slot){ stopBgm(); }
+        else { playBgm(t.slot, t.name, ver); }
+      };
+      box.appendChild(row);
+    });
+    setStatus();
+  }
+
+  window.playBgm = function(slot, name, ver){
+    audio.src = prefix + '/admin/bgm/file/' + slot + (ver ? ('?v=' + ver) : '');
+    audio.loop = true;
+    audio.play().then(function(){
+      curSlot = slot;
+      updateNowPlaying(name);
+      loadBgmList();   // アイコン状態を更新
+      setStatus();
+    }).catch(function(){
+      document.getElementById('bgmStatus').textContent = '再生できませんでした。';
+    });
+  };
+
+  window.stopBgm = function(){
+    audio.pause();
+    try { audio.currentTime = 0; } catch(e){}
+    curSlot = null;
+    updateNowPlaying('');
+    loadBgmList();
+    setStatus();
+  };
+
+  function setStatus(){
+    var s = document.getElementById('bgmStatus');
+    if(s) s.textContent = curSlot ? '▶ ループ再生中' : '停止中';
+  }
+
+  function updateNowPlaying(name){
+    var np = document.getElementById('bgmNowPlaying');
+    var icon = document.getElementById('bgmBtnIcon');
+    if(!np) return;
+    if(name){ np.textContent = name; np.style.display='inline'; if(icon) icon.textContent='🔊'; }
+    else    { np.style.display='none'; if(icon) icon.textContent='🎵'; }
+  }
+
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+})();
+</script>
 </body>
 </html>
