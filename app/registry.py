@@ -54,6 +54,55 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+# ---- 店舗キャッシュ（読み取り高速化）------------------------------------
+# クラウド版では StoreResolverMiddleware が全リクエスト（view の2秒ポーリング含む）で
+# 店舗を解決するため、その都度 control.db を同期 sqlite3 で開いて閉じると、毎回ディスクI/Oで
+# イベントループを止める直列化点になる。店舗は最大5件・変更頻度がほぼゼロなので、
+# 短いTTL＋変更時の明示無効化でインメモリにキャッシュする。
+import time as _time
+import threading as _threading
+
+_CACHE_TTL = 5.0
+_cache_lock = _threading.Lock()
+_cache = {"at": 0.0, "by_slug": {}, "by_id": {}, "default": None, "all": []}
+
+
+def _cache_valid() -> bool:
+    return (_time.monotonic() - _cache["at"]) < _CACHE_TTL
+
+
+def _reload_cache() -> None:
+    """control.db から全店舗を読み込み、キャッシュを作り直す。"""
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    by_slug, by_id, default, all_stores = {}, {}, None, []
+    for r in rows:
+        s = _row_to_store(r)
+        by_id[s.id] = s
+        by_slug[s.slug] = s          # 既定店舗は slug="" で格納
+        all_stores.append(s)
+        if s.slug == "":
+            default = s
+    with _cache_lock:
+        _cache.update(at=_time.monotonic(), by_slug=by_slug, by_id=by_id,
+                      default=default, all=all_stores)
+
+
+def invalidate_store_cache() -> None:
+    """店舗の追加・編集・削除・トークン再生成・利用時間変更の直後に呼ぶ。
+    次回の読み取りで control.db から強制的に読み直させる。"""
+    with _cache_lock:
+        _cache["at"] = 0.0
+
+
+def _ensure_cache() -> None:
+    if not _cache_valid():
+        _reload_cache()
+
+
 def gen_token() -> str:
     return secrets.token_urlsafe(32)
 
@@ -138,48 +187,33 @@ def init_registry(default_admin_token: str = "", default_view_token: str = "") -
             conn.commit()
     finally:
         conn.close()
+    invalidate_store_cache()   # 初期化直後の初回読み取りで確実に最新を読ませる
 
 
 # ---- 参照 ----------------------------------------------------------------
 def list_stores(include_disabled: bool = True) -> list[Store]:
-    conn = _connect()
-    try:
-        q = "SELECT * FROM stores"
-        if not include_disabled:
-            q += " WHERE enabled=1"
-        q += " ORDER BY id"
-        return [_row_to_store(r) for r in conn.execute(q).fetchall()]
-    finally:
-        conn.close()
+    _ensure_cache()
+    stores = _cache["all"]
+    if include_disabled:
+        return list(stores)
+    return [s for s in stores if s.enabled]
 
 
 def get_default_store() -> Optional[Store]:
-    conn = _connect()
-    try:
-        r = conn.execute("SELECT * FROM stores WHERE slug IS NULL OR slug='' LIMIT 1").fetchone()
-        return _row_to_store(r) if r else None
-    finally:
-        conn.close()
+    _ensure_cache()
+    return _cache["default"]
 
 
 def get_store_by_slug(slug: str) -> Optional[Store]:
     if not slug:
         return get_default_store()
-    conn = _connect()
-    try:
-        r = conn.execute("SELECT * FROM stores WHERE slug=? LIMIT 1", (slug,)).fetchone()
-        return _row_to_store(r) if r else None
-    finally:
-        conn.close()
+    _ensure_cache()
+    return _cache["by_slug"].get(slug)
 
 
 def get_store_by_id(store_id: int) -> Optional[Store]:
-    conn = _connect()
-    try:
-        r = conn.execute("SELECT * FROM stores WHERE id=? LIMIT 1", (store_id,)).fetchone()
-        return _row_to_store(r) if r else None
-    finally:
-        conn.close()
+    _ensure_cache()
+    return _cache["by_id"].get(store_id)
 
 
 # ---- バリデーション ------------------------------------------------------
@@ -228,6 +262,7 @@ def add_store(name: str, slug: str) -> Store:
         )
         conn.commit()
         r = conn.execute("SELECT * FROM stores WHERE slug=?", (slug,)).fetchone()
+        invalidate_store_cache()
         return _row_to_store(r)
     finally:
         conn.close()
@@ -294,6 +329,7 @@ def update_store(store_id: int, name: Optional[str] = None,
              1 if new_restrict else 0, new_start, new_end, store_id),
         )
         conn.commit()
+        invalidate_store_cache()   # commit後に無効化 → 直後の get で最新値を返す
         return get_store_by_id(store_id)
     finally:
         conn.close()
@@ -305,6 +341,7 @@ def regenerate_tokens(store_id: int) -> Store:
         conn.execute("UPDATE stores SET admin_token=?, view_token=? WHERE id=?",
                      (gen_token(), gen_token(), store_id))
         conn.commit()
+        invalidate_store_cache()   # commit後に無効化 → 直後の get で最新トークンを返す
         return get_store_by_id(store_id)
     finally:
         conn.close()
@@ -347,6 +384,7 @@ def delete_store(store_id: int) -> None:
     try:
         conn.execute("DELETE FROM stores WHERE id=?", (store_id,))
         conn.commit()
+        invalidate_store_cache()
     finally:
         conn.close()
     print(f"[registry] store '{store.slug}' archived -> {arch_root}", flush=True)

@@ -25,6 +25,14 @@ def current_db_path() -> str:
 async def get_db():
     db = await aiosqlite.connect(current_db_path())
     db.row_factory = aiosqlite.Row
+    # 接続ごとの標準PRAGMA。
+    #   busy_timeout : バックグラウンドHTML書き出しと管理操作の書き込みが競合したとき、
+    #                  即 "database is locked"（500）で落ちる代わりに最大5秒待って再試行する。
+    #   synchronous  : WAL 前提の推奨値。速度を上げつつ実用上十分な安全性を確保する。
+    #   foreign_keys : 参照整合性を有効化（誤った孤児行の混入を防ぐ）。
+    await db.execute("PRAGMA busy_timeout=5000")
+    await db.execute("PRAGMA synchronous=NORMAL")
+    await db.execute("PRAGMA foreign_keys=ON")
     try:
         yield db
     finally:
@@ -837,6 +845,37 @@ async def init_db(db_path: str = None):
             FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
             FOREIGN KEY (entry_id) REFERENCES entries(id)
         )""")
+
+        # ---- インデックス（冪等）------------------------------------------
+        # 主キー以外は全表スキャンになるため、当日の高頻度アクセス経路（結果入力・
+        # 観覧HTML生成）で参照される外部キー列にインデックスを張る。
+        # すべて IF NOT EXISTS のため、既存DBに対しても起動時に自動で追加される。
+        # 上の全テーブル定義・マイグレーションが終わった後に一括作成する。
+        await db.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_entries_tid           ON entries(tournament_id);
+        CREATE INDEX IF NOT EXISTS idx_entries_racer         ON entries(racer_id);
+        CREATE INDEX IF NOT EXISTS idx_heats_tid_round       ON heats(tournament_id, round_no);
+        CREATE INDEX IF NOT EXISTS idx_heat_lanes_heat       ON heat_lanes(heat_id);
+        CREATE INDEX IF NOT EXISTS idx_heat_lanes_entry      ON heat_lanes(entry_id);
+        CREATE INDEX IF NOT EXISTS idx_heat_results_lane     ON heat_results(heat_lane_id);
+        CREATE INDEX IF NOT EXISTS idx_heat_finals_tid       ON heat_finals(tournament_id);
+        CREATE INDEX IF NOT EXISTS idx_ht_rounds_tid         ON ht_rounds(tournament_id, heat_no);
+        CREATE INDEX IF NOT EXISTS idx_ht_groups_round       ON ht_groups(round_id);
+        CREATE INDEX IF NOT EXISTS idx_ht_slots_group        ON ht_slots(group_id);
+        CREATE INDEX IF NOT EXISTS idx_ht_results_group      ON ht_results(group_id);
+        CREATE INDEX IF NOT EXISTS idx_ht_slot_ranks_group   ON ht_slot_ranks(group_id);
+        CREATE INDEX IF NOT EXISTS idx_bracket_rounds_tid    ON bracket_rounds(tournament_id, round_no);
+        CREATE INDEX IF NOT EXISTS idx_bracket_groups_round  ON bracket_groups(round_id);
+        CREATE INDEX IF NOT EXISTS idx_bracket_slots_group   ON bracket_slots(group_id);
+        CREATE INDEX IF NOT EXISTS idx_bracket_results_group ON bracket_results(group_id);
+        CREATE INDEX IF NOT EXISTS idx_bracket_slot_ranks_g  ON bracket_slot_ranks(group_id);
+        CREATE INDEX IF NOT EXISTS idx_pre_entries_tid       ON pre_entries(tournament_id);
+        CREATE INDEX IF NOT EXISTS idx_order_queue_tid       ON order_queue(tournament_id, round_no, consumed);
+        CREATE INDEX IF NOT EXISTS idx_order_queue_stage     ON order_queue(tournament_id, stage_no);
+        CREATE INDEX IF NOT EXISTS idx_ow_stages_tid         ON order_winner_stages(tournament_id, stage_no);
+        CREATE INDEX IF NOT EXISTS idx_ow_racers_tid         ON order_winner_racers(tournament_id, stage_no);
+        CREATE INDEX IF NOT EXISTS idx_race_assets_tid       ON race_assets(tournament_id);
+        """)
 
         await db.commit()
 
