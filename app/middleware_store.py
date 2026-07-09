@@ -131,10 +131,21 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
             body += chunk if isinstance(chunk, (bytes, bytearray)) else chunk.encode("utf-8")
 
         text = body.decode("utf-8", "ignore")
-        text = _REWRITE_RE.sub(lambda m: f"{m.group(1)}/{slug}{m.group(2)}", text)
-
+        # 置換が1件も発生しなければ、テキスト再構築を省いて元の body をそのまま返す
+        # （text/html でもスラッグ前置の対象パスを含まないレスポンスは多いため）
+        new_text, n = _REWRITE_RE.subn(lambda m: f"{m.group(1)}/{slug}{m.group(2)}", text)
         headers = dict(response.headers)
-        headers.pop("content-length", None)  # 再計算させる
+        headers.pop("content-length", None)  # 長さが変わり得るので再計算させる
+        if n == 0:
+            # 置換なし → テキスト再構築を省き、元の body をそのまま返す
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=headers,
+                media_type="text/html",
+            )
+        text = new_text
+
         return Response(
             content=text,
             status_code=response.status_code,

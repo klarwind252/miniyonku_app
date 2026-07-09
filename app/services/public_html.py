@@ -27,21 +27,36 @@ async def _get_settings(db) -> dict:
     return result
 
 
+_logo_cache: dict = {}   # path -> (mtime, data_uri)
+
+
 def _get_logo_base64() -> str | None:
-    """ロゴ画像をBase64エンコードして返す"""
+    """ロゴ画像をBase64エンコードして返す。
+
+    ロゴは起動中ほぼ不変なので、ファイルの更新時刻(mtime)をキーにキャッシュする。
+    差し替え時は mtime が変わるため自動的に再読み込みされる。
+    （①のデバウンスで書き出し頻度自体は下がったが、読み込みコストはゼロにできる）
+    """
     import base64, os
     base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    path = os.path.join(base, "app", "static", "logo_header.jpg")
-    if not os.path.exists(path):
-        # PNG も試す
-        path = os.path.join(base, "app", "static", "logo_header.png")
-    if not os.path.exists(path):
-        return None
-    ext = os.path.splitext(path)[1].lower().lstrip(".")
-    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return f"data:{mime};base64,{b64}"
+    for name in ("logo_header.jpg", "logo_header.png"):
+        path = os.path.join(base, "app", "static", name)
+        if not os.path.exists(path):
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = None
+        hit = _logo_cache.get(path)
+        if hit and hit[0] == mtime:
+            return hit[1]
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+        with open(path, "rb") as f:
+            uri = f"data:{mime};base64,{base64.b64encode(f.read()).decode()}"
+        _logo_cache[path] = (mtime, uri)
+        return uri
+    return None
 
 
 def _patch_html_for_static(html: str, slug: str = "") -> str:
