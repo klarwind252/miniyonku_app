@@ -2235,9 +2235,8 @@ async def bracket_generate(
     suffix = "?dup_resolved=1" if dup_resolved else ""
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 
@@ -2472,9 +2471,8 @@ async def bracket_lottery_confirm(tid: int, request: Request, db: aiosqlite.Conn
 
     # 参加者向けHTML配信（生成時と同じ）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 
@@ -2559,9 +2557,8 @@ async def bracket_save(
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 

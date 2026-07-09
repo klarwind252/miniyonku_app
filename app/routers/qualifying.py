@@ -1164,9 +1164,8 @@ async def qualifying_generate_heat(
     await db.commit()
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 
@@ -1458,9 +1457,8 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
@@ -1527,9 +1525,8 @@ async def qualifying_racer_add(tid: int, db: aiosqlite.Connection = Depends(get_
 
     await db.commit()
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying?info=racer_added", status_code=303)
@@ -1791,9 +1788,8 @@ async def heat_result_save_rank(tid: int, heat_id: int, request: Request, db: ai
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 
@@ -1869,9 +1865,8 @@ async def heat_result_save(tid: int, heat_id: int, request: Request, db: aiosqli
     await db.commit()
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 
@@ -1945,9 +1940,8 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
         return JSONResponse({"ok": True, "status": "done"})
@@ -2016,9 +2010,8 @@ async def auto_advanced(tid: int, db: aiosqlite.Connection = Depends(get_db)):
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
     return JSONResponse({"ok": True, "results": results})
@@ -2182,9 +2175,8 @@ async def playoff_generate(tid: int, request: Request, db: aiosqlite.Connection 
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
     return JSONResponse({"ok": True})
@@ -2249,9 +2241,8 @@ async def playoff_save(tid: int, request: Request, db: aiosqlite.Connection = De
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
     return JSONResponse({"ok": True})
@@ -5195,9 +5186,8 @@ async def none_rr_unconfirm(tid: int, db: aiosqlite.Connection = Depends(get_db)
 
     # 参加者向けHTML配信（自動更新）
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
     return JSONResponse({"ok": True})
@@ -6325,9 +6315,8 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
 
     # 観覧HTML自動更新
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 

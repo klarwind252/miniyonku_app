@@ -101,12 +101,11 @@ async def host_sync(request: Request, db: aiosqlite.Connection = Depends(get_db)
         st["scroll_at"] = time.time()
 
     # 参加者向けHTML配信（トリガー①: ページ切り替え時）
-    # asyncio.create_task は現在のコンテキスト（current_store）をコピーするため、
-    # バックグラウンドでも正しい店舗のDB/配信先で書き出される。
+    # schedule_publish() は予約時点の店舗(current_store)をキャプチャし、デバウンス後に
+    # その店舗の文脈を復元してから書き出すため、正しい店舗のDB/配信先で反映される。
     try:
-        from app.services.public_html import export_current_html
-        import asyncio
-        asyncio.create_task(export_current_html(db))
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
     except Exception:
         pass
 
