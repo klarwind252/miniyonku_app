@@ -1551,11 +1551,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
 {% endif %}
 
-{% if not is_none_roundrobin %}
-<div style="margin-top:4px;display:flex;gap:12px">
-  <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success">🏆 決勝管理へ</a>
-</div>
-{% endif %}
 
 <script>
 const TID = {{ t.id }};

@@ -48,7 +48,14 @@
 
 ```
 miniyonku_app/
-├── app/        アプリ本体（FastAPI / テンプレート / 静的ファイル）
+├── app/        アプリ本体（FastAPI）。内部はクリーンアーキテクチャで分離：
+│   ├── core/           設定・店舗コンテキスト等の基盤
+│   ├── domain/         純粋なドメイン知識（判定・ラベル・締切・かな 等）
+│   ├── application/    ユースケース（サービス層）
+│   ├── infrastructure/ DB接続・スキーマ・リポジトリ
+│   ├── presentation/   ルーター・認証・ミドルウェア・テンプレート
+│   ├── templates/      Jinja2 テンプレート
+│   └── static/         静的ファイル
 ├── deploy/     クラウド版デプロイ用ファイル（nginx・systemd・環境変数の見本）
 ├── setup/      セットアップ用バッチ・Python同梱インストーラ・依存パッケージ
 ├── start/      起動用バッチ
