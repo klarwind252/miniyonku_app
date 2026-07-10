@@ -1190,72 +1190,72 @@ async def qualifying_generate_round(
         if await cur.fetchone():
             return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
 
-    # 指定ラウンドの既存heats（未入力）を削除
-    async with db.execute(
-        "SELECT id FROM heats WHERE tournament_id=? AND round_no=?", (tid, round_no)
-    ) as cur:
-        old_heats = [r["id"] for r in await cur.fetchall()]
-    if old_heats:
-        ph = ",".join("?" * len(old_heats))
-        await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old_heats)
-        await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old_heats)
-        await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old_heats)
-
-    # 全アクティブエントリーでそのラウンドを生成
-    async with db.execute(
-        "SELECT e.id FROM entries e WHERE e.tournament_id=? AND e.status='active' ORDER BY e.entry_order",
-        (tid,),
-    ) as cur:
-        entry_ids = [r["id"] for r in await cur.fetchall()]
-
-    lane_count = int(t["lane_count"] or 3)
-    # 対戦履歴を過去ラウンドから取得
-    opponents = {}
-    lane_history = {e: [] for e in entry_ids}
-
-    async with db.execute(
-        "SELECT h.id FROM heats h WHERE h.tournament_id=? AND h.round_no < ? AND h.status='done'",
-        (tid, round_no),
-    ) as cur:
-        done_heats = [r["id"] for r in await cur.fetchall()]
-
-    if done_heats:
-        ph2 = ",".join("?" * len(done_heats))
+    async with transaction(db):
+        # 指定ラウンドの既存heats（未入力）を削除
         async with db.execute(
-            f"SELECT hl.heat_id, hl.lane_no, hl.entry_id FROM heat_lanes hl WHERE hl.heat_id IN ({ph2}) ORDER BY hl.heat_id, hl.lane_no",
-            done_heats,
+            "SELECT id FROM heats WHERE tournament_id=? AND round_no=?", (tid, round_no)
         ) as cur:
-            for row in await cur.fetchall():
-                eid = row["entry_id"]
-                if eid in lane_history:
-                    lane_history[eid].append(row["lane_no"])
+            old_heats = [r["id"] for r in await cur.fetchall()]
+        if old_heats:
+            ph = ",".join("?" * len(old_heats))
+            await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old_heats)
+            await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old_heats)
+            await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old_heats)
 
-    # 1ラウンド分生成
-    one_round = generate_point_schedule(entry_ids, 1, lane_count)
-    if one_round:
-        groups = one_round[0]
-        # 最大heat_noを取得
+        # 全アクティブエントリーでそのラウンドを生成
         async with db.execute(
-            "SELECT COALESCE(MAX(heat_no),0) as mx FROM heats WHERE tournament_id=?", (tid,)
+            "SELECT e.id FROM entries e WHERE e.tournament_id=? AND e.status='active' ORDER BY e.entry_order",
+            (tid,),
         ) as cur:
-            max_heat = (await cur.fetchone())["mx"]
+            entry_ids = [r["id"] for r in await cur.fetchall()]
 
-        heat_no = max_heat + 1
-        for group in groups:
-            await db.execute(
-                "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
-                (tid, heat_no, 0, round_no, "pending"),
-            )
-            async with db.execute("SELECT last_insert_rowid() as id") as cur:
-                heat_id = (await cur.fetchone())["id"]
-            for lane_no, eid in enumerate(group, 1):
+        lane_count = int(t["lane_count"] or 3)
+        # 対戦履歴を過去ラウンドから取得
+        opponents = {}
+        lane_history = {e: [] for e in entry_ids}
+
+        async with db.execute(
+            "SELECT h.id FROM heats h WHERE h.tournament_id=? AND h.round_no < ? AND h.status='done'",
+            (tid, round_no),
+        ) as cur:
+            done_heats = [r["id"] for r in await cur.fetchall()]
+
+        if done_heats:
+            ph2 = ",".join("?" * len(done_heats))
+            async with db.execute(
+                f"SELECT hl.heat_id, hl.lane_no, hl.entry_id FROM heat_lanes hl WHERE hl.heat_id IN ({ph2}) ORDER BY hl.heat_id, hl.lane_no",
+                done_heats,
+            ) as cur:
+                for row in await cur.fetchall():
+                    eid = row["entry_id"]
+                    if eid in lane_history:
+                        lane_history[eid].append(row["lane_no"])
+
+        # 1ラウンド分生成
+        one_round = generate_point_schedule(entry_ids, 1, lane_count)
+        if one_round:
+            groups = one_round[0]
+            # 最大heat_noを取得
+            async with db.execute(
+                "SELECT COALESCE(MAX(heat_no),0) as mx FROM heats WHERE tournament_id=?", (tid,)
+            ) as cur:
+                max_heat = (await cur.fetchone())["mx"]
+
+            heat_no = max_heat + 1
+            for group in groups:
                 await db.execute(
-                    "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
-                    (heat_id, lane_no, eid),
+                    "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
+                    (tid, heat_no, 0, round_no, "pending"),
                 )
-            heat_no += 1
+                async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                    heat_id = (await cur.fetchone())["id"]
+                for lane_no, eid in enumerate(group, 1):
+                    await db.execute(
+                        "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
+                        (heat_id, lane_no, eid),
+                    )
+                heat_no += 1
 
-    await db.commit()
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
 
 
@@ -1339,121 +1339,121 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
     # シャッフルしてランダム順に（毎回異なる組み合わせ）
     random.shuffle(entry_ids)
 
-    # 既存データ削除
-    async with db.execute("SELECT id FROM heats WHERE tournament_id=?", (tid,)) as cur:
-        old_heats = [r["id"] for r in await cur.fetchall()]
-    if old_heats:
-        ph = ",".join("?" * len(old_heats))
-        await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old_heats)
-        await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old_heats)
-        await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old_heats)
-    # ヒート優勝トーナメントもリセット
-    await db.execute("DELETE FROM heat_finals WHERE tournament_id=?", (tid,))
+    async with transaction(db):
+        # 既存データ削除
+        async with db.execute("SELECT id FROM heats WHERE tournament_id=?", (tid,)) as cur:
+            old_heats = [r["id"] for r in await cur.fetchall()]
+        if old_heats:
+            ph = ",".join("?" * len(old_heats))
+            await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old_heats)
+            await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old_heats)
+            await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old_heats)
+        # ヒート優勝トーナメントもリセット
+        await db.execute("DELETE FROM heat_finals WHERE tournament_id=?", (tid,))
 
-    qual_type = dict(t).get("qualifying_type", "")
+        qual_type = dict(t).get("qualifying_type", "")
 
-    if is_roundrobin(t):
-        # 総当たり：全ペア生成
-        schedule = generate_roundrobin_schedule(entry_ids)
-        for race_no, lane_a, eid_a, lane_b, eid_b in schedule:
-            await db.execute(
-                "INSERT INTO heats (tournament_id, heat_no, group_no, status) VALUES (?,?,?,?)",
-                (tid, race_no, 0, "pending"),
-            )
-            async with db.execute("SELECT last_insert_rowid() as id") as cur:
-                heat_id = (await cur.fetchone())["id"]
-            await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_a, eid_a))
-            await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_b, eid_b))
-    elif qual_type == "heat_roundrobin":
-        # ヒート（総当たり）：ヒートN→グループ1→2→3の順
-        heat_count  = dict(t).get("qual_heat_count", 1)
-        group_count = dict(t).get("qual_group_count", 1)
-        heat_exclude = bool(dict(t).get("qual_heat_exclude", 0))
-        lane_count_rr = int(t["lane_count"] or 3)
-
-        if heat_exclude and heat_count > 1:
-            # qual_heat_exclude=1 のとき：1ヒート目のみ生成。
-            # 2ヒート目以降は前ヒート完了後に generate-heat/{round_no} エンドポイントで個別生成。
-            schedule_rr = generate_heat_roundrobin_schedule(
-                list(entry_ids), 1, group_count, lane_count_rr
-            )
-            global_heat_no = 1
-            for item in schedule_rr:
+        if is_roundrobin(t):
+            # 総当たり：全ペア生成
+            schedule = generate_roundrobin_schedule(entry_ids)
+            for race_no, lane_a, eid_a, lane_b, eid_b in schedule:
                 await db.execute(
-                    "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
-                    (tid, global_heat_no, item["group_no"], 1, "pending"),
+                    "INSERT INTO heats (tournament_id, heat_no, group_no, status) VALUES (?,?,?,?)",
+                    (tid, race_no, 0, "pending"),
                 )
                 async with db.execute("SELECT last_insert_rowid() as id") as cur:
                     heat_id = (await cur.fetchone())["id"]
-                for lane_no, eid in enumerate(item["slots"], 1):
-                    if eid is None:
-                        continue
+                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_a, eid_a))
+                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_b, eid_b))
+        elif qual_type == "heat_roundrobin":
+            # ヒート（総当たり）：ヒートN→グループ1→2→3の順
+            heat_count  = dict(t).get("qual_heat_count", 1)
+            group_count = dict(t).get("qual_group_count", 1)
+            heat_exclude = bool(dict(t).get("qual_heat_exclude", 0))
+            lane_count_rr = int(t["lane_count"] or 3)
+
+            if heat_exclude and heat_count > 1:
+                # qual_heat_exclude=1 のとき：1ヒート目のみ生成。
+                # 2ヒート目以降は前ヒート完了後に generate-heat/{round_no} エンドポイントで個別生成。
+                schedule_rr = generate_heat_roundrobin_schedule(
+                    list(entry_ids), 1, group_count, lane_count_rr
+                )
+                global_heat_no = 1
+                for item in schedule_rr:
                     await db.execute(
-                        "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
-                        (heat_id, lane_no, eid),
+                        "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
+                        (tid, global_heat_no, item["group_no"], 1, "pending"),
                     )
-                global_heat_no += 1
+                    async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                        heat_id = (await cur.fetchone())["id"]
+                    for lane_no, eid in enumerate(item["slots"], 1):
+                        if eid is None:
+                            continue
+                        await db.execute(
+                            "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
+                            (heat_id, lane_no, eid),
+                        )
+                    global_heat_no += 1
+            else:
+                schedule = generate_heat_roundrobin_schedule(
+                    entry_ids, heat_count, group_count, lane_count_rr
+                )
+                for item in schedule:
+                    await db.execute(
+                        "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
+                        (tid, item["heat_no"], item["group_no"], item["round_no"], "pending"),
+                    )
+                    async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                        heat_id = (await cur.fetchone())["id"]
+                    for lane_no, eid in enumerate(item["slots"], 1):
+                        if eid is None:
+                            continue
+                        await db.execute(
+                            "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
+                            (heat_id, lane_no, eid),
+                        )
+        elif qual_type == "point":
+            # ポイント制：複数ラウンド
+            round_count = int(dict(t).get("qual_round_count") or 1)
+            lane_count  = int(t["lane_count"] or 3)
+            all_schedule = generate_point_schedule(entry_ids, round_count, lane_count)
+            heat_no = 1
+            for rno, groups in enumerate(all_schedule, 1):
+                for group in groups:
+                    await db.execute(
+                        "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
+                        (tid, heat_no, 0, rno, "pending"),
+                    )
+                    async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                        heat_id = (await cur.fetchone())["id"]
+                    for lane_no, eid in enumerate(group, 1):
+                        await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, eid))
+                    heat_no += 1
+        elif qual_type == "none_roundrobin":
+            # 即決勝（総当たり）: roundrobin と同じ 1v1 ペア生成
+            schedule = generate_roundrobin_schedule(entry_ids)
+            for race_no, lane_a, eid_a, lane_b, eid_b in schedule:
+                await db.execute(
+                    "INSERT INTO heats (tournament_id, heat_no, group_no, status) VALUES (?,?,?,?)",
+                    (tid, race_no, 0, "pending"),
+                )
+                async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                    heat_id = (await cur.fetchone())["id"]
+                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_a, eid_a))
+                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_b, eid_b))
         else:
-            schedule = generate_heat_roundrobin_schedule(
-                entry_ids, heat_count, group_count, lane_count_rr
-            )
-            for item in schedule:
+            # ヒート制（トーナメント等）
+            schedule = generate_heat_schedule(entry_ids, t["lane_count"])
+            for heat_no, group in enumerate(schedule, 1):
                 await db.execute(
-                    "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
-                    (tid, item["heat_no"], item["group_no"], item["round_no"], "pending"),
+                    "INSERT INTO heats (tournament_id, heat_no, group_no, status) VALUES (?,?,?,?)",
+                    (tid, heat_no, 0, "pending"),
                 )
                 async with db.execute("SELECT last_insert_rowid() as id") as cur:
                     heat_id = (await cur.fetchone())["id"]
-                for lane_no, eid in enumerate(item["slots"], 1):
-                    if eid is None:
-                        continue
-                    await db.execute(
-                        "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
-                        (heat_id, lane_no, eid),
-                    )
-    elif qual_type == "point":
-        # ポイント制：複数ラウンド
-        round_count = int(dict(t).get("qual_round_count") or 1)
-        lane_count  = int(t["lane_count"] or 3)
-        all_schedule = generate_point_schedule(entry_ids, round_count, lane_count)
-        heat_no = 1
-        for rno, groups in enumerate(all_schedule, 1):
-            for group in groups:
-                await db.execute(
-                    "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
-                    (tid, heat_no, 0, rno, "pending"),
-                )
-                async with db.execute("SELECT last_insert_rowid() as id") as cur:
-                    heat_id = (await cur.fetchone())["id"]
-                for lane_no, eid in enumerate(group, 1):
-                    await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, eid))
-                heat_no += 1
-    elif qual_type == "none_roundrobin":
-        # 即決勝（総当たり）: roundrobin と同じ 1v1 ペア生成
-        schedule = generate_roundrobin_schedule(entry_ids)
-        for race_no, lane_a, eid_a, lane_b, eid_b in schedule:
-            await db.execute(
-                "INSERT INTO heats (tournament_id, heat_no, group_no, status) VALUES (?,?,?,?)",
-                (tid, race_no, 0, "pending"),
-            )
-            async with db.execute("SELECT last_insert_rowid() as id") as cur:
-                heat_id = (await cur.fetchone())["id"]
-            await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_a, eid_a))
-            await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_b, eid_b))
-    else:
-        # ヒート制（トーナメント等）
-        schedule = generate_heat_schedule(entry_ids, t["lane_count"])
-        for heat_no, group in enumerate(schedule, 1):
-            await db.execute(
-                "INSERT INTO heats (tournament_id, heat_no, group_no, status) VALUES (?,?,?,?)",
-                (tid, heat_no, 0, "pending"),
-            )
-            async with db.execute("SELECT last_insert_rowid() as id") as cur:
-                heat_id = (await cur.fetchone())["id"]
-            for lane_no, entry_id in enumerate(group, 1):
-                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, entry_id))
+                for lane_no, entry_id in enumerate(group, 1):
+                    await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, entry_id))
 
-    await db.commit()
 
     # 参加者向けHTML配信（自動更新）
     try:
@@ -1821,48 +1821,48 @@ async def heat_result_save(tid: int, heat_id: int, request: Request, db: aiosqli
     ) as cur:
         lanes = await cur.fetchall()
 
-    if is_roundrobin(t):
-        # 総当たり：○×＋タイム
-        assert len(lanes) == 2, "総当たりは2レーンのみ"
-        l0, l1 = lanes[0]["lane_id"], lanes[1]["lane_id"]
-        win0_raw = form.get(f"win_{l0}", "")
-        win0 = 1 if win0_raw == "1" else (0 if win0_raw == "0" else None)
-        win1 = (1 - win0) if win0 is not None else None
-        t0_raw = form.get(f"time_{l0}", "").strip()
-        t1_raw = form.get(f"time_{l1}", "").strip()
-        time0 = float(t0_raw) if t0_raw else None
-        time1 = float(t1_raw) if t1_raw else None
+    async with transaction(db):
+        if is_roundrobin(t):
+            # 総当たり：○×＋タイム
+            assert len(lanes) == 2, "総当たりは2レーンのみ"
+            l0, l1 = lanes[0]["lane_id"], lanes[1]["lane_id"]
+            win0_raw = form.get(f"win_{l0}", "")
+            win0 = 1 if win0_raw == "1" else (0 if win0_raw == "0" else None)
+            win1 = (1 - win0) if win0 is not None else None
+            t0_raw = form.get(f"time_{l0}", "").strip()
+            t1_raw = form.get(f"time_{l1}", "").strip()
+            time0 = float(t0_raw) if t0_raw else None
+            time1 = float(t1_raw) if t1_raw else None
 
-        for lid, win, best_time in [(l0, win0, time0), (l1, win1, time1)]:
-            await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
-            await db.execute(
-                "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points) VALUES (?,?,?,0,0,0)",
-                (lid, win, best_time),
-            )
-    else:
-        # ヒート制：周回数＋タイム→順位→ポイント
-        results = []
-        for lane in lanes:
-            lid = lane["lane_id"]
-            lap_count = int(form.get(f"lap_{lid}") or 0)
-            t_raw = form.get(f"time_{lid}", "").strip()
-            best_time = float(t_raw) if t_raw else None
-            results.append({"lane_id": lid, "lap_count": lap_count, "best_time": best_time})
+            for lid, win, best_time in [(l0, win0, time0), (l1, win1, time1)]:
+                await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
+                await db.execute(
+                    "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points) VALUES (?,?,?,0,0,0)",
+                    (lid, win, best_time),
+                )
+        else:
+            # ヒート制：周回数＋タイム→順位→ポイント
+            results = []
+            for lane in lanes:
+                lid = lane["lane_id"]
+                lap_count = int(form.get(f"lap_{lid}") or 0)
+                t_raw = form.get(f"time_{lid}", "").strip()
+                best_time = float(t_raw) if t_raw else None
+                results.append({"lane_id": lid, "lap_count": lap_count, "best_time": best_time})
 
-        results_sorted = sorted(results, key=lambda r: (-(r["lap_count"] or 0), r["best_time"] or 99999))
-        for rank, r in enumerate(results_sorted, 1):
-            r["rank"] = rank
-            r["points"] = calc_points(rank)
+            results_sorted = sorted(results, key=lambda r: (-(r["lap_count"] or 0), r["best_time"] or 99999))
+            for rank, r in enumerate(results_sorted, 1):
+                r["rank"] = rank
+                r["points"] = calc_points(rank)
 
-        for r in results:
-            await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (r["lane_id"],))
-            await db.execute(
-                "INSERT INTO heat_results (heat_lane_id, lap_count, best_time, rank, points) VALUES (?,?,?,?,?)",
-                (r["lane_id"], r["lap_count"], r["best_time"], r["rank"], r["points"]),
-            )
+            for r in results:
+                await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (r["lane_id"],))
+                await db.execute(
+                    "INSERT INTO heat_results (heat_lane_id, lap_count, best_time, rank, points) VALUES (?,?,?,?,?)",
+                    (r["lane_id"], r["lap_count"], r["best_time"], r["rank"], r["points"]),
+                )
 
-    await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
-    await db.commit()
+        await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
     # 参加者向けHTML配信（自動更新）
     try:
         from app.services.publish_scheduler import schedule_publish
