@@ -13,6 +13,7 @@ import os
 import json
 
 from app.infrastructure.db.connection import get_db
+from app.infrastructure.db.tx import transaction
 from app.routers.tournaments import QUALIFYING_LABELS, calc_finalists
 
 router = APIRouter()
@@ -1090,77 +1091,77 @@ async def qualifying_generate_heat(
         if await cur.fetchone():
             return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
 
-    # 指定ヒートの既存未入力ヒートを削除
-    async with db.execute(
-        "SELECT id FROM heats WHERE tournament_id=? AND round_no=?", (tid, round_no)
-    ) as cur:
-        old_ids = [r["id"] for r in await cur.fetchall()]
-    if old_ids:
-        ph = ",".join("?" * len(old_ids))
-        await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old_ids)
-        await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old_ids)
-        await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old_ids)
-
-    # 全エントリー取得
-    async with db.execute(
-        "SELECT e.id FROM entries e WHERE e.tournament_id=? AND e.status='active' ORDER BY e.entry_order",
-        (tid,),
-    ) as cur:
-        all_entry_ids = [r["id"] for r in await cur.fetchall()]
-
-    # 前ヒートまでの進出確定者を除外
-    # 1) heat_finals 勝者（qual_heat_final=1 の場合）
-    # 2) advanced=1 のエントリー
-    excluded: set = set()
-    if t_dict.get("qual_heat_final"):
+    async with transaction(db):
+        # 指定ヒートの既存未入力ヒートを削除
         async with db.execute(
-            """SELECT DISTINCT entry_id FROM heat_finals
-               WHERE tournament_id=? AND group_no=0 AND final_type='heat'
-                 AND winner_entry_id IS NOT NULL""",
+            "SELECT id FROM heats WHERE tournament_id=? AND round_no=?", (tid, round_no)
+        ) as cur:
+            old_ids = [r["id"] for r in await cur.fetchall()]
+        if old_ids:
+            ph = ",".join("?" * len(old_ids))
+            await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old_ids)
+            await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old_ids)
+            await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old_ids)
+
+        # 全エントリー取得
+        async with db.execute(
+            "SELECT e.id FROM entries e WHERE e.tournament_id=? AND e.status='active' ORDER BY e.entry_order",
             (tid,),
         ) as cur:
-            for r in await cur.fetchall():
-                excluded.add(r["entry_id"])
-    else:
+            all_entry_ids = [r["id"] for r in await cur.fetchall()]
+
+        # 前ヒートまでの進出確定者を除外
+        # 1) heat_finals 勝者（qual_heat_final=1 の場合）
+        # 2) advanced=1 のエントリー
+        excluded: set = set()
+        if t_dict.get("qual_heat_final"):
+            async with db.execute(
+                """SELECT DISTINCT entry_id FROM heat_finals
+                   WHERE tournament_id=? AND group_no=0 AND final_type='heat'
+                     AND winner_entry_id IS NOT NULL""",
+                (tid,),
+            ) as cur:
+                for r in await cur.fetchall():
+                    excluded.add(r["entry_id"])
+        else:
+            async with db.execute(
+                "SELECT id FROM entries WHERE tournament_id=? AND advanced=1",
+                (tid,),
+            ) as cur:
+                for r in await cur.fetchall():
+                    excluded.add(r["id"])
+
+        # 対象エントリー（除外後）
+        entry_ids = [e for e in all_entry_ids if e not in excluded]
+        import random as _rand
+        _rand.shuffle(entry_ids)
+
+        # ヒートスケジュール生成
+        schedule_rr = generate_heat_roundrobin_schedule(entry_ids, 1, group_count, lane_count)
+
+        # 現在の最大heat_noを取得
         async with db.execute(
-            "SELECT id FROM entries WHERE tournament_id=? AND advanced=1",
-            (tid,),
+            "SELECT COALESCE(MAX(heat_no),0) as mx FROM heats WHERE tournament_id=?", (tid,)
         ) as cur:
-            for r in await cur.fetchall():
-                excluded.add(r["id"])
+            max_heat_no = (await cur.fetchone())["mx"]
 
-    # 対象エントリー（除外後）
-    entry_ids = [e for e in all_entry_ids if e not in excluded]
-    import random as _rand
-    _rand.shuffle(entry_ids)
-
-    # ヒートスケジュール生成
-    schedule_rr = generate_heat_roundrobin_schedule(entry_ids, 1, group_count, lane_count)
-
-    # 現在の最大heat_noを取得
-    async with db.execute(
-        "SELECT COALESCE(MAX(heat_no),0) as mx FROM heats WHERE tournament_id=?", (tid,)
-    ) as cur:
-        max_heat_no = (await cur.fetchone())["mx"]
-
-    global_heat_no = max_heat_no + 1
-    for item in schedule_rr:
-        await db.execute(
-            "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
-            (tid, global_heat_no, item["group_no"], round_no, "pending"),
-        )
-        async with db.execute("SELECT last_insert_rowid() as id") as cur:
-            heat_id = (await cur.fetchone())["id"]
-        for lane_no, eid in enumerate(item["slots"], 1):
-            if eid is None:
-                continue
+        global_heat_no = max_heat_no + 1
+        for item in schedule_rr:
             await db.execute(
-                "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
-                (heat_id, lane_no, eid),
+                "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
+                (tid, global_heat_no, item["group_no"], round_no, "pending"),
             )
-        global_heat_no += 1
+            async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                heat_id = (await cur.fetchone())["id"]
+            for lane_no, eid in enumerate(item["slots"], 1):
+                if eid is None:
+                    continue
+                await db.execute(
+                    "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
+                    (heat_id, lane_no, eid),
+                )
+            global_heat_no += 1
 
-    await db.commit()
     # 参加者向けHTML配信（自動更新）
     try:
         from app.services.publish_scheduler import schedule_publish
