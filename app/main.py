@@ -15,6 +15,7 @@ from app.infrastructure.db.schema import init_db
 from app.infrastructure.db.bracket_repair import fix_bracket_slots_on_startup
 from app.presentation.auth import add_auth
 from app.presentation.middleware.store_resolver import add_store_resolver
+from app.presentation.middleware.security import add_security_headers
 
 # ルーター（未移行モジュールは旧パスのまま＝互換シム経由で動作）
 from app.routers import admin, tournaments
@@ -34,6 +35,8 @@ app = FastAPI(title="ミニ四駆レース管理システム", version="1.0.0")
 # 置く必要があるため、add_auth を先、add_store_resolver を後に呼ぶ。
 add_auth(app)
 add_store_resolver(app)
+# 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
+add_security_headers(app)
 
 BASE_DIR = os.path.dirname(__file__)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")

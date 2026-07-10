@@ -13,6 +13,9 @@ router = APIRouter()
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "../../static")
 
+# レース画像として配信を許可する Content-Type（保存型XSS対策）
+_ALLOWED_ASSET_CTYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
 
 @router.get("/")
 async def root():
@@ -81,8 +84,13 @@ async def serve_race_asset(tid: int, kind: str, seq: int,
         return Response(status_code=404)
     try:
         header, b64 = row["data_uri"].split(",", 1)
-        ctype = header.split(":", 1)[1].split(";", 1)[0] or "image/png"
+        ctype = (header.split(":", 1)[1].split(";", 1)[0] or "image/png")
+        # 同一オリジンでの HTML/SVG 配信（保存型XSS）を防ぐため画像のみ許可。
+        if ctype not in _ALLOWED_ASSET_CTYPES:
+            return Response(status_code=404)
         raw = base64.b64decode(b64)
     except Exception:
         return Response(status_code=404)
-    return Response(content=raw, media_type=ctype, headers={"Cache-Control": "no-cache"})
+    return Response(content=raw, media_type=ctype,
+                   headers={"Cache-Control": "no-cache",
+                            "X-Content-Type-Options": "nosniff"})

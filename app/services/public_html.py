@@ -991,7 +991,9 @@ async def _render_page(view_url: str, store=None) -> str | None:
     from app.main import app
 
     try:
+        import os
         import httpx
+        from httpx import ASGITransport
         from app.config import (
             IS_CLOUD as _IS_CLOUD, ADMIN_TOKEN as _ADMIN_TOKEN,
             ADMIN_COOKIE as _ADMIN_COOKIE, admin_cookie_name as _acn,
@@ -1001,9 +1003,12 @@ async def _render_page(view_url: str, store=None) -> str | None:
             # 店舗別Cookie＋内部レンダリングヘッダ（resolver が店舗を確定）
             _cookies = {_acn(store.id): store.admin_token} if store.admin_token else {}
             _headers["x-internal-store-id"] = str(store.id)
+            _secret = os.environ.get("INTERNAL_RENDER_SECRET", "")
+            if _secret:
+                _headers["x-internal-render-secret"] = _secret
         else:
             _cookies = {_ADMIN_COOKIE: _ADMIN_TOKEN} if (_IS_CLOUD and _ADMIN_TOKEN) else {}
-        async with httpx.AsyncClient(app=app, base_url="http://localhost", follow_redirects=True, cookies=_cookies, headers=_headers) as client:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost", follow_redirects=True, cookies=_cookies, headers=_headers) as client:
             # 参加者向けhtml生成であることをテンプレートへ伝えるため _public=1 を付与
             _sep = "&" if ("?" in view_url) else "?"
             _get_url = view_url + _sep + "_public=1"
@@ -1044,9 +1049,11 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
       - #viewer-ht-bracket-{hno}  (qualifying/heat-tournament)
       - #bracket-html-container    (bracket)
     """
+    import os
     import re
     from app.main import app
     import httpx
+    from httpx import ASGITransport
     from app.config import (
         IS_CLOUD as _IS_CLOUD2, ADMIN_TOKEN as _ADMIN_TOKEN2,
         ADMIN_COOKIE as _ADMIN_COOKIE2, admin_cookie_name as _acn2,
@@ -1055,10 +1062,13 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     if _IS_CLOUD2 and store is not None:
         _cookies2 = {_acn2(store.id): store.admin_token} if store.admin_token else {}
         _headers2["x-internal-store-id"] = str(store.id)
+        _secret2 = os.environ.get("INTERNAL_RENDER_SECRET", "")
+        if _secret2:
+            _headers2["x-internal-render-secret"] = _secret2
     else:
         _cookies2 = {_ADMIN_COOKIE2: _ADMIN_TOKEN2} if (_IS_CLOUD2 and _ADMIN_TOKEN2) else {}
 
-    async with httpx.AsyncClient(app=app, base_url="http://localhost", follow_redirects=True, cookies=_cookies2, headers=_headers2) as client:
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost", follow_redirects=True, cookies=_cookies2, headers=_headers2) as client:
 
         # ① qualifying heat-tournament ブラケット（section単位で注入）
         # 差込先 id は viewer-ht-bracket-{hno}-{section_no}（section_no=0 はヒート決勝）。

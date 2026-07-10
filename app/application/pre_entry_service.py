@@ -10,6 +10,11 @@ from app.domain.deadline import deadline_passed
 
 
 class PreEntryService:
+    # 公開（無認証）フォームの入力上限。実運用の卓数に合わせて調整可。
+    MAX_PARTY = 12          # 1送信あたりの最大人数
+    MAX_LEN = 64            # 名前・よみ・都道府県の最大文字数
+    MAX_CONTACT_LEN = 254   # 連絡先（メール想定）の最大文字数
+
     def __init__(self, db_path: str):
         self.db_path = db_path
 
@@ -49,6 +54,11 @@ class PreEntryService:
             closed = deadline_passed(t["pre_entry_deadline"])
             token = ""
             if not closed:
+                # 発行のたびに古いトークンを掃除（無限増殖・ストレージ濫用の防止）。
+                await db.execute(
+                    "DELETE FROM entry_form_tokens "
+                    "WHERE created_at < datetime('now','localtime','-1 day')"
+                )
                 token = uuid.uuid4().hex
                 await db.execute(
                     "INSERT INTO entry_form_tokens (token, tournament_id) VALUES (?,?)",
@@ -100,6 +110,15 @@ class PreEntryService:
                 return "error:required", None, 0
             if n == 0 or len(yomis) != n or len(children) != n:
                 return "error:required", None, 0
+
+            # 無認証エンドポイントのため入力量に上限を設ける（DoS・ストレージ濫用の防止）。
+            if n > self.MAX_PARTY:
+                return "error:required", None, 0
+            if len(rep_pref) > self.MAX_LEN or len(rep_contact) > self.MAX_CONTACT_LEN:
+                return "error:required", None, 0
+            for i in range(n):
+                if len(names[i]) > self.MAX_LEN or len(yomis[i]) > self.MAX_LEN:
+                    return "error:required", None, 0
             for i in range(n):
                 if not names[i] or not yomis[i]:
                     return "error:required", None, 0

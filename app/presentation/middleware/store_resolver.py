@@ -18,7 +18,9 @@ StoreResolverMiddleware（クラウド版のみ登録）。
 """
 from __future__ import annotations
 
+import os
 import re
+import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response, PlainTextResponse
@@ -31,6 +33,19 @@ _APP_PREFIXES = ("admin", "view", "static", "logo", "health", "api", "enter", "f
 
 # HTML本文中で前置対象にする絶対パス接頭辞
 _REWRITE_RE = re.compile(r"([\"'`])(/(?:admin|view|static|logo|health|api|enter)\b)")
+
+# 内部レンダリング（public_html の自己呼び出し）用の共有シークレット。
+# 設定されている場合のみ x-internal-render-secret の一致を要求する。
+# 未設定なら従来どおり x-internal-store-id をそのまま信頼する（後方互換）。
+# 本番では設定し、リバースプロキシ側で両ヘッダを外部リクエストから除去することを推奨。
+_INTERNAL_SECRET = os.environ.get("INTERNAL_RENDER_SECRET", "")
+
+
+def _internal_header_trusted(request) -> bool:
+    if not _INTERNAL_SECRET:
+        return True  # 未設定：従来挙動を維持
+    sig = request.headers.get("x-internal-render-secret", "")
+    return bool(sig) and secrets.compare_digest(sig, _INTERNAL_SECRET)
 
 
 def _first_segment(path: str) -> str:
@@ -46,7 +61,7 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
         # 内部レンダリング（public_html が自分自身へ httpx で投げる観覧ページ生成）用の
         # バイパス。スラッグなしURL＋ヘッダで店舗を指定する。パス書き換えは行わない。
         internal_id = request.headers.get("x-internal-store-id")
-        if internal_id:
+        if internal_id and _internal_header_trusted(request):
             try:
                 istore = registry.get_store_by_id(int(internal_id))
             except Exception:

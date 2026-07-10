@@ -20,8 +20,13 @@
 
 オンプレ版（IS_CLOUD=False）ではこのミドルウェアは登録されない（add_auth参照）。
 """
+import os
 import secrets
 from urllib.parse import urlencode
+
+# クラウドは常時HTTPS前提。誤ってHTTP配信された場合のトークン漏洩を防ぐため、
+# 既定で Secure Cookie を付与する（HTTPで検証したい場合のみ COOKIE_SECURE=0）。
+_COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse, PlainTextResponse
@@ -87,13 +92,15 @@ class FixedTokenAuthMiddleware(BaseHTTPMiddleware):
             params.pop("key", None)
             clean_url = path + (("?" + urlencode(params)) if params else "")
             resp = RedirectResponse(url=clean_url, status_code=303)
+            # トークンが Referer 経由で外部へ漏れないようにする
+            resp.headers["Referrer-Policy"] = "no-referrer"
             cookie_path = _store_prefix(request)
+            _cookie_kw = dict(httponly=True, samesite="lax", secure=_COOKIE_SECURE,
+                              path=cookie_path, max_age=60 * 60 * 24 * 365)
             if admin_token and secrets.compare_digest(key, admin_token):
-                resp.set_cookie(ac_name, key, httponly=True, samesite="lax",
-                                path=cookie_path, max_age=60 * 60 * 24 * 365)
+                resp.set_cookie(ac_name, key, **_cookie_kw)
             if view_token and secrets.compare_digest(key, view_token):
-                resp.set_cookie(vc_name, key, httponly=True, samesite="lax",
-                                path=cookie_path, max_age=60 * 60 * 24 * 365)
+                resp.set_cookie(vc_name, key, **_cookie_kw)
             return resp
 
         admin_cookie = request.cookies.get(ac_name, "")
