@@ -47,10 +47,10 @@
 .wl-td-w{background:#0d2a14;color:#27ae60}
 .wl-td-l{background:#2a0d0d;color:#e74c3c}
 .wl-td-none{background:#0f1923;color:#3d5166}
-.v-cols{display:grid;grid-template-columns:1fr 200px;gap:16px;align-items:start}.v-cols.single{grid-template-columns:1fr}
+.v-cols{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:16px;align-items:start}.v-cols.single{grid-template-columns:minmax(0,1fr)}
 @media(max-width:900px){.v-cols{grid-template-columns:1fr}}
 /* ヒート制総当たり：グループ内「レーススケジュール｜星取表」。スマホ(<=900px)では縦積み（スケジュールの下に星取表） */
-.hr-grp-cols{display:grid;grid-template-columns:3fr 2fr;gap:0}
+.hr-grp-cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:0}
 .hr-grp-cols>.hr-sched{border-right:1px solid #1e3a5f}
 @media(max-width:900px){.hr-grp-cols{grid-template-columns:1fr}.hr-grp-cols>.hr-sched{border-right:none;border-bottom:1px solid #1e3a5f}}
 @media(max-width:600px){

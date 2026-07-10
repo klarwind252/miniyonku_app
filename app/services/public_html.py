@@ -241,6 +241,30 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       var selOld = document.getElementById('m4-racer-select');
       var selVal = selOld ? selOld.value : null;
       var sx = window.scrollX, sy = window.scrollY;
+      // 画面別CSSの同期：待機画面と各レース画面（予選/決勝/総当たり）は
+      // それぞれ異なる <style>（.schedule-table 等）を <head> に持つ。
+      // 部分更新は .v-container（body側）だけを差し替えるため、待機画面→レース画面へ
+      // 自動更新した際に、レース画面用CSSが <head> に無く表組みが崩れる。
+      // そこで新HTMLの <head> 内 <style> 群を現在の <head> に反映してから本文を差し替える。
+      try {
+        var liveHead = document.head;
+        var freshStyles = doc.querySelectorAll('head style');
+        var liveSig = Array.prototype.map.call(
+          liveHead.querySelectorAll('style'), function(s){ return s.textContent; }
+        ).join('\u0001');
+        var freshSig = Array.prototype.map.call(
+          freshStyles, function(s){ return s.textContent; }
+        ).join('\u0001');
+        if(freshStyles.length && freshSig !== liveSig){
+          // 既存の <style> を除去し、新しい画面の <style> 群へ入れ替える
+          Array.prototype.forEach.call(
+            liveHead.querySelectorAll('style'), function(s){ s.remove(); }
+          );
+          Array.prototype.forEach.call(freshStyles, function(s){
+            liveHead.appendChild(document.importNode(s, true));
+          });
+        }
+      } catch(e){ /* CSS同期失敗時も本文差し替えは継続（従来挙動） */ }
       // 更新箇所だけ差し替え
       live.innerHTML = fresh.innerHTML;
       // ブラケット線を再描画（決勝・ヒート予選の全 .bracket-outer が対象）
