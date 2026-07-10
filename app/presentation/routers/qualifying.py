@@ -2311,35 +2311,35 @@ async def heat_final_rank(tid: int, request: Request, db: aiosqlite.Connection =
         await db.execute("ALTER TABLE heat_finals ADD COLUMN deciding_rank INTEGER")
         await db.commit()
 
-    # 同じ順位が既に別エントリーに設定されていれば解除
-    if rank_val:
+    async with transaction(db):
+        # 同じ順位が既に別エントリーに設定されていれば解除
+        if rank_val:
+            await db.execute(
+                "UPDATE heat_finals SET deciding_rank=NULL WHERE tournament_id=? AND round_no=? AND deciding_rank=? AND (final_type='heat' OR final_type IS NULL)",
+                (tid, round_no, rank_val),
+            )
         await db.execute(
-            "UPDATE heat_finals SET deciding_rank=NULL WHERE tournament_id=? AND round_no=? AND deciding_rank=? AND (final_type='heat' OR final_type IS NULL)",
-            (tid, round_no, rank_val),
+            "UPDATE heat_finals SET deciding_rank=? WHERE tournament_id=? AND round_no=? AND entry_id=? AND (final_type='heat' OR final_type IS NULL)",
+            (rank_val, tid, round_no, entry_id),
         )
-    await db.execute(
-        "UPDATE heat_finals SET deciding_rank=? WHERE tournament_id=? AND round_no=? AND entry_id=? AND (final_type='heat' OR final_type IS NULL)",
-        (rank_val, tid, round_no, entry_id),
-    )
 
-    # advanced を deciding_rank から再計算
-    async with db.execute("SELECT qual_heat_final_advance FROM tournaments WHERE id=?", (tid,)) as cur:
-        t_row = await cur.fetchone()
-    advance_n = dict(t_row).get("qual_heat_final_advance", 1) if t_row else 1
-    heat_count = dict(t_row).get("qual_heat_count", 1) if t_row else 1
+        # advanced を deciding_rank から再計算
+        async with db.execute("SELECT qual_heat_final_advance FROM tournaments WHERE id=?", (tid,)) as cur:
+            t_row = await cur.fetchone()
+        advance_n = dict(t_row).get("qual_heat_final_advance", 1) if t_row else 1
+        heat_count = dict(t_row).get("qual_heat_count", 1) if t_row else 1
 
-    # 全ヒートの決勝進出者（deciding_rank <= advance_n）を取得してadvancedを更新
-    await db.execute("UPDATE entries SET advanced=NULL WHERE tournament_id=?", (tid,))
-    async with db.execute(
-        "SELECT entry_id FROM heat_finals WHERE tournament_id=? AND deciding_rank<=? AND (final_type='heat' OR final_type IS NULL)",
-        (tid, advance_n),
-    ) as cur:
-        adv_rows = await cur.fetchall()
-    for row in adv_rows:
-        if row["entry_id"]:
-            await db.execute("UPDATE entries SET advanced=1 WHERE id=?", (row["entry_id"],))
+        # 全ヒートの決勝進出者（deciding_rank <= advance_n）を取得してadvancedを更新
+        await db.execute("UPDATE entries SET advanced=NULL WHERE tournament_id=?", (tid,))
+        async with db.execute(
+            "SELECT entry_id FROM heat_finals WHERE tournament_id=? AND deciding_rank<=? AND (final_type='heat' OR final_type IS NULL)",
+            (tid, advance_n),
+        ) as cur:
+            adv_rows = await cur.fetchall()
+        for row in adv_rows:
+            if row["entry_id"]:
+                await db.execute("UPDATE entries SET advanced=1 WHERE id=?", (row["entry_id"],))
 
-    await db.commit()
     return JSONResponse({"ok": True})
 
 
