@@ -29,9 +29,10 @@
 .status-pending{color:#7f8c8d;font-size:12px}
 
 /* 順位表 */
-.standings-table{width:100%;border-collapse:collapse}
-.standings-table th{background:#1e3a5f;padding:8px 12px;text-align:left;font-size:12px;color:#7f8c8d;font-weight:normal}
-.standings-table td{padding:10px 12px;border-bottom:1px solid #2c3e50;font-size:15px}
+.standings-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.standings-table th,.standings-table td{overflow:hidden;text-overflow:ellipsis}
+.standings-table th{background:#1e3a5f;padding:8px 6px;text-align:left;font-size:12px;color:#7f8c8d;font-weight:normal}
+.standings-table td{padding:10px 6px;border-bottom:1px solid #2c3e50;font-size:15px}
 .standings-table tr:first-child td{background:#1a2a10}
 .rank-col{font-size:20px;font-weight:bold;width:40px}
 .adv-yes{color:#27ae60;font-weight:bold}
@@ -47,7 +48,9 @@
 .wl-td-w{background:#0d2a14;color:#27ae60}
 .wl-td-l{background:#2a0d0d;color:#e74c3c}
 .wl-td-none{background:#0f1923;color:#3d5166}
-.v-cols{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:16px;align-items:start}.v-cols.single{grid-template-columns:minmax(0,1fr)}
+.v-cols{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:16px;align-items:start}.v-cols.single{grid-template-columns:minmax(0,1fr)}
+.v-cols>div{min-width:0}
+.v-cols>div>.v-section{overflow-x:auto}
 @media(max-width:900px){.v-cols{grid-template-columns:1fr}}
 /* ヒート制総当たり：グループ内「レーススケジュール｜星取表」。スマホ(<=900px)では縦積み（スケジュールの下に星取表） */
 .hr-grp-cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:0}
