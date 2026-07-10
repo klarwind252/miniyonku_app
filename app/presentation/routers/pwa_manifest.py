@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 def _serve_manifest(request: Request, screen: str):
-    from app.infrastructure import pwa_icons as pwa
+    from app import pwa
     if not IS_CLOUD:
         return Response(status_code=404)
     settings = pwa.get_pwa_settings(request)
