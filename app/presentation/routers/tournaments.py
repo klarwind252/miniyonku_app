@@ -1473,6 +1473,13 @@ async def tournament_delete(tid: int, db: aiosqlite.Connection = Depends(get_db)
         await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", hids)
         await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", hids)
     await db.execute("DELETE FROM entries WHERE tournament_id=?", (tid,))
+    # 並び順（勝ち抜け・v6.0b）専用テーブル
+    await db.execute("DELETE FROM order_winner_racers WHERE tournament_id=?", (tid,))
+    await db.execute("DELETE FROM order_winner_stages WHERE tournament_id=?", (tid,))
+    # 並び順（ポイント制・v5.6）待機列
+    await db.execute("DELETE FROM order_queue WHERE tournament_id=?", (tid,))
+    # 決勝トーナメント設定
+    await db.execute("DELETE FROM brackets WHERE tournament_id=?", (tid,))
     # マスタ非使用レースの隠しレーサー（このレース専用）も後始末（仕様書12.1）
     await db.execute(
         "DELETE FROM racers WHERE COALESCE(ephemeral,0)=1 AND owner_tournament_id=?", (tid,)
