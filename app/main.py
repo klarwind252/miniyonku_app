@@ -14,6 +14,7 @@ from app.infrastructure.db.connection import DB_PATH
 from app.infrastructure.db.schema import init_db
 from app.infrastructure.db.bracket_repair import fix_bracket_slots_on_startup
 from app.presentation.auth import add_auth
+from app.presentation.onprem_auth import add_onprem_auth
 from app.presentation.middleware.store_resolver import add_store_resolver
 from app.presentation.middleware.security import add_security_headers
 
@@ -34,6 +35,8 @@ app = FastAPI(title="ミニ四駆レース管理システム", version="1.0.0")
 # ミドルウェアは「後に追加したものが外側（先に実行）」。店舗リゾルバを認証より外側に
 # 置く必要があるため、add_auth を先、add_store_resolver を後に呼ぶ。
 add_auth(app)
+# オンプレ版のLAN公開時：ONPREM_ADMIN_PIN 設定時のみ /admin をPIN保護（既定は無効＝従来挙動）。
+add_onprem_auth(app)
 add_store_resolver(app)
 # 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
 add_security_headers(app)
