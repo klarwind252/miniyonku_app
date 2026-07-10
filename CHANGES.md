@@ -24,10 +24,17 @@
 
 ### 整合性
 - トランザクション原子化ヘルパ（`app/infrastructure/db/tx.py`）
-- 主要な書き込み経路を `transaction()` で原子化（`qualifying.py`）：
-  組確定 `qualifying_generate_heat` / `qualifying_generate_round` / `qualifying_generate`、
-  結果保存 `heat_result_save`、結果リセット `heat_result_reset`。
-  ※ 未着手：ヒート決勝・その他リセット系・レーン編集、`bracket.py`・`tournaments.py`。
+- 主要な書き込み経路を `transaction()` で原子化：
+  - `qualifying.py`：組確定 `qualifying_generate_heat` / `qualifying_generate_round` /
+    `qualifying_generate`、結果保存 `heat_result_save`、結果リセット `heat_result_reset`、
+    ヒート決勝生成 `heat_final_generate`、ヒート決勝トーナメント削除
+    `heat_final_tournament_reset`。
+  - `bracket.py`：決勝順位クリア `bracket_clear_final_result`、くじ確定
+    `bracket_lottery_confirm`。
+  ※ 見送り（多段コミット／内部コミット関数を含み、単純な囲みでは原子性が成立しない）：
+    `heat_final_save`・`heat_final_rank`・`heat_final_tournament_generate`、
+    `bracket_generate`・`bracket_save`・`next_round_generate`。
+  ※ 未着手：その他リセット・レーン編集、`tournaments.py`。
 
 ### テスト（回帰網）
 - ドメイン純関数の characterization（`tests/test_domain.py`）
@@ -35,10 +42,10 @@
 - `transaction()` の commit/rollback 機能（`tests/test_tx.py`）
 - 順位計算 `_calc_standings_rr` の characterization（`tests/test_standings.py`）
 - 原子化した各ハンドラの機能・原子性（実DB）：組確定（`tests/test_generate_tx.py`）、
-  結果保存（`tests/test_result_save_tx.py`）、リセット（`tests/test_reset_tx.py`）
+  結果保存（`tests/test_result_save_tx.py`）、リセット（`tests/test_reset_tx.py`）、bracket確定（`tests/test_bracket_tx.py`）
 - 共通設定・実行手順（`tests/conftest.py` / `tests/README.md`）
 - 開発用依存（`setup/requirements-dev.txt`：pytest）
-- 合計 37 件、全パス。
+- 合計 39 件、全パス。
 
 ### デプロイ資料
 - `deploy/HARDENING.md`、`deploy/nginx.cloud.example.conf`

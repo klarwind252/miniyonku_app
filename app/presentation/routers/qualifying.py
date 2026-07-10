@@ -2361,55 +2361,55 @@ async def heat_final_generate(tid: int, request: Request, db: aiosqlite.Connecti
     ) as cur:
         group_nos = [r["group_no"] for r in await cur.fetchall()]
 
-    # 既存データのうち、ヒート優勝トーナメント（final_type='heat'）のみ削除
-    # プレーオフ（final_type='playoff'）は残す
-    await db.execute(
-        "DELETE FROM heat_finals WHERE tournament_id=? AND round_no=? AND (final_type='heat' OR final_type IS NULL)",
-        (tid, round_no),
-    )
-
-    # 各グループから1名のグループ代表を決定
-    # 優先順位: 1) プレーオフ勝者 2) 単独1位 3) 同率（プレーオフ未実施）→スキップ
-    candidates = []
-    seen = set()
-
-    for gno in group_nos:
-        # まずプレーオフ勝者を確認
-        async with db.execute(
-            """SELECT hf.entry_id FROM heat_finals hf
-               WHERE hf.tournament_id=? AND hf.round_no=? AND hf.group_no=?
-                 AND hf.final_type='playoff' AND hf.winner_entry_id IS NOT NULL
-               LIMIT 1""",
-            (tid, round_no, gno),
-        ) as cur:
-            po_winner = await cur.fetchone()
-        if po_winner:
-            eid = po_winner["entry_id"]
-            if eid not in seen:
-                candidates.append(eid)
-                seen.add(eid)
-            continue
-
-        # プレーオフ勝者なし → グループ順位を確認
-        standings = await _calc_standings_group_round(tid, gno, round_no, db)
-        if not standings:
-            continue
-        if len(standings) == 1 or standings[0]["wins"] > standings[1]["wins"]:
-            # 単独1位 → グループ代表
-            eid = standings[0]["entry_id"]
-            if eid not in seen:
-                candidates.append(eid)
-                seen.add(eid)
-        # 同率1位でプレーオフ未実施 → スキップ（決定戦が必要）
-
-    # ヒート優勝トーナメントに配置
-    for slot_no, entry_id in enumerate(candidates, 1):
+    async with transaction(db):
+        # 既存データのうち、ヒート優勝トーナメント（final_type='heat'）のみ削除
+        # プレーオフ（final_type='playoff'）は残す
         await db.execute(
-            "INSERT INTO heat_finals (tournament_id, round_no, group_no, slot_no, entry_id, final_type) VALUES (?,?,?,?,?,'heat')",
-            (tid, round_no, 0, slot_no, entry_id),
+            "DELETE FROM heat_finals WHERE tournament_id=? AND round_no=? AND (final_type='heat' OR final_type IS NULL)",
+            (tid, round_no),
         )
 
-    await db.commit()
+        # 各グループから1名のグループ代表を決定
+        # 優先順位: 1) プレーオフ勝者 2) 単独1位 3) 同率（プレーオフ未実施）→スキップ
+        candidates = []
+        seen = set()
+
+        for gno in group_nos:
+            # まずプレーオフ勝者を確認
+            async with db.execute(
+                """SELECT hf.entry_id FROM heat_finals hf
+                   WHERE hf.tournament_id=? AND hf.round_no=? AND hf.group_no=?
+                     AND hf.final_type='playoff' AND hf.winner_entry_id IS NOT NULL
+                   LIMIT 1""",
+                (tid, round_no, gno),
+            ) as cur:
+                po_winner = await cur.fetchone()
+            if po_winner:
+                eid = po_winner["entry_id"]
+                if eid not in seen:
+                    candidates.append(eid)
+                    seen.add(eid)
+                continue
+
+            # プレーオフ勝者なし → グループ順位を確認
+            standings = await _calc_standings_group_round(tid, gno, round_no, db)
+            if not standings:
+                continue
+            if len(standings) == 1 or standings[0]["wins"] > standings[1]["wins"]:
+                # 単独1位 → グループ代表
+                eid = standings[0]["entry_id"]
+                if eid not in seen:
+                    candidates.append(eid)
+                    seen.add(eid)
+            # 同率1位でプレーオフ未実施 → スキップ（決定戦が必要）
+
+        # ヒート優勝トーナメントに配置
+        for slot_no, entry_id in enumerate(candidates, 1):
+            await db.execute(
+                "INSERT INTO heat_finals (tournament_id, round_no, group_no, slot_no, entry_id, final_type) VALUES (?,?,?,?,?,'heat')",
+                (tid, round_no, 0, slot_no, entry_id),
+            )
+
     return JSONResponse({"ok": True})
 
 
@@ -3830,24 +3830,24 @@ async def heat_final_tournament_reset(
     """ヒート決勝トーナメント（section_no=0）を削除する。"""
     if await _is_heat_locked(tid, heat_no, db):
         return _locked_json_response()
-    async with db.execute(
-        "SELECT id FROM ht_rounds WHERE tournament_id=? AND heat_no=? AND section_no=0",
-        (tid, heat_no),
-    ) as cur:
-        old_rids = [r["id"] for r in await cur.fetchall()]
-    for rid in old_rids:
-        async with db.execute("SELECT id FROM ht_groups WHERE round_id=?", (rid,)) as cur:
-            gids = [r["id"] for r in await cur.fetchall()]
-        for gid in gids:
-            await db.execute("DELETE FROM ht_slot_ranks WHERE group_id=?", (gid,))
-            await db.execute("DELETE FROM ht_results WHERE group_id=?", (gid,))
-            await db.execute("DELETE FROM ht_slots WHERE group_id=?", (gid,))
-        await db.execute("DELETE FROM ht_groups WHERE round_id=?", (rid,))
-    await db.execute(
-        "DELETE FROM ht_rounds WHERE tournament_id=? AND heat_no=? AND section_no=0",
-        (tid, heat_no),
-    )
-    await db.commit()
+    async with transaction(db):
+        async with db.execute(
+            "SELECT id FROM ht_rounds WHERE tournament_id=? AND heat_no=? AND section_no=0",
+            (tid, heat_no),
+        ) as cur:
+            old_rids = [r["id"] for r in await cur.fetchall()]
+        for rid in old_rids:
+            async with db.execute("SELECT id FROM ht_groups WHERE round_id=?", (rid,)) as cur:
+                gids = [r["id"] for r in await cur.fetchall()]
+            for gid in gids:
+                await db.execute("DELETE FROM ht_slot_ranks WHERE group_id=?", (gid,))
+                await db.execute("DELETE FROM ht_results WHERE group_id=?", (gid,))
+                await db.execute("DELETE FROM ht_slots WHERE group_id=?", (gid,))
+            await db.execute("DELETE FROM ht_groups WHERE round_id=?", (rid,))
+        await db.execute(
+            "DELETE FROM ht_rounds WHERE tournament_id=? AND heat_no=? AND section_no=0",
+            (tid, heat_no),
+        )
     return JSONResponse({"ok": True})
 
 

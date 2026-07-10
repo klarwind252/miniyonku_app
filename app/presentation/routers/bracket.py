@@ -14,6 +14,7 @@ import math
 from itertools import product
 
 from app.infrastructure.db.connection import get_db
+from app.infrastructure.db.tx import transaction
 
 router = APIRouter()
 from app.presentation.templates import templates
@@ -2444,29 +2445,29 @@ async def bracket_lottery_confirm(tid: int, request: Request, db: aiosqlite.Conn
             "message": f"未割り当ての枠があります（{labels}{more}）。すべて埋めてから確定してください。",
         })
 
-    # ── 確定：くじ待ち解除。裏トーナメントの後処理を生成時と同じ仕様で実行 ──
-    await db.execute("UPDATE tournaments SET lottery_pending=0 WHERE id=?", (tid,))
+    async with transaction(db):
+        # ── 確定：くじ待ち解除。裏トーナメントの後処理を生成時と同じ仕様で実行 ──
+        await db.execute("UPDATE tournaments SET lottery_pending=0 WHERE id=?", (tid,))
 
-    if t.get("losers_bracket"):
-        async with db.execute(
-            "SELECT round_no, id FROM bracket_rounds "
-            "WHERE tournament_id=? AND round_type IN ('final','normal') ORDER BY round_no", (tid,)
-        ) as cur:
-            nf_rounds = await cur.fetchall()
-        semi_groups = None
-        if len(nf_rounds) >= 2:
-            semi_rid = nf_rounds[-2]["id"]
+        if t.get("losers_bracket"):
             async with db.execute(
-                "SELECT COUNT(*) AS c FROM bracket_groups WHERE round_id=?", (semi_rid,)
+                "SELECT round_no, id FROM bracket_rounds "
+                "WHERE tournament_id=? AND round_type IN ('final','normal') ORDER BY round_no", (tid,)
             ) as cur:
-                semi_groups = (await cur.fetchone())["c"]
-        if semi_groups == 2:
-            await db.execute("UPDATE tournaments SET revival_target_round=NULL WHERE id=?", (tid,))
-        else:
-            await db.execute(
-                "UPDATE tournaments SET losers_bracket=0, revival_target_round=NULL WHERE id=?", (tid,)
-            )
-    await db.commit()
+                nf_rounds = await cur.fetchall()
+            semi_groups = None
+            if len(nf_rounds) >= 2:
+                semi_rid = nf_rounds[-2]["id"]
+                async with db.execute(
+                    "SELECT COUNT(*) AS c FROM bracket_groups WHERE round_id=?", (semi_rid,)
+                ) as cur:
+                    semi_groups = (await cur.fetchone())["c"]
+            if semi_groups == 2:
+                await db.execute("UPDATE tournaments SET revival_target_round=NULL WHERE id=?", (tid,))
+            else:
+                await db.execute(
+                    "UPDATE tournaments SET losers_bracket=0, revival_target_round=NULL WHERE id=?", (tid,)
+                )
 
     # 参加者向けHTML配信（生成時と同じ）
     try:
@@ -4211,11 +4212,11 @@ async def bracket_clear_final_result(tid: int, db: aiosqlite.Connection = Depend
         (tid,),
     ) as cur:
         gids = [r["id"] for r in await cur.fetchall()]
-    if gids:
-        ph = ",".join("?" * len(gids))
-        await db.execute(f"DELETE FROM bracket_slot_ranks WHERE group_id IN ({ph})", gids)
-        await db.execute(f"DELETE FROM bracket_results WHERE group_id IN ({ph})", gids)
-    await db.commit()
+    async with transaction(db):
+        if gids:
+            ph = ",".join("?" * len(gids))
+            await db.execute(f"DELETE FROM bracket_slot_ranks WHERE group_id IN ({ph})", gids)
+            await db.execute(f"DELETE FROM bracket_results WHERE group_id IN ({ph})", gids)
     return RedirectResponse(url=f"/admin/tournaments/{tid}/bracket", status_code=303)
 
 
