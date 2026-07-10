@@ -1801,10 +1801,10 @@ async def heat_result_reset(tid: int, heat_id: int, db: aiosqlite.Connection = D
     """レース結果をリセット"""
     async with db.execute("SELECT id FROM heat_lanes WHERE heat_id=?", (heat_id,)) as cur:
         lane_ids = [r["id"] for r in await cur.fetchall()]
-    for lid in lane_ids:
-        await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
-    await db.execute("UPDATE heats SET status='prepare' WHERE id=?", (heat_id,))
-    await db.commit()
+    async with transaction(db):
+        for lid in lane_ids:
+            await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
+        await db.execute("UPDATE heats SET status='prepare' WHERE id=?", (heat_id,))
 
     return JSONResponse({"ok": True})
 

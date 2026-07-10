@@ -24,15 +24,21 @@
 
 ### 整合性
 - トランザクション原子化ヘルパ（`app/infrastructure/db/tx.py`）
-- 組確定ハンドラ `qualifying_generate_heat` を `transaction()` で原子化
-  （`app/presentation/routers/qualifying.py`）
+- 主要な書き込み経路を `transaction()` で原子化（`qualifying.py`）：
+  組確定 `qualifying_generate_heat` / `qualifying_generate_round` / `qualifying_generate`、
+  結果保存 `heat_result_save`、結果リセット `heat_result_reset`。
+  ※ 未着手：ヒート決勝・その他リセット系・レーン編集、`bracket.py`・`tournaments.py`。
 
 ### テスト（回帰網）
 - ドメイン純関数の characterization（`tests/test_domain.py`）
 - 予選スケジュール生成の golden/不変条件（`tests/test_schedule.py`）
 - `transaction()` の commit/rollback 機能（`tests/test_tx.py`）
+- 順位計算 `_calc_standings_rr` の characterization（`tests/test_standings.py`）
+- 原子化した各ハンドラの機能・原子性（実DB）：組確定（`tests/test_generate_tx.py`）、
+  結果保存（`tests/test_result_save_tx.py`）、リセット（`tests/test_reset_tx.py`）
 - 共通設定・実行手順（`tests/conftest.py` / `tests/README.md`）
 - 開発用依存（`setup/requirements-dev.txt`：pytest）
+- 合計 37 件、全パス。
 
 ### デプロイ資料
 - `deploy/HARDENING.md`、`deploy/nginx.cloud.example.conf`
