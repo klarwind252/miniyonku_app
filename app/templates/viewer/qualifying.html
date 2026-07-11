@@ -30,12 +30,12 @@
 
 /* 順位表 */
 .standings-table{width:100%;border-collapse:collapse;table-layout:fixed}
-.standings-table th,.standings-table td{overflow:hidden;text-overflow:ellipsis}
+.standings-table th,.standings-table td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 列幅割り振り（table-layout:fixed は1行目の幅が列幅になる）:
    1列目#=24px / 2列目順位=40px / 3列目レーサー=残り全部 / 4列目以降(Pt・出走・完走・完走率等)=各44px */
 .standings-table thead th:nth-child(1){width:24px}
 .standings-table thead th:nth-child(2){width:40px}
-.standings-table thead th:nth-child(n+4){width:44px;text-align:center}
+.standings-table thead th:nth-child(n+4){width:58px;text-align:center}
 .standings-table th{background:#1e3a5f;padding:8px 6px;text-align:left;font-size:12px;color:#7f8c8d;font-weight:normal}
 .standings-table td{padding:10px 6px;border-bottom:1px solid #2c3e50;font-size:15px}
 .standings-table tr:first-child td{background:#1a2a10}

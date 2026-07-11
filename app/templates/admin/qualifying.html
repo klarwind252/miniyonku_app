@@ -987,8 +987,8 @@ document.addEventListener('DOMContentLoaded', function(){
     <div style="background:#e8f4fd;padding:6px 16px;font-size:13px;color:#2980b9;border-bottom:1px solid #c8e0f4;font-weight:bold">
       グループ {{ gno }}
     </div>
-    <table style="min-width:500px">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+    <table style="min-width:500px;width:100%;table-layout:fixed">
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1284,8 +1284,8 @@ document.addEventListener('DOMContentLoaded', function(){
             <span style="font-size:12px;font-weight:normal;opacity:0.8">✓完了</span>
             {% endif %}
           </div>
-          <table style="min-width:600px">
-            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+          <table style="min-width:600px;width:100%;table-layout:fixed">
+            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat) }}
@@ -1295,8 +1295,8 @@ document.addEventListener('DOMContentLoaded', function(){
         </div>
         {% endfor %}
       {% else %}
-        <table style="min-width:600px">
-          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+        <table style="min-width:600px;width:100%;table-layout:fixed">
+          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
           </tbody>
@@ -1304,8 +1304,8 @@ document.addEventListener('DOMContentLoaded', function(){
       {% endif %}
     {% else %}
     {# 通常ヒート・総当たり #}
-    <table style="min-width:600px">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+    <table style="min-width:600px;width:100%;table-layout:fixed">
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
       <tbody>
       {% for heat in heats %}
       {{ race_row(heat) }}
