@@ -267,6 +267,29 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       } catch(e){ /* CSS同期失敗時も本文差し替えは継続（従来挙動） */ }
       // 更新箇所だけ差し替え
       live.innerHTML = fresh.innerHTML;
+      // フッター（タイスケ/備考/レイアウト）は .v-container の外（</body>直前）に
+      // 出力されるため、本文差し替えだけでは追随しない。ここで3要素を新HTMLと同期する。
+      //  - 新旧どちらにもある → 置き換え（別レースの残留を解消）
+      //  - 新にだけある     → 追加（待機画面→レース画面などで新規に出現）
+      //  - 旧にだけある     → 削除（フッターが不要になった画面へ遷移）
+      try {
+        ['m4-info-bar','m4-info-overlay','m4-info-data'].forEach(function(id){
+          var freshEl = doc.getElementById(id);
+          var liveEl  = document.getElementById(id);
+          if(freshEl && liveEl){
+            liveEl.parentNode.replaceChild(document.importNode(freshEl, true), liveEl);
+          } else if(freshEl && !liveEl){
+            document.body.appendChild(document.importNode(freshEl, true));
+          } else if(!freshEl && liveEl){
+            liveEl.remove();
+          }
+        });
+        // モーダルを差し替えた直後は必ず閉状態から始める（開いた瞬間の自動更新は
+        // __m4ModalOpen で止まっているため通常ここには来ないが、安全側に倒す）
+        window.__m4ModalOpen = false;
+        var _bar = document.getElementById('m4-info-bar');
+        document.body.style.paddingBottom = _bar ? (Math.round(_bar.getBoundingClientRect().height) + 8) + 'px' : '';
+      } catch(e){ /* フッター同期失敗時も本文更新は維持（従来挙動を壊さない） */ }
       // ブラケット線を再描画（決勝・ヒート予選の全 .bracket-outer が対象）
       if(typeof window._bracketDrawConnectors === 'function'){
         try { window._bracketDrawConnectors(); } catch(e){}
@@ -932,9 +955,8 @@ window.addEventListener('load', function(){
 
     info_bar_script = """<script>
 (function(){
-  var el = document.getElementById('m4-info-data');
-  var DATA = {};
-  if(el){ try{ DATA = JSON.parse(el.textContent || '{}'); }catch(e){ DATA = {}; } }
+  // DATA はキャッシュせず、開くたびに #m4-info-data から読み直す。
+  // （自動更新でフッターが差し替わった後も、常に最新の内容を表示するため）
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   window.m4ToggleZoom = function(img){
     if(img.getAttribute('data-z') === '1'){
@@ -952,6 +974,9 @@ window.addEventListener('load', function(){
   var PREFIX = slugPrefix();
   function assetUrl(u){ return (u.charAt(0) === '/') ? (PREFIX + u) : u; }
   window.m4OpenInfo = function(kind){
+    var el = document.getElementById('m4-info-data');
+    var DATA = {};
+    if(el){ try{ DATA = JSON.parse(el.textContent || '{}'); }catch(e){ DATA = {}; } }
     var d = DATA[kind]; if(!d) return;
     var t = document.getElementById('m4-info-title'); if(t){ t.textContent = d.title; }
     var html = '';

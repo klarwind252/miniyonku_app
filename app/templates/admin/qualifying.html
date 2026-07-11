@@ -884,7 +884,7 @@ document.addEventListener('DOMContentLoaded', function(){
               {% if cur_co %}CO{% elif cur_rank %}{{ cur_rank }}位{% else %}—{% endif %}
             </div>
             <div onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
-                 style="display:flex;align-items:center;gap:4px;height:48px;cursor:pointer;user-select:none">
+                 style="display:flex;align-items:center;gap:4px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0">
               <strong style="font-size:18px">{{ lane.name }}</strong>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ lane.yomi }}</span>{% endif %}
             </div>
             {% if t.qualifying_type == 'order' and heat.id not in done_heat_ids and order_status != 'closed' and not is_finalized %}
