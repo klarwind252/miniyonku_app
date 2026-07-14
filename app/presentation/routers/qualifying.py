@@ -110,12 +110,23 @@ def is_roundrobin(t) -> bool:
 
 
 # ── 総当たりスケジュール生成 ──────────────────────────────
+def _min_gap_for_entries(n: int) -> int:
+    """
+    参加人数 n から「同じレーサーの最低出走間隔（レース数）」を自動算出する。
+    考え方：総当たりは1レース2人なので、全員が1回ずつ走る「1周」あたりの
+    レース数は n // 2。その半分以上は間隔を空ける、という基準で
+    min_gap = max(1, n // 4) とする（例：10名 → 1周5レース → 最低2レース間隔）。
+    """
+    return max(1, n // 4)
+
+
 def generate_roundrobin_schedule(entry_ids: list[int]) -> list[tuple[int,int,int,int]]:
     """
     C(n,2)の全対戦ペアを生成。総当たりは 1vs1 のため常に 1コース・2コースの
     2レーン固定で対戦する（設定レーン数に関わらず3コース目は使わない）。
     優先順位:
-      ① 連続走行の回避（数学的に不可能なときのみ連続を許容）
+      ① 同じレーサーの出走間隔を最低 min_gap レース空ける
+         （人数に応じて自動算出。数学的に不可能なときのみ、可能な範囲で間隔を最大化）
       ② コースは可能な限り前回と異なるコースにする（次点でコース使用回数の偏りも縮小）
 
     戻り値: [(race_no, lane_A, entry_id_A, lane_B, entry_id_B), ...]
@@ -127,63 +138,77 @@ def generate_roundrobin_schedule(entry_ids: list[int]) -> list[tuple[int,int,int
     # 全ペア生成
     pairs = list(itertools.combinations(entry_ids, 2))
 
-    # ── ① 連続走行を避ける順序決定（貪欲＋1手先読み） ──
-    ordered = _order_pairs_no_consecutive(pairs)
+    # ── ① 出走間隔を空ける順序決定（人数に応じた min_gap を自動適用） ──
+    min_gap = _min_gap_for_entries(n)
+    ordered = _order_pairs_no_consecutive(pairs, min_gap=min_gap)
 
     # ── ② コース割り当て（前回と別コースを最優先、次に使用回数の偏り最小化） ──
     result = _assign_lanes_alternating(ordered, entry_ids)
     return result
 
 
-def _order_pairs_no_consecutive(pairs: list[tuple]) -> list[tuple]:
-    """連続走行を最小化する並び替え。
-    「直前のレースと同じ人が出ない」順序を最優先で探索する。
-    まずバックトラック探索で連続0の順序を探し、見つからない／規模が大きい場合は
-    貪欲＋先読みのヒューリスティックにフォールバックする（避けられない分だけ連続を許容）。"""
+def _order_pairs_no_consecutive(pairs: list[tuple], min_gap: int = 1) -> list[tuple]:
+    """出走間隔を最小化しない順序（間隔を空ける）に並び替える。
+    min_gap: 同じレーサーが再び出走するまでに、最低何レース空けたいか
+             （直近 min_gap 件のレースに同じレーサーがいなければOKとする）。
+             min_gap=1 は「直前のレースとだけ重複しなければよい」＝従来動作と同じ。
+    まずバックトラック探索で min_gap を完全に満たす順序を探し、
+    見つからない／規模が大きい場合は、貪欲＋先読みのヒューリスティックにフォールバックする
+    （min_gap を満たせない箇所は、可能な範囲で間隔を最大化しつつ間隔を縮める）。"""
     pairs = list(pairs)
     m = len(pairs)
     if m <= 1:
         return pairs
+    if min_gap < 1:
+        min_gap = 1
 
-    # 各ペアに対し「共通の人がいない（＝連続にならない）ペア」の隣接リストを作る
-    disjoint = [[] for _ in range(m)]
-    for i in range(m):
-        si = set(pairs[i])
-        for j in range(m):
-            if i != j and not (si & set(pairs[j])):
-                disjoint[i].append(j)
+    pair_sets = [set(p) for p in pairs]
 
-    # ── ① バックトラックで「連続0」を探索（規模が大きすぎる場合はスキップ） ──
+    def conflicts(cand_set, window):
+        for w in window:
+            if cand_set & w:
+                return True
+        return False
+
+    # ── ① バックトラックで min_gap を満たす順序を探索（規模が大きすぎる場合はスキップ） ──
     # ステップ予算で打ち切り、現実的な計算量に収める。
     budget = [200000]
     best_order = None
 
-    def dfs(path, used):
+    def dfs(path, path_sets, used):
         if budget[0] <= 0:
             return False
         budget[0] -= 1
         if len(path) == m:
             return True
-        last = path[-1]
-        # Warnsdorff風: 次に進める非連続候補のうち、さらに先の選択肢が少ない順に試す
-        cands = [j for j in disjoint[last] if not used[j]]
-        cands.sort(key=lambda j: sum(1 for k in disjoint[j] if not used[k]))
+        window = path_sets[-min_gap:]
+        cands = [j for j in range(m) if not used[j] and not conflicts(pair_sets[j], window)]
+
+        # Warnsdorff風: 選んだ場合に先の選択肢がどれだけ残るかが少ない順に試す
+        def future_options(j):
+            trial_window = (window + [pair_sets[j]])[-min_gap:]
+            return sum(1 for k in range(m) if k != j and not used[k] and not conflicts(pair_sets[k], trial_window))
+
+        cands.sort(key=future_options)
         for j in cands:
             used[j] = True
             path.append(j)
-            if dfs(path, used):
+            path_sets.append(pair_sets[j])
+            if dfs(path, path_sets, used):
                 return True
+            path_sets.pop()
             path.pop()
             used[j] = False
         return False
 
-    if m <= 220:  # 総当たり推奨上限20名（=190試合）まで連続0探索を行う
+    if m <= 220:  # 総当たり推奨上限20名（=190試合）まで探索を行う
         for start in range(m):
             # 開始点も先の自由度が高いものから（薄く）試す
             used = [False] * m
             used[start] = True
             path = [start]
-            if dfs(path, used):
+            path_sets = [pair_sets[start]]
+            if dfs(path, path_sets, used):
                 best_order = [pairs[k] for k in path]
                 break
             if budget[0] <= 0:
@@ -192,22 +217,33 @@ def _order_pairs_no_consecutive(pairs: list[tuple]) -> list[tuple]:
     if best_order is not None:
         return best_order
 
-    # ── ② フォールバック：貪欲＋1手先読み（避けられない連続のみ許容） ──
+    # ── ② フォールバック：貪欲＋先読み（min_gap を段階的に緩めて、可能な限り間隔を空ける） ──
     remaining = list(range(m))
     order_idx: list[int] = []
-    prev: set = set()
+    history: list[set] = []  # 選択済みペアの集合（末尾が最新）
+
     while remaining:
-        non_consec = [i for i in remaining if not (set(pairs[i]) & prev)]
-        cands = non_consec if non_consec else remaining
+        window = history[-min_gap:]
+        cands = [i for i in remaining if not conflicts(pair_sets[i], window)]
+        if not cands:
+            # min_gap を満たせない場合、間隔を段階的に緩めて候補を探す
+            for relaxed_gap in range(min_gap - 1, 0, -1):
+                w = history[-relaxed_gap:]
+                c = [i for i in remaining if not conflicts(pair_sets[i], w)]
+                if c:
+                    cands = c
+                    break
+            if not cands:
+                cands = remaining
 
         def lookahead_score(i):
-            ap = set(pairs[i])
-            return sum(1 for k in remaining if k != i and not (set(pairs[k]) & ap))
+            trial_window = (history + [pair_sets[i]])[-min_gap:]
+            return sum(1 for k in remaining if k != i and not conflicts(pair_sets[k], trial_window))
 
         best = max(cands, key=lambda i: (lookahead_score(i), -remaining.index(i)))
         order_idx.append(best)
         remaining.remove(best)
-        prev = set(pairs[best])
+        history.append(pair_sets[best])
     return [pairs[k] for k in order_idx]
 
 
@@ -306,9 +342,10 @@ def generate_heat_roundrobin_schedule(
             m = len(group)
             # 全対戦ペアを生成
             pairs = [(group[i], group[j]) for i in range(m) for j in range(i+1, m)]
-            # 連続走行を最小化する並び替え（平の総当たりと同じ探索を使用）。
-            # グループ内は別レーサー同士なので、この並びで連続を最小化できる。
-            ordered_pairs = _order_pairs_no_consecutive(pairs)
+            # 出走間隔を空ける並び替え（平の総当たりと同じ探索を使用、グループ人数に応じて自動算出）。
+            # グループ内は別レーサー同士なので、この並びで間隔を最大化できる。
+            group_min_gap = _min_gap_for_entries(m)
+            ordered_pairs = _order_pairs_no_consecutive(pairs, min_gap=group_min_gap)
             if ordered_pairs:
                 prev_race_eids = set(ordered_pairs[-1])
 
