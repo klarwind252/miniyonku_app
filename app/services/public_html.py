@@ -241,55 +241,8 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       var selOld = document.getElementById('m4-racer-select');
       var selVal = selOld ? selOld.value : null;
       var sx = window.scrollX, sy = window.scrollY;
-      // 画面別CSSの同期：待機画面と各レース画面（予選/決勝/総当たり）は
-      // それぞれ異なる <style>（.schedule-table 等）を <head> に持つ。
-      // 部分更新は .v-container（body側）だけを差し替えるため、待機画面→レース画面へ
-      // 自動更新した際に、レース画面用CSSが <head> に無く表組みが崩れる。
-      // そこで新HTMLの <head> 内 <style> 群を現在の <head> に反映してから本文を差し替える。
-      try {
-        var liveHead = document.head;
-        var freshStyles = doc.querySelectorAll('head style');
-        var liveSig = Array.prototype.map.call(
-          liveHead.querySelectorAll('style'), function(s){ return s.textContent; }
-        ).join('\u0001');
-        var freshSig = Array.prototype.map.call(
-          freshStyles, function(s){ return s.textContent; }
-        ).join('\u0001');
-        if(freshStyles.length && freshSig !== liveSig){
-          // 既存の <style> を除去し、新しい画面の <style> 群へ入れ替える
-          Array.prototype.forEach.call(
-            liveHead.querySelectorAll('style'), function(s){ s.remove(); }
-          );
-          Array.prototype.forEach.call(freshStyles, function(s){
-            liveHead.appendChild(document.importNode(s, true));
-          });
-        }
-      } catch(e){ /* CSS同期失敗時も本文差し替えは継続（従来挙動） */ }
       // 更新箇所だけ差し替え
       live.innerHTML = fresh.innerHTML;
-      // フッター（タイスケ/備考/レイアウト）は .v-container の外（</body>直前）に
-      // 出力されるため、本文差し替えだけでは追随しない。ここで3要素を新HTMLと同期する。
-      //  - 新旧どちらにもある → 置き換え（別レースの残留を解消）
-      //  - 新にだけある     → 追加（待機画面→レース画面などで新規に出現）
-      //  - 旧にだけある     → 削除（フッターが不要になった画面へ遷移）
-      try {
-        ['m4-info-bar','m4-info-overlay','m4-info-data'].forEach(function(id){
-          var freshEl = doc.getElementById(id);
-          var liveEl  = document.getElementById(id);
-          if(freshEl && liveEl){
-            liveEl.parentNode.replaceChild(document.importNode(freshEl, true), liveEl);
-          } else if(freshEl && !liveEl){
-            document.body.appendChild(document.importNode(freshEl, true));
-          } else if(!freshEl && liveEl){
-            liveEl.remove();
-          }
-        });
-        // モーダルを差し替えた直後は必ず閉状態から始める（開いた瞬間の自動更新は
-        // __m4ModalOpen で止まっているため通常ここには来ないが、安全側に倒す）
-        window.__m4ModalOpen = false;
-        var _bar = document.getElementById('m4-info-bar');
-        document.body.style.paddingBottom = _bar ? (Math.round(_bar.getBoundingClientRect().height) + 8) + 'px' : '';
-      } catch(e){ /* フッター同期失敗時も本文更新は維持（従来挙動を壊さない） */ }
       // ブラケット線を再描画（決勝・ヒート予選の全 .bracket-outer が対象）
       if(typeof window._bracketDrawConnectors === 'function'){
         try { window._bracketDrawConnectors(); } catch(e){}
@@ -400,51 +353,150 @@ window.addEventListener('load', function(){
     else:
         redraw_script = ""
     my_racer_script = """<script>
-/* ===== マイレーサー フォーカス機能 ===== */
+/* ===== マイレーサー フォーカス機能（複数選択対応） ===== */
 (function(){
   var SLUG_KEY = '__SLUGKEY__';
-  var LS_KEY = 'm4_my_racer_' + SLUG_KEY;
+  var LS_KEY = 'm4_my_racers_' + SLUG_KEY;
 
-  /* ---------- localStorage ---------- */
-  function getMyRacer(){ try{ var v=localStorage.getItem(LS_KEY); return v?JSON.parse(v):null; }catch(e){ return null; } }
-  function setMyRacer(obj){ try{ localStorage.setItem(LS_KEY, JSON.stringify(obj)); }catch(e){} }
-  function clearMyRacer(){ try{ localStorage.removeItem(LS_KEY); }catch(e){} }
-
-  /* ---------- エントリー名一覧を収集 ---------- */
-  function collectNames(){
-    var names = [];
-    /* エントリー一覧（決勝トーナメント等） */
-    document.querySelectorAll('.entry-card').forEach(function(card){
-      var n = card.querySelector('.entry-name');
-      if(n){ var t = n.textContent.trim(); if(t && names.indexOf(t)<0) names.push(t); }
-    });
-    /* .entry-card に属さない .entry-name（ヒート別決勝進出一覧など）も収集 */
-    document.querySelectorAll('.entry-name').forEach(function(el){
-      var t = el.textContent.trim();
-      if(t && names.indexOf(t)<0) names.push(t);
-    });
-    /* 総当たり等のレーススケジュール表の名前（.rr-name） */
-    document.querySelectorAll('.rr-name').forEach(function(el){
-      var t = el.textContent.trim();
-      if(t && names.indexOf(t)<0) names.push(t);
-    });
-    /* 決勝トーナメントのスロット名（.br-slot-name） */
-    document.querySelectorAll('.br-slot-name').forEach(function(el){
-      var t = el.textContent.trim();
-      if(t && names.indexOf(t)<0) names.push(t);
-    });
-    return names;
+  /* ---------- 五十音（あいうえお）比較 ---------- */
+  var _collator = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator('ja') : null;
+  function kanaCompare(a, b){
+    var ay = a.yomi || a.name, by = b.yomi || b.name;
+    if(_collator) return _collator.compare(ay, by);
+    return ay < by ? -1 : (ay > by ? 1 : 0);
   }
 
-  /* ---------- バナー（プルダウン付き） ---------- */
-  function renderBanner(name){
-    /* 待機画面（「○○のミニ四駆レースへようこそ！／お待ちください」）では
-       レーサー選択バーを表示しない。既に出ている場合は除去する。 */
+  /* ---------- エスケープ ---------- */
+  function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+
+  /* ---------- localStorage（配列で保存） ---------- */
+  function getMyRacers(){
+    try{
+      var v = localStorage.getItem(LS_KEY);
+      var arr = v ? JSON.parse(v) : [];
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){ return []; }
+  }
+  function setMyRacers(arr){ try{ localStorage.setItem(LS_KEY, JSON.stringify(arr)); }catch(e){} }
+  function clearMyRacers(){ try{ localStorage.removeItem(LS_KEY); }catch(e){} }
+  function toggleRacer(name, yomi){
+    var list = getMyRacers();
+    var idx = list.findIndex(function(r){ return r.name === name; });
+    if(idx >= 0){ list.splice(idx, 1); }
+    else { list.push({ name: name, yomi: yomi || '' }); }
+    setMyRacers(list);
+  }
+
+  /* ---------- エントリー名（＋よみ）一覧を収集し、あいうえお順で返す ---------- */
+  function collectNamesWithYomi(){
+    var map = {};   /* name -> yomi */
+    var order = [];
+    function add(name, yomi){
+      if(!name) return;
+      if(!(name in map)){ map[name] = yomi || ''; order.push(name); }
+      else if(yomi && !map[name]){ map[name] = yomi; }
+    }
+    document.querySelectorAll('.entry-card').forEach(function(card){
+      var n = card.querySelector('.entry-name');
+      if(!n) return;
+      var t = n.textContent.trim();
+      var y = card.querySelector('.entry-yomi');
+      add(t, y ? y.textContent.trim() : '');
+    });
+    document.querySelectorAll('.entry-name').forEach(function(el){ add(el.textContent.trim(), ''); });
+    document.querySelectorAll('.rr-name').forEach(function(el){ add(el.textContent.trim(), ''); });
+    document.querySelectorAll('.br-slot-name').forEach(function(el){ add(el.textContent.trim(), ''); });
+    var list = order.map(function(n){ return { name: n, yomi: map[n] }; });
+    list.sort(kanaCompare);
+    return list;
+  }
+
+  /* ---------- 選択パネルの表示位置 ---------- */
+  function positionPanel(){
+    var panel = document.getElementById('m4-racer-panel');
+    var toggleBtn = document.getElementById('m4-racer-toggle');
+    if(!panel || !toggleBtn) return;
+    var r = toggleBtn.getBoundingClientRect();
+    var w = Math.max(r.width, 220);
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    var left = Math.round(r.left);
+    if(left + w > vw - 8){ left = Math.max(8, vw - w - 8); }
+    panel.style.left = left + 'px';
+    panel.style.top = Math.round(r.bottom + 4) + 'px';
+    panel.style.width = Math.round(w) + 'px';
+  }
+
+  /* ---------- 選択パネル（チェックボックス一覧・あいうえお順） ---------- */
+  function buildPanel(){
+    var list = collectNamesWithYomi();
+    var selNames = getMyRacers().map(function(r){ return r.name; });
+    var panel = document.getElementById('m4-racer-panel');
+    if(!panel){
+      panel = document.createElement('div');
+      panel.id = 'm4-racer-panel';
+      document.body.appendChild(panel);
+    }
+    panel.style.cssText = 'display:none;position:fixed;z-index:9001;background:#0f4d2a;color:#fff;'
+      + 'border:1px solid rgba(255,255,255,.3);border-radius:6px;max-height:60vh;overflow-y:auto;'
+      + 'box-shadow:0 4px 14px rgba(0,0,0,.4);min-width:200px;max-width:90vw;padding:4px;box-sizing:border-box;';
+    var html = '';
+    if(list.length === 0){
+      html = '<div style="padding:8px;font-size:12px;">レーサーが見つかりません</div>';
+    } else {
+      list.forEach(function(item){
+        var checked = selNames.indexOf(item.name) >= 0 ? 'checked' : '';
+        html += '<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:13px;'
+          + 'cursor:pointer;border-bottom:1px solid rgba(255,255,255,.15);">'
+          + '<input type="checkbox" value="' + escAttr(item.name) + '" data-yomi="' + escAttr(item.yomi) + '" '
+          + checked + ' style="width:16px;height:16px;flex:none;">'
+          + '<span>' + escHtml(item.name) + '</span></label>';
+      });
+    }
+    panel.innerHTML = html;
+    panel.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        toggleRacer(cb.value, cb.getAttribute('data-yomi') || '');
+        applyAll();
+        buildPanel();               /* チェック状態を再反映 */
+        positionPanel();
+        document.getElementById('m4-racer-panel').style.display = 'block';
+      });
+    });
+  }
+
+  function togglePanel(){
+    buildPanel();
+    var panel = document.getElementById('m4-racer-panel');
+    if(!panel) return;
+    var isOpen = panel.style.display === 'block';
+    if(isOpen){ panel.style.display = 'none'; }
+    else { positionPanel(); panel.style.display = 'block'; }
+  }
+
+  /* パネル外タップで閉じる */
+  document.addEventListener('click', function(e){
+    var panel = document.getElementById('m4-racer-panel');
+    var toggleBtn = document.getElementById('m4-racer-toggle');
+    if(!panel || panel.style.display !== 'block') return;
+    if(panel.contains(e.target) || (toggleBtn && toggleBtn.contains(e.target))) return;
+    panel.style.display = 'none';
+  });
+  window.addEventListener('resize', function(){
+    var panel = document.getElementById('m4-racer-panel');
+    if(panel && panel.style.display === 'block') positionPanel();
+  });
+
+  /* ---------- 選択バー（トグルボタン＋✕） ---------- */
+  function renderBanner(selected){
+    /* 待機画面では選択バーを表示しない */
     if(document.querySelector('.v-waiting')){
       var ex = document.getElementById('m4-my-banner');
       if(ex){ ex.remove(); }
-      var pb = document.getElementById('m4-position-banner');
-      if(pb){ pb.remove(); }
+      var pnl = document.getElementById('m4-racer-panel');
+      if(pnl){ pnl.remove(); }
+      var pb0 = document.getElementById('m4-position-banner');
+      if(pb0){ pb0.remove(); }
       document.body.style.paddingTop = '';
       return;
     }
@@ -454,7 +506,6 @@ window.addEventListener('load', function(){
       b = document.createElement('div');
       b.id = 'm4-my-banner';
       if(_slot){
-        /* ヘッダー（v-nav）右側のスロットに配置（最上部固定はしない） */
         b.style.cssText = 'display:flex;align-items:center;gap:6px;flex:1;min-width:0;'
           + 'background:#1a6e3c;color:#fff;border-radius:6px;'
           + 'padding:3px 6px;font-size:12px;font-weight:bold;box-sizing:border-box;';
@@ -469,47 +520,32 @@ window.addEventListener('load', function(){
       }
     }
 
-    /* プルダウン生成 */
-    var names = collectNames();
-    var opts = '<option value="">👤 レーサーを選択</option>';
-    names.forEach(function(n){
-      opts += '<option value="' + n + '"' + (n === name ? ' selected' : '') + '>' + n + '</option>';
-    });
-    var selStyle = 'flex:1;min-width:0;background:#0f4d2a;color:#fff;border:1px solid rgba(255,255,255,.3);'
-      + 'border-radius:4px;padding:4px 6px;font-size:13px;font-weight:bold;cursor:pointer;';
-    var btnStyle = 'background:rgba(255,255,255,.2);border:none;color:#fff;'
+    var count = selected.length;
+    var label = count > 0 ? ('👤 選択中（' + count + '名）▾') : '👤 レーサーを選択 ▾';
+    var btnStyle = 'flex:1;min-width:0;background:#0f4d2a;color:#fff;border:1px solid rgba(255,255,255,.3);'
+      + 'border-radius:4px;padding:4px 6px;font-size:13px;font-weight:bold;cursor:pointer;text-align:left;'
+      + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    var clearStyle = 'background:rgba(255,255,255,.2);border:none;color:#fff;'
       + 'border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap;';
-    b.innerHTML = '<select id="m4-racer-select" style="' + selStyle + '">' + opts + '</select>'
-      + '<button onclick="m4ClearMyRacer()" style="' + btnStyle + '">✕</button>';
+    b.innerHTML = '<button type="button" id="m4-racer-toggle" style="' + btnStyle + '">' + escHtml(label) + '</button>'
+      + '<button type="button" onclick="m4ClearMyRacer()" style="' + clearStyle + '">✕</button>';
 
-    /* selectのchangeイベント */
-    var sel = document.getElementById('m4-racer-select');
-    sel.addEventListener('change', function(){
-      var val = sel.value;
-      if(!val){ m4ClearMyRacer(); return; }
-      var card = Array.from(document.querySelectorAll('.entry-card')).find(function(c){
-        var n = c.querySelector('.entry-name');
-        return n && n.textContent.trim() === val;
-      });
-      var yomi = '';
-      if(card){ var y = card.querySelector('.entry-yomi'); yomi = y ? y.textContent.trim() : ''; }
-      setMyRacer({ name: val, yomi: yomi });
-      applyAll();
+    var toggleBtn = document.getElementById('m4-racer-toggle');
+    toggleBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      togglePanel();
     });
   }
 
-  /* ---------- ハイライト（エントリーカード） ---------- */
-  function applyEntryHighlight(name){
+  /* ---------- ハイライト（エントリーカード・複数対応） ---------- */
+  function applyEntryHighlight(names){
     var cards = document.querySelectorAll('.entry-card');
-    if(!name || cards.length === 0) return;
+    if(cards.length === 0) return;
     cards.forEach(function(card){
       var n = card.querySelector('.entry-name');
       if(!n) return;
-      var match = n.textContent.trim() === name;
-      /* 他はグレーアウトせず元のまま。対象だけオレンジで強調する。 */
+      var match = names.indexOf(n.textContent.trim()) >= 0;
       if(match){
-        /* 背景 rgb(230,126,34)・枠はより濃いオレンジ・文字は白。子要素が背景色を
-           持つ場合に隠れないよう important を付け、名前要素にも背景・文字色を当てる。 */
         card.style.setProperty('background', 'rgb(230,126,34)', 'important');
         card.style.setProperty('border', '2px solid rgb(160,80,15)', 'important');
         card.style.setProperty('color', '#ffffff', 'important');
@@ -531,45 +567,38 @@ window.addEventListener('load', function(){
     });
   }
 
-  /* ---------- 出走順バナー ---------- */
-  function renderPositionBanner(name){
-    var old = document.getElementById('m4-position-banner');
-    if(old) old.remove();
-    /* 出走順バナーを消した時点で、本文の余白をヘッダー（マイレーサー選択バー）の
-       高さぶんに戻す。バナーを再表示する場合は末尾で改めて上書きする。 */
-    var _slotR = document.getElementById('m4-picker-slot');
-    var _navR = document.querySelector('.v-nav');
-    var _myBar = document.getElementById('m4-my-banner');
-    document.body.style.paddingTop = _slotR
-      ? ((_navR ? Math.round(_navR.getBoundingClientRect().height) : 44) + 'px')
-      : ((_myBar ? Math.round(_myBar.getBoundingClientRect().height) : 44) + 'px');
-    /* 別レーサーへ切替時に前回の強調が残らないよう、まず全リセット
-       （important で当てた背景・文字色等は removeProperty で確実に消す） */
-    document.querySelectorAll('.br-slot-name').forEach(function(el){
-      el.style.removeProperty('background'); el.style.removeProperty('color');
-      el.style.fontWeight = '';
-    });
-    document.querySelectorAll('.br-slot').forEach(function(s){
-      s.style.removeProperty('background'); s.style.removeProperty('box-shadow');
-    });
-    document.querySelectorAll('.racer-cell').forEach(function(c){
-      c.style.removeProperty('background'); c.style.removeProperty('color');
-      c.style.removeProperty('box-shadow'); c.style.fontWeight = '';
-    });
-    if(!name) return;
+  /* ---------- 出走順の色 ---------- */
+  function urgencyColor(u){
+    if(u === 3) return 'linear-gradient(135deg,#b8860b 0%,#f6c744 50%,#b8860b 100%)';   /* 優勝 */
+    if(u === 4) return 'linear-gradient(135deg,#1f6fb2 0%,#2ecc71 50%,#1f6fb2 100%)';    /* 入賞 */
+    if(u === 0) return 'rgb(200,40,40)';     /* あなたの番 */
+    if(u === 1) return 'rgb(210,140,30)';    /* あと1レース */
+    return '#154360';                        /* 通常 */
+  }
 
-    /* 決勝 br-slot-name */
-    var msgs = [];
-    var bannerBg = '#154360';   /* バナー背景。あと0組=赤・あと1組=橙・それ以外=濃紺 */
+  /* ---------- 1レーサー分の出走ステータスを計算（ハイライトも同時に適用） ---------- */
+  function computeStatusForName(name, isHeatQual){
+    /* 表彰台チェック（本戦のみ・ヒート予選ページでは判定しない） */
+    if(!isHeatQual){
+      var podRank = 0;
+      [['.br-champion', '.br-champion-name', 1],
+       ['.br-runner-up', '.br-runner-up-name', 2],
+       ['.br-third-pod', '.br-third-pod-name', 3]].forEach(function(p){
+        document.querySelectorAll(p[0]).forEach(function(card){
+          var nm = card.querySelector(p[1]);
+          if(nm && nm.textContent.trim() === name){ podRank = p[2]; }
+        });
+      });
+      if(podRank === 1){ return { text: '🎉🏆 優勝おめでとうございます 🏆🎉', urgency: 3 }; }
+      if(podRank >= 2){ return { text: '🎊🏅 入賞おめでとうございます 🏅🎊', urgency: 4 }; }
+    }
 
-    /* ── ヒートトーナメント予選：ヒート（とグループ）ごとに位置を出す ──
-       本戦と違い、準決勝・決勝も「数える」（各ヒートは独立した小トーナメントのため）。 */
-    var _htConts = document.querySelectorAll('[id^="viewer-ht-bracket-"]');
-    var isHeatQual = _htConts.length > 0;
+    /* ヒート（トーナメント）予選 */
     if(isHeatQual){
+      var _htConts = document.querySelectorAll('[id^="viewer-ht-bracket-"]');
+      var found = null;
       _htConts.forEach(function(cont){
-        var idp = cont.id.split('-');           /* viewer-ht-bracket-{hno}-{sec} */
-        var hno = idp[3];
+        if(found) return;
         var rs = cont.querySelectorAll('.br-round');
         if(!rs.length) return;
         var mR = -1, mG = -1;
@@ -582,13 +611,7 @@ window.addEventListener('load', function(){
         });
         if(mR < 0) return;
         var mGrp = rs[mR].querySelectorAll('.br-group')[mG];
-        if(mGrp && mGrp.classList.contains('has-winner')){
-          /* 自分の最終地点グループが決着済み＝このヒートでの出番は終了
-             （勝って次が無い／負けた のいずれも）。勝敗を問わず出走順は出さない。 */
-          return;
-        }
-        var lb = rs[mR].querySelector('.br-round-label');
-        var roundName = lb ? lb.textContent.trim() : ('R'+(mR+1));
+        if(mGrp && mGrp.classList.contains('has-winner')) return;   /* 出番終了 */
         var before = 0;
         rs.forEach(function(rnd, ri){
           rnd.querySelectorAll('.br-group').forEach(function(grp, gi){
@@ -598,10 +621,6 @@ window.addEventListener('load', function(){
             before++;
           });
         });
-        var head = 'ヒート' + hno + ' ' + roundName + ' 第' + (mG+1) + 'グループ';
-        if(before === 0){ msgs.push(head + ' あなたの番です'); bannerBg = 'rgb(200,40,40)'; }
-        else if(before === 1){ msgs.push(head + ' あなたは次です'); bannerBg = 'rgb(210,140,30)'; }
-        else { msgs.push(head + '（あと' + before + '組）'); bannerBg = '#154360'; }
         rs.forEach(function(rnd){
           rnd.querySelectorAll('.br-slot-name').forEach(function(el){
             if(el.textContent.trim() === name){
@@ -616,139 +635,90 @@ window.addEventListener('load', function(){
             }
           });
         });
+        found = before === 0
+          ? { text: 'あなたの番です', urgency: 0 }
+          : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
       });
+      if(found) return found;
     }
 
-    /* 決勝トーナメント（本戦）。ヒート予選画面では数えない。 */
-    var rounds = document.querySelectorAll('.br-round');
-    if(!isHeatQual && rounds.length > 0){
-      var myRound = -1, myGroup = -1;
-      rounds.forEach(function(rnd, ri){
-        rnd.querySelectorAll('.br-group').forEach(function(grp, gi){
-          grp.querySelectorAll('.br-slot-name').forEach(function(el){
-            if(el.textContent.trim() === name){ myRound = ri; myGroup = gi; }
+    /* 決勝トーナメント（本戦。ヒート予選ページでは数えない） */
+    if(!isHeatQual){
+      var rounds = document.querySelectorAll('.br-round');
+      if(rounds.length > 0){
+        var myRound = -1, myGroup = -1;
+        rounds.forEach(function(rnd, ri){
+          rnd.querySelectorAll('.br-group').forEach(function(grp, gi){
+            grp.querySelectorAll('.br-slot-name').forEach(function(el){
+              if(el.textContent.trim() === name){ myRound = ri; myGroup = gi; }
+            });
           });
         });
-      });
-      if(myRound >= 0){
-        /* 敗退判定：自分の現在地グループ（名前が入っている最後尾グループ）が勝者確定済みで、
-           その勝者が自分でない場合は、自分は負けて勝ち残っていない。
-           この場合は出走順バナーを出さない（冒頭で全リセット済みなのでハイライトも消える）。 */
-        var myGrpEl = rounds[myRound].querySelectorAll('.br-group')[myGroup];
-        if(myGrpEl && myGrpEl.classList.contains('has-winner')){
-          var w = (myGrpEl.dataset && myGrpEl.dataset.winnerName) ? myGrpEl.dataset.winnerName.trim() : '';
-          if(w && w !== name){
-            return;   // 敗退 → バナーごと非表示
+        if(myRound >= 0){
+          var myGrpEl = rounds[myRound].querySelectorAll('.br-group')[myGroup];
+          var eliminated = false;
+          if(myGrpEl && myGrpEl.classList.contains('has-winner')){
+            var w = (myGrpEl.dataset && myGrpEl.dataset.winnerName) ? myGrpEl.dataset.winnerName.trim() : '';
+            if(w && w !== name){ eliminated = true; }
+          }
+          function isExcludedRound(rnd){
+            var lb = rnd.querySelector('.br-round-label');
+            var t = lb ? lb.textContent.trim() : '';
+            if(t.indexOf('敗者復活') >= 0) return true;
+            if(t.indexOf('裏') >= 0) return true;
+            return false;
+          }
+          if(!eliminated && !isExcludedRound(rounds[myRound])){
+            var before = 0;
+            rounds.forEach(function(rnd, ri){
+              if(isExcludedRound(rnd)) return;
+              rnd.querySelectorAll('.br-group').forEach(function(grp, gi){
+                if(ri > myRound) return;
+                if(ri === myRound && gi >= myGroup) return;
+                if(grp.classList.contains('has-winner')) return;
+                before++;
+              });
+            });
+            rounds.forEach(function(rnd){
+              rnd.querySelectorAll('.br-slot-name').forEach(function(el){
+                if(el.textContent.trim() === name){
+                  el.style.setProperty('background', 'rgb(230,126,34)', 'important');
+                  el.style.setProperty('color', '#ffffff', 'important');
+                  el.style.fontWeight = 'bold';
+                  var slot = el.closest('.br-slot') || el.parentElement;
+                  if(slot){
+                    slot.style.setProperty('background', 'rgb(230,126,34)', 'important');
+                    slot.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
+                  }
+                }
+              });
+            });
+            return before === 0
+              ? { text: 'あなたの番です', urgency: 0 }
+              : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
           }
         }
-
-        var label = rounds[myRound].querySelector('.br-round-label');
-        var roundName = label ? label.textContent.trim() : ('R'+(myRound+1));
-
-        /* 「あと〇組」= 自分が次に出走するまでに消化される残り組数。
-           - 数えないラウンド：準決勝・決勝・3位決定戦・敗者復活戦・裏トーナメント。
-             それ以外（ラウンド1〜N・準々決勝）はすべて数える。
-           - 自分の現在地グループより前にあり、勝者未確定（.has-winner なし）の
-             グループを数える。確定済みは自動的に差し引かれリアルタイムに減る。 */
-        function isExcludedRound(rnd){
-          var lb = rnd.querySelector('.br-round-label');
-          var t = lb ? lb.textContent.trim() : '';
-          /* 準決勝・決勝・3位決定戦も出走順バーを表示する
-             （スーパーシード等、準決勝から登場するレーサーにも出すため）。
-             敗者復活戦・裏トーナメントのみ除外する
-             （別ブラケットで「残り組数」の概念が本戦と異なるため）。 */
-          if(t.indexOf('敗者復活') >= 0) return true;   // 敗者復活戦
-          if(t.indexOf('裏') >= 0) return true;          // 裏トーナメント（裏R…）
-          return false;
-        }
-
-        /* 自分の現在地ラウンドが除外ラウンド（準決勝・決勝・3位・敗者復活・裏）の場合は、
-           出走順バナーを出さない（残り組数の概念を適用しない）。 */
-        if(isExcludedRound(rounds[myRound])){
-          return;
-        }
-
-        var before = 0;
-        rounds.forEach(function(rnd, ri){
-          if(isExcludedRound(rnd)) return;            // 除外ラウンドは数えない
-          var grps = rnd.querySelectorAll('.br-group');
-          grps.forEach(function(grp, gi){
-            // 現在地グループ自身・それより後ろは数えない
-            if(ri > myRound) return;
-            if(ri === myRound && gi >= myGroup) return;
-            // 勝者確定済み（消化済み）は数えない
-            if(grp.classList.contains('has-winner')) return;
-            before++;
-          });
-        });
-
-        if(before === 0){
-          /* 自分の出走順が来た */
-          msgs.push(roundName + ' 第' + (myGroup+1) + 'グループ あなたの番です');
-          bannerBg = 'rgb(200,40,40)';      /* 最も目立つ赤 */
-        } else if(before === 1){
-          msgs.push(roundName + ' 第' + (myGroup+1) + 'グループ あなたは次です');
-          bannerBg = 'rgb(210,140,30)';     /* 少し目立つ橙 */
-        } else {
-          msgs.push(roundName + ' 第' + (myGroup+1) + 'グループ（あと' + before + '組）');
-          bannerBg = '#154360';             /* 通常（濃紺） */
-        }
-        /* 他は薄くしない。対象レーサーのスロット名だけオレンジで強調する。 */
-        rounds.forEach(function(rnd){
-          rnd.querySelectorAll('.br-slot-name').forEach(function(el){
-            if(el.textContent.trim() === name){
-              /* 名前要素・スロットの両方に背景rgb(230,126,34)を important で当てる
-                 （子要素が背景色を持つと親の background が見えないため）。
-                 枠はより濃いオレンジ、文字は白。 */
-              el.style.setProperty('background', 'rgb(230,126,34)', 'important');
-              el.style.setProperty('color', '#ffffff', 'important');
-              el.style.fontWeight = 'bold';
-              var slot = el.closest('.br-slot') || el.parentElement;
-              if(slot){
-                slot.style.setProperty('background', 'rgb(230,126,34)', 'important');
-                slot.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
-              }
-            }
-          });
-        });
       }
     }
 
-    /* 予選 racer-cell / heat lane */
+    /* 予選（並び順など）の racer-cell テーブル */
     var racerCells = document.querySelectorAll('.racer-cell');
     if(racerCells.length > 0){
-      /* 自分が出走する行のうち、まだ結果が出ていない（done でない）最初の行＝
-         「自分の次の出走」。その行より前にある未了レース数を「あと〇走」とする。
-         結果が出た行（done）は差し引かれ、更新検知リロードのたびに減っていく。 */
       var myTr = null, myTbody = null;
       racerCells.forEach(function(cell){
         if(myTr) return;
         if(cell.textContent.trim() === name){
           var tr = cell.closest('tr');
-          if(tr && !tr.classList.contains('done')){
-            myTr = tr; myTbody = tr.closest('tbody');
-          }
+          if(tr && !tr.classList.contains('done')){ myTr = tr; myTbody = tr.closest('tbody'); }
         }
       });
       if(myTr && myTbody){
         var rows = Array.from(myTbody.querySelectorAll('tr'));
         var myIdx = rows.indexOf(myTr);
-        /* 自分の次の出走行より前にある「未了」レース数を数える */
         var before = 0;
         for(var ri = 0; ri < myIdx; ri++){
           if(!rows[ri].classList.contains('done')) before++;
         }
-        if(before === 0){
-          msgs.push('予選 第' + (myIdx + 1) + '走 あなたの番です');
-          bannerBg = 'rgb(200,40,40)';      /* 最も目立つ赤 */
-        } else if(before === 1){
-          msgs.push('予選 第' + (myIdx + 1) + '走 次です');
-          bannerBg = 'rgb(210,140,30)';     /* 少し目立つ橙 */
-        } else {
-          msgs.push('予選 第' + (myIdx + 1) + '走（あと' + before + '走）');
-          bannerBg = '#154360';             /* 通常（濃紺） */
-        }
-        /* 対象レーサーのセルだけオレンジで強調する。 */
         myTr.querySelectorAll('.racer-cell').forEach(function(cell){
           if(cell.textContent.trim() === name){
             cell.style.setProperty('background', 'rgb(230,126,34)', 'important');
@@ -757,64 +727,84 @@ window.addEventListener('load', function(){
             cell.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
           }
         });
+        return before === 0
+          ? { text: 'あなたの番です', urgency: 0 }
+          : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
       }
     }
 
-    /* ── 決勝入賞チェック（本戦の表彰台のみ。ヒート予選ページでは判定しない）──
-       選択レーサーが本戦の表彰台（1〜3位）にいれば、順番待ち表示を祝福メッセージに差し替える。 */
-    if(document.querySelectorAll('[id^="viewer-ht-bracket-"]').length === 0){
-      var _podRank = 0;
-      [['.br-champion','.br-champion-name',1],
-       ['.br-runner-up','.br-runner-up-name',2],
-       ['.br-third-pod','.br-third-pod-name',3]].forEach(function(p){
-        document.querySelectorAll(p[0]).forEach(function(card){
-          var nm = card.querySelector(p[1]);
-          if(nm && nm.textContent.trim() === name){ _podRank = p[2]; }
-        });
-      });
-      if(_podRank === 1){
-        msgs = ['🎉🏆✨　優勝おめでとうございます　✨🏆🎉'];
-        bannerBg = 'linear-gradient(135deg,#b8860b 0%,#f6c744 50%,#b8860b 100%)';
-      } else if(_podRank >= 2){
-        msgs = ['🎊🏅✨　入賞おめでとうございます　✨🏅🎊'];
-        bannerBg = 'linear-gradient(135deg,#1f6fb2 0%,#2ecc71 50%,#1f6fb2 100%)';
-      }
+    return null;   /* このページでは出番なし・該当なし */
+  }
+
+  /* ---------- 出走順バナー（選択レーサーごとに1行） ---------- */
+  function renderPositionBanner(selectedList){
+    var old = document.getElementById('m4-position-banner');
+    if(old) old.remove();
+
+    /* 直前のハイライトを全リセット */
+    document.querySelectorAll('.br-slot-name').forEach(function(el){
+      el.style.removeProperty('background'); el.style.removeProperty('color');
+      el.style.fontWeight = '';
+    });
+    document.querySelectorAll('.br-slot').forEach(function(s){
+      s.style.removeProperty('background'); s.style.removeProperty('box-shadow');
+    });
+    document.querySelectorAll('.racer-cell').forEach(function(c){
+      c.style.removeProperty('background'); c.style.removeProperty('color');
+      c.style.removeProperty('box-shadow'); c.style.fontWeight = '';
+    });
+
+    var _slotR = document.getElementById('m4-picker-slot');
+    var _navR = document.querySelector('.v-nav');
+    var _myBar = document.getElementById('m4-my-banner');
+    var headerH = _slotR
+      ? (_navR ? Math.round(_navR.getBoundingClientRect().height) : 44)
+      : (_myBar ? Math.round(_myBar.getBoundingClientRect().height) : 44);
+
+    if(!selectedList || selectedList.length === 0){
+      document.body.style.paddingTop = _slotR ? '' : headerH + 'px';
+      return;
     }
 
-    if(msgs.length === 0) return;
+    var isHeatQual = document.querySelectorAll('[id^="viewer-ht-bracket-"]').length > 0;
+    var lines = [];
+    selectedList.forEach(function(r){
+      var result = computeStatusForName(r.name, isHeatQual);
+      if(result){ lines.push({ name: r.name, text: result.text, urgency: result.urgency }); }
+    });
+
+    if(lines.length === 0){
+      document.body.style.paddingTop = _slotR ? '' : headerH + 'px';
+      return;
+    }
+
     var b = document.createElement('div');
     b.id = 'm4-position-banner';
-    /* スクロールしても上部に残るよう固定表示。位置はタイトルヘッダー
-       （マイレーサー選択バー m4-my-banner）の直下に重ねる。 */
-    var _slotP = document.getElementById('m4-picker-slot');
-    var _navEl = document.querySelector('.v-nav');
-    var myBar = document.getElementById('m4-my-banner');
-    var topPx = _slotP ? (_navEl ? Math.round(_navEl.getBoundingClientRect().height) : 44)
-                       : (myBar ? Math.round(myBar.getBoundingClientRect().height) : 44);
-    b.style.cssText = 'position:fixed;left:0;width:100vw;top:'+topPx+'px;z-index:8999;'
-      + 'background:'+bannerBg+';color:#fff;padding:8px 14px;font-size:13px;'
-      + 'text-align:center;font-weight:bold;'
-      + 'transform:translateZ(0);-webkit-transform:translateZ(0);'
-      + 'box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.35);';
-    b.textContent = msgs.join(' / ');
+    b.style.cssText = 'position:fixed;left:0;width:100vw;top:' + headerH + 'px;z-index:8999;'
+      + 'padding:4px 10px;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.35);'
+      + 'color:#fff;font-size:13px;text-align:center;'
+      + 'transform:translateZ(0);-webkit-transform:translateZ(0);';
+    b.innerHTML = lines.map(function(l){
+      return '<div style="background:' + urgencyColor(l.urgency) + ';padding:6px 10px;'
+        + 'border-radius:4px;margin:2px 0;font-weight:bold;">'
+        + escHtml(l.name) + '：' + escHtml(l.text) + '</div>';
+    }).join('');
     document.body.appendChild(b);
-    /* 固定した2本のバー（ヘッダー＋出走順）の合計高さぶん本文に余白を確保し、
-       本文先頭がバーに隠れないようにする。 */
+
     var ownH = Math.round(b.getBoundingClientRect().height) || 36;
-    /* v-nav(固定) と 出走順バナー の合計高さぶん本文を下げる。 */
-    document.body.style.paddingTop = (topPx + ownH) + 'px';
+    document.body.style.paddingTop = (headerH + ownH) + 'px';
   }
 
   /* ---------- 全体適用 ---------- */
   function applyAll(){
-    var r = getMyRacer();
-    var name = r ? r.name : null;
-    renderBanner(name); /* 常時表示（名前未選択でもプルダウンを出す） */
-    applyEntryHighlight(name);
-    renderPositionBanner(name);
+    var list = getMyRacers();
+    var names = list.map(function(r){ return r.name; });
+    renderBanner(list);
+    applyEntryHighlight(names);
+    renderPositionBanner(list);
   }
 
-  /* ---------- entry-card タップ ---------- */
+  /* ---------- entry-card タップで選択トグル ---------- */
   function bindEntryCards(){
     document.querySelectorAll('.entry-card').forEach(function(card){
       card.style.cursor = 'pointer';
@@ -822,23 +812,16 @@ window.addEventListener('load', function(){
         var n = card.querySelector('.entry-name');
         if(!n) return;
         var name = n.textContent.trim();
-        var cur = getMyRacer();
-        if(cur && cur.name === name){
-          /* 同じカードを再タップ → 解除 */
-          clearMyRacer();
-        } else {
-          var y = card.querySelector('.entry-yomi');
-          setMyRacer({ name: name, yomi: y ? y.textContent.trim() : '' });
-        }
+        var y = card.querySelector('.entry-yomi');
+        toggleRacer(name, y ? y.textContent.trim() : '');
         applyAll();
       });
     });
   }
 
-  /* ---------- グローバル公開（バナーの✕ボタン用） ---------- */
+  /* ---------- グローバル公開（✕ボタン：全選択解除） ---------- */
   window.m4ClearMyRacer = function(){
-    clearMyRacer();
-    /* ハイライト解除（important で当てた分は removeProperty で確実に戻す） */
+    clearMyRacers();
     document.querySelectorAll('.entry-card').forEach(function(card){
       card.style.removeProperty('border');
       card.style.removeProperty('background');
@@ -846,10 +829,8 @@ window.addEventListener('load', function(){
       card.style.opacity = '';
       card.style.boxShadow = '';
       var n = card.querySelector('.entry-name');
-      if(n){ n.style.removeProperty('background'); n.style.removeProperty('color'); n.style.fontWeight=''; }
+      if(n){ n.style.removeProperty('background'); n.style.removeProperty('color'); n.style.fontWeight = ''; }
     });
-    document.querySelectorAll('.br-group').forEach(function(g){ g.style.opacity=''; });
-    document.querySelectorAll('tr').forEach(function(r){ r.style.opacity=''; });
     document.querySelectorAll('.br-slot-name').forEach(function(el){
       el.style.removeProperty('background');
       el.style.removeProperty('color');
@@ -868,34 +849,18 @@ window.addEventListener('load', function(){
     var pb = document.getElementById('m4-position-banner');
     if(pb) pb.remove();
     document.body.style.paddingTop = '';
-    renderBanner(''); /* プルダウンは維持、選択をリセット */
+    var panel = document.getElementById('m4-racer-panel');
+    if(panel) panel.style.display = 'none';
+    renderBanner([]);
   };
-
-  /* ---------- selectをfocusしたとき名前を再収集してoptionを更新 ---------- */
-  function refreshSelect(){
-    var sel = document.getElementById('m4-racer-select');
-    if(!sel) return;
-    var cur = sel.value;
-    var names = collectNames();
-    var opts = '<option value="">👤 レーサーを選択</option>';
-    names.forEach(function(n){
-      opts += '<option value="' + n + '"' + (n === cur ? ' selected' : '') + '>' + n + '</option>';
-    });
-    sel.innerHTML = opts;
-  }
 
   /* ---------- 初期化（部分更新後の再適用にも使う） ---------- */
   function _m4Init(){
     bindEntryCards();
     applyAll();
-    /* selectのfocusで名前を再収集 */
-    var sel = document.getElementById('m4-racer-select');
-    if(sel) sel.addEventListener('focus', refreshSelect);
   }
-  /* .v-container 差し替え（部分更新）後に、更新スクリプトから呼ばれる公開フック */
   window._m4Reapply = function(){ try { _m4Init(); } catch(e){} };
   window.addEventListener('load', function(){
-    /* bracket注入JSが300ms後に動くのでさらに後で初期化 */
     setTimeout(_m4Init, 600);
   });
 })();
@@ -955,8 +920,9 @@ window.addEventListener('load', function(){
 
     info_bar_script = """<script>
 (function(){
-  // DATA はキャッシュせず、開くたびに #m4-info-data から読み直す。
-  // （自動更新でフッターが差し替わった後も、常に最新の内容を表示するため）
+  var el = document.getElementById('m4-info-data');
+  var DATA = {};
+  if(el){ try{ DATA = JSON.parse(el.textContent || '{}'); }catch(e){ DATA = {}; } }
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   window.m4ToggleZoom = function(img){
     if(img.getAttribute('data-z') === '1'){
@@ -974,9 +940,6 @@ window.addEventListener('load', function(){
   var PREFIX = slugPrefix();
   function assetUrl(u){ return (u.charAt(0) === '/') ? (PREFIX + u) : u; }
   window.m4OpenInfo = function(kind){
-    var el = document.getElementById('m4-info-data');
-    var DATA = {};
-    if(el){ try{ DATA = JSON.parse(el.textContent || '{}'); }catch(e){ DATA = {}; } }
     var d = DATA[kind]; if(!d) return;
     var t = document.getElementById('m4-info-title'); if(t){ t.textContent = d.title; }
     var html = '';
@@ -1016,9 +979,7 @@ async def _render_page(view_url: str, store=None) -> str | None:
     from app.main import app
 
     try:
-        import os
         import httpx
-        from httpx import ASGITransport
         from app.config import (
             IS_CLOUD as _IS_CLOUD, ADMIN_TOKEN as _ADMIN_TOKEN,
             ADMIN_COOKIE as _ADMIN_COOKIE, admin_cookie_name as _acn,
@@ -1028,12 +989,9 @@ async def _render_page(view_url: str, store=None) -> str | None:
             # 店舗別Cookie＋内部レンダリングヘッダ（resolver が店舗を確定）
             _cookies = {_acn(store.id): store.admin_token} if store.admin_token else {}
             _headers["x-internal-store-id"] = str(store.id)
-            _secret = os.environ.get("INTERNAL_RENDER_SECRET", "")
-            if _secret:
-                _headers["x-internal-render-secret"] = _secret
         else:
             _cookies = {_ADMIN_COOKIE: _ADMIN_TOKEN} if (_IS_CLOUD and _ADMIN_TOKEN) else {}
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost", follow_redirects=True, cookies=_cookies, headers=_headers) as client:
+        async with httpx.AsyncClient(app=app, base_url="http://localhost", follow_redirects=True, cookies=_cookies, headers=_headers) as client:
             # 参加者向けhtml生成であることをテンプレートへ伝えるため _public=1 を付与
             _sep = "&" if ("?" in view_url) else "?"
             _get_url = view_url + _sep + "_public=1"
@@ -1074,11 +1032,9 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
       - #viewer-ht-bracket-{hno}  (qualifying/heat-tournament)
       - #bracket-html-container    (bracket)
     """
-    import os
     import re
     from app.main import app
     import httpx
-    from httpx import ASGITransport
     from app.config import (
         IS_CLOUD as _IS_CLOUD2, ADMIN_TOKEN as _ADMIN_TOKEN2,
         ADMIN_COOKIE as _ADMIN_COOKIE2, admin_cookie_name as _acn2,
@@ -1087,13 +1043,10 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     if _IS_CLOUD2 and store is not None:
         _cookies2 = {_acn2(store.id): store.admin_token} if store.admin_token else {}
         _headers2["x-internal-store-id"] = str(store.id)
-        _secret2 = os.environ.get("INTERNAL_RENDER_SECRET", "")
-        if _secret2:
-            _headers2["x-internal-render-secret"] = _secret2
     else:
         _cookies2 = {_ADMIN_COOKIE2: _ADMIN_TOKEN2} if (_IS_CLOUD2 and _ADMIN_TOKEN2) else {}
 
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost", follow_redirects=True, cookies=_cookies2, headers=_headers2) as client:
+    async with httpx.AsyncClient(app=app, base_url="http://localhost", follow_redirects=True, cookies=_cookies2, headers=_headers2) as client:
 
         # ① qualifying heat-tournament ブラケット（section単位で注入）
         # 差込先 id は viewer-ht-bracket-{hno}-{section_no}（section_no=0 はヒート決勝）。
