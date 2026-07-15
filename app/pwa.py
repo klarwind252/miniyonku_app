@@ -460,12 +460,15 @@ def build_manifest_dict(screen: str, settings: dict, slug: str = "",
     elif screen == "view":
         scope = start = f"{pfx}/view/"
     else:  # html
-        # scope は参加者トップ配下。ただし start_url は /enter にする。
-        # PWA(ホーム画面アイコン)から起動するたびに /enter が localStorage へ
+        # scope は参加者トップ配下。start_url は /enter にする。
+        # PWA(ホーム画面アイコン)の「初回」起動時のみ /enter が localStorage へ
         # 発行時刻を記録してから参加者トップへ遷移するため、独立storageコンテキストの
-        # PWA でも「発行時刻なし＝期限切れ」にならず、開くたびに24時間が更新される。
+        # PWA でも「発行時刻なし＝期限切れ」にならず、追加直後は開ける。
+        # ?src=pwa を付けて本物のQR経由の /enter と区別し、2回目以降の起動では
+        # 発行時刻を上書きしない（＝アイコンを開くだけで24時間制限を無期限延長できて
+        # しまう不具合を防ぐ。期限切れ後は物理QRの再スキャンが必須のまま）。
         scope = f"{pfx}/"
-        start = f"{pfx}/enter"
+        start = f"{pfx}/enter?src=pwa"
 
     if key:
         start = f"{start}?key={key}"
