@@ -2204,6 +2204,48 @@ async def bracket_generate(
     # 木構造が確定するため、勝ち上がりリンクをここで焼き付ける。
     # 以後、組み合わせは結果入力・取消によって一切変化しない。
     await _bake_bracket_advance_links(tid, db)
+    # ── がらっぱ堂：2ヒート時のみ「2位決定戦」を third ラウンドとして追加 ──
+    # 各ヒートの2位2名で対戦し、勝者＝総合3位（敗者は内部4位・表示は3位まで）。
+    # 3ヒート以上は勝者決定戦（各ヒート1位）だけで総合1〜3位が確定するため追加しない。
+    if qt_gen == "heat_tournament_garappa":
+        async with db.execute(
+            "SELECT qual_heat_count FROM tournaments WHERE id=?", (tid,)
+        ) as cur:
+            _hc_row = await cur.fetchone()
+        _heat_count = int((_hc_row["qual_heat_count"] if _hc_row else 1) or 1)
+        if _heat_count == 2:
+            _seconds = await _get_garappa_second_place(tid, db)
+            _second_ids = [x["entry_id"] for x in _seconds if x.get("entry_id")]
+            if len(_second_ids) >= 2:
+                async with db.execute(
+                    "SELECT id FROM bracket_rounds WHERE tournament_id=? AND round_type='third'",
+                    (tid,),
+                ) as cur:
+                    _exists_third = await cur.fetchone()
+                if not _exists_third:
+                    async with db.execute(
+                        "SELECT COALESCE(MAX(round_no),0) as mx FROM bracket_rounds WHERE tournament_id=?",
+                        (tid,),
+                    ) as cur:
+                        _third_rno = int((await cur.fetchone())["mx"]) + 1
+                    await db.execute(
+                        "INSERT INTO bracket_rounds (tournament_id, round_no, round_type) VALUES (?,?,?)",
+                        (tid, _third_rno, "third"),
+                    )
+                    async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                        _trid = (await cur.fetchone())["id"]
+                    await db.execute(
+                        "INSERT INTO bracket_groups (round_id, group_no) VALUES (?,?)",
+                        (_trid, 1),
+                    )
+                    async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                        _tgid = (await cur.fetchone())["id"]
+                    for _sno, _eid in enumerate(_second_ids[:2], 1):
+                        await db.execute(
+                            "INSERT INTO bracket_slots (group_id, slot_no, entry_id) VALUES (?,?,?)",
+                            (_tgid, _sno, _eid),
+                        )
+                    await db.commit()
     # 裏トーナメント（案B）: 復活先は常に決勝（最終ラウンド）。
     # 準決勝の勝者が2名（=準決勝が2グループ）のときだけ裏を許可する。
     # それ以外（3グループ等）は決勝が4名になり不可のため裏をOFFにする。
@@ -3262,10 +3304,18 @@ async def _get_ht_per_heat_advanced(tid: int, db) -> list[dict]:
     group_advance = int(t_dict.get("qual_group_advance") or heat_advance)
     heat_count = int(t_dict.get("qual_heat_count") or 1)
     has_heat_final = bool(t_dict.get("qual_heat_final", 0))
+    is_garappa = t_dict.get("qualifying_type") == "heat_tournament_garappa"
 
     result = []
     for hno in range(1, heat_count + 1):
-        if has_heat_final:
+        if is_garappa:
+            # がらっぱ堂：各ヒートの1位のみを勝者決定戦へ送る（2位は別途2位決定戦で使用）
+            advs = await _ht_get_heatfinal_advancers(tid, hno, 1, db)
+            advanced = [
+                {"entry_id": a["entry_id"], "name": a["name"], "overall_rank": a["rank"]}
+                for a in advs if a.get("entry_id") and a.get("rank") == 1
+            ]
+        elif has_heat_final:
             # ヒート決勝あり：本戦進出者（ヒート決勝 上位 heat_advance 名）
             advs = await _ht_get_heatfinal_advancers(tid, hno, heat_advance, db)
             advanced = [
@@ -3283,6 +3333,32 @@ async def _get_ht_per_heat_advanced(tid: int, db) -> list[dict]:
     return result
 
 
+
+async def _get_garappa_second_place(tid: int, db) -> list[dict]:
+    """がらっぱ堂：各ヒートの2位を [{heat_no, entry_id, name}] で返す（heat_no昇順）。
+
+    2ヒート時の「2位決定戦」（＝総合3位決定戦）の出場者取得に使用する。
+    ヒート決勝あり前提（がらっぱ堂の必須条件）で、各ヒートのヒート決勝2位を採る。
+    """
+    from app.routers.qualifying import _ht_get_heatfinal_advancers
+    async with db.execute(
+        "SELECT qual_heat_count FROM tournaments WHERE id=?", (tid,)
+    ) as cur:
+        row = await cur.fetchone()
+    heat_count = int((row["qual_heat_count"] if row else 1) or 1)
+    seconds = []
+    for hno in range(1, heat_count + 1):
+        advs = await _ht_get_heatfinal_advancers(tid, hno, 2, db)
+        second = next(
+            (a for a in advs if a.get("entry_id") and a.get("rank") == 2), None
+        )
+        if second:
+            seconds.append({
+                "heat_no": hno,
+                "entry_id": second["entry_id"],
+                "name": second["name"],
+            })
+    return seconds
 
 async def _get_all_standings(tid: int, db: aiosqlite.Connection) -> list[dict]:
     """予選全順位を取得（同率rank付き）※bracket内部用"""

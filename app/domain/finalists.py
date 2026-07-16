@@ -10,6 +10,10 @@ def calc_finalists(qual_type: str, data: dict) -> int | None:
     """決勝進出予定人数を計算"""
     if qual_type in ("none", "none_roundrobin"):
         return None
+    if qual_type == "heat_tournament_garappa":
+        # がらっぱ堂：決勝（勝者決定戦）の出場者＝各ヒートの1位のみ。
+        # よって決勝トーナメント出場人数＝ヒート数。
+        return data.get("qual_heat_count", 1) or 1
     if qual_type in HEAT_TOURNAMENT_TYPES:
         hc = data.get("qual_heat_count", 1) or 1
         gc = data.get("qual_group_count", 1) or 1
