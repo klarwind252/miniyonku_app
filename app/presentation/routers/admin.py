@@ -377,6 +377,70 @@ async def save_default_qualifying(request: Request, db: aiosqlite.Connection = D
     return RedirectResponse(url="/admin/settings#defaults", status_code=303)
 
 
+# ---- Git アップデート（admin 画面を開いたときの確認・実行） ----
+
+@router.get("/update/check")
+async def update_check(request: Request):
+    """更新の有無を返す（admin ページ読み込み時にフロントから呼ばれる）。
+
+    クラウド版のみ有効。オンプレ版や git 未構成では available=false を返す。
+    """
+    from fastapi.responses import JSONResponse
+    if not IS_CLOUD:
+        return JSONResponse({"cloud": False, "available": False})
+    try:
+        from app.services import auto_update
+        info = await auto_update._run_blocking(auto_update.check_available)
+        race = await auto_update._run_blocking(auto_update.race_in_progress)
+        return JSONResponse({
+            "cloud": True,
+            "available": bool(info.get("available")),
+            "commit": info.get("commit", ""),
+            "race": bool(race),
+            "boot": auto_update.BOOT_ID,
+        })
+    except Exception as e:
+        return JSONResponse({"cloud": True, "available": False, "error": str(e)})
+
+
+@router.post("/update/run")
+async def update_run(request: Request):
+    """更新を実行する（更新があれば取得後に再起動）。
+
+    応答を返してから再起動されるよう、実処理は少し遅らせて別タスクで走らせる。
+    """
+    from fastapi.responses import JSONResponse
+    if not IS_CLOUD:
+        return JSONResponse({"ok": False, "error": "クラウド版でのみ利用できます"})
+    import asyncio
+    from app.services import auto_update
+    info = await auto_update._run_blocking(auto_update.check_available, True)
+    if not info.get("available"):
+        return JSONResponse({"ok": True, "willRestart": False, "updated": False})
+
+    async def _later():
+        # 応答が返り切ってから git pull → 再起動（このプロセスは終了する）
+        await asyncio.sleep(1.0)
+        await auto_update._run_blocking(auto_update.do_update)
+
+    asyncio.create_task(_later())
+    return JSONResponse({"ok": True, "willRestart": True, "commit": info.get("commit", "")})
+
+
+@router.get("/update/ping")
+async def update_ping(request: Request):
+    """再起動検知用。プロセス起動ID（BOOT_ID）を返す。
+
+    更新実行前後で boot が変われば、再起動が完了したと判断できる。
+    """
+    from fastapi.responses import JSONResponse
+    try:
+        from app.services import auto_update
+        return JSONResponse({"ok": True, "boot": auto_update.BOOT_ID})
+    except Exception:
+        return JSONResponse({"ok": True, "boot": ""})
+
+
 @router.post("/settings/store-name/save", response_class=HTMLResponse)
 async def save_store_name(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """店舗1の店舗名を保存（オンプレ版設定画面用。app_settings 'store_name'）"""

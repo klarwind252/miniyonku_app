@@ -546,5 +546,131 @@ updatePubStatus();
   }
 })();
 </script>
+
+{% if IS_CLOUD %}
+<!-- ===== Git アップデート確認（admin を開いたとき） ===== -->
+<div id="updBanner" style="display:none;position:fixed;left:0;right:0;top:0;z-index:9998;
+     background:#2c3e50;color:#fff;padding:12px 18px;box-shadow:0 2px 8px rgba(0,0,0,.25);
+     display:none;align-items:center;gap:14px;flex-wrap:wrap;font-size:14px">
+  <span style="font-size:18px">🔄</span>
+  <span id="updBannerMsg" style="flex:1;min-width:220px">新しいアップデートがあります。今すぐ更新しますか？</span>
+  <button id="updBtnYes" type="button"
+          style="background:#27ae60;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:bold;cursor:pointer">更新する</button>
+  <button id="updBtnNo" type="button"
+          style="background:#5a6b7b;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer">あとで</button>
+</div>
+
+<div id="updOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
+     background:rgba(20,28,38,.88);color:#fff;flex-direction:column;
+     align-items:center;justify-content:center;gap:18px;text-align:center;padding:24px">
+  <div style="width:44px;height:44px;border:5px solid rgba(255,255,255,.25);
+       border-top-color:#27ae60;border-radius:50%;animation:updSpin 1s linear infinite"></div>
+  <div id="updOverlayMsg" style="font-size:16px;line-height:1.7">
+    更新を適用してサーバーを再起動しています。<br>数十秒お待ちください（自動で元の画面に戻ります）。
+  </div>
+</div>
+<style>@keyframes updSpin{to{transform:rotate(360deg)}}</style>
+
+<script>
+(function(){
+  var banner  = document.getElementById('updBanner');
+  var overlay = document.getElementById('updOverlay');
+  if (!banner) return;
+
+  function show(el){ el.style.display = 'flex'; }
+  function hide(el){ el.style.display = 'none'; }
+
+  // 起動時：更新の有無を確認（非同期。ページ表示はブロックしない）
+  fetch('/admin/update/check', {cache:'no-store'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d || !d.available) return;                       // 更新なし → そのまま表示
+      // この更新（コミット）を「あとで」で閉じ済みなら再表示しない
+      var dismissed = '';
+      try { dismissed = sessionStorage.getItem('updDismissed') || ''; } catch(e){}
+      if (dismissed && dismissed === d.commit) return;
+
+      var msg = '新しいアップデートがあります（' + (d.commit || '') + '）。今すぐ更新しますか？';
+      if (d.race) {
+        msg += ' ⚠ 現在レースが進行中です。更新すると再起動されます。';
+      }
+      document.getElementById('updBannerMsg').textContent = msg;
+      show(banner);
+      document.body.style.paddingTop = banner.offsetHeight + 'px';
+    })
+    .catch(function(){ /* 確認失敗時は何もしない（通常表示） */ });
+
+  // 「あとで」：このセッションではこの更新を再度尋ねない
+  document.getElementById('updBtnNo').addEventListener('click', function(){
+    var msg = document.getElementById('updBannerMsg').textContent || '';
+    var m = msg.match(/（([0-9a-f]+)）/);
+    try { if (m) sessionStorage.setItem('updDismissed', m[1]); } catch(e){}
+    hide(banner);
+    document.body.style.paddingTop = '';
+  });
+
+  // 「更新する」：更新実行 → 再起動検知 → 元の画面を再読み込み
+  document.getElementById('updBtnYes').addEventListener('click', function(){
+    hide(banner);
+    show(overlay);
+    document.body.style.paddingTop = '';
+    // 再起動検知の基準となる現在の boot を取得
+    var bootBefore = '';
+    fetch('/admin/update/ping', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(p){ bootBefore = (p && p.boot) || ''; })
+      .catch(function(){})
+      .then(function(){
+        return fetch('/admin/update/run', {method:'POST'});
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.ok) {
+          document.getElementById('updOverlayMsg').innerHTML =
+            '❌ 更新に失敗しました。' + ((d && d.error) ? ('<br>' + d.error) : '');
+          setTimeout(function(){ hide(overlay); }, 4000);
+          return;
+        }
+        if (!d.willRestart) {
+          // 実行時点では最新だった → そのまま元の画面へ
+          document.getElementById('updOverlayMsg').textContent = '既に最新でした。';
+          setTimeout(function(){ location.reload(); }, 1200);
+          return;
+        }
+        waitForRestart(bootBefore);
+      })
+      .catch(function(){
+        // 応答前に再起動でコネクションが切れた場合もここに来る
+        waitForRestart(bootBefore);
+      });
+  });
+
+  // boot が変わる（＝再起動完了）まで ping を繰り返し、変わったら元の画面を再読み込み
+  function waitForRestart(bootBefore){
+    var tries = 0, MAX = 40;   // 約90秒まで待つ
+    setTimeout(poll, 4000);    // 再起動が始まるまで少し待ってから監視開始
+    function poll(){
+      tries++;
+      fetch('/admin/update/ping', {cache:'no-store'})
+        .then(function(r){ return r.json(); })
+        .then(function(p){
+          if (p && p.boot && p.boot !== bootBefore) { location.reload(); return; }
+          if (tries < MAX) setTimeout(poll, 2500);
+          else fallbackReload();
+        })
+        .catch(function(){
+          if (tries < MAX) setTimeout(poll, 2500);   // 再起動中は失敗が続く
+          else fallbackReload();
+        });
+    }
+    function fallbackReload(){
+      document.getElementById('updOverlayMsg').innerHTML =
+        '再起動の確認に時間がかかっています。<br>手動で再読み込みしてください。';
+    }
+  }
+})();
+</script>
+{% endif %}
+
 </body>
 </html>
