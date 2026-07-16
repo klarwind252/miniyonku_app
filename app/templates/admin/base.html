@@ -438,10 +438,18 @@ updatePubStatus();
     <div id="bgmList" style="padding:10px 14px">
       <div style="color:#95a5a6;font-size:13px;padding:16px 4px">読み込み中…</div>
     </div>
-    <div style="padding:10px 18px 16px;border-top:1px solid #eee;display:flex;gap:10px;align-items:center">
+    <div style="padding:10px 18px 16px;border-top:1px solid #eee;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button type="button" id="bgmStopBtn" onclick="stopBgm()"
               style="padding:8px 16px;border:none;border-radius:6px;background:#e74c3c;color:#fff;font-size:13px;cursor:pointer">■ 停止</button>
       <span id="bgmStatus" style="font-size:12px;color:#95a5a6"></span>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;min-width:180px">
+        <button type="button" id="bgmMuteBtn" onclick="toggleBgmMute()" title="ミュート切替"
+                style="background:none;border:none;font-size:18px;line-height:1;cursor:pointer;color:#2c3e50">🔊</button>
+        <input type="range" id="bgmVolume" min="0" max="100" step="1"
+               oninput="setBgmVolume(this.value)"
+               style="flex:1;accent-color:#27ae60;cursor:pointer">
+        <span id="bgmVolumeLabel" style="font-size:11px;color:#95a5a6;width:34px;text-align:right">100%</span>
+      </div>
     </div>
   </div>
 </div>
@@ -456,6 +464,35 @@ updatePubStatus();
   var CURRENT_SCENE = "{% block scene %}{% endblock %}".trim();
   // 自動BGMのON/OFF（この端末＝ブラウザ単位。localStorage に保持）
   function autoOn(){ try { return localStorage.getItem('bgmAuto') === '1'; } catch(e){ return false; } }
+
+  // ---- 音量（この端末＝ブラウザ単位。localStorage 保持） ----
+  function getVol(){ var v = parseFloat(localStorage.getItem('bgmVolume')); return (isFinite(v) && v>=0 && v<=1) ? v : 1; }
+  function isMuted(){ try { return localStorage.getItem('bgmMuted') === '1'; } catch(e){ return false; } }
+  function applyVolume(){
+    try { audio.volume = getVol(); audio.muted = isMuted(); } catch(e){}
+    syncVolumeUI();
+  }
+  function syncVolumeUI(){
+    var v = getVol(), m = isMuted(), pct = Math.round(v*100);
+    var slider = document.getElementById('bgmVolume');
+    var label  = document.getElementById('bgmVolumeLabel');
+    var mute   = document.getElementById('bgmMuteBtn');
+    if (slider) slider.value = pct;
+    if (label)  label.textContent = m ? 'ミュート' : (pct + '%');
+    if (mute)   mute.textContent = (m || v === 0) ? '🔇' : (v < 0.5 ? '🔉' : '🔊');
+  }
+  window.setBgmVolume = function(val){
+    var v = Math.max(0, Math.min(1, (parseFloat(val)||0)/100));
+    try {
+      localStorage.setItem('bgmVolume', String(v));
+      if (v > 0) localStorage.setItem('bgmMuted','0');   // スライダー操作でミュート解除
+    } catch(e){}
+    applyVolume();
+  };
+  window.toggleBgmMute = function(){
+    try { localStorage.setItem('bgmMuted', isMuted() ? '0' : '1'); } catch(e){}
+    applyVolume();
+  };
 
   // 再生状態を sessionStorage に保存（ページ遷移をまたいで引き継ぐため）
   function saveState(){
@@ -500,6 +537,7 @@ updatePubStatus();
   window.openBgmPopup = function(){
     var overlay = document.getElementById('bgmOverlay');
     overlay.style.display = 'flex';
+    syncVolumeUI();
     loadBgmList();
   };
   window.closeBgmPopup = function(){
@@ -659,6 +697,8 @@ updatePubStatus();
 
   // 初期表示：自動トグルの見た目を反映
   syncAutoBtn();
+  // 保存済みの音量を audio に適用
+  applyVolume();
 })();
 </script>
 
