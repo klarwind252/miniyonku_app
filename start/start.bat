@@ -18,14 +18,17 @@ ping -n 3 127.0.0.1 > nul
 
 REM Restore the real title (so the next launch can target it).
 title Mini4WD Race System
-cd /d "%USERPROFILE%\Documents\miniyonku_app"
+pushd "%~dp0.."
+set "INSTALL_DIR=%CD%"
+popd
+cd /d "%INSTALL_DIR%"
 
 echo ============================================
 echo   Mini4WD Race System
 echo ============================================
 echo.
 
-set "INSTALL_DIR=%USERPROFILE%\Documents\miniyonku_app"
+REM INSTALL_DIR is derived above from the script location (OneDrive-safe).
 
 py -3.12 --version > nul 2>&1
 if errorlevel 1 (
@@ -68,7 +71,8 @@ echo   このウィンドウを閉じるか Ctrl+C で停止します。
 echo ============================================
 echo.
 
-"%INSTALL_DIR%\venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+REM LAN observation monitors are needed, change 127.0.0.1 to 0.0.0.0 (see security notes).
+"%INSTALL_DIR%\venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 echo.
 echo [INFO] サーバーが停止しました。

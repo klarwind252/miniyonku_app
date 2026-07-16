@@ -1,0 +1,13 @@
+# Mac 用依存パッケージ（オンライン導入）。
+# 注意: pystray は app/ で未使用のため Mac 版では除外しています。
+fastapi==0.115.0
+uvicorn==0.30.6
+jinja2==3.1.4
+python-multipart==0.0.9
+aiosqlite==0.20.0
+Pillow==10.4.0
+httpx==0.27.0
+google-cloud-storage==2.18.2
+jpholiday
+tzdata
+colorama
