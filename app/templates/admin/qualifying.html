@@ -1,4 +1,5 @@
 {% extends "admin/base.html" %}
+{% block scene %}{% if is_none_roundrobin %}決勝{% else %}予選{% endif %}{% endblock %}
 {% block title %}{% if is_none_roundrobin %}決勝管理（総当たり）{% elif is_roundrobin %}総当たり管理{% else %}予選管理{% endif %} - {{ t.name }}{% endblock %}
 {% block head %}
 <style>

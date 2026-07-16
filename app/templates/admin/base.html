@@ -168,6 +168,15 @@ select{background:#fff}
       <span id="bgmBtnIcon">🎵</span> BGM
       <span id="bgmNowPlaying" style="display:none;font-size:11px;padding:1px 8px;border-radius:8px;background:#27ae60;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis"></span>
     </button>
+    <button type="button" id="bgmAutoBtn"
+            onclick="toggleBgmAuto()"
+            title="シーン（予選・決勝など）に合わせてBGMを自動再生（この端末のみ）"
+            style="display:flex;align-items:center;gap:6px;color:#bdc3c7;padding:14px 12px;font-size:12px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
+      <span id="bgmAutoTrack" style="position:relative;display:inline-block;width:32px;height:18px;border-radius:9px;background:#4a5568;transition:background .3s;flex-shrink:0">
+        <span id="bgmAutoKnob" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .3s;display:block"></span>
+      </span>
+      自動
+    </button>
   </div>
 
   <div class="nav-group">
@@ -441,8 +450,34 @@ updatePubStatus();
 (function(){
   var audio = document.getElementById('bgmAudio');
   var curSlot = null;
+  var curVer  = '';
 
-  // ページを開いた／「戻る」等で復帰した（bfcache含む）ときは必ずBGMをOFFにする
+  // このページのシーン（予選・決勝 等。該当なしは空）。子テンプレートが宣言する。
+  var CURRENT_SCENE = "{% block scene %}{% endblock %}".trim();
+  // 自動BGMのON/OFF（この端末＝ブラウザ単位。localStorage に保持）
+  function autoOn(){ try { return localStorage.getItem('bgmAuto') === '1'; } catch(e){ return false; } }
+
+  // 再生状態を sessionStorage に保存（ページ遷移をまたいで引き継ぐため）
+  function saveState(){
+    try {
+      if (curSlot){
+        sessionStorage.setItem('bgmState', JSON.stringify({
+          slot: curSlot, ver: curVer, scene: CURRENT_SCENE, t: audio.currentTime || 0
+        }));
+      } else {
+        sessionStorage.removeItem('bgmState');
+      }
+    } catch(e){}
+  }
+  function loadState(){
+    try { return JSON.parse(sessionStorage.getItem('bgmState') || 'null'); } catch(e){ return null; }
+  }
+  // 「このシーンは手動で止めた」印（同一シーン内では自動再開しない）
+  function markUserStopped(scene){ try { sessionStorage.setItem('bgmUserStopped', scene || ''); } catch(e){} }
+  function isUserStopped(scene){ try { return sessionStorage.getItem('bgmUserStopped') === (scene||''); } catch(e){ return false; } }
+  function clearUserStopped(){ try { sessionStorage.removeItem('bgmUserStopped'); } catch(e){} }
+
+  // 手動モード（自動OFF）用：開いた／復帰したら必ずBGMをOFFにする
   function forceBgmOff(){
     try { audio.pause(); audio.currentTime = 0; audio.removeAttribute('src'); audio.load(); } catch(e){}
     curSlot = null;
@@ -451,9 +486,16 @@ updatePubStatus();
     var overlay = document.getElementById('bgmOverlay');
     if (overlay) overlay.style.display = 'none';
   }
-  window.addEventListener('pageshow', forceBgmOff);
-  // ページを離れる瞬間にも止める（bfcacheに再生中で入り込むのを防ぐ）
-  window.addEventListener('pagehide', function(){ try { audio.pause(); } catch(e){} });
+
+  window.addEventListener('pageshow', function(){
+    syncAutoBtn();
+    if (autoOn()) { initAutoBgm(); }   // 自動：シーンに合うBGMを再生（引き継ぎ）
+    else { forceBgmOff(); }            // 手動：従来どおり停止
+  });
+  // 遷移直前に現在位置を保存し、再生も止める（bfcache対策）
+  window.addEventListener('pagehide', function(){ saveState(); try { audio.pause(); } catch(e){} });
+  // 再生位置を定期保存（遷移時に近い位置から続けられるように）
+  audio.addEventListener('timeupdate', function(){ if (curSlot) saveState(); });
 
   window.openBgmPopup = function(){
     var overlay = document.getElementById('bgmOverlay');
@@ -504,16 +546,25 @@ updatePubStatus();
     setStatus();
   }
 
-  window.playBgm = function(slot, name, ver){
+  window.playBgm = function(slot, name, ver, startAt){
     audio.src = '/admin/bgm/file/' + slot + (ver ? ('?v=' + ver) : '');
     audio.loop = true;
+    curVer = ver || '';
     audio.play().then(function(){
       curSlot = slot;
+      if (typeof startAt === 'number' && isFinite(startAt) && startAt > 0){
+        try { audio.currentTime = startAt; } catch(e){}
+      }
+      clearUserStopped();          // 鳴らしたら「止めた印」は解除
       updateNowPlaying(name);
       loadBgmList();   // アイコン状態を更新
       setStatus();
+      saveState();
     }).catch(function(){
-      document.getElementById('bgmStatus').textContent = '再生できませんでした。';
+      // 自動再生がブロックされた場合は、最初の操作（クリック等）で再生する
+      armGestureRetry(slot, name, ver, startAt);
+      var s = document.getElementById('bgmStatus');
+      if (s) s.textContent = '再生できませんでした。';
     });
   };
 
@@ -524,6 +575,8 @@ updatePubStatus();
     updateNowPlaying('');
     loadBgmList();
     setStatus();
+    markUserStopped(CURRENT_SCENE);  // 同一シーンでは自動再開しない
+    saveState();
   };
 
   function setStatus(){
@@ -544,6 +597,68 @@ updatePubStatus();
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;');
   }
+
+  // ---- 自動BGM（シーンに合わせて自動再生。この端末のみ） ----
+  window.toggleBgmAuto = function(){
+    var next = autoOn() ? '0' : '1';
+    try { localStorage.setItem('bgmAuto', next); } catch(e){}
+    syncAutoBtn();
+    if (next === '1'){ clearUserStopped(); initAutoBgm(); }
+    else { forceBgmOff(); saveState(); }
+  };
+
+  function syncAutoBtn(){
+    var on = autoOn();
+    var track = document.getElementById('bgmAutoTrack');
+    var knob  = document.getElementById('bgmAutoKnob');
+    var btn   = document.getElementById('bgmAutoBtn');
+    if (track) track.style.background = on ? '#27ae60' : '#4a5568';
+    if (knob)  knob.style.left = on ? '16px' : '2px';
+    if (btn)   btn.style.color = on ? '#ecf0f1' : '#bdc3c7';
+  }
+
+  // このページのシーンに一致するタグのBGMを選び、遷移を引き継いで再生する
+  function initAutoBgm(){
+    if (!autoOn()) return;
+    var scene = CURRENT_SCENE;
+    if (!scene){ forceBgmOff(); return; }               // シーン指定なしのページ→無音
+    if (isUserStopped(scene)){ forceBgmOff(); return; } // このシーンは手動で止めた
+    fetch('/admin/bgm/list', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var tracks = d.tracks || [], ver = d.ver || '';
+        var match = null;
+        for (var i=0;i<tracks.length;i++){
+          if ((tracks[i].scene||'') === scene){ match = tracks[i]; break; }
+        }
+        if (!match){ forceBgmOff(); return; }            // 該当タグのBGMなし→無音
+        if (curSlot === match.slot) return;              // 既に同じ曲を再生中
+        // 直前ページと同じ曲なら保存位置の続きから
+        var st = loadState(), startAt = 0;
+        if (st && st.slot === match.slot && st.scene === scene && typeof st.t === 'number'){
+          startAt = st.t;
+        }
+        playBgm(match.slot, match.name, ver, startAt);
+      })
+      .catch(function(){});
+  }
+
+  // 自動再生がブラウザにブロックされた時、最初のユーザー操作で再生を開始する
+  function armGestureRetry(slot, name, ver, startAt){
+    function once(){
+      document.removeEventListener('click', once, true);
+      document.removeEventListener('keydown', once, true);
+      document.removeEventListener('pointerdown', once, true);
+      if (!autoOn()) return;
+      playBgm(slot, name, ver, startAt);
+    }
+    document.addEventListener('click', once, true);
+    document.addEventListener('keydown', once, true);
+    document.addEventListener('pointerdown', once, true);
+  }
+
+  // 初期表示：自動トグルの見た目を反映
+  syncAutoBtn();
 })();
 </script>
 
