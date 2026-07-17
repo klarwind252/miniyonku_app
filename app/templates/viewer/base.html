@@ -220,12 +220,10 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   {% else %}
   <h1>ミニ四駆レースへようこそ！</h1>
   {% endif %}
-  {% if not is_public_html %}
   <div class="v-clock">
     <div class="v-clock-date" id="v-clock-date">----年--月--日</div>
     <div class="v-clock-time" id="v-clock-time">--：--</div>
   </div>
-  {% endif %}
   <p class="dot-anim">レース開始までしばらくお待ちください</p>
 </div>
 {% if slideshow_urls %}

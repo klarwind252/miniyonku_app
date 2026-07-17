@@ -996,7 +996,26 @@ window.addEventListener('load', function(){
 })();
 </script>""").replace("__TELOPURL__", _telop_url)
 
-    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + '</body>', 1)
+    # 待機画面の日時時計：参加者htmlは<script>が除去されるため専用に注入（端末のローカル時刻）。
+    # 時計要素が無いページ（レース進行中など）では何もしない。
+    clock_script = """<script>
+(function(){
+  var dateEl = document.getElementById('v-clock-date');
+  var timeEl = document.getElementById('v-clock-time');
+  if(!dateEl && !timeEl) return;
+  var WD = ['日','月','火','水','木','金','土'];
+  function z(n){ return (n < 10 ? '0' : '') + n; }
+  function tick(){
+    var d = new Date();
+    if(dateEl){ dateEl.textContent = d.getFullYear()+'年'+z(d.getMonth()+1)+'月'+z(d.getDate())+'日（'+WD[d.getDay()]+'）'; }
+    if(timeEl){ timeEl.textContent = z(d.getHours())+'：'+z(d.getMinutes()); }
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>"""
+
+    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + '</body>', 1)
 
     return patched
 
