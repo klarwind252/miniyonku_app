@@ -86,6 +86,9 @@ async def startup():
             await fix_bracket_slots_on_startup(st.db_path)
             print(f"[APP] 店舗 init: id={st.id} slug='{st.slug or '(default)'}' "
                   f"name={st.name} db={st.db_path}", flush=True)
+        # DB自動バックアップ（毎晩03:30 JST・14世代保持）をクラウド版で開始
+        from app.services import backup_scheduler
+        backup_scheduler.launch()
         print(f"[APP] 起動完了（クラウド版 / 複数店舗 {len(stores)}件 / "
               f"DEPLOY_MODE={DEPLOY_MODE}）"
               f"{' / ' + PUBLIC_BASE_URL if PUBLIC_BASE_URL else ''}", flush=True)
