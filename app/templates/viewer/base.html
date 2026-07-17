@@ -102,6 +102,26 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
 @keyframes m4telopglow{0%,100%{background:#e67e22}50%{background:#d35400}}
 @media(max-width:600px){#m4-telop{top:44px;font-size:14px;padding:6px 12px}}
 
+/* 待機画面の日時時計（view待機画面のみ・端末のローカル時刻）。
+   数字が見やすいよう同梱 DotGothic16（デジタル時計風）を使う。 */
+@font-face{
+  font-family:'M4ClockFont';
+  font-style:normal;font-weight:400;font-display:swap;
+  src:url('/static/fonts/dotgothic16-v21-japanese_latin-regular.woff2') format('woff2');
+}
+.v-clock{
+  text-align:center;margin:2px 0 20px;color:#fff;
+  font-family:'M4ClockFont','Hiragino Kaku Gothic Pro','Meiryo',sans-serif;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 2px 8px rgba(0,0,0,.6);
+}
+.v-clock-date{font-size:24px;line-height:1.4;color:#eaf2fb}
+.v-clock-time{font-size:64px;line-height:1.05;letter-spacing:2px}
+@media(max-width:600px){
+  .v-clock-date{font-size:18px}
+  .v-clock-time{font-size:44px}
+}
+
 {% block extra_style %}{% endblock %}
 </style>
 {% if slideshow_urls %}
@@ -199,6 +219,12 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   <h1>{{ request.state.store.name }} のミニ四駆レースへようこそ！</h1>
   {% else %}
   <h1>ミニ四駆レースへようこそ！</h1>
+  {% endif %}
+  {% if not is_public_html %}
+  <div class="v-clock">
+    <div class="v-clock-date" id="v-clock-date">----年--月--日</div>
+    <div class="v-clock-time" id="v-clock-time">--：--</div>
+  </div>
   {% endif %}
   <p class="dot-anim">レース開始までしばらくお待ちください</p>
 </div>
@@ -423,6 +449,30 @@ setInterval(pollHostState, 2000);
   }
   poll();
   (function loop(){ setTimeout(function(){ poll(); loop(); }, 30000); })();
+})();
+</script>
+
+<script>
+/* 待機画面の日時時計（view待機画面のみ）。端末のローカル時刻を毎秒更新する。
+   時計要素が無いページ（レース情報・予選・決勝など）では何もしない。
+   setTimeout チェーンなので追従OFFでも止まらない。 */
+(function(){
+  var dateEl = document.getElementById('v-clock-date');
+  var timeEl = document.getElementById('v-clock-time');
+  if(!dateEl && !timeEl) return;
+  var WD = ['日','月','火','水','木','金','土'];
+  function z(n){ return (n < 10 ? '0' : '') + n; }
+  function tick(){
+    var d = new Date();
+    if(dateEl){
+      dateEl.textContent = d.getFullYear() + '年' + z(d.getMonth()+1) + '月' + z(d.getDate()) + '日（' + WD[d.getDay()] + '）';
+    }
+    if(timeEl){
+      timeEl.textContent = z(d.getHours()) + '：' + z(d.getMinutes());
+    }
+  }
+  tick();
+  (function loop(){ setTimeout(function(){ tick(); loop(); }, 1000); })();
 })();
 </script>
 
