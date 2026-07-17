@@ -1457,13 +1457,26 @@ async function loadHealth(){
     var r = await fetch('/admin/health', {cache:'no-store'});
     var d = await r.json();
     var disk = d.disk || {};
-    var pct = (disk.percent != null) ? disk.percent : null;
-    var barColor = pct == null ? '#95a5a6' : (pct >= 90 ? '#e74c3c' : (pct >= 75 ? '#e67e22' : '#27ae60'));
+    var mem = d.memory || {};
+    function _barColor(p){ return p == null ? '#95a5a6' : (p >= 90 ? '#e74c3c' : (p >= 75 ? '#e67e22' : '#27ae60')); }
+    function _barHtml(label, p){
+      if(p == null) return '';
+      return '<div style="margin-bottom:10px">'
+        + '<div style="height:10px;background:#ecf0f1;border-radius:6px;overflow:hidden">'
+        + '<div style="height:100%;width:' + p + '%;background:' + _barColor(p) + '"></div></div>'
+        + '<div style="font-size:12px;color:#636e72;margin-top:4px">' + label + ' ' + p + '%</div></div>';
+    }
+    var dpct = (disk.percent != null) ? disk.percent : null;
+    var mpct = (mem.percent != null) ? mem.percent : null;
     var rows = [
       ['稼働時間', _fmtUptime(d.uptime_seconds)],
       ['ディスク残量', (disk.free != null)
-        ? (_fmtBytes(disk.free) + ' 空き / ' + _fmtBytes(disk.total) + '（使用 ' + (pct != null ? pct + '%' : '—') + '）')
+        ? (_fmtBytes(disk.free) + ' 空き / ' + _fmtBytes(disk.total) + '（使用 ' + (dpct != null ? dpct + '%' : '—') + '）')
         : '—'],
+      ['メモリ', (mem.total != null)
+        ? (_fmtBytes(mem.used) + ' / ' + _fmtBytes(mem.total) + '（使用 ' + (mpct != null ? mpct + '%' : '—') + '）')
+        : '—（Linux/クラウドのみ）'],
+      ['ロード', d.load ? (d.load['1'] + ' / ' + d.load['5'] + ' / ' + d.load['15'] + '（1/5/15分）') : '—'],
       ['DBサイズ合計', _fmtBytes(d.db && d.db.total_bytes) + '（' + (d.db ? d.db.count : 0) + 'ファイル）'],
       ['店舗数', (d.store_count != null ? d.store_count : '—')],
       ['最終バックアップ', (d.backups && d.backups.latest) ? (d.backups.latest + '（' + d.backups.generations + '世代）') : 'なし'],
@@ -1471,12 +1484,8 @@ async function loadHealth(){
       ['モード', d.deploy_mode || '—']
     ];
     var html = '';
-    if(pct != null){
-      html += '<div style="margin-bottom:12px">'
-        + '<div style="height:10px;background:#ecf0f1;border-radius:6px;overflow:hidden">'
-        + '<div style="height:100%;width:' + pct + '%;background:' + barColor + '"></div></div>'
-        + '<div style="font-size:12px;color:#636e72;margin-top:4px">ディスク使用 ' + pct + '%</div></div>';
-    }
+    html += _barHtml('ディスク使用', dpct);
+    html += _barHtml('メモリ使用', mpct);
     html += '<table style="width:100%;border-collapse:collapse;font-size:14px">';
     rows.forEach(function(row){
       html += '<tr>'

@@ -635,6 +635,31 @@ async def admin_health(request: Request):
     except Exception:
         disk = None
 
+    # メモリ（Linux/クラウド：/proc/meminfo。Windows/オンプレでは取得不可→None）
+    memory = None
+    try:
+        _mi = {}
+        with open("/proc/meminfo") as _f:
+            for _line in _f:
+                _k, _, _v = _line.partition(":")
+                _parts = _v.split()
+                if _parts:
+                    _mi[_k] = int(_parts[0]) * 1024   # kB → bytes
+        _mt = _mi.get("MemTotal"); _ma = _mi.get("MemAvailable")
+        if _mt and _ma is not None:
+            _mu = _mt - _ma
+            memory = {"total": _mt, "available": _ma, "used": _mu,
+                      "percent": round(_mu / _mt * 100, 1)}
+    except Exception:
+        memory = None
+
+    # ロードアベレージ（Linuxのみ。取得不可なら None）
+    try:
+        _la = _os.getloadavg()
+        load = {"1": round(_la[0], 2), "5": round(_la[1], 2), "15": round(_la[2], 2)}
+    except Exception:
+        load = None
+
     db_files = []
     total_db = 0
 
@@ -678,6 +703,8 @@ async def admin_health(request: Request):
         "deploy_mode": _MODE,
         "uptime_seconds": uptime_sec,
         "disk": disk,
+        "memory": memory,
+        "load": load,
         "db": {"count": len(db_files), "total_bytes": total_db, "files": db_files},
         "store_count": store_count,
         "backups": backups,
