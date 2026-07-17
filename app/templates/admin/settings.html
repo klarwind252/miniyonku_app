@@ -229,6 +229,7 @@
     <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 複数店舗展開</a>
     {% endif %}
     <a href="#health" class="settings-menu-item" id="menu-health">🩺 稼働ヘルス</a>
+    <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 アクセス統計</a>
   </nav>
 
   <!-- 右コンテンツ -->
@@ -1274,6 +1275,22 @@
       </div>
     </div>
 
+    <!-- アクセス統計（参加者htmlの大会別 現在同時接続 / ピーク / 延べ。ボタン押下時にだけ取得） -->
+    <div class="settings-section" id="access-stats">
+      <div class="section-title">📊 アクセス統計</div>
+      <div class="card">
+        <div class="card-header">参加者向け観覧のアクセス</div>
+        <div class="card-body">
+          <p style="color:#636e72;font-size:13px;margin-bottom:12px">
+            参加者向けhtmlの大会ごとの「現在の同時接続・ピーク同時接続・延べ視聴者（端末数）」です。
+            ボタンを押したときだけ取得します。集計は起動以降のメモリ保持で、サーバー再起動でリセットされます。
+          </p>
+          <button type="button" class="btn" id="accessBtn" onclick="loadAccessStats()">🔄 アクセス統計を確認</button>
+          <div id="accessResult" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /右コンテンツ -->
 </div>
 
@@ -1410,7 +1427,7 @@ async function manualPublish() {
 }
 
 /* ---------- サイドメニュー スクロール連動 ---------- */
-const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health'];
+const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health', 'access-stats'];
 function updateMenu() {
   let current = sections[0];
   sections.forEach(id => {
@@ -1499,6 +1516,43 @@ async function loadHealth(){
     box.innerHTML = '<div style="color:#e74c3c;font-size:13px">取得に失敗しました。時間をおいて再度お試しください。</div>';
   }
   btn.disabled = false; btn.textContent = '🔄 サーバー状態を確認';
+}
+
+/* ---------- アクセス統計（ボタン押下時に1回だけ取得。ポーリングしない） ---------- */
+async function loadAccessStats(){
+  var btn = document.getElementById('accessBtn');
+  var box = document.getElementById('accessResult');
+  btn.disabled = true; btn.textContent = '取得中...'; box.innerHTML = '';
+  try {
+    var r = await fetch('/admin/access-stats', {cache:'no-store'});
+    var d = await r.json();
+    var rows = (d && d.rows) || [];
+    if(!rows.length){
+      box.innerHTML = '<div style="font-size:13px;color:#636e72">まだアクセスがありません（参加者が観覧画面を開くと集計されます）。</div>';
+    } else {
+      var esc = function(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:14px">'
+        + '<tr>'
+        + '<th style="text-align:left;padding:7px 8px;color:#636e72;border-bottom:2px solid #e9ecef">大会</th>'
+        + '<th style="text-align:right;padding:7px 8px;color:#636e72;border-bottom:2px solid #e9ecef">現在</th>'
+        + '<th style="text-align:right;padding:7px 8px;color:#636e72;border-bottom:2px solid #e9ecef">ピーク</th>'
+        + '<th style="text-align:right;padding:7px 8px;color:#636e72;border-bottom:2px solid #e9ecef">延べ端末</th>'
+        + '</tr>';
+      rows.forEach(function(row){
+        html += '<tr>'
+          + '<td style="padding:7px 8px;color:#2c3e50;border-bottom:1px solid #f0f0f0">' + esc(row.name) + '</td>'
+          + '<td style="padding:7px 8px;text-align:right;font-weight:bold;color:#27ae60;border-bottom:1px solid #f0f0f0">' + row.current + '</td>'
+          + '<td style="padding:7px 8px;text-align:right;font-weight:bold;color:#2c3e50;border-bottom:1px solid #f0f0f0">' + row.peak + '</td>'
+          + '<td style="padding:7px 8px;text-align:right;color:#636e72;border-bottom:1px solid #f0f0f0">' + row.uniq + '</td>'
+          + '</tr>';
+      });
+      html += '</table>';
+      box.innerHTML = html;
+    }
+  } catch(e){
+    box.innerHTML = '<div style="color:#e74c3c;font-size:13px">取得に失敗しました。時間をおいて再度お試しください。</div>';
+  }
+  btn.disabled = false; btn.textContent = '🔄 アクセス統計を確認';
 }
 </script>
 {% endblock %}

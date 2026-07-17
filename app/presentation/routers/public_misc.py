@@ -28,14 +28,27 @@ async def health():
 
 
 @router.get("/api/telop")
-async def public_telop(db: aiosqlite.Connection = Depends(get_db)):
+async def public_telop(request: Request, cid: str = "", tid: int = 0,
+                       db: aiosqlite.Connection = Depends(get_db)):
     """参加者html / view 用：現在のテロップをJSONで返す（公開・トークン不要）。
 
     店舗はミドルウェアが解決済み（既定店舗は /api/telop、スラッグ店舗は
     /{slug}/api/telop でこのルートに届く）。'api' は既定店舗プレフィックスなので
     スラッグ無しの /api/telop は店舗1として解決される。
+
+    参加者htmlはこの30秒ポーリングに cid（端末ID）と tid（大会ID）を相乗りさせる。
+    cid があるときだけアクセス統計の心拍として記録する（view からは cid 無し＝不計上）。
     """
     from fastapi.responses import JSONResponse
+
+    if cid:
+        try:
+            from app.services import access_stats
+            store = getattr(request.state, "store", None)
+            sid = getattr(store, "id", 0)
+            access_stats.record_hit(sid, tid, cid)
+        except Exception:
+            pass
 
     async def _val(key: str) -> str:
         async with db.execute("SELECT value FROM app_settings WHERE key=?", (key,)) as cur:

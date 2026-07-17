@@ -149,6 +149,10 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _slug_key = (slug or "default")
     _enter_url = (f"/{slug}/enter" if slug else "/enter")
     _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
+    # アクセス統計用：表示中の大会ID（/view/tournament/<id> リンクから抽出。トップ等は0）
+    import re as _re_tid
+    _mtid = _re_tid.search(r"/view/tournament/(\d+)", html)
+    _tid = _mtid.group(1) if _mtid else "0"
     expiry_script = """<script>
 (function(){
   var KEY = "m4_pub_issued___SLUGKEY__";
@@ -1026,6 +1030,16 @@ window.addEventListener('load', function(){
     telop_script = ("""<script>
 (function(){
   var URL = "__TELOPURL__";
+  var TID = "__TID__";
+  /* アクセス統計用の端末ID（ブラウザごとに1つ。ユニーク視聴者の集計に使う） */
+  var CID = (function(){
+    try {
+      var k = 'm4_cid';
+      var v = localStorage.getItem(k);
+      if(!v){ v = Date.now().toString(36) + Math.random().toString(36).slice(2, 10); localStorage.setItem(k, v); }
+      return v;
+    } catch(e){ return ''; }
+  })();
   function apply(d){
     var bar = document.getElementById('m4-telop');
     if(!bar) return;
@@ -1039,14 +1053,16 @@ window.addEventListener('load', function(){
     }
   }
   function poll(){
-    fetch(URL, {cache:'no-store'})
+    /* 既存のテロップ確認に cid/tid を相乗り（新規リクエストは増やさない＝アクセス統計の心拍） */
+    var u = URL + (URL.indexOf('?') >= 0 ? '&' : '?') + 'cid=' + encodeURIComponent(CID) + '&tid=' + TID;
+    fetch(u, {cache:'no-store'})
       .then(function(r){ return r.json(); })
       .then(apply).catch(function(){});
   }
   poll();
   setInterval(poll, 30000);
 })();
-</script>""").replace("__TELOPURL__", _telop_url)
+</script>""").replace("__TELOPURL__", _telop_url).replace("__TID__", _tid)
 
     # 待機画面の日時時計：参加者htmlは<script>が除去されるため専用に注入（端末のローカル時刻）。
     # 時計要素が無いページ（レース進行中など）では何もしない。

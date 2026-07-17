@@ -711,6 +711,39 @@ async def admin_health(request: Request):
     })
 
 
+# ---- アクセス統計（参加者htmlの大会別 現在同時接続 / ピーク / 延べ視聴者）----
+@router.get("/access-stats")
+async def admin_access_stats(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """設定画面『アクセス統計』のボタン押下時に1回だけ取得する（常時更新しない）。
+    集計はメモリ保持（起動以降・再起動でリセット）。大会名はDBから補完。"""
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from app.services import access_stats
+
+    store = getattr(request.state, "store", None)
+    sid = getattr(store, "id", 0)
+    snap = access_stats.snapshot(sid)
+
+    names = {}
+    try:
+        async with db.execute("SELECT id, name FROM tournaments") as cur:
+            async for row in cur:
+                names[row["id"]] = row["name"]
+    except Exception:
+        pass
+
+    rows = []
+    for tid, s in snap.items():
+        rows.append({
+            "tid": tid,
+            "name": (names.get(tid) or ("トップ／その他" if tid == 0 else ("大会#" + str(tid)))),
+            "current": s["current"],
+            "peak": s["peak"],
+            "uniq": s["uniq"],
+        })
+    rows.sort(key=lambda r: (-r["current"], -r["peak"], -r["uniq"]))
+    return _JSONResponse({"ok": True, "rows": rows})
+
+
 @router.get("/settings/post-templates/new", response_class=HTMLResponse)
 async def new_post_template(request: Request):
     """ポストテンプレート新規作成画面"""
