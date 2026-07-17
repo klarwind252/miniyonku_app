@@ -612,6 +612,78 @@ async def save_telop(request: Request, db: aiosqlite.Connection = Depends(get_db
     return _JSONResponse({"ok": True, "active": active == "1", "text": text, "updated_at": now})
 
 
+# ---- 稼働ヘルス（サーバー状態：設定画面からオンデマンド取得・admin専用）----
+@router.get("/health")
+async def admin_health(request: Request):
+    """サーバー状態（稼働時間・ディスク残量・DBサイズ・最終バックアップ）をJSONで返す。
+    設定画面『稼働ヘルス』のボタン押下時に1回だけ取得する（常時監視はしない）。
+    公開の /health（liveness）とは別で、こちらは admin 配下＝認証済みのみ。"""
+    import time as _time, os as _os, shutil as _shutil
+    from datetime import datetime as _dt
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from app import registry as _reg
+    from app.core.config import DEPLOY_MODE as _MODE
+
+    started = getattr(request.app.state, "started_at", None)
+    uptime_sec = int(_time.time() - started) if started else None
+
+    data_dir = _reg.DATA_DIR
+    try:
+        _du = _shutil.disk_usage(data_dir)
+        disk = {"total": _du.total, "used": _du.used, "free": _du.free,
+                "percent": round(_du.used / _du.total * 100, 1) if _du.total else None}
+    except Exception:
+        disk = None
+
+    db_files = []
+    total_db = 0
+
+    def _addf(path, label):
+        nonlocal total_db
+        try:
+            if path and _os.path.isfile(path):
+                sz = _os.path.getsize(path)
+                total_db += sz
+                db_files.append({"name": label, "bytes": sz})
+        except Exception:
+            pass
+
+    _addf(_reg.CONTROL_DB_PATH, "control.db")
+    store_count = 0
+    try:
+        for st in _reg.list_stores(include_disabled=True):
+            store_count += 1
+            _addf(st.db_path, (st.slug or "(店舗1)"))
+    except Exception:
+        _addf(_reg.DEFAULT_DB_PATH, "(店舗1)")
+
+    # #9 の自動バックアップ状況（最新日付・世代数）
+    backups = {"latest": None, "generations": 0}
+    try:
+        _broot = _os.path.join(data_dir, "_backups")
+        _dates = []
+        for _d in _os.listdir(_broot):
+            try:
+                _dt.strptime(_d, "%Y-%m-%d"); _dates.append(_d)
+            except ValueError:
+                pass
+        _dates.sort(reverse=True)
+        backups = {"latest": (_dates[0] if _dates else None), "generations": len(_dates)}
+    except Exception:
+        pass
+
+    return _JSONResponse({
+        "ok": True,
+        "server_time": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "deploy_mode": _MODE,
+        "uptime_seconds": uptime_sec,
+        "disk": disk,
+        "db": {"count": len(db_files), "total_bytes": total_db, "files": db_files},
+        "store_count": store_count,
+        "backups": backups,
+    })
+
+
 @router.get("/settings/post-templates/new", response_class=HTMLResponse)
 async def new_post_template(request: Request):
     """ポストテンプレート新規作成画面"""

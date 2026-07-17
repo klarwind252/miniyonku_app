@@ -228,6 +228,7 @@
     {% if IS_CLOUD and is_default_store %}
     <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 複数店舗展開</a>
     {% endif %}
+    <a href="#health" class="settings-menu-item" id="menu-health">🩺 稼働ヘルス</a>
   </nav>
 
   <!-- 右コンテンツ -->
@@ -1257,6 +1258,22 @@
     </div>
     {% endif %}
 
+    <!-- 稼働ヘルス（サーバー状態：ボタン押下時にだけ取得。常時監視はしない） -->
+    <div class="settings-section" id="health">
+      <div class="section-title">🩺 稼働ヘルス</div>
+      <div class="card">
+        <div class="card-header">サーバー状態</div>
+        <div class="card-body">
+          <p style="color:#636e72;font-size:13px;margin-bottom:12px">
+            稼働時間・ディスク残量・DBサイズ・最終バックアップを確認します。
+            ボタンを押したときだけ取得します（常時監視はしません）。
+          </p>
+          <button type="button" class="btn" id="healthBtn" onclick="loadHealth()">🔄 サーバー状態を確認</button>
+          <div id="healthResult" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /右コンテンツ -->
 </div>
 
@@ -1393,7 +1410,7 @@ async function manualPublish() {
 }
 
 /* ---------- サイドメニュー スクロール連動 ---------- */
-const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores'];
+const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health'];
 function updateMenu() {
   let current = sections[0];
   sections.forEach(id => {
@@ -1412,6 +1429,67 @@ function togglePricingForm() {
   const form = document.getElementById('pricingForm');
   form.style.opacity = cb.checked ? '1' : '0.4';
   form.style.pointerEvents = cb.checked ? 'auto' : 'none';
+}
+
+/* ---------- 稼働ヘルス（ボタン押下時に1回だけ取得。ポーリングしない） ---------- */
+function _fmtBytes(n){
+  if(n == null) return '—';
+  var u = ['B','KB','MB','GB','TB'], i = 0; n = Number(n);
+  while(n >= 1024 && i < u.length - 1){ n /= 1024; i++; }
+  return (n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)) + u[i];
+}
+function _fmtUptime(sec){
+  if(sec == null) return '—';
+  sec = Math.max(0, Math.floor(sec));
+  var d = Math.floor(sec/86400); sec -= d*86400;
+  var h = Math.floor(sec/3600);  sec -= h*3600;
+  var m = Math.floor(sec/60);
+  var out = '';
+  if(d) out += d + '日';
+  if(d || h) out += h + '時間';
+  return out + m + '分';
+}
+async function loadHealth(){
+  var btn = document.getElementById('healthBtn');
+  var box = document.getElementById('healthResult');
+  btn.disabled = true; btn.textContent = '取得中...'; box.innerHTML = '';
+  try {
+    var r = await fetch('/admin/health', {cache:'no-store'});
+    var d = await r.json();
+    var disk = d.disk || {};
+    var pct = (disk.percent != null) ? disk.percent : null;
+    var barColor = pct == null ? '#95a5a6' : (pct >= 90 ? '#e74c3c' : (pct >= 75 ? '#e67e22' : '#27ae60'));
+    var rows = [
+      ['稼働時間', _fmtUptime(d.uptime_seconds)],
+      ['ディスク残量', (disk.free != null)
+        ? (_fmtBytes(disk.free) + ' 空き / ' + _fmtBytes(disk.total) + '（使用 ' + (pct != null ? pct + '%' : '—') + '）')
+        : '—'],
+      ['DBサイズ合計', _fmtBytes(d.db && d.db.total_bytes) + '（' + (d.db ? d.db.count : 0) + 'ファイル）'],
+      ['店舗数', (d.store_count != null ? d.store_count : '—')],
+      ['最終バックアップ', (d.backups && d.backups.latest) ? (d.backups.latest + '（' + d.backups.generations + '世代）') : 'なし'],
+      ['サーバー時刻', d.server_time || '—'],
+      ['モード', d.deploy_mode || '—']
+    ];
+    var html = '';
+    if(pct != null){
+      html += '<div style="margin-bottom:12px">'
+        + '<div style="height:10px;background:#ecf0f1;border-radius:6px;overflow:hidden">'
+        + '<div style="height:100%;width:' + pct + '%;background:' + barColor + '"></div></div>'
+        + '<div style="font-size:12px;color:#636e72;margin-top:4px">ディスク使用 ' + pct + '%</div></div>';
+    }
+    html += '<table style="width:100%;border-collapse:collapse;font-size:14px">';
+    rows.forEach(function(row){
+      html += '<tr>'
+        + '<td style="padding:7px 8px;color:#636e72;white-space:nowrap;border-bottom:1px solid #f0f0f0">' + row[0] + '</td>'
+        + '<td style="padding:7px 8px;text-align:right;font-weight:bold;color:#2c3e50;border-bottom:1px solid #f0f0f0">' + row[1] + '</td>'
+        + '</tr>';
+    });
+    html += '</table>';
+    box.innerHTML = html;
+  } catch(e){
+    box.innerHTML = '<div style="color:#e74c3c;font-size:13px">取得に失敗しました。時間をおいて再度お試しください。</div>';
+  }
+  btn.disabled = false; btn.textContent = '🔄 サーバー状態を確認';
 }
 </script>
 {% endblock %}

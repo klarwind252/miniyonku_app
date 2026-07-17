@@ -76,6 +76,8 @@ app.include_router(public_misc_router)
 
 @app.on_event("startup")
 async def startup():
+    import time as _t
+    app.state.started_at = _t.time()
     if IS_CLOUD:
         # 複数店舗化：レジストリ（control.db）を用意し、店舗1（既定店舗）を移行登録。
         from app import registry
