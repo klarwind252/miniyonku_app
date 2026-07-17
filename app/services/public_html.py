@@ -128,6 +128,8 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 .entry-yomi{font-size:10px!important;font-weight:normal!important;color:#7f8c8d;white-space:nowrap;flex-shrink:0;margin-top:0!important}
 /* 順位バッジ（entry-card 内の先頭span）: 改行・縮小させない */
 .entry-card > span:first-child{flex-shrink:0!important;white-space:nowrap!important}
+/* お知らせ帯（テロップ）：参加者htmlはナビが fixed(48px) なので貼り付き位置を合わせる */
+#m4-telop{top:48px}
 </style>
 """
     patched = patched.replace('</head>', inject + '</head>', 1)
@@ -146,6 +148,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     # 有効期限ゲート（24時間）＋自動更新（更新検知時のみ反映）スクリプト
     _slug_key = (slug or "default")
     _enter_url = (f"/{slug}/enter" if slug else "/enter")
+    _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
     expiry_script = """<script>
 (function(){
   var KEY = "m4_pub_issued___SLUGKEY__";
@@ -966,7 +969,34 @@ window.addEventListener('load', function(){
 })();
 </script>"""
 
-    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + '</body>', 1)
+    # お試し（お知らせ帯）テロップ：/api/telop を30秒ごとに確認して帯を出し入れする。
+    # 参加者htmlは <script> が全除去されるため、ここで専用ポーラーを注入する。
+    telop_script = ("""<script>
+(function(){
+  var URL = "__TELOPURL__";
+  function apply(d){
+    var bar = document.getElementById('m4-telop');
+    if(!bar) return;
+    var t = (d && d.active && d.text) ? d.text : '';
+    if(t){
+      var span = document.getElementById('m4-telop-text');
+      if(span) span.textContent = t;
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+  function poll(){
+    fetch(URL, {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(apply).catch(function(){});
+  }
+  poll();
+  setInterval(poll, 30000);
+})();
+</script>""").replace("__TELOPURL__", _telop_url)
+
+    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + '</body>', 1)
 
     return patched
 

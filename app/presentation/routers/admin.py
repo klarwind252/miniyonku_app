@@ -576,6 +576,42 @@ async def save_day_type(request: Request, db: aiosqlite.Connection = Depends(get
     return _JSONResponse({"ok": True, "day_type": day_type})
 
 
+# ---- テロップ（お知らせ帯：admin から入力 → view / 参加者html に表示）----
+# 保存先は app_settings（店舗ごとのDB）。キーは telop_text / telop_active / telop_updated_at。
+# 操作は admin のみ。表示は view / 参加者html 側が /api/telop をポーリングして反映する。
+async def _telop_val(db, key: str) -> str:
+    async with db.execute("SELECT value FROM app_settings WHERE key=?", (key,)) as cur:
+        row = await cur.fetchone()
+    return (row["value"] if row and row["value"] is not None else "")
+
+
+@router.get("/telop")
+async def get_telop(db: aiosqlite.Connection = Depends(get_db)):
+    """現在のテロップ（本文・表示中フラグ・更新時刻）を返す。ポップオーバーの初期表示用。"""
+    from fastapi.responses import JSONResponse as _JSONResponse
+    text = await _telop_val(db, "telop_text")
+    active = (await _telop_val(db, "telop_active")) == "1"
+    updated_at = await _telop_val(db, "telop_updated_at")
+    return _JSONResponse({"active": active, "text": text, "updated_at": updated_at})
+
+
+@router.post("/telop")
+async def save_telop(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """テロップを保存する。action='show' で表示（本文必須）、action='clear' で消去。"""
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from datetime import datetime as _dt
+    body = await request.json()
+    action = (body.get("action") or "show").strip()
+    text = (body.get("text") or "").strip()[:200]   # 帯なので程々の長さに切り詰め
+    active = "0" if (action == "clear" or not text) else "1"
+    now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('telop_text', ?)", (text,))
+    await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('telop_active', ?)", (active,))
+    await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('telop_updated_at', ?)", (now,))
+    await db.commit()
+    return _JSONResponse({"ok": True, "active": active == "1", "text": text, "updated_at": now})
+
+
 @router.get("/settings/post-templates/new", response_class=HTMLResponse)
 async def new_post_template(request: Request):
     """ポストテンプレート新規作成画面"""

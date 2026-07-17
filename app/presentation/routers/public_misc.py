@@ -27,6 +27,30 @@ async def health():
     return {"status": "ok"}
 
 
+@router.get("/api/telop")
+async def public_telop(db: aiosqlite.Connection = Depends(get_db)):
+    """参加者html / view 用：現在のテロップをJSONで返す（公開・トークン不要）。
+
+    店舗はミドルウェアが解決済み（既定店舗は /api/telop、スラッグ店舗は
+    /{slug}/api/telop でこのルートに届く）。'api' は既定店舗プレフィックスなので
+    スラッグ無しの /api/telop は店舗1として解決される。
+    """
+    from fastapi.responses import JSONResponse
+
+    async def _val(key: str) -> str:
+        async with db.execute("SELECT value FROM app_settings WHERE key=?", (key,)) as cur:
+            row = await cur.fetchone()
+        return (row["value"] if row and row["value"] is not None else "")
+
+    text = await _val("telop_text")
+    active = (await _val("telop_active")) == "1"
+    updated_at = await _val("telop_updated_at")
+    return JSONResponse(
+        {"active": active, "text": text, "updated_at": updated_at},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.get("/enter")
 async def participant_enter(request: Request):
     """参加者向け入口（QRが指すURL）。

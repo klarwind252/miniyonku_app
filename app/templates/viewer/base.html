@@ -88,6 +88,20 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
 .v-sync-banner .keep{background:#27ae60;color:#fff}
 .v-sync-banner .stop{background:#566;color:#fff}
 
+/* お知らせ帯（テロップ）：view / 参加者html 共通。JS が active 時に display:flex にする。
+   view はナビ(sticky,52px)の直下、参加者html はナビ(fixed,48px)の直下に貼り付く。 */
+#m4-telop{
+  position:sticky;top:52px;z-index:95;
+  display:none;align-items:center;gap:10px;
+  background:#e67e22;color:#fff;
+  padding:8px 18px;font-size:16px;font-weight:bold;
+  box-shadow:0 3px 10px rgba(0,0,0,.35);
+  animation:m4telopglow 2.4s ease-in-out infinite;
+}
+#m4-telop #m4-telop-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes m4telopglow{0%,100%{background:#e67e22}50%{background:#d35400}}
+@media(max-width:600px){#m4-telop{top:44px;font-size:14px;padding:6px 12px}}
+
 {% block extra_style %}{% endblock %}
 </style>
 {% if slideshow_urls %}
@@ -161,6 +175,12 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
     <span class="v-sync-dot"></span>追従中
   </button>
 </nav>
+
+<!-- お知らせ帯（テロップ）：admin から入力された文言を表示。JSが /api/telop を見て出し入れする -->
+<div id="m4-telop">
+  <span aria-hidden="true">📢</span>
+  <span id="m4-telop-text"></span>
+</div>
 
 <!-- 追従継続確認バナー（30分経過時に表示） -->
 <div class="v-sync-banner" id="syncBanner">
@@ -368,6 +388,41 @@ setInterval(pollHostState, 2000);
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState === 'visible' && wakeLock === null && acquiredOnce){ requestWakeLock(); }
   });
+})();
+</script>
+
+<script>
+/* お知らせ帯（テロップ）：/api/telop を30秒ごとに確認して帯を出し入れする。
+   追従ON/OFFに関係なく動かすため setTimeout チェーンで回す（stopAllPolling の対象外）。
+   ※参加者html ではこの <script> は除去され、public_html.py が同等のポーラーを注入する。 */
+(function(){
+  function slugPrefix(){
+    var segs = location.pathname.split('/').filter(Boolean);
+    if(!segs.length) return '';
+    var f = segs[0];
+    if(['admin','view','api','enter','static','logo','health','favicon'].indexOf(f) >= 0) return '';
+    return '/' + f;
+  }
+  function apply(d){
+    var bar = document.getElementById('m4-telop');
+    if(!bar) return;
+    var t = (d && d.active && d.text) ? d.text : '';
+    if(t){
+      var span = document.getElementById('m4-telop-text');
+      if(span) span.textContent = t;
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+  function poll(){
+    fetch(slugPrefix() + '/api/telop', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(apply)
+      .catch(function(){});
+  }
+  poll();
+  (function loop(){ setTimeout(function(){ poll(); loop(); }, 30000); })();
 })();
 </script>
 
