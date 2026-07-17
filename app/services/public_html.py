@@ -739,6 +739,57 @@ window.addEventListener('load', function(){
     return null;   /* このページでは出番なし・該当なし */
   }
 
+  /* ---------- 「まもなく出走」通知（2組前で1回だけ・点滅＋バイブ／参加者html） ---------- */
+  /* 既存の出走順計算（computeStatusForName）の結果から「自分の前に残る組数」を読み取り、
+     2組前に入った瞬間だけ通知する。追加のポーリングは無く既存30秒サイクルに相乗り。
+     点滅は3回で自動停止（無限アニメにしない）、バイブは1回のみ（iOS Safariは非対応＝点滅のみ）。 */
+  function _beforeFromResult(res){
+    if(!res) return null;
+    if(res.urgency === 3 || res.urgency === 4) return null;   /* 優勝・入賞は対象外 */
+    if(res.urgency === 0) return 0;                            /* あなたの番 */
+    var digits = String(res.text).replace(/[^0-9]/g, '');     /* 「次のレースまでNレース」→ N */
+    return digits ? parseInt(digits, 10) : null;
+  }
+  function _maybeSoonNotify(name, res){
+    var before = _beforeFromResult(res);
+    var key = 'm4_soon2_' + SLUG_KEY + '_' + name;
+    var prevRaw = null;
+    try { prevRaw = sessionStorage.getItem(key); } catch(e){}
+    var prev = (prevRaw == null ? null : parseInt(prevRaw, 10));
+    if(before == null){
+      /* このページに出番が無い／終了 → 状態リセット（次に2組前へ入ったら再通知できる） */
+      try { sessionStorage.removeItem(key); } catch(e){}
+      return;
+    }
+    if(before === 2 && prev !== 2){ _fireSoonAlert(); }        /* 2組前へ入った瞬間だけ */
+    try { sessionStorage.setItem(key, String(before)); } catch(e){}
+  }
+  function _fireSoonAlert(){
+    if(document.getElementById('m4-soon-flash')) return;       /* 多重発火ガード（同一更新で1回） */
+    try { if(navigator.vibrate) navigator.vibrate([200,100,200]); } catch(e){}   /* Androidのみ・1回 */
+    var ov = document.createElement('div');
+    ov.id = 'm4-soon-flash';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99998;pointer-events:none;'
+      + 'background:rgba(230,126,34,.85);opacity:0;transition:opacity .16s ease-in-out;'
+      + 'display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML = '<div style="color:#fff;font-size:9vw;font-weight:bold;'
+      + 'text-shadow:0 2px 12px rgba(0,0,0,.55);letter-spacing:2px">まもなく出走</div>';
+    document.body.appendChild(ov);
+    var shows = 0;
+    (function step(){
+      ov.style.opacity = '1';
+      setTimeout(function(){
+        ov.style.opacity = '0';
+        shows++;
+        if(shows >= 3){   /* 3回光ったら自動で消す（有限＝電池を食わない） */
+          setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 220);
+          return;
+        }
+        setTimeout(step, 190);
+      }, 230);
+    })();
+  }
+
   /* ---------- 出走順バナー（選択レーサーごとに1行） ---------- */
   function renderPositionBanner(selectedList){
     var old = document.getElementById('m4-position-banner');
@@ -774,6 +825,7 @@ window.addEventListener('load', function(){
     selectedList.forEach(function(r){
       var result = computeStatusForName(r.name, isHeatQual);
       if(result){ lines.push({ name: r.name, text: result.text, urgency: result.urgency }); }
+      _maybeSoonNotify(r.name, result);   /* 「まもなく出走」＝2組前で1回だけ点滅＋バイブ */
     });
 
     if(lines.length === 0){
