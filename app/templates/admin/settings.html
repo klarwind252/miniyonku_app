@@ -230,6 +230,7 @@
     {% endif %}
     <a href="#health" class="settings-menu-item" id="menu-health">🩺 稼働ヘルス</a>
     <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 アクセス統計</a>
+    <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 監査ログ</a>
   </nav>
 
   <!-- 右コンテンツ -->
@@ -1291,6 +1292,25 @@
       </div>
     </div>
 
+    <!-- 監査ログ（結果の入力・修正・取消の履歴。14日分・店舗ごと） -->
+    <div class="settings-section" id="audit-log">
+      <div class="section-title">📜 監査ログ</div>
+      <div class="card">
+        <div class="card-header">結果操作の履歴</div>
+        <div class="card-body">
+          <p style="color:#636e72;font-size:13px;margin-bottom:12px">
+            予選・決勝での結果の入力／修正／取消などの操作を、日時・IP・操作内容とともに記録しています（保管は14日分）。
+            クラウド版は固定トークン認証のため個人名は残らず、「誰が」は店舗とIPで記録されます。
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <a class="btn" href="/admin/audit-log/download">⬇ CSVをダウンロード（14日分）</a>
+            <button type="button" class="btn" id="auditBtn" onclick="loadAudit()">🔄 最近のログを表示</button>
+          </div>
+          <div id="auditResult" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /右コンテンツ -->
 </div>
 
@@ -1427,7 +1447,7 @@ async function manualPublish() {
 }
 
 /* ---------- サイドメニュー スクロール連動 ---------- */
-const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health', 'access-stats'];
+const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health', 'access-stats', 'audit-log'];
 function updateMenu() {
   let current = sections[0];
   sections.forEach(id => {
@@ -1553,6 +1573,44 @@ async function loadAccessStats(){
     box.innerHTML = '<div style="color:#e74c3c;font-size:13px">取得に失敗しました。時間をおいて再度お試しください。</div>';
   }
   btn.disabled = false; btn.textContent = '🔄 アクセス統計を確認';
+}
+
+/* ---------- 監査ログ（最近のログをボタンで表示。全14日分はCSVで取得） ---------- */
+async function loadAudit(){
+  var btn = document.getElementById('auditBtn');
+  var box = document.getElementById('auditResult');
+  btn.disabled = true; btn.textContent = '取得中...'; box.innerHTML = '';
+  try {
+    var r = await fetch('/admin/audit-log/recent?limit=100', {cache:'no-store'});
+    var d = await r.json();
+    var es = (d && d.entries) || [];
+    if(!es.length){
+      box.innerHTML = '<div style="font-size:13px;color:#636e72">まだ記録がありません（予選・決勝で結果を操作すると記録されます）。</div>';
+    } else {
+      var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+      var html = '<div style="font-size:12px;color:#636e72;margin-bottom:6px">最新 ' + es.length + ' 件（14日分すべてはCSVで取得できます）</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+        + '<tr>'
+        + '<th style="text-align:left;padding:6px 8px;color:#636e72;border-bottom:2px solid #e9ecef">日時</th>'
+        + '<th style="text-align:left;padding:6px 8px;color:#636e72;border-bottom:2px solid #e9ecef">操作</th>'
+        + '<th style="text-align:left;padding:6px 8px;color:#636e72;border-bottom:2px solid #e9ecef">IP</th>'
+        + '<th style="text-align:left;padding:6px 8px;color:#636e72;border-bottom:2px solid #e9ecef">パス</th>'
+        + '</tr>';
+      es.forEach(function(e){
+        html += '<tr>'
+          + '<td style="padding:6px 8px;white-space:nowrap;color:#2c3e50;border-bottom:1px solid #f0f0f0">' + esc(e.ts) + '</td>'
+          + '<td style="padding:6px 8px;white-space:nowrap;font-weight:bold;color:#2c3e50;border-bottom:1px solid #f0f0f0">' + esc(e.action) + '</td>'
+          + '<td style="padding:6px 8px;white-space:nowrap;color:#636e72;border-bottom:1px solid #f0f0f0">' + esc(e.ip) + '</td>'
+          + '<td style="padding:6px 8px;color:#636e72;border-bottom:1px solid #f0f0f0;word-break:break-all">' + esc(e.path) + '</td>'
+          + '</tr>';
+      });
+      html += '</table>';
+      box.innerHTML = html;
+    }
+  } catch(e){
+    box.innerHTML = '<div style="color:#e74c3c;font-size:13px">取得に失敗しました。</div>';
+  }
+  btn.disabled = false; btn.textContent = '🔄 最近のログを表示';
 }
 </script>
 {% endblock %}

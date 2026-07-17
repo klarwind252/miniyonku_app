@@ -41,6 +41,25 @@ add_store_resolver(app)
 # 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
 add_security_headers(app)
 
+# 監査ログ：結果系（/qualifying/・/bracket/ へのPOST）を1か所で拾って記録する。
+# スキャンは件数が多く結果操作ではないため除外。記録失敗はリクエストに影響させない。
+@app.middleware("http")
+async def _audit_mw(request, call_next):
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        if request.method == "POST" and ("/qualifying/" in path or "/bracket/" in path) and "/scan" not in path:
+            from app.services import audit_log
+            store = getattr(request.state, "store", None)
+            skey = (getattr(store, "slug", "") or "default")
+            xff = request.headers.get("x-forwarded-for", "")
+            ip = (xff.split(",")[0].strip() if xff else (request.client.host if request.client else ""))
+            audit_log.record(skey, ip, request.method, path, response.status_code)
+    except Exception:
+        pass
+    return response
+
+
 BASE_DIR = os.path.dirname(__file__)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 

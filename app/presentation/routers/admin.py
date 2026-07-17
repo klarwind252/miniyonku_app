@@ -744,6 +744,43 @@ async def admin_access_stats(request: Request, db: aiosqlite.Connection = Depend
     return _JSONResponse({"ok": True, "rows": rows})
 
 
+# ---- 監査ログ（結果の入力・修正・取消の履歴。14日分・店舗ごと）----
+@router.get("/audit-log/recent")
+async def admin_audit_recent(request: Request, limit: int = 100):
+    """設定画面のプレビュー用。要求元店舗の直近ログを新しい順で返す。"""
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from app.services import audit_log
+    store = getattr(request.state, "store", None)
+    skey = (getattr(store, "slug", "") or "default")
+    n = max(1, min(int(limit or 100), 500))
+    entries = audit_log.read_entries(skey)[:n]
+    return _JSONResponse({"ok": True, "count": len(entries), "entries": entries})
+
+
+@router.get("/audit-log/download")
+async def admin_audit_download(request: Request):
+    """要求元店舗の直近14日分の監査ログをCSVで返す（Excel向けにBOM付き）。"""
+    from fastapi.responses import Response as _Response
+    from app.services import audit_log
+    import csv
+    import io
+    from datetime import datetime as _dt
+    store = getattr(request.state, "store", None)
+    skey = (getattr(store, "slug", "") or "default")
+    entries = audit_log.read_entries(skey)
+    buf = io.StringIO()
+    buf.write("\ufeff")  # Excelで文字化けしないようBOM
+    w = csv.writer(buf)
+    w.writerow(["日時", "店舗", "IP", "操作", "パス", "メソッド", "ステータス"])
+    for e in entries:
+        w.writerow([e.get("ts", ""), e.get("store", ""), e.get("ip", ""),
+                    e.get("action", ""), e.get("path", ""), e.get("method", ""), e.get("status", "")])
+    data = buf.getvalue().encode("utf-8")
+    fname = "audit_%s_%s.csv" % (skey, _dt.now().strftime("%Y%m%d"))
+    return _Response(content=data, media_type="text/csv; charset=utf-8",
+                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 @router.get("/settings/post-templates/new", response_class=HTMLResponse)
 async def new_post_template(request: Request):
     """ポストテンプレート新規作成画面"""
