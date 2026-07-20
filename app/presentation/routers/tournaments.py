@@ -1593,8 +1593,9 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
         t = await cur.fetchone()
     if not t:
         return RedirectResponse(url="/admin/tournaments/")
-    if await _is_result_finalized(tid, db):
-        return RedirectResponse(url=f"/admin/tournaments/{tid}?error=finalized", status_code=303)
+    # 結果確定済みでも画面は開ける。ただし編集できるのは
+    # 開催日・レース名・レギュレーション・時間帯 の4項目のみ（is_finalized で制御）。
+    is_finalized = await _is_result_finalized(tid, db)
     async with db.execute("SELECT COUNT(*) AS cnt FROM entries WHERE tournament_id=?", (tid,)) as cur:
         entry_count = (await cur.fetchone())["cnt"]
     # 並び順（勝ち抜け）の既存段階設定（編集画面の初期描画用にJSONで渡す）
@@ -1605,6 +1606,7 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
         "request": request,
         "t": t,
         "entry_count": entry_count,
+        "is_finalized": is_finalized,
         "time_slot_labels": TIME_SLOT_LABELS,
         "regulation_labels": await get_regulation_labels(db),
         "qualifying_labels": QUALIFYING_LABELS,
@@ -1651,7 +1653,26 @@ async def tournament_edit_save(
     if not t:
         return RedirectResponse(url="/admin/tournaments/", status_code=303)
     if await _is_result_finalized(tid, db):
-        return RedirectResponse(url=f"/admin/tournaments/{tid}?error=finalized", status_code=303)
+        # 結果確定済みレースは「開催日・レース名・レギュレーション・時間帯」だけを更新する。
+        # 予選形式などの設定は結果と整合しなくなるため、送信されても一切反映しない。
+        # （画面側でも操作不可にしているが、サーバー側でも必ず弾く）
+        name = (name or "").strip()
+        if not name:
+            return RedirectResponse(
+                url=f"/admin/tournaments/{tid}?error=basic_name", status_code=303)
+        new_date = _normalize_date(date) or await _current_date(tid, db)
+        if time_slot not in TIME_SLOT_LABELS:
+            time_slot = "day"
+        time_slot_free = (time_slot_free or "").strip() if time_slot == "free" else ""
+        await db.execute(
+            """UPDATE tournaments
+               SET date=?, name=?, regulation=?, time_slot=?, time_slot_free=?
+               WHERE id=?""",
+            (new_date, name, regulation, time_slot, time_slot_free, tid),
+        )
+        await db.commit()
+        return RedirectResponse(
+            url=f"/admin/tournaments/{tid}?saved=basic", status_code=303)
 
     # マスタ使用フラグの切替は、エントリーが無いときのみ許可する。
     # 既にエントリーがある場合は整合性のため現状維持。

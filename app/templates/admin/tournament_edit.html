@@ -28,6 +28,16 @@
   <h1>レース編集</h1>
 </div>
 
+{% if is_finalized %}
+<div style="max-width:760px;background:#fff5e6;border:2px solid #e67e22;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#a05a00;font-weight:bold;line-height:1.6">
+  🔒 このレースは結果が確定済みです<br>
+  <span style="font-weight:normal;font-size:13px">
+    訂正できるのは <strong>開催日 / レース名 / レギュレーション / 時間帯</strong> の4項目のみです。
+    予選形式・各種設定・オプションは、確定した結果との整合を保つため変更できません。
+  </span>
+</div>
+{% endif %}
+
 <div class="card" style="max-width:760px">
   <div class="card-body">
     <form method="post" enctype="multipart/form-data" onsubmit="return checkBeforeSubmit()" action="/admin/tournaments/{{ t.id }}/edit" id="form">
@@ -872,5 +882,46 @@ function owInitFromExisting(){
 onQualChange();
 initAdvancePicks();
 owInitFromExisting();
+
+{% if is_finalized %}
+// ============================================================
+// 結果確定済みレースのロック
+//   編集を許可するのは 開催日 / レース名 / レギュレーション / 時間帯 の4項目のみ。
+//   それ以外の入力欄は操作不可（disabled）にする。disabled な要素は送信もされないが、
+//   サーバー側（POST /{tid}/edit）でも4項目以外は無視するため、二重で守られる。
+// ============================================================
+(function lockFinalizedRace() {
+  var ALLOW_NAMES = ['date', 'name', 'regulation', 'time_slot', 'time_slot_free',
+                     '_regulation_radio'];
+  var ALLOW_IDS   = ['regulation_free'];
+  var form = document.getElementById('form');
+  if (!form) return;
+
+  form.querySelectorAll('input, select, textarea').forEach(function(el) {
+    if (ALLOW_NAMES.indexOf(el.name) >= 0) return;
+    if (ALLOW_IDS.indexOf(el.id) >= 0) return;
+    el.disabled = true;
+    // 編集不可であることを見た目でも示す
+    var box = el.closest('.form-group') || el.closest('.qual-section');
+    if (box) { box.style.opacity = '.55'; box.style.pointerEvents = 'none'; }
+  });
+
+  // 区切り線から下（予選形式以降）のカードも淡色にする
+  form.querySelectorAll('.qual-section').forEach(function(sec) {
+    sec.style.opacity = '.55';
+    sec.style.pointerEvents = 'none';
+  });
+
+  // 決勝進出人数のバリデーションは予選設定を対象にしたものなので、
+  // 確定済み（予選設定を触れない）ときは保存をブロックしないようにする。
+  window.checkBeforeSubmit = function() { return true; };
+  form.querySelectorAll('button[type="submit"]').forEach(function(b) {
+    b.disabled = false;
+    b.textContent = '4項目を保存';
+  });
+  var errBox = document.getElementById('finalist-error');
+  if (errBox) errBox.style.display = 'none';
+})();
+{% endif %}
 </script>
 {% endblock %}
