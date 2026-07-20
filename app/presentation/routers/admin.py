@@ -1480,9 +1480,9 @@ async def upload_cert_bg(tid: int, request: Request, db: aiosqlite.Connection = 
         # await で非同期読み込み → 同期書き込み
         data = await upload.read()
         # サイズ上限（10MB）。巨大ファイルによるディスク／メモリ枯渇を防ぐ
-        MAX_BG_BYTES = 10 * 1024 * 1024
+        MAX_BG_BYTES = 20 * 1024 * 1024  # 20MB
         if len(data) > MAX_BG_BYTES:
-            return JSONResponse({"error": "ファイルが大きすぎます（上限10MB）"}, status_code=400)
+            return JSONResponse({"error": "ファイルが大きすぎます（上限20MB）"}, status_code=400)
         with open(dest, "wb") as fp:
             fp.write(data)
 
@@ -1624,9 +1624,9 @@ async def upload_card_bg(tid: int, request: Request, db: aiosqlite.Connection = 
         dest     = os.path.join(base_dir, fname)
 
         data = await upload.read()
-        MAX_BG_BYTES = 10 * 1024 * 1024
+        MAX_BG_BYTES = 20 * 1024 * 1024  # 20MB
         if len(data) > MAX_BG_BYTES:
-            return JSONResponse({"error": "ファイルが大きすぎます（上限10MB）"}, status_code=400)
+            return JSONResponse({"error": "ファイルが大きすぎます（上限20MB）"}, status_code=400)
         with open(dest, "wb") as fp:
             fp.write(data)
 
