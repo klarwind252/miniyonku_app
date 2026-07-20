@@ -149,3 +149,55 @@ async def serve_race_asset(tid: int, kind: str, seq: int,
     return Response(content=raw, media_type=ctype,
                    headers={"Cache-Control": "no-cache",
                             "X-Content-Type-Options": "nosniff"})
+
+
+# ---- 過去成績（参加者向け・ライブ配信。/api 配下なので nginx 無改修で届く）----
+from app.presentation.templates import templates as _templates
+from app.application.racer_service import RacerService as _RacerService
+
+_history_cache = {}      # store_id -> (monotonic_ts, data)
+_HISTORY_TTL = 60        # 集計は結果確定時しか変わらないため60秒キャッシュ
+
+
+@router.get("/api/history", response_class=HTMLResponse)
+async def public_history(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページを返す（公開）。"""
+    import time as _time
+    store = getattr(request.state, "store", None)
+    slug = (getattr(store, "slug", "") or "")
+    sid = getattr(store, "id", 0)
+
+    now = _time.monotonic()
+    cached = _history_cache.get(sid)
+    if cached and (now - cached[0]) < _HISTORY_TTL:
+        data = cached[1]
+    else:
+        data = await _RacerService(db).history_overview()
+        _history_cache[sid] = (now, data)
+
+    return _templates.TemplateResponse("viewer/history.html", {
+        "request": request,
+        "prefix": (f"/{slug}" if slug else ""),
+        "back_href": (f"/{slug}/" if slug else "/"),
+        "race_total": data.get("race_total", 0),
+        "racers": data.get("racers", []),
+    })
+
+
+@router.get("/api/history/racer/{racer_id}")
+async def public_history_racer(racer_id: int, request: Request,
+                               db: aiosqlite.Connection = Depends(get_db)):
+    """1レーサーの大会別成績（過去成績ページの詳細）をJSONで返す（公開）。"""
+    from fastapi.responses import JSONResponse
+    r = await _RacerService(db).achievements(racer_id, "1900-01-01", "")
+    if not r:
+        return JSONResponse({"ok": False}, status_code=404)
+    racer = r.get("racer")
+    return JSONResponse({
+        "ok": True,
+        "name": (racer["name"] if racer else ""),
+        "race_count": r.get("race_count", 0),
+        "win_rate": r.get("win_rate", 0),
+        "podium_rate": r.get("podium_rate", 0),
+        "rows": r.get("rows", []),
+    })

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>過去成績</title>
+<style>
+:root{ color-scheme: dark; }
+*{ box-sizing:border-box; }
+body{
+  margin:0; background:#0d1b2a; color:#e8eef4;
+  font-family:'Hiragino Kaku Gothic Pro','Meiryo',system-ui,sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{ max-width:820px; margin:0 auto; padding:14px 14px 60px; }
+.top{ display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+h1{ font-size:22px; margin:0; letter-spacing:1px; }
+.back{
+  color:#cfe0f0; text-decoration:none; font-size:14px;
+  border:1px solid #35506e; border-radius:18px; padding:6px 14px; background:rgba(255,255,255,.04);
+}
+.back:active{ transform:translateY(1px); }
+.note{ color:#9fb3c8; font-size:13px; margin:0 0 12px; }
+.controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
+#q{
+  flex:1; min-width:160px; padding:10px 12px; font-size:16px;
+  background:#13273b; border:1px solid #35506e; border-radius:10px; color:#e8eef4;
+}
+.sorts{ display:flex; gap:6px; flex-wrap:wrap; }
+.sortbtn{
+  background:#13273b; color:#cfe0f0; border:1px solid #35506e; border-radius:16px;
+  padding:7px 12px; font-size:13px; cursor:pointer;
+}
+.sortbtn.active{ background:#1f6feb; border-color:#1f6feb; color:#fff; }
+table{ width:100%; border-collapse:collapse; }
+th,td{ padding:9px 8px; border-bottom:1px solid #22384f; text-align:right; white-space:nowrap; }
+th{ color:#9fb3c8; font-size:12px; font-weight:normal; position:sticky; top:0; background:#0d1b2a; }
+th.l,td.l{ text-align:left; }
+tr.r{ cursor:pointer; }
+tr.r:active{ background:#13273b; }
+.rank{ color:#7f97ad; width:2.4em; }
+.nm{ font-size:16px; color:#e8eef4; }
+.jr{ font-size:11px; color:#0d1b2a; background:#7fc4ff; border-radius:4px; padding:1px 5px; margin-left:6px; }
+.win{ color:#ffd45e; font-weight:bold; }
+.pod{ color:#cdd8e3; font-weight:bold; }
+.small{ color:#7f97ad; }
+.detail td{ background:#0a1622; }
+.dwrap{ padding:4px 2px 10px; }
+.dsum{ color:#9fb3c8; font-size:13px; margin-bottom:8px; }
+.dtable{ width:100%; border-collapse:collapse; }
+.dtable td{ border-bottom:1px solid #1a2c40; font-size:13px; }
+.res1{ color:#ffd45e; font-weight:bold; }
+.res23{ color:#cdd8e3; font-weight:bold; }
+.resx{ color:#6b8299; }
+.empty{ color:#9fb3c8; text-align:center; padding:26px 0; }
+.loading{ color:#7f97ad; padding:8px 2px; font-size:13px; }
+@media(max-width:600px){
+  h1{ font-size:19px; }
+  .nm{ font-size:15px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>過去成績</h1>
+    <a class="back" href="{{ back_href }}">← 観覧に戻る</a>
+  </div>
+  <p class="note">確定した大会（{{ race_total }}大会）をもとに集計しています。名前をタップすると大会ごとの結果が開きます。</p>
+
+  <div class="controls">
+    <input id="q" type="search" placeholder="レーサー名で検索" oninput="render()">
+    <div class="sorts">
+      <button class="sortbtn active" data-s="wins" onclick="setSort('wins')">優勝順</button>
+      <button class="sortbtn" data-s="podiums" onclick="setSort('podiums')">入賞順</button>
+      <button class="sortbtn" data-s="races" onclick="setSort('races')">参加順</button>
+      <button class="sortbtn" data-s="yomi" onclick="setSort('yomi')">五十音</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+var PREFIX = "{{ prefix }}";
+var RACERS = {{ racers | tojson }};
+var sortKey = 'wins';
+var openId = null;
+var detailCache = {};
+
+function escHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function setSort(k){
+  sortKey = k;
+  var btns = document.querySelectorAll('.sortbtn');
+  for(var i=0;i<btns.length;i++){ btns[i].classList.toggle('active', btns[i].getAttribute('data-s') === k); }
+  render();
+}
+
+function sortedFiltered(){
+  var q = (document.getElementById('q').value || '').trim().toLowerCase();
+  var arr = RACERS.filter(function(r){
+    if(!q) return true;
+    return (r.name || '').toLowerCase().indexOf(q) >= 0 || (r.yomi || '').toLowerCase().indexOf(q) >= 0;
+  });
+  arr.sort(function(a,b){
+    if(sortKey === 'yomi'){ return (a.yomi||'').localeCompare(b.yomi||'', 'ja') || (a.name||'').localeCompare(b.name||'','ja'); }
+    if(a[sortKey] !== b[sortKey]) return b[sortKey] - a[sortKey];
+    if(b.wins !== a.wins) return b.wins - a.wins;
+    if(b.podiums !== a.podiums) return b.podiums - a.podiums;
+    return (a.yomi||'').localeCompare(b.yomi||'','ja');
+  });
+  return arr;
+}
+
+function render(){
+  var arr = sortedFiltered();
+  var list = document.getElementById('list');
+  if(!arr.length){ list.innerHTML = '<div class="empty">該当するレーサーがいません。</div>'; return; }
+  var h = '<table><thead><tr>'
+    + '<th class="l">レーサー</th><th>参加</th><th>優勝</th><th>入賞</th>'
+    + '</tr></thead><tbody>';
+  arr.forEach(function(r, i){
+    var jr = r.jr ? '<span class="jr">Jr.</span>' : '';
+    h += '<tr class="r" onclick="toggle(' + r.id + ')">'
+      + '<td class="l"><span class="rank">' + (i + 1) + '</span><span class="nm">' + escHtml(r.name) + '</span>' + jr + '</td>'
+      + '<td class="small">' + r.races + '</td>'
+      + '<td class="win">' + (r.wins || '0') + '</td>'
+      + '<td class="pod">' + (r.podiums || '0') + '</td>'
+      + '</tr>';
+    if(openId === r.id){
+      h += '<tr class="detail"><td colspan="4"><div class="dwrap" id="d' + r.id + '"><div class="loading">読み込み中...</div></div></td></tr>';
+    }
+  });
+  h += '</tbody></table>';
+  list.innerHTML = h;
+  if(openId != null) loadDetail(openId);
+}
+
+function toggle(id){
+  openId = (openId === id) ? null : id;
+  render();
+}
+
+async function loadDetail(id){
+  var box = document.getElementById('d' + id);
+  if(!box) return;
+  if(detailCache[id]){ box.innerHTML = detailCache[id]; return; }
+  try{
+    var r = await fetch(PREFIX + '/api/history/racer/' + id, {cache:'no-store'});
+    var d = await r.json();
+    var html = '<div class="dsum">参加 ' + d.race_count + ' ・ 優勝率 ' + d.win_rate + '% ・ 入賞率 ' + d.podium_rate + '%</div>';
+    if(d.rows && d.rows.length){
+      html += '<table class="dtable">';
+      d.rows.forEach(function(row){
+        var cls = row.result === '1位' ? 'res1' : (row.result === '2位' || row.result === '3位' ? 'res23' : 'resx');
+        html += '<tr>'
+          + '<td class="l small" style="white-space:nowrap">' + escHtml(row.date) + '</td>'
+          + '<td class="l" style="width:99%">' + escHtml(row.name) + '</td>'
+          + '<td class="' + cls + '">' + escHtml(row.result) + '</td>'
+          + '</tr>';
+      });
+      html += '</table>';
+    } else {
+      html += '<div class="small">確定した大会の記録がありません。</div>';
+    }
+    detailCache[id] = html;
+    box.innerHTML = html;
+  }catch(e){
+    box.innerHTML = '<div class="small">読み込みに失敗しました。</div>';
+  }
+}
+
+render();
+</script>
+</body>
+</html>

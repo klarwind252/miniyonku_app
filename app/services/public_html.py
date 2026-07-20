@@ -149,6 +149,8 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _slug_key = (slug or "default")
     _enter_url = (f"/{slug}/enter" if slug else "/enter")
     _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
+    _history_url = (f"/{slug}/api/history" if slug else "/api/history")
+    patched = patched.replace("__HISTORYURL__", _history_url)
     # アクセス統計用：表示中の大会ID（/view/tournament/<id> リンクから抽出。トップ等は0）
     import re as _re_tid
     _mtid = _re_tid.search(r"/view/tournament/(\d+)", html)

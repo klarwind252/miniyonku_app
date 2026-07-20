@@ -316,3 +316,74 @@ class RacerService:
             "race_count": finalized_count,
             "win_rate": win_rate, "podium_rate": podium_rate, "last_win": last_win,
         }
+
+    # ---- 過去成績（参加者向け・全レーサー集計） ----
+    async def history_overview(self):
+        """確定済み大会をもとに、全レーサーの 参加数／優勝数／入賞数 を集計して返す。
+        大会ごとに表彰台を1回だけ求めて各レーサーへ配るため、レーサー数に依存せず軽い。
+        """
+        async with self.db.execute(
+            "SELECT id, name, date, qualifying_type FROM tournaments ORDER BY date DESC, id DESC"
+        ) as cur:
+            tournaments = await cur.fetchall()
+
+        finalized = []
+        for t in tournaments:
+            if await self.results.is_result_finalized(t["id"]):
+                finalized.append(t)
+
+        stats = {}
+        def _slot(rid):
+            s = stats.get(rid)
+            if s is None:
+                s = {"races": 0, "wins": 0, "podiums": 0}
+                stats[rid] = s
+            return s
+
+        # 参加回数（確定大会の参加者。重複エントリは1回に丸める）
+        if finalized:
+            ftids = [t["id"] for t in finalized]
+            seen = set()
+            for row in await self.entries.list_entries_in(ftids):
+                key = (row["racer_id"], row["tournament_id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                _slot(row["racer_id"])["races"] += 1
+
+        # 優勝・入賞（各大会の表彰台1〜3位）
+        for t in finalized:
+            podium = await self.results.race_podium_racer_ids(t["id"], t["qualifying_type"])
+            for rk in (1, 2, 3):
+                rid = podium.get(rk)
+                if rid is None:
+                    continue
+                s = _slot(rid)
+                s["podiums"] += 1
+                if rk == 1:
+                    s["wins"] += 1
+
+        ids = [rid for rid, s in stats.items() if s["races"] > 0 or s["podiums"] > 0]
+        names = {}
+        if ids:
+            ph = ",".join("?" for _ in ids)
+            async with self.db.execute(
+                f"SELECT id, name, yomi, is_child FROM racers WHERE id IN ({ph})", ids
+            ) as cur:
+                for row in await cur.fetchall():
+                    names[row["id"]] = {"name": row["name"], "yomi": row["yomi"] or "",
+                                        "jr": bool(row["is_child"])}
+
+        racers = []
+        for rid in ids:
+            info = names.get(rid)
+            if not info:
+                continue  # マスタから削除されたレーサーは除外
+            s = stats[rid]
+            racers.append({
+                "id": rid, "name": info["name"], "yomi": info["yomi"],
+                "jr": info.get("jr", False),
+                "races": s["races"], "wins": s["wins"], "podiums": s["podiums"],
+            })
+        racers.sort(key=lambda r: (-r["wins"], -r["podiums"], -r["races"], r["yomi"], r["name"]))
+        return {"racers": racers, "race_total": len(finalized)}

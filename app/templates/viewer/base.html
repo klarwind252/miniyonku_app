@@ -124,6 +124,18 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   .v-clock-time{font-size:44px}
 }
 
+#m4-history-btn{
+  position:fixed; left:12px; bottom:12px; z-index:97;
+  background:rgba(15,25,35,.86); color:#ffe08a; text-decoration:none;
+  border:1px solid #6b5a2e; border-radius:22px;
+  padding:9px 17px; font-size:14px; font-weight:bold;
+  box-shadow:0 2px 8px rgba(0,0,0,.45);
+}
+#m4-history-btn:active{ transform:translateY(1px); }
+@media(max-width:600px){
+  #m4-history-btn{ left:8px; bottom:8px; padding:8px 14px; font-size:13px }
+}
+
 {% block extra_style %}{% endblock %}
 </style>
 {% if slideshow_urls %}
@@ -203,6 +215,12 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   <span aria-hidden="true">📢</span>
   <span id="m4-telop-text"></span>
 </div>
+
+{% if is_public_html %}
+<!-- 過去成績ページへの常時表示ボタン（.v-container の外＝部分更新で消えない）。
+     href は参加者html生成時に店舗別URL（/api/history または /{slug}/api/history）へ置換する。 -->
+<a id="m4-history-btn" href="__HISTORYURL__">🏆 過去成績</a>
+{% endif %}
 
 <!-- 追従継続確認バナー（30分経過時に表示） -->
 <div class="v-sync-banner" id="syncBanner">
