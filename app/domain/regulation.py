@@ -20,3 +20,17 @@ def is_junior_or_kids_tournament(regulation: str | None) -> bool:
         return False
     reg = regulation.lower()
     return "ジュニア" in regulation or "子供" in regulation or "junior" in reg or "jr" in reg
+
+def is_open_regulation(regulation: str | None) -> bool:
+    """オープンクラス（誰でも参加できる区分）かどうか。
+
+    レギュレーションの値は環境によって
+      - 既定コード（"open"）
+      - 設定画面で登録した表示名そのもの（"オープンクラス" 等）
+    のどちらにもなり得るため、両方を受け付ける。
+    これ以外はすべて「限定」（ジュニア・ストック・店舗独自レギュ等）として扱う。
+    """
+    if not regulation:
+        return False
+    reg = regulation.strip()
+    return reg.lower() == "open" or "オープン" in reg

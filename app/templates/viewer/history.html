@@ -32,10 +32,23 @@ h1{ font-size:22px; margin:0; letter-spacing:1px; }
   padding:7px 12px; font-size:13px; cursor:pointer;
 }
 .sortbtn.active{ background:#1f6feb; border-color:#1f6feb; color:#fff; }
-table{ width:100%; border-collapse:collapse; }
-th,td{ padding:9px 8px; border-bottom:1px solid #22384f; text-align:right; white-space:nowrap; }
-th{ color:#9fb3c8; font-size:12px; font-weight:normal; position:sticky; top:0; background:#0d1b2a; }
+#list{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+table{ width:100%; border-collapse:collapse; min-width:560px; }
+th,td{ padding:9px 6px; border-bottom:1px solid #22384f; text-align:right; white-space:nowrap; }
+th{ color:#9fb3c8; font-size:12px; font-weight:normal; background:#0d1b2a; }
+thead tr:first-child th{ position:sticky; top:0; z-index:2; }
+thead tr:last-child th{ position:sticky; top:30px; z-index:2; }
 th.l,td.l{ text-align:left; }
+/* 大項目（オープン／限定）のグループ見出し */
+th.grp{ text-align:center; font-size:12px; font-weight:bold; letter-spacing:1px;
+        border-bottom:1px solid #35506e; }
+th.grp-open{ color:#7fc4ff; }
+th.grp-ltd{ color:#ffb37f; }
+/* 区分の境目に縦罫を入れて左右を見分けやすくする */
+th.sep, td.sep{ border-left:1px solid #2c455f; }
+/* 数値の下に添える割合 */
+.pct{ display:block; font-size:10px; color:#7f97ad; font-weight:normal; margin-top:1px; }
+.zero{ color:#54708a; }
 tr.r{ cursor:pointer; }
 tr.r:active{ background:#13273b; }
 .rank{ color:#7f97ad; width:2.4em; }
@@ -66,7 +79,7 @@ tr.r:active{ background:#13273b; }
     <h1>過去成績</h1>
     <a class="back" href="{{ back_href }}">← 観覧に戻る</a>
   </div>
-  <p class="note">確定した大会（{{ race_total }}大会）をもとに集計しています。名前をタップすると大会ごとの結果が開きます。</p>
+  <p class="note">確定した大会（{{ race_total }}大会：オープン {{ open_total }} ／ 限定 {{ ltd_total }}）をもとに集計しています。カッコ内は参加数に対する割合です。名前をタップすると大会ごとの結果が開きます。</p>
 
   <div class="controls">
     <input id="q" type="search" placeholder="レーサー名で検索" oninput="render()">
@@ -87,6 +100,21 @@ var RACERS = {{ racers | tojson }};
 var sortKey = 'wins';
 var openId = null;
 var detailCache = {};
+
+// 数値セル。denom を渡すと「数値＋(割合%)」を表示する。
+// 0件のときは色を落として見やすくし、参加0なら割合は出さない（0除算・意味なし対策）。
+function numCell(val, denom, cls, isSep){
+  var v = val || 0;
+  var sep = isSep ? ' sep' : '';
+  if(!v && (denom === null || !denom)){
+    return '<td class="' + cls + sep + '"><span class="zero">0</span></td>';
+  }
+  var body = '<span class="' + (v ? '' : 'zero') + '">' + v + '</span>';
+  if(denom){
+    body += '<span class="pct">' + Math.round(v / denom * 100) + '%</span>';
+  }
+  return '<td class="' + cls + sep + '">' + body + '</td>';
+}
 
 function escHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -117,19 +145,30 @@ function render(){
   var arr = sortedFiltered();
   var list = document.getElementById('list');
   if(!arr.length){ list.innerHTML = '<div class="empty">該当するレーサーがいません。</div>'; return; }
-  var h = '<table><thead><tr>'
-    + '<th class="l">レーサー</th><th>参加</th><th>優勝</th><th>入賞</th>'
-    + '</tr></thead><tbody>';
+  var h = '<table><thead>'
+    + '<tr>'
+    +   '<th class="l" rowspan="2">レーサー</th>'
+    +   '<th class="grp grp-open sep" colspan="3">オープン</th>'
+    +   '<th class="grp grp-ltd sep" colspan="3">限定</th>'
+    + '</tr>'
+    + '<tr>'
+    +   '<th class="sep">参加</th><th>優勝</th><th>入賞</th>'
+    +   '<th class="sep">参加</th><th>優勝</th><th>入賞</th>'
+    + '</tr>'
+    + '</thead><tbody>';
   arr.forEach(function(r, i){
     var jr = r.jr ? '<span class="jr">Jr.</span>' : '';
     h += '<tr class="r" onclick="toggle(' + r.id + ')">'
       + '<td class="l"><span class="rank">' + (i + 1) + '</span><span class="nm">' + escHtml(r.name) + '</span>' + jr + '</td>'
-      + '<td class="small">' + r.races + '</td>'
-      + '<td class="win">' + (r.wins || '0') + '</td>'
-      + '<td class="pod">' + (r.podiums || '0') + '</td>'
+      + numCell(r.open_races, null, 'small', true)
+      + numCell(r.open_wins,    r.open_races, 'win')
+      + numCell(r.open_podiums, r.open_races, 'pod')
+      + numCell(r.ltd_races, null, 'small', true)
+      + numCell(r.ltd_wins,    r.ltd_races, 'win')
+      + numCell(r.ltd_podiums, r.ltd_races, 'pod')
       + '</tr>';
     if(openId === r.id){
-      h += '<tr class="detail"><td colspan="4"><div class="dwrap" id="d' + r.id + '"><div class="loading">読み込み中...</div></div></td></tr>';
+      h += '<tr class="detail"><td colspan="7"><div class="dwrap" id="d' + r.id + '"><div class="loading">読み込み中...</div></div></td></tr>';
     }
   });
   h += '</tbody></table>';

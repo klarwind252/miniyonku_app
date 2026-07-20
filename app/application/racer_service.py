@@ -9,7 +9,7 @@ from datetime import date, datetime
 from app.domain import racer_import
 from app.domain.day_type import day_type_of
 from app.domain.kana import KANA_ROWS, kana_row_of
-from app.domain.regulation import is_junior_tournament
+from app.domain.regulation import is_junior_tournament, is_open_regulation
 from app.infrastructure.db.repositories.racer_repository import RacerRepository
 from app.infrastructure.db.repositories.entry_repository import EntryRepository
 from app.infrastructure.db.repositories.result_repository import ResultRepository
@@ -351,10 +351,13 @@ class RacerService:
     # ---- 過去成績（参加者向け・全レーサー集計） ----
     async def history_overview(self):
         """確定済み大会をもとに、全レーサーの 参加数／優勝数／入賞数 を集計して返す。
+
+        レギュレーションで「オープン」と「限定（それ以外）」に分けて集計する。
         大会ごとに表彰台を1回だけ求めて各レーサーへ配るため、レーサー数に依存せず軽い。
         """
         async with self.db.execute(
-            "SELECT id, name, date, qualifying_type FROM tournaments ORDER BY date DESC, id DESC"
+            "SELECT id, name, date, qualifying_type, regulation "
+            "FROM tournaments ORDER BY date DESC, id DESC"
         ) as cur:
             tournaments = await cur.fetchall()
 
@@ -363,11 +366,15 @@ class RacerService:
             if await self.results.is_result_finalized(t["id"]):
                 finalized.append(t)
 
+        # 大会IDごとの区分（True=オープン / False=限定）
+        is_open_map = {t["id"]: is_open_regulation(t["regulation"]) for t in finalized}
+
         stats = {}
         def _slot(rid):
             s = stats.get(rid)
             if s is None:
-                s = {"races": 0, "wins": 0, "podiums": 0}
+                s = {"open_races": 0, "open_wins": 0, "open_podiums": 0,
+                     "ltd_races": 0, "ltd_wins": 0, "ltd_podiums": 0}
                 stats[rid] = s
             return s
 
@@ -380,21 +387,24 @@ class RacerService:
                 if key in seen:
                     continue
                 seen.add(key)
-                _slot(row["racer_id"])["races"] += 1
+                pre = "open" if is_open_map.get(row["tournament_id"]) else "ltd"
+                _slot(row["racer_id"])[pre + "_races"] += 1
 
         # 優勝・入賞（各大会の表彰台1〜3位）
         for t in finalized:
+            pre = "open" if is_open_map.get(t["id"]) else "ltd"
             podium = await self.results.race_podium_racer_ids(t["id"], t["qualifying_type"])
             for rk in (1, 2, 3):
                 rid = podium.get(rk)
                 if rid is None:
                     continue
                 s = _slot(rid)
-                s["podiums"] += 1
+                s[pre + "_podiums"] += 1
                 if rk == 1:
-                    s["wins"] += 1
+                    s[pre + "_wins"] += 1
 
-        ids = [rid for rid, s in stats.items() if s["races"] > 0 or s["podiums"] > 0]
+        ids = [rid for rid, s in stats.items()
+               if (s["open_races"] or s["ltd_races"] or s["open_podiums"] or s["ltd_podiums"])]
         names = {}
         if ids:
             ph = ",".join("?" for _ in ids)
@@ -414,7 +424,18 @@ class RacerService:
             racers.append({
                 "id": rid, "name": info["name"], "yomi": info["yomi"],
                 "jr": info.get("jr", False),
-                "races": s["races"], "wins": s["wins"], "podiums": s["podiums"],
+                # 区分別
+                "open_races": s["open_races"], "open_wins": s["open_wins"],
+                "open_podiums": s["open_podiums"],
+                "ltd_races": s["ltd_races"], "ltd_wins": s["ltd_wins"],
+                "ltd_podiums": s["ltd_podiums"],
+                # 合計（並べ替え・後方互換のため従来キーも残す）
+                "races": s["open_races"] + s["ltd_races"],
+                "wins": s["open_wins"] + s["ltd_wins"],
+                "podiums": s["open_podiums"] + s["ltd_podiums"],
             })
         racers.sort(key=lambda r: (-r["wins"], -r["podiums"], -r["races"], r["yomi"], r["name"]))
-        return {"racers": racers, "race_total": len(finalized)}
+
+        open_total = sum(1 for t in finalized if is_open_map.get(t["id"]))
+        return {"racers": racers, "race_total": len(finalized),
+                "open_total": open_total, "ltd_total": len(finalized) - open_total}

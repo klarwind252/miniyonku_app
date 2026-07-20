@@ -63,6 +63,16 @@ tr:hover td{background:#f8f9fa}
    inline-block のままだと文字が上寄りになるので、.btn は inline-flex で上下中央そろえにする。 */
 .btn, button, .tbtn{min-height:40px; box-sizing:border-box}
 .btn{display:inline-flex; align-items:center; justify-content:center}
+/* 「変更を保存」など、押し間違えたくない主要な保存ボタン。
+   通常ボタン（高さ40px・文字14px）のおよそ2倍のサイズにする。 */
+.btn.btn-save-lg{
+  min-height:80px; padding:16px 44px;
+  font-size:20px; border-radius:8px; letter-spacing:1px;
+}
+@media(max-width:700px){
+  /* スマホでは横幅いっぱいに広げて押しやすくする（高さは維持） */
+  .btn.btn-save-lg{width:100%; padding:16px 24px}
+}
 
 /* フォーム */
 .form-group{margin-bottom:14px}

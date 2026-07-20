@@ -180,6 +180,8 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
         "prefix": (f"/{slug}" if slug else ""),
         "back_href": (f"/{slug}/" if slug else "/"),
         "race_total": data.get("race_total", 0),
+        "open_total": data.get("open_total", 0),
+        "ltd_total": data.get("ltd_total", 0),
         "racers": data.get("racers", []),
     })
 
