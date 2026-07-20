@@ -26,12 +26,17 @@
 {% block content %}
 <div class="page-title">
   <h1>レース編集</h1>
-  <p>開催日は変更できません（{{ t.date }}）</p>
 </div>
 
 <div class="card" style="max-width:760px">
   <div class="card-body">
     <form method="post" enctype="multipart/form-data" onsubmit="return checkBeforeSubmit()" action="/admin/tournaments/{{ t.id }}/edit" id="form">
+
+      <!-- 開催日 -->
+      <div class="form-group">
+        <label>開催日 *</label>
+        <input type="date" name="date" id="date" required value="{{ t.date }}">
+      </div>
 
       <!-- レース名 -->
       <div class="form-group">

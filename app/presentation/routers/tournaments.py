@@ -6,6 +6,8 @@ import os
 import uuid
 import json
 from datetime import date
+# Form引数名 date と衝突しないよう、日付検証用に別名でも参照できるようにする
+from datetime import date as date_cls
 
 from app.infrastructure.db.connection import get_db
 
@@ -855,6 +857,31 @@ async def add_entries_bulk(tid: int, request: Request, db: aiosqlite.Connection 
     return RedirectResponse(url=f"/admin/tournaments/{tid}", status_code=303)
 
 
+async def _purge_entry_references(entry_id: int, db: aiosqlite.Connection) -> None:
+    """entries.id を外部キー参照している行をすべて削除する。
+
+    entries を DELETE する前に必ず呼ぶこと。DBは PRAGMA foreign_keys=ON で動作するため、
+    参照行が1つでも残っていると「FOREIGN KEY constraint failed」で削除に失敗する。
+    レース削除（tournament_delete）と同じ順序を、エントリー単位でも踏襲する。
+    """
+    # heat_results は heat_lanes.id を参照するため、heat_lanes より先に消す
+    await db.execute(
+        "DELETE FROM heat_results WHERE heat_lane_id IN "
+        "(SELECT id FROM heat_lanes WHERE entry_id=?)",
+        (entry_id,),
+    )
+    await db.execute("DELETE FROM heat_lanes WHERE entry_id=?", (entry_id,))
+    await db.execute("DELETE FROM order_queue WHERE entry_id=?", (entry_id,))
+    await db.execute("DELETE FROM order_winner_racers WHERE entry_id=?", (entry_id,))
+    # 決勝トーナメントのスロット（FK制約は無いが、消えたエントリーIDが残ると表示が壊れる）
+    await db.execute("UPDATE bracket_slots SET entry_id=NULL WHERE entry_id=?", (entry_id,))
+    await db.execute("UPDATE ht_slots SET entry_id=NULL WHERE entry_id=?", (entry_id,))
+    await db.execute(
+        "UPDATE brackets SET entry1_id=NULL WHERE entry1_id=?", (entry_id,))
+    await db.execute(
+        "UPDATE brackets SET entry2_id=NULL WHERE entry2_id=?", (entry_id,))
+
+
 @router.post("/{tid}/remove-entry/{entry_id}")
 async def remove_entry(tid: int, entry_id: int, db: aiosqlite.Connection = Depends(get_db)):
     if await _is_result_finalized(tid, db):
@@ -880,6 +907,14 @@ async def remove_entry(tid: int, entry_id: int, db: aiosqlite.Connection = Depen
             "UPDATE pre_entries SET checked_in=0 WHERE tournament_id=? AND seq_no=?",
             (tid, pre_seq_no),
         )
+
+    # 本エントリーを削除する前に、entries.id を外部キー参照している行を先に消す。
+    # （PRAGMA foreign_keys=ON のため、順序を誤ると FOREIGN KEY constraint failed で落ちる）
+    #   heat_lanes           … ヒート系・ポイント制・総当たりのレーン割当
+    #   heat_results         … heat_lanes を参照するため、heat_lanes より先に消す
+    #   order_queue          … 並び順（ポイント制／勝ち抜け）の待機列
+    #   order_winner_racers  … 並び順（勝ち抜け）の段階別状態
+    await _purge_entry_references(entry_id, db)
 
     # 本エントリーを削除
     await db.execute("DELETE FROM entries WHERE id=?", (entry_id,))
@@ -1492,6 +1527,66 @@ async def tournament_delete(tid: int, db: aiosqlite.Connection = Depends(get_db)
     return RedirectResponse(url="/admin/tournaments/", status_code=303)
 
 
+def _normalize_date(value: str) -> str:
+    """'YYYY-MM-DD' 形式として妥当なら正規化して返す。不正なら空文字を返す。"""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    try:
+        return date_cls.fromisoformat(v).isoformat()
+    except ValueError:
+        return ""
+
+
+async def _current_date(tid: int, db: aiosqlite.Connection) -> str:
+    async with db.execute("SELECT date FROM tournaments WHERE id=?", (tid,)) as cur:
+        row = await cur.fetchone()
+    return (row["date"] if row else "") or ""
+
+
+@router.post("/{tid}/edit-basic")
+async def tournament_edit_basic(
+    tid: int,
+    name: str = Form(...),
+    date: str = Form(""),
+    regulation: str = Form("open"),
+    time_slot: str = Form("day"),
+    time_slot_free: str = Form(""),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """レース基本情報の訂正（開催日・レース名・レギュレーション・時間帯）。
+
+    入力ミスの訂正用のため、結果が確定済みのレースでも実行できる。
+    ここで更新するのは表示上の属性のみで、エントリー・予選・決勝の結果には一切触れない。
+    """
+    async with db.execute("SELECT date FROM tournaments WHERE id=?", (tid,)) as cur:
+        cur_row = await cur.fetchone()
+    if not cur_row:
+        return RedirectResponse(url="/admin/tournaments/", status_code=303)
+
+    name = (name or "").strip()
+    if not name:
+        return RedirectResponse(
+            url=f"/admin/tournaments/{tid}?error=basic_name", status_code=303)
+
+    # 開催日が不正・未入力なら現在値を維持（誤操作で日付が消えないようにする）
+    new_date = _normalize_date(date) or (cur_row["date"] or "")
+
+    if time_slot not in TIME_SLOT_LABELS:
+        time_slot = "day"
+    # フリーワード以外を選んだ場合はフリーワード欄をクリアする
+    time_slot_free = (time_slot_free or "").strip() if time_slot == "free" else ""
+
+    await db.execute(
+        """UPDATE tournaments
+           SET date=?, name=?, regulation=?, time_slot=?, time_slot_free=?
+           WHERE id=?""",
+        (new_date, name, regulation, time_slot, time_slot_free, tid),
+    )
+    await db.commit()
+    return RedirectResponse(url=f"/admin/tournaments/{tid}?saved=basic", status_code=303)
+
+
 @router.get("/{tid}/edit", response_class=HTMLResponse)
 async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
@@ -1524,6 +1619,7 @@ async def tournament_edit_save(
     tid: int,
     request: Request,
     name: str = Form(...),
+    date: str = Form(""),
     time_slot: str = Form("day"),
     time_slot_free: str = Form(""),
     regulation: str = Form("open"),
@@ -1566,9 +1662,12 @@ async def tournament_edit_save(
             cur_um = await cur.fetchone()
         use_racer_master = cur_um["use_racer_master"] if cur_um and cur_um["use_racer_master"] is not None else 1
 
+    # 開催日：未入力・不正な値のときは現在値を維持する（誤操作で日付が飛ばないように）
+    date = _normalize_date(date) or await _current_date(tid, db)
+
     await db.execute(
         """UPDATE tournaments SET
-           name=?, time_slot=?, time_slot_free=?, regulation=?,
+           date=?, name=?, time_slot=?, time_slot_free=?, regulation=?,
            qualifying_type=?, final_type=?, note=?, time_schedule=?,
            qual_heat_count=?, qual_heat_advance=?,
            qual_group_count=?, qual_group_advance=?,
@@ -1577,7 +1676,7 @@ async def tournament_edit_save(
            qual_round_count=?, qual_heat_exclude=?,
            order_round_mode=?, order_round_count=?, order_free_max_runs=?, use_racer_master=?
            WHERE id=?""",
-        (name, time_slot, time_slot_free, regulation,
+        (date, name, time_slot, time_slot_free, regulation,
          qualifying_type, final_type, note, time_schedule,
          qual_heat_count, qual_heat_advance,
          qual_group_count, qual_group_advance,

@@ -120,8 +120,39 @@ class RacerService:
         return None
 
     async def delete_racer(self, racer_id):
+        """レーサーを削除する。成功時は None、削除できない場合はエラーメッセージを返す。
+
+        entries.racer_id は racers.id を外部キー参照しており（PRAGMA foreign_keys=ON）、
+        エントリー履歴が残ったまま削除すると FOREIGN KEY constraint failed で落ちる。
+        過去のレース結果が壊れるのを避けるため、履歴がある場合は削除せずに理由を返す。
+        """
+        async with self.db.execute(
+            """SELECT COUNT(*) AS cnt,
+                      (SELECT t.name FROM entries e2
+                        JOIN tournaments t ON t.id = e2.tournament_id
+                       WHERE e2.racer_id = ?
+                       ORDER BY t.date DESC, t.id DESC LIMIT 1) AS last_name
+               FROM entries WHERE racer_id = ?""",
+            (racer_id, racer_id),
+        ) as cur:
+            row = await cur.fetchone()
+
+        cnt = row["cnt"] if row else 0
+        if cnt:
+            async with self.db.execute(
+                "SELECT name FROM racers WHERE id = ?", (racer_id,)
+            ) as cur:
+                r = await cur.fetchone()
+            racer_name = (r["name"] if r else "") or "このレーサー"
+            last_name = row["last_name"] or ""
+            detail = f"（例：{last_name}）" if last_name else ""
+            return (f"「{racer_name}」は {cnt} 件のレースにエントリー済みのため削除できません{detail}。"
+                    f"過去の成績が失われるのを防ぐための制限です。"
+                    f"削除する場合は、先に各レースのエントリーを取り消してください。")
+
         await self.racers.delete(racer_id)
         await self.db.commit()
+        return None
 
     # ---- エントリー単発操作 ----
     async def entry_single(self, racer_id, tournament_id):

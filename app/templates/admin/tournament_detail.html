@@ -12,6 +12,16 @@
 function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
 </script>
 {% endraw %}
+{% if request.query_params.get("saved") == "basic" %}
+<div style="background:#eafaf1;border:2px solid #27ae60;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#1e8449;font-weight:bold">
+  ✅ レース基本情報を更新しました
+</div>
+{% endif %}
+{% if request.query_params.get("error") == "basic_name" %}
+<div style="background:#fdf0f0;border:2px solid #e74c3c;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#e74c3c;font-weight:bold">
+  ⚠️ レース名が空のため更新しませんでした
+</div>
+{% endif %}
 {% if request.query_params.get("error") == "finalized" %}
 <div style="background:#fdf0f0;border:2px solid #e74c3c;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#e74c3c;font-weight:bold">
   ⚠️ 結果が確定済みのため、エントリーの追加・削除はできません
@@ -139,7 +149,14 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
   <!-- 左：レース情報（40%） -->
   <div class="card" style="flex:4;min-width:260px">
-    <div class="card-header">レース情報</div>
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span>レース情報</span>
+      {# 開催日・レース名・レギュレーション・時間帯は入力ミスの訂正用として、
+         結果が確定済みでも編集できる（結果データには一切影響しない）。 #}
+      <button type="button" class="btn btn-warning btn-sm"
+              style="padding:3px 12px;font-size:12px;line-height:1.6"
+              onclick="openBasicEdit()">✏️ 訂正</button>
+    </div>
     <div class="card-body">
       <table style="width:100%">
         <tr><td style="color:#636e72;font-size:13px;width:120px;padding:6px 0">時間帯</td>
@@ -237,6 +254,68 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">レーン数</td><td>{{ t.lane_count }} レーン</td></tr>
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">備考</td><td style="white-space:pre-wrap">{{ t.note or '-' }}</td></tr>
       </table>
+
+      <!-- ===== 基本情報の訂正モーダル（確定済みでも使用可） ===== -->
+      <div id="basicEditOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;padding:16px"
+           onclick="if(event.target===this) closeBasicEdit()">
+        <div style="background:#fff;border-radius:10px;max-width:460px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.3)">
+          <div style="padding:14px 18px;border-bottom:1px solid #e6e9ec;font-weight:bold;color:#2c3e50">
+            ✏️ レース基本情報の訂正
+          </div>
+          <form method="post" action="/admin/tournaments/{{ t.id }}/edit-basic"
+                onsubmit="return basicEditValidate()" style="padding:16px 18px">
+
+            <div style="margin-bottom:14px">
+              <label style="display:block;font-size:13px;color:#636e72;margin-bottom:4px">開催日 *</label>
+              <input type="date" name="date" id="be_date" required value="{{ t.date }}"
+                     style="width:100%;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:16px">
+            </div>
+
+            <div style="margin-bottom:14px">
+              <label style="display:block;font-size:13px;color:#636e72;margin-bottom:4px">レース名 *</label>
+              <input type="text" name="name" id="be_name" required value="{{ t.name }}"
+                     style="width:100%;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:16px">
+            </div>
+
+            <div style="margin-bottom:14px">
+              <label style="display:block;font-size:13px;color:#636e72;margin-bottom:4px">レギュレーション *</label>
+              <select name="regulation"
+                      style="width:100%;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:16px">
+                {# 現在値が設定一覧に無い（過去データ・設定変更後）場合も、そのまま選べるようにする #}
+                {% if t.regulation and t.regulation not in regulation_labels %}
+                <option value="{{ t.regulation }}" selected>{{ t.regulation }}（現在の設定）</option>
+                {% endif %}
+                {% for code, label in regulation_labels.items() %}
+                <option value="{{ code }}" {% if t.regulation == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div style="margin-bottom:14px">
+              <label style="display:block;font-size:13px;color:#636e72;margin-bottom:4px">時間帯 *</label>
+              <select name="time_slot" id="be_slot" onchange="basicEditToggleFree()"
+                      style="width:100%;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:16px">
+                <option value="day"      {% if (t.time_slot or 'day') == 'day' %}selected{% endif %}>☀️ デイレース</option>
+                <option value="night"    {% if t.time_slot == 'night' %}selected{% endif %}>🌙 ナイトレース</option>
+                <option value="extended" {% if t.time_slot == 'extended' %}selected{% endif %}>⏰ 延長</option>
+                <option value="free"     {% if t.time_slot == 'free' %}selected{% endif %}>✏️ フリーワード</option>
+              </select>
+              <input type="text" name="time_slot_free" id="be_slot_free"
+                     value="{{ t.time_slot_free or '' }}" placeholder="フリーワードを入力"
+                     style="width:100%;margin-top:8px;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:16px;display:{% if t.time_slot == 'free' %}block{% else %}none{% endif %}">
+            </div>
+
+            <p style="font-size:12px;color:#95a5a6;margin:0 0 14px">
+              この4項目は入力ミスの訂正用です。エントリー・予選・決勝の結果には影響しません。
+            </p>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="closeBasicEdit()">キャンセル</button>
+              <button type="submit" class="btn btn-primary btn-sm">保存</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
       <!-- 賞状・ポストは上部ツールバーへ移動。ここでは postToX 用スクリプトのみ読み込む -->
       <div style="display:none">
@@ -1196,4 +1275,44 @@ async function submitWalkin() {
 }
 </script>
 {% endif %}
+
+<script>
+// ============================================================
+// レース基本情報の訂正モーダル（開催日・レース名・レギュレーション・時間帯）
+//   結果確定済みでも使用できる。結果データには一切影響しない。
+// ============================================================
+function openBasicEdit(){
+  var ov = document.getElementById('basicEditOverlay');
+  if(!ov) return;
+  ov.style.display = 'flex';
+  basicEditToggleFree();
+}
+function closeBasicEdit(){
+  var ov = document.getElementById('basicEditOverlay');
+  if(ov) ov.style.display = 'none';
+}
+function basicEditToggleFree(){
+  var sel  = document.getElementById('be_slot');
+  var free = document.getElementById('be_slot_free');
+  if(!sel || !free) return;
+  free.style.display = (sel.value === 'free') ? 'block' : 'none';
+}
+function basicEditValidate(){
+  var d = document.getElementById('be_date');
+  var n = document.getElementById('be_name');
+  if(!d.value){ alert('開催日を入力してください'); d.focus(); return false; }
+  if(!n.value.trim()){ alert('レース名を入力してください'); n.focus(); return false; }
+  var sel = document.getElementById('be_slot');
+  var free = document.getElementById('be_slot_free');
+  if(sel.value === 'free' && !free.value.trim()){
+    alert('フリーワードを入力してください'); free.focus(); return false;
+  }
+  return true;
+}
+// Escキーで閉じる（PC操作向け。スマホはオーバーレイのタップで閉じる）
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeBasicEdit();
+});
+</script>
+
 {% endblock %}

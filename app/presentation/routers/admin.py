@@ -1393,13 +1393,21 @@ async def create_cert_template(request: Request, db: aiosqlite.Connection = Depe
     name = form.get("name", "").strip() or "新規テンプレート"
     paper_size = form.get("paper_size", "A4")
     orientation = form.get("orientation", "portrait")
+    # 新規作成画面のエディタで配置したレイアウトも保存する。
+    # （これを受け取らないと「配置して保存」した内容が破棄されていた）
+    layout_json = form.get("layout_json", "{}")
     await db.execute(
-        "INSERT INTO certificate_templates (name, paper_size, orientation) VALUES (?, ?, ?)",
-        (name, paper_size, orientation)
+        "INSERT INTO certificate_templates (name, paper_size, orientation, layout_json) "
+        "VALUES (?, ?, ?, ?)",
+        (name, paper_size, orientation, layout_json)
     )
+    async with db.execute("SELECT last_insert_rowid() AS id") as cur:
+        new_id = (await cur.fetchone())["id"]
     await db.commit()
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/admin/settings", status_code=303)
+    # 作成直後は編集画面へ遷移する（背景画像のアップロードはID確定後にのみ可能なため）
+    return RedirectResponse(
+        url=f"/admin/settings/certificate-templates/{new_id}/edit", status_code=303)
 
 
 @router.get("/settings/certificate-templates/{tid}/edit", response_class=HTMLResponse)
@@ -1532,13 +1540,21 @@ async def create_card_template(request: Request, db: aiosqlite.Connection = Depe
     name = form.get("name", "").strip() or "新規テンプレート"
     card_size = form.get("card_size", "meishi")
     code_type = form.get("code_type", "qr")
+    # 新規作成画面のエディタで配置したレイアウトも保存する。
+    # （これを受け取らないと「配置して保存」した内容が破棄されていた）
+    layout_json = form.get("layout_json", "{}")
     await db.execute(
-        "INSERT INTO card_templates (name, card_size, code_type) VALUES (?, ?, ?)",
-        (name, card_size, code_type)
+        "INSERT INTO card_templates (name, card_size, code_type, layout_json) "
+        "VALUES (?, ?, ?, ?)",
+        (name, card_size, code_type, layout_json)
     )
+    async with db.execute("SELECT last_insert_rowid() AS id") as cur:
+        new_id = (await cur.fetchone())["id"]
     await db.commit()
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/admin/settings", status_code=303)
+    # 作成直後は編集画面へ遷移する（背景画像のアップロードはID確定後にのみ可能なため）
+    return RedirectResponse(
+        url=f"/admin/settings/card-templates/{new_id}/edit", status_code=303)
 
 
 @router.get("/settings/card-templates/{tid}/edit", response_class=HTMLResponse)

@@ -96,8 +96,13 @@ async def racer_add(
 
 
 @router.post("/delete/{racer_id}")
-async def racer_delete(racer_id: int, db: aiosqlite.Connection = Depends(get_db)):
-    await RacerService(db).delete_racer(racer_id)
+async def racer_delete(request: Request, racer_id: int,
+                       db: aiosqlite.Connection = Depends(get_db)):
+    err = await RacerService(db).delete_racer(racer_id)
+    if err:
+        # エントリー履歴がある等で削除できない場合は、一覧へ理由を表示して戻す
+        # （従来はここで FOREIGN KEY constraint failed により500エラーになっていた）
+        return await _racer_list_error(request, db, err)
     return RedirectResponse(url="/admin/racers/", status_code=303)
 
 

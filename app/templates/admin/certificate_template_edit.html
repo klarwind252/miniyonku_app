@@ -514,7 +514,15 @@ function uploadBg(file) {
   applyBg(localUrl);
   bgUrl = localUrl;
 
-  if (!TPL_ID) return;  // 未保存テンプレートはローカルURLのまま
+  // 未保存テンプレートはIDが無く、サーバーへ保存できない。
+  // ローカルURL（blob:）のまま保存すると次回開いたときに背景が消えるため、
+  // 先に「保存」してテンプレートを作成してもらう。
+  if (!TPL_ID) {
+    bgUrl = '';
+    applyBg('');
+    alert('背景画像を設定する前に、いちど「💾 保存」でテンプレートを作成してください。\n作成後の編集画面で背景画像を設定できます。');
+    return;
+  }
 
   // アップロード中表示
   const drop = document.getElementById('bgDrop');
