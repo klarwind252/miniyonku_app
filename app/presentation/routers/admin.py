@@ -1422,7 +1422,7 @@ async def create_cert_template(request: Request, db: aiosqlite.Connection = Depe
     from fastapi.responses import RedirectResponse
     # 作成直後は編集画面へ遷移する（背景画像のアップロードはID確定後にのみ可能なため）
     return RedirectResponse(
-        url=f"/admin/settings/certificate-templates/{new_id}/edit", status_code=303)
+        url=f"/admin/settings/certificate-templates/{new_id}/edit?saved=1", status_code=303)
 
 
 @router.get("/settings/certificate-templates/{tid}/edit", response_class=HTMLResponse)
@@ -1469,7 +1469,9 @@ async def update_cert_template(tid: int, request: Request, db: aiosqlite.Connect
     )
     await db.commit()
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"/admin/settings/certificate-templates/{tid}/edit", status_code=303)
+    # ?saved=1 を付けて戻し、編集画面で「保存しました」を表示する
+    return RedirectResponse(
+        url=f"/admin/settings/certificate-templates/{tid}/edit?saved=1", status_code=303)
 
 
 @router.post("/settings/certificate-templates/{tid}/upload-bg")
@@ -1568,7 +1570,7 @@ async def create_card_template(request: Request, db: aiosqlite.Connection = Depe
     from fastapi.responses import RedirectResponse
     # 作成直後は編集画面へ遷移する（背景画像のアップロードはID確定後にのみ可能なため）
     return RedirectResponse(
-        url=f"/admin/settings/card-templates/{new_id}/edit", status_code=303)
+        url=f"/admin/settings/card-templates/{new_id}/edit?saved=1", status_code=303)
 
 
 @router.get("/settings/card-templates/{tid}/edit", response_class=HTMLResponse)
@@ -1614,7 +1616,9 @@ async def update_card_template(tid: int, request: Request, db: aiosqlite.Connect
     )
     await db.commit()
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"/admin/settings/card-templates/{tid}/edit", status_code=303)
+    # ?saved=1 を付けて戻し、編集画面で「保存しました」を表示する
+    return RedirectResponse(
+        url=f"/admin/settings/card-templates/{tid}/edit?saved=1", status_code=303)
 
 
 @router.post("/settings/card-templates/{tid}/upload-bg")

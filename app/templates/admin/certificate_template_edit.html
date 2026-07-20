@@ -249,16 +249,32 @@
 .tbtn-primary:hover { background:#2471a3; }
 .tbtn-secondary { background:#95a5a6; color:#fff; }
 .tbtn-secondary:hover { background:#7f8c8d; }
+
+/* 保存完了トースト */
+.save-toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:2000;
+  background:#27ae60;color:#fff;font-weight:bold;font-size:14px;
+  padding:12px 24px;border-radius:24px;box-shadow:0 4px 16px rgba(0,0,0,.3);
+  display:flex;align-items:center;gap:8px;
+  animation:saveToastIn .25s ease-out}
+@keyframes saveToastIn{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
+.save-toast.hide{opacity:0;transition:opacity .4s}
+/* 未保存インジケータ */
+.dirty-mark{display:none;color:#f39c12;font-size:12px;font-weight:bold;margin-left:8px}
+.dirty-mark.on{display:inline}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="editor-page">
 
+  {% if request.query_params.get('saved') %}
+  <div class="save-toast" id="saveToast">✅ 保存しました</div>
+  {% endif %}
+
   <!-- 上バー -->
   <div class="editor-topbar">
-    <h1>🏅 賞状テンプレート編集{% if tpl %} — {{ tpl.name }}{% endif %}</h1>
-    <button class="tbtn tbtn-secondary" onclick="history.back()">← 戻る</button>
+    <h1>🏅 賞状テンプレート編集{% if tpl %} — {{ tpl.name }}{% endif %}<span class="dirty-mark" id="dirtyMark">● 未保存</span></h1>
+    <button class="tbtn tbtn-secondary" onclick="goBack()">← 戻る</button>
     <button class="tbtn tbtn-primary" onclick="saveAll()">💾 保存</button>
   </div>
 
@@ -1092,6 +1108,7 @@ function saveAll() {
   document.getElementById('f_paper').value  = document.getElementById('tplPaper').value;
   document.getElementById('f_orient').value = document.getElementById('tplOrient').value;
   document.getElementById('f_layout').value = JSON.stringify(layout);
+  isSubmitting = true;   // 送信時は未保存警告を出さない
   document.getElementById('saveForm').submit();
 }
 
@@ -1099,5 +1116,66 @@ function saveAll() {
 // 起動
 // ============================================================
 init();
+
+// ============================================================
+// 未保存の変更を検知して離脱を防ぐ ／ 保存完了トースト
+// ============================================================
+let savedSnapshot = '';   // 直近に保存された（＝画面を開いた時点の）状態
+let isSubmitting  = false;
+
+function currentSnapshot() {
+  return JSON.stringify({
+    name:   document.getElementById('tplName').value,
+    paper:  document.getElementById('tplPaper').value,
+    orient: document.getElementById('tplOrient').value,
+    bg:     bgUrl,
+    objs:   objs
+  });
+}
+function markSaved() {
+  savedSnapshot = currentSnapshot();
+  updateDirtyMark();
+}
+function isDirty() {
+  return savedSnapshot !== '' && currentSnapshot() !== savedSnapshot;
+}
+function updateDirtyMark() {
+  const m = document.getElementById('dirtyMark');
+  if (m) m.classList.toggle('on', isDirty());
+}
+// 変更操作を個別に拾わず、一定間隔で状態を比較する（拾い漏れが起きない）
+setInterval(updateDirtyMark, 800);
+
+// タブを閉じる・リロード・別URLへ移動したとき（ブラウザ標準の確認ダイアログ）
+window.addEventListener('beforeunload', function (e) {
+  if (isSubmitting || !isDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';   // Chrome/Safari はこの指定で標準ダイアログを出す
+  return '';
+});
+
+// 「← 戻る」ボタン：こちらは文言を出せるので独自の確認を出す
+function goBack() {
+  if (isDirty() &&
+      !confirm('保存していない変更があります。\nこのページを離れると変更内容は失われます。\n\n本当に戻りますか？')) {
+    return;
+  }
+  isSubmitting = true;   // 離脱確定なので beforeunload は出さない
+  history.back();
+}
+
+// 保存完了トーストを数秒で消す
+(function initSaveToast() {
+  const t = document.getElementById('saveToast');
+  if (!t) return;
+  setTimeout(function () { t.classList.add('hide'); }, 2400);
+  setTimeout(function () { t.remove(); }, 2900);
+  // 保存直後のURL（?saved=1）は履歴に残さない
+  if (history.replaceState) {
+    history.replaceState(null, '', location.pathname);
+  }
+})();
+
+markSaved();
 </script>
 {% endblock %}
