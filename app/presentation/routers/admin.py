@@ -16,6 +16,21 @@ BGM_MAX = 10                          # 登録できる最大曲数
 BGM_MAX_BYTES = 30 * 1024 * 1024      # 1曲あたり最大30MB
 
 
+# アプリの静的ファイル配信ディレクトリ（main.py が /static としてマウントする app/static）。
+# 本モジュールは app/presentation/routers/ 配下にあるため、2つ上へ遡る必要がある。
+# （v6.0c のクリーンアーキテクチャ移設で app/routers → app/presentation/routers へ
+#   移動した際、"../static" のままだと app/presentation/static を指してしまい、
+#   保存はできるが /static/ では配信されず、画像が404になっていた）
+_STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../static"))
+
+
+def _static_subdir(name: str) -> str:
+    """app/static/<name> の絶対パスを返す（存在しなければ作成する）。"""
+    path = os.path.join(_STATIC_DIR, name)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def _bgm_dir(request) -> str | None:
     """BGM mp3 の保存先ディレクトリを返す。
 
@@ -32,7 +47,7 @@ def _bgm_dir(request) -> str | None:
         if not public_dir:
             return None
         return os.path.join(public_dir, "bgm")
-    return os.path.join(os.path.dirname(__file__), "../static/bgm")
+    return _static_subdir("bgm")
 
 
 def _bgm_slot_name(slot: int) -> str:
@@ -1473,8 +1488,7 @@ async def upload_cert_bg(tid: int, request: Request, db: aiosqlite.Connection = 
             return JSONResponse({"error": f"対応外の形式です ({ext})"}, status_code=400)
 
         fname    = f"cert_{tid}_{uuid.uuid4().hex[:8]}{ext}"
-        base_dir = os.path.join(os.path.dirname(__file__), "../static/cert_bg")
-        os.makedirs(base_dir, exist_ok=True)
+        base_dir = _static_subdir("cert_bg")
         dest     = os.path.join(base_dir, fname)
 
         # await で非同期読み込み → 同期書き込み
@@ -1619,8 +1633,7 @@ async def upload_card_bg(tid: int, request: Request, db: aiosqlite.Connection = 
             return JSONResponse({"error": f"対応外の形式です ({ext})"}, status_code=400)
 
         fname    = f"card_{tid}_{uuid.uuid4().hex[:8]}{ext}"
-        base_dir = os.path.join(os.path.dirname(__file__), "../static/card_bg")
-        os.makedirs(base_dir, exist_ok=True)
+        base_dir = _static_subdir("card_bg")
         dest     = os.path.join(base_dir, fname)
 
         data = await upload.read()
