@@ -33,7 +33,7 @@ h1{ font-size:22px; margin:0; letter-spacing:1px; }
 }
 .sortbtn.active{ background:#1f6feb; border-color:#1f6feb; color:#fff; }
 #list{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
-table{ width:100%; border-collapse:collapse; min-width:560px; }
+table{ width:100%; border-collapse:collapse; }
 th,td{ padding:9px 6px; border-bottom:1px solid #22384f; text-align:right; white-space:nowrap; }
 th{ color:#9fb3c8; font-size:12px; font-weight:normal; background:#0d1b2a; }
 thead tr:first-child th{ position:sticky; top:0; z-index:2; }
@@ -71,6 +71,38 @@ tr.r:active{ background:#13273b; }
   h1{ font-size:19px; }
   .nm{ font-size:15px; }
 }
+
+/* ===== 狭い画面用のカード表示 =====
+   7列のテーブルはスマホ幅だと横スクロールが必須になり実用的でないため、
+   640px以下では1レーサー＝1カードに切り替える（JS側で描画を出し分ける）。 */
+.rcard{
+  background:#101f31; border:1px solid #22384f; border-radius:12px;
+  padding:10px 12px; margin-bottom:8px; cursor:pointer;
+}
+.rcard:active{ background:#16283c; }
+.rcard.open{ border-color:#35506e; }
+.rhead{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+.rhead .rank{ color:#7f97ad; font-size:13px; min-width:1.8em; }
+.rhead .nm{ font-size:17px; font-weight:bold; flex:1; min-width:0;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rhead .tot{ color:#7f97ad; font-size:12px; white-space:nowrap; }
+.segs{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.seg{ background:#0b1828; border-radius:8px; padding:7px 9px; }
+.seg-open{ border-left:3px solid #7fc4ff; }
+.seg-ltd{ border-left:3px solid #ffb37f; }
+.seglabel{ font-size:11px; letter-spacing:1px; margin-bottom:5px; }
+.seg-open .seglabel{ color:#7fc4ff; }
+.seg-ltd .seglabel{ color:#ffb37f; }
+.segrow{ display:flex; align-items:baseline; gap:4px; font-size:12px;
+         color:#9fb3c8; padding:2px 0; }
+.segrow .k{ flex:1; }
+.segrow .v{ font-size:15px; font-weight:bold; color:#e8eef4; }
+.segrow .v.win{ color:#ffd45e; }
+.segrow .v.pod{ color:#cdd8e3; }
+.segrow .v.zero{ color:#54708a; font-weight:normal; }
+.segrow .p{ font-size:10px; color:#7f97ad; min-width:3.2em; text-align:right; }
+.seg.none{ opacity:.45; }
+.rdetail{ margin-top:10px; border-top:1px solid #22384f; padding-top:8px; }
 </style>
 </head>
 <body>
@@ -141,10 +173,16 @@ function sortedFiltered(){
   return arr;
 }
 
+// 640px以下ではカード表示（横スクロール不要）、それより広ければ表表示に切り替える
+function isNarrow(){
+  try { return window.matchMedia('(max-width:640px)').matches; } catch(e){ return false; }
+}
+
 function render(){
   var arr = sortedFiltered();
   var list = document.getElementById('list');
   if(!arr.length){ list.innerHTML = '<div class="empty">該当するレーサーがいません。</div>'; return; }
+  if(isNarrow()){ renderCards(arr, list); return; }
   var h = '<table><thead>'
     + '<tr>'
     +   '<th class="l" rowspan="2">レーサー</th>'
@@ -172,6 +210,49 @@ function render(){
     }
   });
   h += '</tbody></table>';
+  list.innerHTML = h;
+  if(openId != null) loadDetail(openId);
+}
+
+// 1レーサー＝1カード。オープン／限定を左右に並べ、参加・優勝・入賞を縦に積む。
+function segBlock(title, cls, races, wins, pods){
+  var none = races ? '' : ' none';
+  function row(label, v, kls){
+    var val = v || 0;
+    var pct = races ? Math.round(val / races * 100) + '%' : '';
+    return '<div class="segrow"><span class="k">' + label + '</span>'
+         + '<span class="v ' + kls + (val ? '' : ' zero') + '">' + val + '</span>'
+         + '<span class="p">' + pct + '</span></div>';
+  }
+  return '<div class="seg ' + cls + none + '">'
+       + '<div class="seglabel">' + title + '</div>'
+       + '<div class="segrow"><span class="k">参加</span>'
+       +   '<span class="v' + (races ? '' : ' zero') + '">' + (races || 0) + '</span>'
+       +   '<span class="p"></span></div>'
+       + row('優勝', wins, 'win')
+       + row('入賞', pods, 'pod')
+       + '</div>';
+}
+
+function renderCards(arr, list){
+  var h = '';
+  arr.forEach(function(r, i){
+    var jr = r.jr ? '<span class="jr">Jr.</span>' : '';
+    h += '<div class="rcard' + (openId === r.id ? ' open' : '') + '" onclick="toggle(' + r.id + ')">'
+      +   '<div class="rhead">'
+      +     '<span class="rank">' + (i + 1) + '</span>'
+      +     '<span class="nm">' + escHtml(r.name) + '</span>' + jr
+      +     '<span class="tot">全' + (r.races || 0) + '戦 / 優勝' + (r.wins || 0) + '</span>'
+      +   '</div>'
+      +   '<div class="segs">'
+      +     segBlock('オープン', 'seg-open', r.open_races, r.open_wins, r.open_podiums)
+      +     segBlock('限定',     'seg-ltd',  r.ltd_races,  r.ltd_wins,  r.ltd_podiums)
+      +   '</div>';
+    if(openId === r.id){
+      h += '<div class="rdetail"><div class="dwrap" id="d' + r.id + '"><div class="loading">読み込み中...</div></div></div>';
+    }
+    h += '</div>';
+  });
   list.innerHTML = h;
   if(openId != null) loadDetail(openId);
 }
@@ -209,6 +290,17 @@ async function loadDetail(id){
     box.innerHTML = '<div class="small">読み込みに失敗しました。</div>';
   }
 }
+
+// 画面回転やウィンドウ幅の変化で 表⇔カード を切り替える
+var _rzTimer = null;
+var _wasNarrow = isNarrow();
+window.addEventListener('resize', function(){
+  clearTimeout(_rzTimer);
+  _rzTimer = setTimeout(function(){
+    var n = isNarrow();
+    if(n !== _wasNarrow){ _wasNarrow = n; render(); }
+  }, 200);
+});
 
 render();
 </script>
