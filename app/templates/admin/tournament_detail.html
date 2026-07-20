@@ -28,57 +28,63 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 {% endif %}
 <style>
-  /* ===== 上部アクションバー（sticky） =====
-     PC(>1024px) : 折り返さず1行に収める（段組みなし）。案内文が余白を食って伸び、ボタンは右に寄る＝背が低い
-     タブレット   : 段組み（グリッド折り返し）＋ボタン均等幅で画面いっぱい
-     スマホ       : 段組み＋全幅（画面端まで）＋padding/margin 0＋ボタン均等幅 */
-  .detail-actionbar{
-    position:sticky; top:0; z-index:100;
-    background:#f4f5f7;
-    margin:0 -20px 16px;        /* .container の左右padding(20px)を打ち消して全幅にする */
-    padding:10px 20px;
-    border-bottom:1px solid #e1e5ea;
-    box-shadow:0 6px 10px -8px rgba(0,0,0,.25);
-    display:flex; gap:8px; flex-wrap:nowrap;   /* PC：1行に収める（段組みしない） */
-    align-items:center; justify-content:flex-end;
-  }
-  .detail-actionbar .btn{margin:0}
-  .detail-actionbar form{margin:0}
-  /* 案内文：PCでは余白を食って伸び、ボタンを右へ押し出す（同じ1行に収める＝背が低い） */
+/* ===== 上部アクションバー（sticky・全admin画面で共通） =====
+   PC          : 1行に収める。案内文が左で余白を食って伸び、ボタンは右寄せ
+   〜820px     : 案内文だけで1行を占有して左揃え。ボタンは次の行に右揃えで並ぶ
+                 （従来は案内文が細い列へ押し込まれ、日本語が1文字ずつ折り返して
+                   読めなくなっていた。単独行にすることで確実に防ぐ）
+   〜700px     : さらに全幅化し、data-short を持つボタンは短縮ラベルで表示 */
+.detail-actionbar{
+  position:sticky; top:0; z-index:100;
+  background:#f4f5f7;
+  margin:0 -20px 16px;        /* .container の左右padding(20px)を打ち消して全幅にする */
+  padding:10px 20px;
+  border-bottom:1px solid #e1e5ea;
+  box-shadow:0 6px 10px -8px rgba(0,0,0,.25);
+  display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; justify-content:flex-end;
+}
+.detail-actionbar .btn{margin:0}
+.detail-actionbar form{margin:0}
+/* 案内文：PCでは残り幅いっぱいに伸びてボタンを右へ押し出す */
+.detail-actionbar > span,
+.detail-actionbar .prelim-note{
+  flex:1 1 auto; min-width:0;
+  text-align:left; line-height:1.5;
+  white-space:normal; word-break:normal; overflow-wrap:break-word;
+}
+@media(max-width:820px){
+  .detail-actionbar{padding:8px 12px; gap:6px; justify-content:flex-end}
+  /* 案内文は単独行・左揃え（1文字折り返しの根本対策） */
+  .detail-actionbar > span,
   .detail-actionbar .prelim-note{
-    flex:1 1 auto; min-width:0;
-    font-size:13px; font-weight:bold; color:#1c6ea4; line-height:1.4;
-    white-space:normal; word-break:normal; overflow-wrap:normal;
+    flex:0 0 100%; width:100%; margin:0 0 2px; text-align:left;
   }
-
-  /* ===== タブレット（〜1024px）：段組み＋ボタン均等・画面いっぱい ===== */
-  @media(max-width:1024px){
-    .detail-actionbar{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
-      gap:8px; align-items:stretch; justify-items:stretch;
-    }
-    .detail-actionbar .prelim-note{grid-column:1 / -1;}
-    .detail-actionbar form{display:contents;}            /* 削除ボタンも1マスとして均等配置 */
-    .detail-actionbar a,
-    .detail-actionbar button{width:100%; justify-content:center; min-height:0;}  /* coarse時のmin-height:44pxを打ち消してaと高さを揃える */
+  /* ボタンは自然幅のまま右詰めで並び、入り切らなければ次の行へ折り返す */
+  .detail-actionbar > a,
+  .detail-actionbar > button,
+  .detail-actionbar > form,
+  .detail-actionbar > div{flex:0 0 auto;}
+  .detail-actionbar a,
+  .detail-actionbar button{white-space:nowrap; min-height:40px;}
+}
+@media(max-width:700px){
+  .detail-actionbar{
+    padding:8px 10px;
+    margin:0 0 12px;                      /* 下だけ間隔を確保 */
+    width:100vw; max-width:100vw;
+    margin-left:calc(50% - 50vw);         /* 画面端まで拡張 */
+    border-radius:0;
   }
-
-  /* ===== スマホ（〜700px）：全幅・余白0・段組み・ボタン均等 ===== */
-  @media(max-width:700px){
-    .detail-actionbar{
-      grid-template-columns:repeat(auto-fit,minmax(84px,1fr));
-      gap:6px;
-      padding:0;                            /* padding 0 */
-      margin:0 0 12px;                      /* margin 0（下だけ間隔を確保） */
-      width:100vw; max-width:100vw;
-      margin-left:calc(50% - 50vw);         /* 画面端まで拡張（container左右余白を打ち消し全幅化） */
-      border-radius:0;
-    }
-    .detail-actionbar a, .detail-actionbar button{height:34px!important; min-height:34px!important; padding-left:4px!important; padding-right:4px!important}  /* min-heightも34pxに固定（coarseの44pxを打ち消し・削除ボタンの高さズレ解消） */
-    .detail-actionbar .btn{font-size:0!important}                 /* 元ラベル(絵文字含む)を隠す */
-    .detail-actionbar .btn::before{content:attr(data-short); font-size:12px; line-height:1}
-  }
+  .detail-actionbar > a,
+  .detail-actionbar > button,
+  .detail-actionbar > div > button{height:40px!important; min-height:40px!important;
+    padding-left:10px!important; padding-right:10px!important}
+  /* data-short を持つボタンだけ短縮ラベルへ差し替える
+     （属性が無いボタンまで font-size:0 にすると文字が消えてしまうため限定する） */
+  .detail-actionbar .btn[data-short]{font-size:0!important}
+  .detail-actionbar .btn[data-short]::before{content:attr(data-short); font-size:12px; line-height:1}
+}
   @keyframes m4PrelimPulse{0%,100%{box-shadow:0 0 0 0 rgba(41,128,185,.6)}50%{box-shadow:0 0 0 7px rgba(41,128,185,0)}}
   .btn-prelim-hl{animation:m4PrelimPulse 1.4s ease-out infinite;font-weight:bold!important}
   /* 即決勝（トーナメント/総当たり）でエントリー2名以上のとき決勝管理ボタンを緑グローで強調 */

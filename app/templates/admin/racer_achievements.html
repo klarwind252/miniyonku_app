@@ -36,6 +36,10 @@
   .rank-none { color: #c0c7d0; }
   .empty { text-align: center; color: #95a5a6; padding: 28px 0; }
   .date-col { white-space: nowrap; color: #636e72; }
+
+/* すべてのボタンの高さを最低40pxに揃える（40pxを超えるものは現状維持）。
+   min-height は height より強く効くため、既存の小さいボタンも底上げされる。 */
+button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-sizing:border-box}
 </style>
 </head>
 <body>

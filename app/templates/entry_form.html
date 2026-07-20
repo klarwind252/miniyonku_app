@@ -78,6 +78,10 @@
     background:#fff; border:1px solid #e1e6ea; border-radius:12px;
     padding:40px 24px; margin-top:16px; text-align:center;
   }
+
+/* すべてのボタンの高さを最低40pxに揃える（40pxを超えるものは現状維持）。
+   min-height は height より強く効くため、既存の小さいボタンも底上げされる。 */
+button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-sizing:border-box}
 </style>
 </head>
 <body>

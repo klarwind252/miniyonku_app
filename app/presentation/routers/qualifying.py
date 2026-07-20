@@ -1323,10 +1323,12 @@ async def heat_edit_form(tid: int, heat_id: int, request: Request, db: aiosqlite
     ) as cur:
         all_entries = [dict(r) for r in await cur.fetchall()]
 
-    from fastapi.templating import Jinja2Templates as _T
-    import os as _os
-    _tmpl = _T(directory=_os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "templates"))
-    return _tmpl.TemplateResponse("admin/heat_edit.html", {
+    # 共通の Jinja2Templates を使う。
+    # （v6.0c で app/routers → app/presentation/routers へ移設された際、ここだけ
+    #   __file__ 基準で "../templates" を組み立てたままになっており、
+    #   app/presentation/templates という存在しない場所を指して
+    #   TemplateNotFound（500エラー）になっていた）
+    return templates.TemplateResponse("admin/heat_edit.html", {
         "request": request, "t": t, "heat": heat, "lanes": lanes, "all_entries": all_entries,
     })
 

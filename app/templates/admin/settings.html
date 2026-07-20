@@ -875,10 +875,8 @@
         ctx.font = urlFont;
         for (var j = 0; j < urlLines.length; j++) { ctx.fillText(urlLines[j], W/2, y + 40); y += urlLH; }
 
-        var a = document.createElement('a');
-        a.href = out.toDataURL('image/png');
-        a.download = 'qr_' + (fileBase || 'miniyonku').replace(/[^\w\-ぁ-んァ-ヶ一-龠]+/g, '_') + '.png';
-        a.click();
+        // PC・スマホ共通の保存処理（base.html の共通関数）
+        saveCanvasAsImage(out, 'qr_' + (fileBase || 'miniyonku').replace(/[^\w\-ぁ-んァ-ヶ一-龠]+/g, '_') + '.png');
       }
       </script>
       {% endif %}

@@ -5,24 +5,62 @@
 <style>
 /* 決勝管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
 .btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
-/* 上部アクションバー（レース詳細画面と同じ挙動）
-   PC(>1024px): 折り返さず1行・右寄せ（案内文が伸びてボタンを右へ）
-   タブレット/スマホ: 段組み＋ボタン均等幅  スマホ(≤700px): 全幅・余白0 */
-.detail-actionbar{position:sticky;top:0;z-index:100;background:#f4f5f7;margin:0 -20px 16px;padding:10px 20px;border-bottom:1px solid #e1e5ea;box-shadow:0 6px 10px -8px rgba(0,0,0,.25);display:flex;gap:8px;flex-wrap:nowrap;align-items:center;justify-content:flex-end}
+/* ===== 上部アクションバー（sticky・全admin画面で共通） =====
+   PC          : 1行に収める。案内文が左で余白を食って伸び、ボタンは右寄せ
+   〜820px     : 案内文だけで1行を占有して左揃え。ボタンは次の行に右揃えで並ぶ
+                 （従来は案内文が細い列へ押し込まれ、日本語が1文字ずつ折り返して
+                   読めなくなっていた。単独行にすることで確実に防ぐ）
+   〜700px     : さらに全幅化し、data-short を持つボタンは短縮ラベルで表示 */
+.detail-actionbar{
+  position:sticky; top:0; z-index:100;
+  background:#f4f5f7;
+  margin:0 -20px 16px;        /* .container の左右padding(20px)を打ち消して全幅にする */
+  padding:10px 20px;
+  border-bottom:1px solid #e1e5ea;
+  box-shadow:0 6px 10px -8px rgba(0,0,0,.25);
+  display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; justify-content:flex-end;
+}
 .detail-actionbar .btn{margin:0}
-/* 案内文：1行まるごと占有して縦積み（日本語が1文字幅に潰れる）を防ぐ */
-.detail-actionbar > span{flex:1 1 auto;min-width:0;white-space:normal;word-break:normal;overflow-wrap:normal}
-@media(max-width:1024px){
-  .detail-actionbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;align-items:stretch;justify-items:stretch}
-  .detail-actionbar > span{grid-column:1 / -1}
-  .detail-actionbar > a,.detail-actionbar > button,.detail-actionbar > div{width:100%}
-  .detail-actionbar > div > .btn{width:100%}
+.detail-actionbar form{margin:0}
+/* 案内文：PCでは残り幅いっぱいに伸びてボタンを右へ押し出す */
+.detail-actionbar > span,
+.detail-actionbar .prelim-note{
+  flex:1 1 auto; min-width:0;
+  text-align:left; line-height:1.5;
+  white-space:normal; word-break:normal; overflow-wrap:break-word;
+}
+@media(max-width:820px){
+  .detail-actionbar{padding:8px 12px; gap:6px; justify-content:flex-end}
+  /* 案内文は単独行・左揃え（1文字折り返しの根本対策） */
+  .detail-actionbar > span,
+  .detail-actionbar .prelim-note{
+    flex:0 0 100%; width:100%; margin:0 0 2px; text-align:left;
+  }
+  /* ボタンは自然幅のまま右詰めで並び、入り切らなければ次の行へ折り返す */
+  .detail-actionbar > a,
+  .detail-actionbar > button,
+  .detail-actionbar > form,
+  .detail-actionbar > div{flex:0 0 auto;}
+  .detail-actionbar a,
+  .detail-actionbar button{white-space:nowrap; min-height:40px;}
 }
 @media(max-width:700px){
-  .detail-actionbar{grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:6px;padding:0;margin:0 0 12px;width:100vw;max-width:100vw;margin-left:calc(50% - 50vw);border-radius:0}
-  .detail-actionbar > a,.detail-actionbar > button,.detail-actionbar > div > button{height:34px !important;min-height:34px !important;padding-left:4px !important;padding-right:4px !important}
-  .detail-actionbar .btn{font-size:0 !important}                 /* 元ラベル(絵文字含む)を隠す */
-  .detail-actionbar .btn::before{content:attr(data-short);font-size:12px;line-height:1}
+  .detail-actionbar{
+    padding:8px 10px;
+    margin:0 0 12px;                      /* 下だけ間隔を確保 */
+    width:100vw; max-width:100vw;
+    margin-left:calc(50% - 50vw);         /* 画面端まで拡張 */
+    border-radius:0;
+  }
+  .detail-actionbar > a,
+  .detail-actionbar > button,
+  .detail-actionbar > div > button{height:40px!important; min-height:40px!important;
+    padding-left:10px!important; padding-right:10px!important}
+  /* data-short を持つボタンだけ短縮ラベルへ差し替える
+     （属性が無いボタンまで font-size:0 にすると文字が消えてしまうため限定する） */
+  .detail-actionbar .btn[data-short]{font-size:0!important}
+  .detail-actionbar .btn[data-short]::before{content:attr(data-short); font-size:12px; line-height:1}
 }
 .bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:16px; margin-bottom:12px; }
 .bracket-group.done { border-color:#27ae60; }
@@ -32,7 +70,7 @@
 .slot-row:last-child { border-bottom:none; }
 .slot-no { display:none; }
 .slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; }
-.win-btn { width:38px; height:38px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+.win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
 .round-header { font-size:15px; font-weight:bold; color:#fff; padding:6px 16px; display:block; margin-bottom:14px; border-radius:6px; }
@@ -58,7 +96,7 @@
 .seed-toggle.superseeded { border-color:#8e44ad; background:#f5eef8; color:#8e44ad; }
 .seed-toggle:not(.seeded):not(.superseeded) { color:#bdc3c7; }
 .seed-btn-group { display:flex; gap:4px; flex-shrink:0; }
-.seed-btn { width:32px; height:32px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:16px; font-weight:bold; background:#fff; font-family:inherit; transition:all .12s; display:inline-flex; align-items:center; justify-content:center; }
+.seed-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:16px; font-weight:bold; background:#fff; font-family:inherit; transition:all .12s; display:inline-flex; align-items:center; justify-content:center; }
 .seed-btn.active-seed   { border-color:#f39c12; background:#fff3cd; color:#d68910; }
 .seed-btn.active-super  { border-color:#8e44ad; background:#f5eef8; color:#8e44ad; }
 .seed-btn:not(.active-seed):not(.active-super) { color:#bdc3c7; }
@@ -2028,16 +2066,14 @@ function exportBracketImage() {
       windowWidth: container.scrollWidth + 40,
       logging: false,
     }).then(function(canvas) {
-      const link = document.createElement('a');
       const now = new Date();
       const ts = now.getFullYear() +
                  ('0'+(now.getMonth()+1)).slice(-2) +
                  ('0'+now.getDate()).slice(-2) + '_' +
                  ('0'+now.getHours()).slice(-2) +
                  ('0'+now.getMinutes()).slice(-2);
-      link.download = 'tournament_' + ts + '.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      // PC・スマホ共通の保存処理（base.html の共通関数）
+      saveCanvasAsImage(canvas, 'tournament_' + ts + '.png');
       if (btn) { btn.textContent = '📷 画像出力'; btn.disabled = false; }
     }).catch(function(e) {
       console.error(e);

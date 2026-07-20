@@ -58,6 +58,11 @@ tr:hover td{background:#f8f9fa}
 .btn-secondary{background:#95a5a6;color:#fff}
 .btn-warning{background:#f39c12;color:#fff}
 .btn-sm{padding:5px 12px;font-size:14px}
+/* すべてのボタンの高さを最低40pxに揃える（40pxを超えるものは現状維持）。
+   min-height は height より強く効くため、height:30px 等が指定済みのボタンも40pxに底上げされる。
+   inline-block のままだと文字が上寄りになるので、.btn は inline-flex で上下中央そろえにする。 */
+.btn, button, .tbtn{min-height:40px; box-sizing:border-box}
+.btn{display:inline-flex; align-items:center; justify-content:center}
 
 /* フォーム */
 .form-group{margin-bottom:14px}
@@ -81,6 +86,11 @@ select{background:#fff}
 .page-title{margin-bottom:20px}
 .page-title h1{font-size:22px;color:#2c3e50}
 .page-title p{color:#636e72;font-size:13px;margin-top:4px}
+/* 見出しの横にボタンを置く画面（結果入力・ヒート編集など）で、狭い画面でも
+   ボタンのラベルが1文字ずつ縦に折り返さないようにする */
+.page-title{gap:8px}
+.page-title > div{min-width:0}
+.page-title .btn{flex:0 0 auto; white-space:nowrap}
 
 /* 統計カード */
 .stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px}
@@ -916,6 +926,88 @@ updatePubStatus();
 })();
 </script>
 {% endif %}
+
+<script>
+/* ============================================================
+   画像の保存（PC・スマホ共通）
+     従来は <a download href="data:image/png;base64,..."> をクリックする方式で、
+     iOS Safari では download 属性やサイズの大きい data URL が扱えず保存できなかった。
+     ここでは次の順に試して、どの端末でも保存できるようにする。
+       ① Web Share API（files対応）… iOS/Androidの共有シートから「画像を保存」
+       ② Blob URL ＋ <a download>  … PC・Android Chrome ほか
+       ③ 別タブで開く              … 上記が使えない古い端末（長押しで保存）
+     data URL ではなく Blob を使うため、大きな画像でも失敗しにくい。
+   ============================================================ */
+(function () {
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    if ('download' in a) {
+      a.download = filename;
+      a.href = url;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    } else {
+      var w = window.open(url, '_blank');
+      if (!w) {
+        alert('画像を開けませんでした。ポップアップを許可してから、もう一度お試しください。');
+      } else {
+        alert('開いた画像を長押しして「"写真"に追加」または「画像を保存」を選んでください。');
+      }
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    }
+  }
+
+  // 共有シートを優先するのは「タッチ操作が主」の端末だけに限定する。
+  //   Windows/Mac の Chrome・Edge も navigator.share に対応しているため、
+  //   判定を入れないとPCでも共有ダイアログが開いてしまい、従来のダウンロードより不便になる。
+  //   ・iPhone / Android            … maxTouchPoints>0 かつ primary pointer が coarse → 共有
+  //   ・iPad(iPadOS)                … デスクトップUAを名乗るが上記条件で正しくスマホ扱いになる
+  //   ・タッチ対応Windowsノート     … マウスがあるため primary pointer は fine → ダウンロード
+  function prefersShareSheet() {
+    try {
+      return (navigator.maxTouchPoints || 0) > 0 &&
+             window.matchMedia('(pointer: coarse)').matches;
+    } catch (e) { return false; }
+  }
+
+  window.saveImageBlob = function (blob, filename) {
+    if (!blob) { alert('画像の生成に失敗しました。'); return; }
+    var file = null;
+    try { file = new File([blob], filename, { type: blob.type || 'image/png' }); } catch (e) { /* File未対応 */ }
+
+    // ① スマホ：共有シート経由で写真アプリへ保存できる
+    if (file && prefersShareSheet() && navigator.share &&
+        navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file] }).catch(function (err) {
+        // ユーザーが共有をキャンセルしただけなら何もしない
+        if (err && (err.name === 'AbortError' || err.name === 'CanceledError')) return;
+        // 権限切れ等で共有できなかった場合は従来方式へ
+        downloadBlob(blob, filename);
+      });
+      return;
+    }
+
+    // ②③ PC・その他
+    downloadBlob(blob, filename);
+  };
+
+  window.saveCanvasAsImage = function (canvas, filename) {
+    if (canvas && canvas.toBlob) {
+      canvas.toBlob(function (blob) { window.saveImageBlob(blob, filename); }, 'image/png');
+      return;
+    }
+    // toBlob 非対応のごく古い環境向けフォールバック（従来方式）
+    var a = document.createElement('a');
+    a.download = filename;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  };
+})();
+</script>
 
 </body>
 </html>

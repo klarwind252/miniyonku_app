@@ -306,10 +306,8 @@ async function exportCalendar() {
 
   const calEl = document.getElementById('calExportArea');
   const canvas = await html2canvas(calEl, { scale: 2, backgroundColor: '#ffffff' });
-  const link = document.createElement('a');
-  link.download = `race-calendar-${curYear}-${String(curMonth).padStart(2,'0')}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  // PC・スマホ共通の保存処理（base.html の共通関数）
+  saveCanvasAsImage(canvas, `race-calendar-${curYear}-${String(curMonth).padStart(2,'0')}.png`);
 }
 
 document.getElementById('exportOverlay').addEventListener('click', function(e){

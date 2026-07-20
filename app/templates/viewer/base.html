@@ -136,6 +136,10 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   #m4-history-btn{ left:8px; bottom:8px; padding:8px 14px; font-size:13px }
 }
 
+
+/* すべてのボタンの高さを最低40pxに揃える（40pxを超えるものは現状維持）。
+   min-height は height より強く効くため、既存の小さいボタンも底上げされる。 */
+button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-sizing:border-box}
 {% block extra_style %}{% endblock %}
 </style>
 {% if slideshow_urls %}

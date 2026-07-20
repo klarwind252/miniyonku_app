@@ -74,6 +74,10 @@
     .tpl-card { border: 1px dashed #ccc; margin: 0; }
     @page { size: A4; margin: 8mm; }
   }
+
+/* すべてのボタンの高さを最低40pxに揃える（40pxを超えるものは現状維持）。
+   min-height は height より強く効くため、既存の小さいボタンも底上げされる。 */
+button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-sizing:border-box}
 </style>
 </head>
 <body class="size-meishi code-qr">
