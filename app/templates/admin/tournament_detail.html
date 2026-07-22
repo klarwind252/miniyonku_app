@@ -254,8 +254,6 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">備考</td><td style="white-space:pre-wrap">{{ t.note or '-' }}</td></tr>
       </table>
 
-      </div>
-
       <!-- 賞状・ポストは上部ツールバーへ移動。ここでは postToX 用スクリプトのみ読み込む -->
       <div style="display:none">
         {% if is_finalized %}
