@@ -151,26 +151,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 
 <!-- レース情報 ＋ エントリー追加 を横並び -->
-<style>
-  /* 左=レース情報(40%) / 右=エントリー追加(60%) の2カラム。
-     grid の子は既定 min-width:auto で中身が広いと縮まず溢れる → min-width:0 で縮ませる。
-     狭い画面(900px以下)だけ1カラムに落とす。 */
-  .detail-2col{
-    display:grid;
-    grid-template-columns:2fr 3fr;
-    gap:16px;
-    align-items:start;
-    margin-bottom:16px;
-  }
-  .detail-2col > *{ min-width:0; }
-  @media (max-width:900px){
-    .detail-2col{ grid-template-columns:1fr; }
-  }
-</style>
-<div class="detail-2col">
+<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
 
   <!-- 左：レース情報（40%） -->
-  <div class="card">
+  <div class="card" style="flex:4;min-width:260px">
     <div class="card-header">レース情報</div>
     <div class="card-body">
       <table style="width:100%">
@@ -339,7 +323,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 
   <!-- 右：エントリー追加（60%） -->
-  <div>
+  <div style="flex:6;min-width:260px">
     {% if is_finalized %}
     {% set r1 = cert_results.get(1, '') %}
     {% set r2 = cert_results.get(2, '') %}
