@@ -95,14 +95,24 @@ async def layout_edit_page(
         raise HTTPException(status_code=404, detail="layout not found")
     elements = await lrepo.get_elements(layout_id)
     # 割当可能な機器（SG/SQ のみ。レイアウトのゲート枠で選ぶ）
-    sg_devices = await drepo.list_by_kind("GW")   # S/GはGW実機
-    sq_devices = await drepo.list_by_kind("SQ")
+    # ⚠ aiosqlite.Row はそのままでは tojson できないため dict に変換する。
+    sg_rows = await drepo.list_by_kind("GW")   # S/GはGW実機
+    sq_rows = await drepo.list_by_kind("SQ")
+    sg_devices = [{"node_id": r["node_id"], "label": r["label"]} for r in sg_rows]
+    sq_devices = [{"node_id": r["node_id"], "label": r["label"]} for r in sq_rows]
+
+    # elements も dict 化（tojson でJSに渡すため）
+    elem_list = [
+        {"position": e["position"], "kind": e["kind"], "node_id": e["node_id"]}
+        for e in elements
+    ]
+
     return templates.TemplateResponse(
         "admin/timing_layout_edit.html",
         {
             "request": request,
             "layout": layout,
-            "elements": elements,
+            "elements": elem_list,
             "sg_devices": sg_devices,
             "sq_devices": sq_devices,
         },
