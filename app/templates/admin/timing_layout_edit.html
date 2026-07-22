@@ -67,6 +67,14 @@
           <option value="9" {% if layout.target_laps==9 %}selected{% endif %}>9周</option>
         </select>
       </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span id="dirty-indicator"
+              style="display:none;color:#e67e22;font-size:13px;font-weight:bold">
+          ● 未保存の変更があります
+        </span>
+        <button class="btn btn-primary" onclick="save(false)" style="min-width:120px">保存</button>
+      </div>
     </div>
   </div>
 </div>
@@ -98,12 +106,6 @@
         <div id="issues"></div>
       </div>
     </div>
-
-    <div class="card">
-      <div class="card-body">
-        <button class="btn btn-primary" style="width:100%" onclick="save(false)">保存</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -118,6 +120,33 @@ let els = {{ elements | tojson }};
 els = (els || []).map(e => ({kind: e.kind, node_id: e.node_id}));
 
 const track = document.getElementById('track');
+
+// ---- 未保存（dirty）管理 ----
+let dirty = false;
+function markDirty(){
+  dirty = true;
+  const ind = document.getElementById('dirty-indicator');
+  if(ind) ind.style.display = 'inline';
+}
+function clearDirty(){
+  dirty = false;
+  const ind = document.getElementById('dirty-indicator');
+  if(ind) ind.style.display = 'none';
+}
+// 画面を離れようとしたとき、未保存なら確認（ブラウザ標準）
+window.addEventListener('beforeunload', function(e){
+  if(dirty){
+    e.preventDefault();
+    e.returnValue = '';  // 標準の離脱確認を表示
+  }
+});
+// コース名・周回数の変更も未保存にする
+window.addEventListener('DOMContentLoaded', function(){
+  const nm = document.getElementById('layout-name');
+  const tl = document.getElementById('target-laps');
+  if(nm) nm.addEventListener('input', markDirty);
+  if(tl) tl.addEventListener('change', markDirty);
+});
 
 function usedNodeIds(exceptIdx){
   // 現在レイアウトで既に使われている node_id の集合（exceptIdx の枠は除く）
@@ -197,6 +226,7 @@ function render(){
       if(from === to) return;
       const moved = els.splice(from, 1)[0];
       els.splice(to, 0, moved);
+      markDirty();
       render();
       validate();
     });
@@ -227,18 +257,21 @@ function addEl(kind){
     return;
   }
   els.push({kind: kind, node_id: null});
+  markDirty();
   render();
   validate();
 }
 
 function delEl(idx){
   els.splice(idx, 1);
+  markDirty();
   render();
   validate();
 }
 
 function setNode(idx, val){
   els[idx].node_id = val === '' ? null : parseInt(val);
+  markDirty();
   // 他の枠のプルダウンにも「使用済み除外」を反映するため再描画する
   render();
   validate();
@@ -279,6 +312,7 @@ async function save(force){
     body: JSON.stringify(body)
   });
   if(res.ok){
+    clearDirty();
     alert('保存しました。');
     return;
   }
