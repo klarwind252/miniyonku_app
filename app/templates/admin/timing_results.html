@@ -1,19 +1,19 @@
 {% extends "admin/base.html" %}
-{% block title %}レース結果{% endblock %}
+{% block title %}計測結果{% endblock %}
 {% block content %}
 <div class="page-title">
-  <h1>レース結果</h1>
+  <h1>計測結果</h1>
   <p>ラップタイマーから届いたレースの一覧です。行を選ぶと詳細（ラップ・セクター・順位）を表示します。</p>
 </div>
 
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
   <a href="/admin/timing/layouts" class="btn btn-secondary btn-sm">🗺️ コースレイアウト</a>
   <a href="/admin/timing/devices" class="btn btn-secondary btn-sm">📟 計測端末台帳</a>
-  <a href="/admin/timing/results" class="btn btn-primary btn-sm">🏁 レース結果</a>
+  <a href="/admin/timing/results" class="btn btn-primary btn-sm">🏁 計測結果</a>
 </div>
 
 <div class="card">
-  <div class="card-header">最近のレース</div>
+  <div class="card-header">計測結果の一覧</div>
   <div class="card-body">
     {% if races %}
     <table style="width:100%;border-collapse:collapse;font-size:14px">
@@ -49,7 +49,7 @@
       </tbody>
     </table>
     {% else %}
-    <p style="color:#7f8c8d">まだレース結果がありません。ラップタイマーから計測データが届くと、ここに表示されます。</p>
+    <p style="color:#7f8c8d">まだ計測結果がありません。ラップタイマーから計測データが届くと、ここに表示されます。</p>
     {% endif %}
   </div>
 </div>

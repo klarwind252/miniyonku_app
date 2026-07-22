@@ -20,9 +20,17 @@
   .el.sg .kind-badge { background:#fdeaea; color:#c0392b; }
   .el.sq .kind-badge { background:#e8f4fd; color:#2980b9; }
   .el.lc .kind-badge { background:#f4ecf7; color:#8e44ad; }
-  .el select { flex:1; max-width:180px; }
+  .el select { flex:1; min-width:280px; max-width:420px; font-size:14px; padding:6px 8px; }
   .el .del { color:#e74c3c; cursor:pointer; font-weight:bold; padding:2px 8px; }
   .el.drop-target { border-top:3px solid #3498db; }
+
+  /* 通過方向の矢印（要素の間に表示） */
+  .flow-arrow { text-align:center; color:#95a5a6; font-size:18px; line-height:1;
+                margin:-2px 0; user-select:none; pointer-events:none; }
+  .track-start { display:flex; align-items:center; gap:8px; color:#c0392b;
+                 font-size:13px; font-weight:bold; margin:4px 0 2px; }
+  .track-goal { display:flex; align-items:center; gap:8px; color:#2c3e50;
+                font-size:13px; font-weight:bold; margin:2px 0 4px; }
 
   .palette button { width:100%; margin-bottom:8px; text-align:left; }
   .issue { padding:10px 12px; border-radius:6px; margin-bottom:8px; font-size:13px; }
@@ -41,7 +49,7 @@
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
   <a href="/admin/timing/layouts" class="btn btn-primary btn-sm">🗺️ コースレイアウト</a>
   <a href="/admin/timing/devices" class="btn btn-secondary btn-sm">📟 計測端末台帳</a>
-  <a href="/admin/timing/results" class="btn btn-secondary btn-sm">🏁 レース結果</a>
+  <a href="/admin/timing/results" class="btn btn-secondary btn-sm">🏁 計測結果</a>
 </div>
 
 <div class="card" style="margin-bottom:16px">
@@ -140,6 +148,15 @@ function deviceOptions(kind, selected, idx){
 function render(){
   track.classList.toggle('empty', els.length === 0);
   track.innerHTML = '';
+
+  // 先頭に「スタート地点」の目印（要素があるときだけ）
+  if(els.length > 0){
+    const start = document.createElement('div');
+    start.className = 'track-start';
+    start.innerHTML = '🚩 スタート／ゴール地点（ここから1周が始まり、ここで完了）';
+    track.appendChild(start);
+  }
+
   els.forEach((el, idx) => {
     const div = document.createElement('div');
     div.className = 'el ' + el.kind.toLowerCase();
@@ -185,7 +202,23 @@ function render(){
     });
 
     track.appendChild(div);
+
+    // 要素の間に通過方向の矢印（最後の要素の後は入れない）
+    if(idx < els.length - 1){
+      const arrow = document.createElement('div');
+      arrow.className = 'flow-arrow';
+      arrow.textContent = '↓';
+      track.appendChild(arrow);
+    }
   });
+
+  // 末尾に「ゴール（S/Gへ戻る）」の目印
+  if(els.length > 0){
+    const goal = document.createElement('div');
+    goal.className = 'flow-arrow';
+    goal.innerHTML = '↓<br><span style="font-size:12px;color:#7f8c8d">S/Gへ戻って1周完了 → 次の周へ</span>';
+    track.appendChild(goal);
+  }
 }
 
 function addEl(kind){
