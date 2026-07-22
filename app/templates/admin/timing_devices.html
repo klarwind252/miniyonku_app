@@ -13,6 +13,23 @@
   <a href="/admin/timing/results" class="btn btn-secondary btn-sm">🏁 計測結果</a>
 </div>
 
+<!-- ===== 未割当ノード（MAC一次識別子・実行時割当） ===== -->
+<div class="card" id="unassigned-card">
+  <div class="card-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span>未割当ノード</span>
+    <span style="color:#7f8c8d;font-size:12px;font-weight:normal">
+      電源を入れた端末が名乗り出るとここに並びます。番号を選んで割り当ててください。
+    </span>
+    <span style="flex:1"></span>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="loadUnassigned()">↻ 更新</button>
+  </div>
+  <div class="card-body" style="overflow-x:auto">
+    <div id="unassigned-body">
+      <div style="padding:16px;text-align:center;color:#95a5a6">読み込み中…</div>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <span>端末一覧（固定12台）</span>
@@ -68,4 +85,120 @@
     </p>
   </div>
 </div>
+
+<script>
+// ===== 未割当ノードの割当UI =====
+// 種別ごとの割当可能レンジ（protocol.h / node_assignment.py と一致）
+const KIND_RANGE = { SQ:[0,1,2,3,4,5], GW:[6,7], RC:[8,9], SG:[10,11] };
+
+// 既に台帳で使用済みの番号（この画面のテーブルから集める）
+function usedNodeIds() {
+  const used = new Set();
+  document.querySelectorAll('form[action^="/admin/timing/devices/"] input[name="mac"]').forEach(function(inp){
+    const m = (inp.value || '').trim();
+    if (m) {
+      const id = inp.closest('tr').querySelector('td').textContent.trim();
+      if (id !== '') used.add(parseInt(id, 10));
+    }
+  });
+  return used;
+}
+
+function freeIdsForKind(kind) {
+  const range = KIND_RANGE[kind] || [];
+  const used = usedNodeIds();
+  return range.filter(function(id){ return !used.has(id); });
+}
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadUnassigned() {
+  const box = document.getElementById('unassigned-body');
+  try {
+    const res = await fetch('/admin/timing/unassigned', {cache:'no-store'});
+    const data = await res.json();
+    const list = (data && data.unassigned) || [];
+    if (list.length === 0) {
+      box.innerHTML = '<div style="padding:16px;text-align:center;color:#95a5a6">'
+        + '未割当の端末はありません。端末の電源を入れると自動でここに表示されます。</div>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:14px">'
+      + '<thead><tr style="text-align:left;border-bottom:2px solid #dfe4ea">'
+      + '<th style="padding:8px">MACアドレス</th>'
+      + '<th style="padding:8px">種別</th>'
+      + '<th style="padding:8px">FW</th>'
+      + '<th style="padding:8px">割り当てる番号</th>'
+      + '<th style="padding:8px"></th></tr></thead><tbody>';
+    list.forEach(function(n){
+      const free = freeIdsForKind(n.kind_name);
+      let opts = free.map(function(id){
+        return '<option value="'+id+'">'+n.kind_name+id+'</option>';
+      }).join('');
+      const canAssign = free.length > 0;
+      const sel = canAssign
+        ? '<select style="width:120px" data-mac="'+esc(n.mac)+'" data-kind="'+n.kind+'">'+opts+'</select>'
+        : '<span style="color:#c0392b;font-size:13px">空き番号なし</span>';
+      const btn = canAssign
+        ? '<button type="button" class="btn btn-success btn-sm" onclick="bindNode(this)">割り当て</button>'
+        : '';
+      html += '<tr style="border-bottom:1px solid #eef2f5">'
+        + '<td style="padding:8px;font-family:monospace">'+esc(n.mac)+'</td>'
+        + '<td style="padding:8px">'+esc(n.kind_name)+'</td>'
+        + '<td style="padding:8px;color:#7f8c8d">'+esc(n.fw)+'</td>'
+        + '<td style="padding:8px">'+sel+'</td>'
+        + '<td style="padding:8px">'+btn+'</td></tr>';
+    });
+    html += '</tbody></table>';
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = '<div style="padding:16px;text-align:center;color:#e74c3c">'
+      + '一覧の取得に失敗しました。</div>';
+  }
+}
+
+const REASON_MSG = {
+  RANGE:'その種別に割り当てられない番号です',
+  DUP:'その番号は既に別の端末に割り当て済みです',
+  REBIND:'この端末は既に別の番号に割り当て済みです（先に解除してください）',
+  BAD_MAC:'MACアドレスが不正です',
+  FULL:'空き番号がありません'
+};
+
+async function bindNode(btn) {
+  const row = btn.closest('tr');
+  const sel = row.querySelector('select');
+  if (!sel) return;
+  const mac = sel.dataset.mac;
+  const kind = parseInt(sel.dataset.kind, 10);
+  const nodeId = parseInt(sel.value, 10);
+  btn.disabled = true; btn.textContent = '割当中…';
+  try {
+    const res = await fetch('/admin/timing/devices/bind', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({node_id:nodeId, mac:mac, kind:kind})
+    });
+    if (res.ok) {
+      // 成功：台帳に反映するためリロード（MACが該当行に入る）
+      location.reload();
+      return;
+    }
+    // 400：拒否理由
+    let reason = '';
+    try { const d = await res.json(); reason = (d.detail && d.detail.reason) || d.reason || ''; } catch(_){}
+    alert('割り当てできませんでした：' + (REASON_MSG[reason] || reason || '不明なエラー'));
+  } catch(e) {
+    alert('通信エラーが発生しました：' + e);
+  }
+  btn.disabled = false; btn.textContent = '割り当て';
+}
+
+// 初回ロード＋10秒ごとに自動更新
+loadUnassigned();
+setInterval(loadUnassigned, 10000);
+</script>
 {% endblock %}
