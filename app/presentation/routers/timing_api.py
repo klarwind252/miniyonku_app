@@ -22,6 +22,7 @@ from app.infrastructure.db.repositories.timing_repository import (
 )
 from app.application.timing_race_service import build_race_result
 from app.presentation.templates import templates
+from app.presentation.routers.m4laps_guard import require_m4laps
 
 router = APIRouter()
 
@@ -102,7 +103,11 @@ async def post_events(
 # ---------------------------------------------------------------------------
 
 @router.get("/admin/timing/results", response_class=HTMLResponse)
-async def results_page(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+async def results_page(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
     repo = TimingRaceRepository(db)
     races = await repo.list_races(limit=50)
     return templates.TemplateResponse(
@@ -116,6 +121,7 @@ async def result_detail_page(
     race_id: int,
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
 ):
     race, result = await build_race_result(db, race_id)
     if race is None:

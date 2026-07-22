@@ -177,12 +177,14 @@ select{background:#fff}
     </a>
   </div>
 
+  {% if IS_CLOUD and request.state.m4laps_licensed %}
   <div class="nav-group">
     <a href="/admin/timing/layouts"
        class="nav-link {% if '/admin/timing' in request.url.path %}active{% endif %}">
       ⏱️ M4LAPS
     </a>
   </div>
+  {% endif %}
 
   <div class="spacer"></div>
 

@@ -340,6 +340,10 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
             },
         ]
 
+    # M4LAPS ライセンス状態（クラウド版のみ意味を持つ）
+    from app.domain import m4laps_license
+    _m4laps_licensed = await m4laps_license.is_licensed(db)
+
     return templates.TemplateResponse("admin/settings.html", {
         "request": request,
         "cert_templates": cert_templates,
@@ -358,6 +362,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
         "public_html_gcp_project": public_html_gcp_project,
         "participant_url": participant_url,
         "stores_info": stores_info,
+        "m4laps_licensed": _m4laps_licensed,
         "is_default_store": is_default_store,
         "max_stores": max_stores,
         "pwa": pwa_settings,
@@ -392,7 +397,28 @@ async def save_default_qualifying(request: Request, db: aiosqlite.Connection = D
     return RedirectResponse(url="/admin/settings#defaults", status_code=303)
 
 
-# ---- Git アップデート（admin 画面を開いたときの確認・実行） ----
+# ---- M4LAPS ライセンス（キー登録で機能を有効化） ----
+
+@router.post("/settings/m4laps/activate", response_class=HTMLResponse)
+async def m4laps_activate(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """ライセンスキーを照合し、正しければ M4LAPS を有効化する。"""
+    from fastapi.responses import RedirectResponse
+    from app.domain import m4laps_license
+    form = await request.form()
+    key = form.get("license_key", "")
+    if m4laps_license.verify_key(key):
+        await m4laps_license.activate(db)
+        return RedirectResponse(url="/admin/settings?m4laps=ok#m4laps", status_code=303)
+    return RedirectResponse(url="/admin/settings?m4laps=ng#m4laps", status_code=303)
+
+
+@router.post("/settings/m4laps/deactivate", response_class=HTMLResponse)
+async def m4laps_deactivate(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """M4LAPS を無効化する（ライセンス解除）。"""
+    from fastapi.responses import RedirectResponse
+    from app.domain import m4laps_license
+    await m4laps_license.deactivate(db)
+    return RedirectResponse(url="/admin/settings#m4laps", status_code=303)
 
 @router.get("/update/check")
 async def update_check(request: Request):

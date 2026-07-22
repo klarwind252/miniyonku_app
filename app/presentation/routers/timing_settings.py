@@ -15,8 +15,9 @@ from app.infrastructure.db.repositories.timing_repository import (
 )
 from app.presentation.templates import templates
 from app.domain.rotation import LayoutElement, validate_layout, build_course
+from app.presentation.routers.m4laps_guard import require_m4laps
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_m4laps)])
 
 
 # ---------------------------------------------------------------------------

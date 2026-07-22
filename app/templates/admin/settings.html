@@ -228,6 +228,9 @@
     {% if IS_CLOUD and is_default_store %}
     <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 複数店舗展開</a>
     {% endif %}
+    {% if IS_CLOUD %}
+    <a href="#m4laps" class="settings-menu-item" id="menu-m4laps">⏱️ M4LAPS</a>
+    {% endif %}
     <a href="#health" class="settings-menu-item" id="menu-health">🩺 稼働ヘルス</a>
     <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 アクセス統計</a>
     <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 監査ログ</a>
@@ -1255,6 +1258,52 @@
         document.body.appendChild(s);
       }
       </script>
+    </div>
+    {% endif %}
+
+    {% if IS_CLOUD %}
+    <div class="settings-section" id="m4laps">
+      <div class="section-title">⏱️ M4LAPS</div>
+      <div class="card">
+        <div class="card-header">連動型ラップタイマー M4LAPS</div>
+        <div class="card-body" style="padding:16px">
+          {% if request.query_params.get('m4laps') == 'ok' %}
+          <div style="background:#eafaf1;border-left:4px solid #27ae60;color:#1e7e46;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:14px">
+            ✓ ライセンスを登録しました。ナビゲーションに「M4LAPS」が表示されます。
+          </div>
+          {% elif request.query_params.get('m4laps') == 'ng' %}
+          <div style="background:#fdf2f2;border-left:4px solid #e74c3c;color:#922b21;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:14px">
+            ✕ ライセンスキーが正しくありません。
+          </div>
+          {% endif %}
+
+          <p style="font-size:13px;color:#636e72;margin-bottom:14px">
+            M4LAPS は IR遮断式の連動型ラップタイマーです。
+            ライセンスキーを登録すると、ナビゲーションに「M4LAPS」が表示され、
+            コースレイアウト・計測端末台帳・レース結果が利用できます。
+          </p>
+
+          {% if m4laps_licensed %}
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span class="status" style="background:#eafaf1;color:#27ae60;font-size:13px">✓ ライセンス登録済み・有効</span>
+            <form method="post" action="/admin/settings/m4laps/deactivate" style="display:inline"
+                  onsubmit="return confirm('M4LAPS を無効化しますか？ナビゲーションから消え、計測機能が使えなくなります。');">
+              <button type="submit" class="btn btn-danger btn-sm">ライセンスを解除</button>
+            </form>
+          </div>
+          {% else %}
+          <form method="post" action="/admin/settings/m4laps/activate">
+            <div class="form-group" style="margin-bottom:12px">
+              <label>ライセンスキー</label>
+              <input type="text" name="license_key" required
+                     placeholder="ライセンスキーを入力"
+                     style="width:280px;font-family:monospace">
+            </div>
+            <button type="submit" class="btn btn-primary">ライセンスを登録</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
     </div>
     {% endif %}
 

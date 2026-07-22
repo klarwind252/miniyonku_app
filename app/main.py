@@ -17,6 +17,7 @@ from app.presentation.auth import add_auth
 from app.presentation.onprem_auth import add_onprem_auth
 from app.presentation.middleware.store_resolver import add_store_resolver
 from app.presentation.middleware.security import add_security_headers
+from app.presentation.middleware.m4laps_license import add_m4laps_license
 
 # ルーター（未移行モジュールは旧パスのまま＝互換シム経由で動作）
 from app.routers import admin, tournaments
@@ -40,6 +41,8 @@ add_auth(app)
 # オンプレ版のLAN公開時：ONPREM_ADMIN_PIN 設定時のみ /admin をPIN保護（既定は無効＝従来挙動）。
 add_onprem_auth(app)
 add_store_resolver(app)
+# M4LAPSライセンス状態を request.state にセット（クラウドのadmin画面でのみ判定）。
+add_m4laps_license(app)
 # 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
 add_security_headers(app)
 
