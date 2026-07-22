@@ -1544,49 +1544,6 @@ async def _current_date(tid: int, db: aiosqlite.Connection) -> str:
     return (row["date"] if row else "") or ""
 
 
-@router.post("/{tid}/edit-basic")
-async def tournament_edit_basic(
-    tid: int,
-    name: str = Form(...),
-    date: str = Form(""),
-    regulation: str = Form("open"),
-    time_slot: str = Form("day"),
-    time_slot_free: str = Form(""),
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    """レース基本情報の訂正（開催日・レース名・レギュレーション・時間帯）。
-
-    入力ミスの訂正用のため、結果が確定済みのレースでも実行できる。
-    ここで更新するのは表示上の属性のみで、エントリー・予選・決勝の結果には一切触れない。
-    """
-    async with db.execute("SELECT date FROM tournaments WHERE id=?", (tid,)) as cur:
-        cur_row = await cur.fetchone()
-    if not cur_row:
-        return RedirectResponse(url="/admin/tournaments/", status_code=303)
-
-    name = (name or "").strip()
-    if not name:
-        return RedirectResponse(
-            url=f"/admin/tournaments/{tid}?error=basic_name", status_code=303)
-
-    # 開催日が不正・未入力なら現在値を維持（誤操作で日付が消えないようにする）
-    new_date = _normalize_date(date) or (cur_row["date"] or "")
-
-    if time_slot not in TIME_SLOT_LABELS:
-        time_slot = "day"
-    # フリーワード以外を選んだ場合はフリーワード欄をクリアする
-    time_slot_free = (time_slot_free or "").strip() if time_slot == "free" else ""
-
-    await db.execute(
-        """UPDATE tournaments
-           SET date=?, name=?, regulation=?, time_slot=?, time_slot_free=?
-           WHERE id=?""",
-        (new_date, name, regulation, time_slot, time_slot_free, tid),
-    )
-    await db.commit()
-    return RedirectResponse(url=f"/admin/tournaments/{tid}?saved=basic", status_code=303)
-
-
 @router.get("/{tid}/edit", response_class=HTMLResponse)
 async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
