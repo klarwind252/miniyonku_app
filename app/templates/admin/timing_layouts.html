@@ -1,0 +1,70 @@
+{% extends "admin/base.html" %}
+{% block title %}コースレイアウト{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>コースレイアウト</h1>
+  <p>S/G・セクションゲート・レーンチェンジを通過順に並べた「コースの地図」です。
+     端末台帳の機器を各ゲート枠に割り当てます。</p>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">新しいコースを作成</div>
+    <div class="card-body">
+      <form method="post" action="/admin/timing/layouts/create">
+        <div class="form-group">
+          <label>コース名 *</label>
+          <input type="text" name="name" required placeholder="例：コースA">
+        </div>
+        <div class="form-group" style="margin-bottom:18px">
+          <label>周回数（3の倍数・最大9）</label>
+          <select name="target_laps">
+            <option value="3">3周</option>
+            <option value="6">6周</option>
+            <option value="9">9周</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">作成して編集へ</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">保存済みコース</div>
+    <div class="card-body">
+      {% if layouts %}
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <thead>
+          <tr style="text-align:left;border-bottom:2px solid #dfe4ea">
+            <th style="padding:8px">コース名</th>
+            <th style="padding:8px">周回</th>
+            <th style="padding:8px">更新</th>
+            <th style="padding:8px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in layouts %}
+          <tr style="border-bottom:1px solid #eef2f5">
+            <td style="padding:8px;font-weight:bold">{{ l.name }}</td>
+            <td style="padding:8px">{{ l.target_laps }}周</td>
+            <td style="padding:8px;color:#7f8c8d;font-size:12px">{{ l.updated_at }}</td>
+            <td style="padding:8px;white-space:nowrap">
+              <a href="/admin/timing/layouts/{{ l.id }}/edit"
+                 class="btn btn-secondary btn-sm">編集</a>
+              <form method="post" action="/admin/timing/layouts/{{ l.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('「{{ l.name }}」を削除しますか？');">
+                <button type="submit" class="btn btn-danger btn-sm">削除</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p style="color:#7f8c8d">まだコースがありません。左のフォームから作成してください。</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

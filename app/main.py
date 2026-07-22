@@ -28,6 +28,7 @@ from app.presentation.routers.stores import router as stores_router
 from app.presentation.routers.public_entry import router as public_entry_router
 from app.presentation.routers.public_misc import router as public_misc_router
 from app.presentation.routers.pwa_manifest import router as pwa_manifest_router
+from app.presentation.routers.timing_settings import router as timing_settings_router
 
 app = FastAPI(title="ミニ四駆レース管理システム", version="1.0.0")
 
@@ -88,6 +89,7 @@ app.include_router(racers_router, prefix="/admin/racers")
 app.include_router(tournaments.router, prefix="/admin/tournaments")
 app.include_router(viewer_router, prefix="/view")
 app.include_router(stores_router, prefix="/admin/stores")
+app.include_router(timing_settings_router, prefix="/admin/timing")
 app.include_router(pwa_manifest_router)
 app.include_router(public_entry_router)
 app.include_router(public_misc_router)

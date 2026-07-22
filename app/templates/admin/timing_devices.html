@@ -1,0 +1,62 @@
+{% extends "admin/base.html" %}
+{% block title %}計測端末台帳{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>計測端末台帳</h1>
+  <p>ラップタイマーの端末一覧です。ノードID（機体番号）は固定・永続で、
+     フルメンテナンス以外では変更しません。テプラの番号と一致させてください。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">端末一覧（固定12台）</div>
+  <div class="card-body" style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead>
+        <tr style="text-align:left;border-bottom:2px solid #dfe4ea">
+          <th style="padding:8px">ノードID</th>
+          <th style="padding:8px">種別</th>
+          <th style="padding:8px">表示名</th>
+          <th style="padding:8px">MACアドレス</th>
+          <th style="padding:8px">メモ</th>
+          <th style="padding:8px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr style="border-bottom:1px solid #eef2f5">
+          <form method="post" action="/admin/timing/devices/{{ d.node_id }}">
+          <td style="padding:8px;font-weight:bold">{{ d.node_id }}</td>
+          <td style="padding:8px">
+            {% if d.kind == 'SQ' %}<span class="status" style="background:#e8f4fd;color:#2980b9">SQ セクション</span>
+            {% elif d.kind == 'GW' %}<span class="status" style="background:#fdeaea;color:#c0392b">GW 本体</span>
+            {% elif d.kind == 'RC' %}<span class="status" style="background:#eafaf1;color:#27ae60">RC リモコン</span>
+            {% elif d.kind == 'SG' %}<span class="status" style="background:#fef5e7;color:#e67e22">SG シグナル</span>
+            {% endif %}
+          </td>
+          <td style="padding:8px">
+            <input type="text" name="label" value="{{ d.label }}" style="width:90px">
+          </td>
+          <td style="padding:8px">
+            <input type="text" name="mac" value="{{ d.mac or '' }}"
+                   placeholder="未登録" style="width:150px;font-family:monospace">
+          </td>
+          <td style="padding:8px">
+            <input type="text" name="note" value="{{ d.note or '' }}"
+                   placeholder="—" style="width:160px">
+          </td>
+          <td style="padding:8px">
+            <button type="submit" class="btn btn-secondary btn-sm">保存</button>
+          </td>
+          </form>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="color:#7f8c8d;font-size:13px;margin-top:12px">
+      ⚠ ノードID・種別は固定です。表示名・MAC・メモのみ編集できます。<br>
+      SQ0〜SQ5＝セクションゲート（最大6台）／ GW6・GW7＝本体（1台は予備・電源OFF）／
+      RC8・RC9＝リモコン ／ SG10・SG11＝シグナル。
+    </p>
+  </div>
+</div>
+{% endblock %}

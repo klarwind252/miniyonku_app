@@ -1,0 +1,245 @@
+{% extends "admin/base.html" %}
+{% block title %}コース編集 — {{ layout.name }}{% endblock %}
+{% block extra_head %}
+<style>
+  .layout-editor { display:grid; grid-template-columns: 1fr 320px; gap:20px; }
+  @media (max-width: 900px){ .layout-editor{ grid-template-columns:1fr; } }
+
+  .track { min-height:120px; padding:12px; background:#f8fafb;
+           border:2px dashed #cfd8dd; border-radius:10px; }
+  .track.empty::after { content:"下の部品を押して追加、ドラッグで並べ替え";
+           color:#9aa7ad; font-size:13px; display:block; text-align:center; padding:24px; }
+
+  .el { display:flex; align-items:center; gap:10px; padding:10px 12px; margin:8px 0;
+        background:#fff; border:1px solid #e1e8ec; border-radius:8px; cursor:grab;
+        box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .el.dragging { opacity:.4; }
+  .el .grip { color:#b2bec3; font-size:18px; cursor:grab; }
+  .el .pos { color:#9aa7ad; font-size:12px; width:20px; text-align:center; }
+  .el .kind-badge { font-weight:bold; font-size:13px; padding:3px 10px; border-radius:12px; }
+  .el.sg .kind-badge { background:#fdeaea; color:#c0392b; }
+  .el.sq .kind-badge { background:#e8f4fd; color:#2980b9; }
+  .el.lc .kind-badge { background:#f4ecf7; color:#8e44ad; }
+  .el select { flex:1; max-width:180px; }
+  .el .del { color:#e74c3c; cursor:pointer; font-weight:bold; padding:2px 8px; }
+  .el.drop-target { border-top:3px solid #3498db; }
+
+  .palette button { width:100%; margin-bottom:8px; text-align:left; }
+  .issue { padding:10px 12px; border-radius:6px; margin-bottom:8px; font-size:13px; }
+  .issue.error { background:#fdf2f2; border-left:4px solid #e74c3c; color:#922b21; }
+  .issue.warning { background:#fffbea; border-left:4px solid #f39c12; color:#8a6d1a; }
+  .issue.ok { background:#eafaf1; border-left:4px solid #27ae60; color:#1e7e46; }
+  .summary { font-size:13px; color:#636e72; margin:10px 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>コース編集</h1>
+  <p>通過順に部品を並べます。マシンは上から下へ通過します。</p>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-body">
+    <div style="display:flex;gap:16px;align-items:end;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label>コース名</label>
+        <input type="text" id="layout-name" value="{{ layout.name }}" style="width:200px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>周回数</label>
+        <select id="target-laps">
+          <option value="3" {% if layout.target_laps==3 %}selected{% endif %}>3周</option>
+          <option value="6" {% if layout.target_laps==6 %}selected{% endif %}>6周</option>
+          <option value="9" {% if layout.target_laps==9 %}selected{% endif %}>9周</option>
+        </select>
+      </div>
+      <a href="/admin/timing/layouts" class="btn btn-secondary">一覧へ戻る</a>
+    </div>
+  </div>
+</div>
+
+<div class="layout-editor">
+  <!-- 左：トラック -->
+  <div class="card">
+    <div class="card-header">コース（通過順・S/G → ゴール）</div>
+    <div class="card-body">
+      <div id="track" class="track"></div>
+    </div>
+  </div>
+
+  <!-- 右：部品パレット＋検証＋保存 -->
+  <div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">部品を追加</div>
+      <div class="card-body palette">
+        <button class="btn btn-danger" onclick="addEl('SG')">＋ S/Gゲート（1個のみ）</button>
+        <button class="btn btn-primary" onclick="addEl('SQ')">＋ セクションゲート</button>
+        <button class="btn" style="background:#8e44ad;color:#fff" onclick="addEl('LC')">＋ レーンチェンジ</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">検証</div>
+      <div class="card-body">
+        <div class="summary" id="summary">—</div>
+        <div id="issues"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <button class="btn btn-primary" style="width:100%" onclick="save(false)">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const LAYOUT_ID = {{ layout.id }};
+const SG_DEVICES = {{ sg_devices | tojson }};   // GW実機（S/G枠用）
+const SQ_DEVICES = {{ sq_devices | tojson }};   // SQ実機
+
+// 現在の要素列（順序＝配列順）
+let els = {{ elements | tojson }};
+// elements は [{position,kind,node_id}, ...]。無ければ空。
+els = (els || []).map(e => ({kind: e.kind, node_id: e.node_id}));
+
+const track = document.getElementById('track');
+
+function deviceOptions(kind, selected){
+  const list = kind === 'SG' ? SG_DEVICES : SQ_DEVICES;
+  let html = '<option value="">（機器を選択）</option>';
+  for(const d of list){
+    const sel = (d.node_id === selected) ? 'selected' : '';
+    html += `<option value="${d.node_id}" ${sel}>${d.label}（ID:${d.node_id}）</option>`;
+  }
+  return html;
+}
+
+function render(){
+  track.classList.toggle('empty', els.length === 0);
+  track.innerHTML = '';
+  els.forEach((el, idx) => {
+    const div = document.createElement('div');
+    div.className = 'el ' + el.kind.toLowerCase();
+    div.draggable = true;
+    div.dataset.idx = idx;
+
+    let inner = `<span class="grip">⋮⋮</span><span class="pos">${idx+1}</span>`;
+    if(el.kind === 'SG'){
+      inner += `<span class="kind-badge">S/G</span>`;
+      inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SG', el.node_id)}</select>`;
+    } else if(el.kind === 'SQ'){
+      inner += `<span class="kind-badge">SQ</span>`;
+      inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SQ', el.node_id)}</select>`;
+    } else {
+      inner += `<span class="kind-badge">LC レーンチェンジ</span><span style="flex:1"></span>`;
+    }
+    inner += `<span class="del" onclick="delEl(${idx})">✕</span>`;
+    div.innerHTML = inner;
+
+    // drag events
+    div.addEventListener('dragstart', e => {
+      div.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', idx);
+    });
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      document.querySelectorAll('.el').forEach(x=>x.classList.remove('drop-target'));
+    });
+    div.addEventListener('dragover', e => {
+      e.preventDefault();
+      div.classList.add('drop-target');
+    });
+    div.addEventListener('dragleave', () => div.classList.remove('drop-target'));
+    div.addEventListener('drop', e => {
+      e.preventDefault();
+      const from = parseInt(e.dataTransfer.getData('text/plain'));
+      const to = idx;
+      if(from === to) return;
+      const moved = els.splice(from, 1)[0];
+      els.splice(to, 0, moved);
+      render();
+      validate();
+    });
+
+    track.appendChild(div);
+  });
+}
+
+function addEl(kind){
+  if(kind === 'SG' && els.some(e => e.kind === 'SG')){
+    alert('S/Gゲートは1個だけです。');
+    return;
+  }
+  els.push({kind: kind, node_id: null});
+  render();
+  validate();
+}
+
+function delEl(idx){
+  els.splice(idx, 1);
+  render();
+  validate();
+}
+
+function setNode(idx, val){
+  els[idx].node_id = val === '' ? null : parseInt(val);
+  validate();
+}
+
+async function validate(){
+  const res = await fetch(`/admin/timing/layouts/${LAYOUT_ID}/validate`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({elements: els})
+  });
+  const data = await res.json();
+  const summary = document.getElementById('summary');
+  summary.textContent = `レーンチェンジ ${data.lc_count} 個 ／ 1周のずれ ${data.rot_total}`;
+
+  const box = document.getElementById('issues');
+  box.innerHTML = '';
+  if(data.issues.length === 0){
+    box.innerHTML = '<div class="issue ok">✓ 問題ありません。保存できます。</div>';
+  } else {
+    for(const i of data.issues){
+      const cls = i.severity === 'error' ? 'error' : 'warning';
+      const mark = i.severity === 'error' ? '✕' : '⚠';
+      box.innerHTML += `<div class="issue ${cls}">${mark} ${i.message}</div>`;
+    }
+  }
+  return data;
+}
+
+async function save(force){
+  const body = {
+    name: document.getElementById('layout-name').value,
+    target_laps: parseInt(document.getElementById('target-laps').value),
+    elements: els,
+    force: force
+  };
+  const res = await fetch(`/admin/timing/layouts/${LAYOUT_ID}/save`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if(res.ok){
+    alert('保存しました。');
+    return;
+  }
+  const data = await res.json();
+  if(data.reason === 'warning'){
+    // 警告のみ → 確認して force 保存
+    const msg = data.issues.map(i => '⚠ ' + i.message).join('\n\n');
+    if(confirm(msg + '\n\nこのまま保存しますか？')){
+      await save(true);
+    }
+  } else {
+    const msg = data.issues.map(i => '✕ ' + i.message).join('\n\n');
+    alert('保存できません：\n\n' + msg);
+  }
+}
+
+render();
+validate();
+</script>
+{% endblock %}

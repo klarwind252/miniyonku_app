@@ -879,5 +879,10 @@ async def init_db(db_path: str = None):
 
         await db.commit()
 
+        # ---- タイミング計測（端末台帳・コースレイアウト）----
+        # 既存スキーマを汚さないよう別モジュールに分離（冪等・固定12台を投入）。
+        from app.infrastructure.db.timing_schema import ensure_timing_schema
+        await ensure_timing_schema(db)
+
     print(f"[DB] ready: {db_path}")
 # NOTE: certificate_templates migration appended below in init_db flow
