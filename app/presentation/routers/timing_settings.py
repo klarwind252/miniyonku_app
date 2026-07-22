@@ -58,27 +58,23 @@ async def devices_update(
 # コースレイアウト
 # ---------------------------------------------------------------------------
 
-@router.get("/layouts", response_class=HTMLResponse)
-async def layouts_page(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+SINGLE_LAYOUT_NAME = "メインコース"
+
+
+async def _get_or_create_single_layout(db: aiosqlite.Connection) -> int:
+    """単一コース固定（方針A）。既存の最初のレイアウトを返す。無ければ1つ作る。"""
     repo = TimingLayoutRepository(db)
     layouts = await repo.list_layouts()
-    return templates.TemplateResponse(
-        "admin/timing_layouts.html",
-        {"request": request, "layouts": layouts},
-    )
+    if layouts:
+        return layouts[0]["id"]
+    return await repo.create_layout(SINGLE_LAYOUT_NAME, 3)
 
 
-@router.post("/layouts/create")
-async def layouts_create(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    form = await request.form()
-    name = (form.get("name") or "新しいコース").strip()
-    try:
-        target_laps = int(form.get("target_laps") or 3)
-    except ValueError:
-        target_laps = 3
-    repo = TimingLayoutRepository(db)
-    lid = await repo.create_layout(name, target_laps)
+@router.get("/layouts")
+async def layouts_page(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """単一コース固定：一覧は廃止し、そのコースの編集画面へ直行する。"""
     from fastapi.responses import RedirectResponse
+    lid = await _get_or_create_single_layout(db)
     return RedirectResponse(url=f"/admin/timing/layouts/{lid}/edit", status_code=303)
 
 
@@ -98,8 +94,8 @@ async def layout_edit_page(
     # ⚠ aiosqlite.Row はそのままでは tojson できないため dict に変換する。
     sg_rows = await drepo.list_by_kind("GW")   # S/GはGW実機
     sq_rows = await drepo.list_by_kind("SQ")
-    sg_devices = [{"node_id": r["node_id"], "label": r["label"]} for r in sg_rows]
-    sq_devices = [{"node_id": r["node_id"], "label": r["label"]} for r in sq_rows]
+    sg_devices = [{"node_id": r["node_id"], "label": r["label"], "note": r["note"]} for r in sg_rows]
+    sq_devices = [{"node_id": r["node_id"], "label": r["label"], "note": r["note"]} for r in sq_rows]
 
     # elements も dict 化（tojson でJSに渡すため）
     elem_list = [
@@ -202,7 +198,6 @@ async def layout_delete(
     layout_id: int,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    repo = TimingLayoutRepository(db)
-    await repo.delete_layout(layout_id)
+    """単一コース固定（方針A）のため、削除は行わない。編集画面へ戻す。"""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/admin/timing/layouts", status_code=303)

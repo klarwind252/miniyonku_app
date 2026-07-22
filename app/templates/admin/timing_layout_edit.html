@@ -38,6 +38,12 @@
   <p>通過順に部品を並べます。マシンは上から下へ通過します。</p>
 </div>
 
+<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+  <a href="/admin/timing/layouts" class="btn btn-primary btn-sm">🗺️ コースレイアウト</a>
+  <a href="/admin/timing/devices" class="btn btn-secondary btn-sm">📟 計測端末台帳</a>
+  <a href="/admin/timing/results" class="btn btn-secondary btn-sm">🏁 レース結果</a>
+</div>
+
 <div class="card" style="margin-bottom:16px">
   <div class="card-body">
     <div style="display:flex;gap:16px;align-items:end;flex-wrap:wrap">
@@ -53,7 +59,6 @@
           <option value="9" {% if layout.target_laps==9 %}selected{% endif %}>9周</option>
         </select>
       </div>
-      <a href="/admin/timing/layouts" class="btn btn-secondary">一覧へ戻る</a>
     </div>
   </div>
 </div>
@@ -106,12 +111,28 @@ els = (els || []).map(e => ({kind: e.kind, node_id: e.node_id}));
 
 const track = document.getElementById('track');
 
-function deviceOptions(kind, selected){
+function usedNodeIds(exceptIdx){
+  // 現在レイアウトで既に使われている node_id の集合（exceptIdx の枠は除く）
+  const used = new Set();
+  els.forEach((e, i) => {
+    if(i === exceptIdx) return;
+    if((e.kind === 'SG' || e.kind === 'SQ') && e.node_id != null){
+      used.add(e.node_id);
+    }
+  });
+  return used;
+}
+
+function deviceOptions(kind, selected, idx){
   const list = kind === 'SG' ? SG_DEVICES : SQ_DEVICES;
+  const used = usedNodeIds(idx);
   let html = '<option value="">（機器を選択）</option>';
   for(const d of list){
+    // 他の枠で使用済みの機器は選択肢から消す（自分が選択中のものは残す）
+    if(used.has(d.node_id) && d.node_id !== selected) continue;
     const sel = (d.node_id === selected) ? 'selected' : '';
-    html += `<option value="${d.node_id}" ${sel}>${d.label}（ID:${d.node_id}）</option>`;
+    const note = d.note ? ` ｜ ${d.note}` : '';
+    html += `<option value="${d.node_id}" ${sel}>${d.label}（ID:${d.node_id}）${note}</option>`;
   }
   return html;
 }
@@ -128,10 +149,10 @@ function render(){
     let inner = `<span class="grip">⋮⋮</span><span class="pos">${idx+1}</span>`;
     if(el.kind === 'SG'){
       inner += `<span class="kind-badge">S/G</span>`;
-      inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SG', el.node_id)}</select>`;
+      inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SG', el.node_id, idx)}</select>`;
     } else if(el.kind === 'SQ'){
       inner += `<span class="kind-badge">SQ</span>`;
-      inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SQ', el.node_id)}</select>`;
+      inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SQ', el.node_id, idx)}</select>`;
     } else {
       inner += `<span class="kind-badge">LC レーンチェンジ</span><span style="flex:1"></span>`;
     }
@@ -185,6 +206,8 @@ function delEl(idx){
 
 function setNode(idx, val){
   els[idx].node_id = val === '' ? null : parseInt(val);
+  // 他の枠のプルダウンにも「使用済み除外」を反映するため再描画する
+  render();
   validate();
 }
 
