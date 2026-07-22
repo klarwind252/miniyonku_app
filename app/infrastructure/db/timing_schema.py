@@ -63,6 +63,38 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_timing_layout_elems
             ON timing_layout_elements(layout_id, position);
+
+        -- レース（独立・DA5）。GWのヒートIDで管理。既存 heats とは当面切り離す。
+        -- いずれトーナメントの heat_id と橋渡しする（timing_races.heat_id を後で使う）。
+        CREATE TABLE IF NOT EXISTS timing_races (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            heat_tag     INTEGER,               -- GWが貼るヒートID（対戦の識別）
+            layout_id    INTEGER,               -- どのコースで走ったか
+            target_laps  INTEGER NOT NULL DEFAULT 3,
+            green_t_us   INTEGER,               -- 緑時刻（NULLなら走行式・DA4）
+            heat_id      INTEGER,               -- 将来：既存トーナメントheatへの橋渡し用
+            created_at   TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        -- 通過イベント（GWが記録した材料・DA3）。冪等キーは D12。
+        CREATE TABLE IF NOT EXISTS timing_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id      INTEGER NOT NULL,
+            device_id    TEXT NOT NULL,         -- GW識別（冪等キーの一部・D12）
+            src          INTEGER NOT NULL,      -- 発生ノードID（ゲート）
+            src_boot_id  INTEGER NOT NULL,      -- 発生ノードのboot_id（D12）
+            seq          INTEGER NOT NULL,      -- 発生ノードごとの通番（D12）
+            lane         INTEGER NOT NULL,      -- 物理レーン 1..3
+            t_us         INTEGER NOT NULL,      -- ビームA打刻（GW時刻）
+            t_us_b       INTEGER,               -- ビームB打刻（速度用・任意）
+            quality      INTEGER DEFAULT 0,
+            -- 冪等キー（D12）: 同一イベントの再送を弾く
+            UNIQUE (device_id, src, src_boot_id, seq),
+            FOREIGN KEY (race_id) REFERENCES timing_races(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_timing_events_race
+            ON timing_events(race_id);
     """)
 
     # 固定12台を投入（既にあれば無視＝冪等）

@@ -177,6 +177,13 @@ select{background:#fff}
     </a>
   </div>
 
+  <div class="nav-group">
+    <a href="/admin/timing/layouts"
+       class="nav-link {% if '/admin/timing' in request.url.path %}active{% endif %}">
+      ⏱️ 計測
+    </a>
+  </div>
+
   <div class="spacer"></div>
 
   <!-- テロップ（お知らせ帯：全admin画面共通。クリックでポップオーバー） -->
@@ -248,18 +255,6 @@ select{background:#fff}
       <option value="holiday">祝日</option>
       <option value="special">特別</option>
     </select>
-  </div>
-
-  <div class="nav-group" style="padding:0 4px">
-    <button id="pubStatusBadge"
-            {% if IS_CLOUD %}disabled title="クラウド運用ではGCS配信を使用しません（無効固定）"{% else %}onclick="togglePubDelivery()" title="クリックで配信ON/OFFを切り替え"{% endif %}
-            style="display:flex;align-items:center;gap:7px;padding:0 14px;height:100%;color:#bdc3c7;font-size:13px;white-space:nowrap;background:none;border:none;cursor:{% if IS_CLOUD %}not-allowed;opacity:.45{% else %}pointer{% endif %}">
-      <span id="pubToggleTrack" style="position:relative;display:inline-block;width:32px;height:18px;border-radius:9px;background:#4a5568;transition:background .3s;flex-shrink:0">
-        <span id="pubToggleKnob" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .3s;display:block"></span>
-      </span>
-      配信
-      <span id="pubStatusLabel" style="font-size:11px;padding:1px 7px;border-radius:8px;background:#4a5568;color:#a0aec0;transition:all .3s">{% if IS_CLOUD %}無効{% else %}OFF{% endif %}</span>
-    </button>
   </div>
 
 </nav>
@@ -394,7 +389,8 @@ function _showPubToast(msg) {
   }, 3500);
 }
 
-updatePubStatus();
+// 配信トグルはナビから削除済み（要素が無いため初回取得は行わない）。
+// updatePubStatus();
 
 // 管理画面のURL変化・クリック位置をviewerに通知
 (function() {

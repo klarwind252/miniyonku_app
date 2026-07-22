@@ -124,3 +124,74 @@ class TimingLayoutRepository:
             (layout_id,),
         )
         await self.db.commit()
+
+
+class TimingRaceRepository:
+    """独立レース（timing_races）と通過イベント（timing_events）へのアクセス。"""
+
+    def __init__(self, db: aiosqlite.Connection):
+        self.db = db
+
+    async def create_race(
+        self,
+        heat_tag: int | None,
+        layout_id: int | None,
+        target_laps: int,
+        green_t_us: int | None,
+    ) -> int:
+        cur = await self.db.execute(
+            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us) "
+            "VALUES (?, ?, ?, ?)",
+            (heat_tag, layout_id, target_laps, green_t_us),
+        )
+        await self.db.commit()
+        return cur.lastrowid
+
+    async def get_race(self, race_id: int):
+        async with self.db.execute(
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, heat_id, created_at "
+            "FROM timing_races WHERE id = ?",
+            (race_id,),
+        ) as cur:
+            return await cur.fetchone()
+
+    async def list_races(self, limit: int = 50):
+        async with self.db.execute(
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, created_at "
+            "FROM timing_races ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            return await cur.fetchall()
+
+    async def insert_event(self, race_id: int, ev: dict) -> bool:
+        """通過イベントを1件挿入。冪等キー（D12）で重複は無視。
+
+        戻り値: True=新規挿入 / False=重複（既にある）
+        ev: {device_id, src, src_boot_id, seq, lane, t_us, t_us_b?, quality?}
+        """
+        cur = await self.db.execute(
+            "INSERT OR IGNORE INTO timing_events "
+            "(race_id, device_id, src, src_boot_id, seq, lane, t_us, t_us_b, quality) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                race_id,
+                str(ev["device_id"]),
+                int(ev["src"]),
+                int(ev["src_boot_id"]),
+                int(ev["seq"]),
+                int(ev["lane"]),
+                int(ev["t_us"]),
+                ev.get("t_us_b"),
+                int(ev.get("quality", 0)),
+            ),
+        )
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def get_events(self, race_id: int):
+        async with self.db.execute(
+            "SELECT src, lane, t_us, t_us_b, quality, seq FROM timing_events "
+            "WHERE race_id = ? ORDER BY t_us",
+            (race_id,),
+        ) as cur:
+            return await cur.fetchall()
