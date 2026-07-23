@@ -120,8 +120,12 @@ async def results_page(
 async def pip_latest(
     limit: int = 5,
     db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
 ):
     """PIP（右下小窓）用：最近の計測レースを新しい順に、順位つきで返す。
+
+    ⚠ クラウド版かつライセンス登録済みの環境でのみ利用可（require_m4laps）。
+       オンプレ版・未登録環境では 404 を返し、機能自体を隠す。
 
     GWから送られてきた記録をそのまま見せるだけ。まだ誰のものかは紐づけない。
     （組み合わせ情報はGWへ送らない方針のため、突き合わせはアプリ側で後から行う）

@@ -1017,6 +1017,7 @@ function _showPubToast(msg) {
 })();
 </script>
 
+{% if IS_CLOUD and request.state.m4laps_licensed %}
 <!-- ============ M4LAPS PIP（ラップタイマー受信・全admin画面共通／PC） ============ -->
 <style>
   #m4pip{
@@ -1149,5 +1150,6 @@ function _showPubToast(msg) {
   setInterval(poll, 3000);
 })();
 </script>
+{% endif %}
 </body>
 </html>
