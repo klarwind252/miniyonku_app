@@ -162,6 +162,7 @@ async def results_page(
                 "race_id": rid,
                 "created_at": race["created_at"],
                 "heat_id": race["heat_id"],
+                "mode": result.mode,               # 'f1'=レース / 'run'=フリー
                 "pos": pos,
                 "start_lane": m.start_lane,
                 "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,

@@ -26,11 +26,17 @@
   .c-pos{width:38px;text-align:center;font-weight:bold;color:#2980b9}
   .c-lane{width:52px;text-align:center}
   .th-c{text-align:center}
+  .c-mode{text-align:center;vertical-align:top;width:64px}
+  .mode-chip{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold}
+  .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
+  .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
   /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
   .lane-chip{display:inline-block;min-width:22px;padding:1px 6px;border-radius:4px;
     font-size:12px;font-weight:bold;color:#fff;text-align:center;line-height:1.5}
-  .lane-1{background:#e74c3c} .lane-2{background:#2980b9} .lane-3{background:#f39c12}
-  .lane-4{background:#27ae60} .lane-5{background:#8e44ad} .lane-6{background:#16a085}
+  /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
+  .lane-1{background:#2980b9} .lane-2{background:#e74c3c}
+  .lane-3{background:#f1c40f;color:#4a3b00}   /* 黄は白文字だと読めないので濃色に */
+  .lane-4{background:#27ae60} .lane-5{background:#95a5a6}
   .c-best{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums}
   .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:70px}
   .c-sec{text-align:right;font-variant-numeric:tabular-nums}
@@ -49,6 +55,7 @@
         <thead>
           <tr>
             <th>タイムスタンプ</th>
+            <th class="th-c">方式</th>
             <th class="c-pos">POS</th>
             <th class="th-c">LANE</th>
             <th class="th-r">FINISH</th>
@@ -70,9 +77,16 @@
               <span class="linked-badge">ヒート{{ row.heat_id }}</span>
               {% endif %}
             </td>
+            <td class="c-mode" rowspan="{{ row.race_row_count }}">
+              {% if row.mode == 'f1' %}
+              <span class="mode-chip mode-race">レース</span>
+              {% else %}
+              <span class="mode-chip mode-free">フリー</span>
+              {% endif %}
+            </td>
             {% endif %}
             <td class="c-pos">{{ row.pos }}</td>
-            <td class="c-lane"><span class="lane-chip lane-{{ ((row.start_lane - 1) % 6) + 1 }}">{{ row.start_lane }}</span></td>
+            <td class="c-lane"><span class="lane-chip lane-{{ ((row.start_lane - 1) % 5) + 1 }}">{{ row.start_lane }}</span></td>
             <td class="c-best">{{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}</td>
             <td class="c-gap">
               {% if row.gap is none %}—

@@ -1029,7 +1029,9 @@ function _showPubToast(msg) {
   }
   #m4pip .pip-head{
     display:flex; align-items:center; gap:8px;
-    padding:8px 10px; background:#2c3e50; color:#fff; cursor:pointer; user-select:none;
+    padding:8px 10px; background:#2c3e50; color:#fff; user-select:none;
+    cursor:move;   /* ヘッダをつまんで移動できる */
+    touch-action:none;
   }
   #m4pip .pip-title{font-weight:bold; font-size:13px}
   #m4pip .pip-dot{
@@ -1058,12 +1060,12 @@ function _showPubToast(msg) {
     display:inline-block; min-width:20px; padding:1px 5px; border-radius:4px;
     font-size:12px; font-weight:bold; color:#fff; text-align:center; line-height:1.4;
   }
-  #m4pip .lane-1{background:#e74c3c}
-  #m4pip .lane-2{background:#2980b9}
-  #m4pip .lane-3{background:#f39c12}
+  /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
+  #m4pip .lane-1{background:#2980b9}
+  #m4pip .lane-2{background:#e74c3c}
+  #m4pip .lane-3{background:#f1c40f; color:#4a3b00}  /* 黄は白文字だと読めないので濃色に */
   #m4pip .lane-4{background:#27ae60}
-  #m4pip .lane-5{background:#8e44ad}
-  #m4pip .lane-6{background:#16a085}
+  #m4pip .lane-5{background:#95a5a6}
   #m4pip .pip-total{text-align:right; font-weight:bold; font-variant-numeric:tabular-nums}
   #m4pip .pip-gap{
     text-align:right; width:66px; color:#8e44ad;
@@ -1093,10 +1095,103 @@ function _showPubToast(msg) {
   var body=document.getElementById('m4pipBody');
   var dot=document.getElementById('m4pipDot');
   var btn=document.getElementById('m4pipToggleBtn');
+  var head=pip ? pip.querySelector('.pip-head') : null;
   var lastSig='';
   var failCount=0;
 
+  // ---- 表示するページを限定（レース情報／予選／決勝のみ） ----
+  //   /admin/tournaments/{id}            … レース情報
+  //   /admin/tournaments/{id}/qualifying … 予選
+  //   /admin/tournaments/{id}/bracket    … 決勝
+  function isTargetPage(){
+    var p=location.pathname.replace(/\/+$/,'');
+    return /^\/admin\/tournaments\/\d+$/.test(p)
+        || /^\/admin\/tournaments\/\d+\/qualifying(\/.*)?$/.test(p)
+        || /^\/admin\/tournaments\/\d+\/bracket(\/.*)?$/.test(p);
+  }
+  if(!isTargetPage()){
+    if(pip) pip.remove();   // 対象外のページでは存在ごと消す
+    return;
+  }
+
+  // ---- 位置の保存／復元（ドラッグで動かせる） ----
+  function savePos(){
+    try{
+      localStorage.setItem('m4pip_pos', JSON.stringify({
+        left: pip.style.left, top: pip.style.top,
+        right: pip.style.right, bottom: pip.style.bottom
+      }));
+    }catch(e){}
+  }
+  function restorePos(){
+    try{
+      var s=localStorage.getItem('m4pip_pos');
+      if(!s) return;
+      var p=JSON.parse(s);
+      if(p.left){   // ドラッグ済み＝left/top指定に切り替わっている
+        pip.style.left=p.left; pip.style.top=p.top;
+        pip.style.right='auto'; pip.style.bottom='auto';
+      }
+    }catch(e){}
+  }
+  function clampIntoView(){
+    // 画面外に出てしまった場合に引き戻す（ウィンドウ縮小・解像度変更対策）
+    var r=pip.getBoundingClientRect();
+    var maxL=Math.max(0, window.innerWidth - r.width);
+    var maxT=Math.max(0, window.innerHeight - r.height);
+    if(pip.style.left){
+      var l=Math.min(Math.max(0, parseFloat(pip.style.left)||0), maxL);
+      var t=Math.min(Math.max(0, parseFloat(pip.style.top)||0), maxT);
+      pip.style.left=l+'px'; pip.style.top=t+'px';
+    }
+  }
+
+  // ---- ドラッグ（ヘッダをつまんで移動。マウス／タッチ両対応） ----
+  var drag=null;
+  function onDown(ev){
+    // 折りたたみボタンの上では開始しない
+    if(ev.target.closest('.pip-toggle')) return;
+    var pt = ev.touches ? ev.touches[0] : ev;
+    var r = pip.getBoundingClientRect();
+    drag = {dx: pt.clientX - r.left, dy: pt.clientY - r.top, moved:false};
+    // right/bottom 指定から left/top 指定へ切り替える
+    pip.style.left=r.left+'px'; pip.style.top=r.top+'px';
+    pip.style.right='auto'; pip.style.bottom='auto';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, {passive:false});
+    document.addEventListener('touchend', onUp);
+  }
+  function onMove(ev){
+    if(!drag) return;
+    if(ev.cancelable) ev.preventDefault();
+    var pt = ev.touches ? ev.touches[0] : ev;
+    var r = pip.getBoundingClientRect();
+    var l = Math.min(Math.max(0, pt.clientX - drag.dx), window.innerWidth  - r.width);
+    var t = Math.min(Math.max(0, pt.clientY - drag.dy), window.innerHeight - r.height);
+    pip.style.left=l+'px'; pip.style.top=t+'px';
+    drag.moved=true;
+  }
+  function onUp(){
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onUp);
+    if(drag && drag.moved) savePos();
+    // ドラッグ直後のクリックで開閉が誤発火しないよう少し待つ
+    var wasMoved = drag && drag.moved;
+    drag=null;
+    if(wasMoved){ pip.dataset.justDragged='1';
+      setTimeout(function(){ delete pip.dataset.justDragged; }, 120); }
+  }
+  if(head){
+    head.addEventListener('mousedown', onDown);
+    head.addEventListener('touchstart', onDown, {passive:true});
+  }
+  window.addEventListener('resize', clampIntoView);
+
   window.m4pipToggle=function(){
+    if(pip.dataset.justDragged) return;   // 移動した直後は開閉しない
     pip.classList.toggle('collapsed');
     btn.textContent = pip.classList.contains('collapsed') ? '\u25b2' : '\u25bc';
     try{ localStorage.setItem('m4pip_collapsed', pip.classList.contains('collapsed')?'1':'0'); }catch(e){}
@@ -1151,7 +1246,7 @@ function _showPubToast(msg) {
           html+='<tr>'
             + '<td class="pip-pos">'+esc(m.pos)+'</td>'
             + '<td class="pip-lane"><span class="lane-chip lane-'
-              + (((m.start_lane-1)%6)+1) + '">'+esc(m.start_lane)+'</span></td>'
+              + (((m.start_lane-1)%5)+1) + '">'+esc(m.start_lane)+'</span></td>'
             + '<td class="pip-total">'+fmt(m.total_s)+'</td>'
             + '<td class="pip-gap">'+gap+'</td>'
             + '</tr>';
@@ -1189,6 +1284,7 @@ function _showPubToast(msg) {
       pip.classList.remove('collapsed'); btn.textContent='\u25bc';
     }
   }catch(e){}
+  restorePos();
 
   poll();
   setInterval(poll, 3000);
