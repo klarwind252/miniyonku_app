@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-title">
   <h1>計測結果</h1>
-  <p>ラップタイマーから届いた記録です。1行が1レーン、S1〜はセクター（区間）タイムと通過速度です。</p>
+  <p>ラップタイマーから届いた記録です。1行が1レーンの1周、SECTOR 0はS/G通過、1〜7は各区間です。</p>
 </div>
 
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
@@ -15,23 +15,26 @@
 <style>
   .tr-table{width:auto;border-collapse:collapse;font-size:13px;table-layout:fixed}
   .tr-table th{
-    padding:6px 8px;text-align:left;font-size:10px;font-weight:bold;
-    color:#95a5a6;letter-spacing:.5px;border-bottom:2px solid #dfe4ea;white-space:nowrap;
+    padding:4px 6px;text-align:center;font-size:10px;font-weight:bold;
+    color:#95a5a6;letter-spacing:.5px;white-space:nowrap;
   }
-  .tr-table td{padding:3px 8px;border-bottom:1px solid #eef2f5;white-space:nowrap}
-  /* レースの切れ目に太い罫線を入れ、どこまでが同じレースか分かるようにする */
-  .tr-table tr.race-start td{border-top:2px solid #dfe4ea}
+  .tr-table thead tr.g-row th{border-bottom:1px solid #e9ecef;color:#7f8c8d;font-size:10px}
+  .tr-table thead tr.h-row th{border-bottom:2px solid #dfe4ea}
+  .tr-table td{padding:2px 6px;border-bottom:1px solid #f4f6f8;white-space:nowrap}
+  /* レースの切れ目に太い罫線。レーンの切れ目は中太で区切る */
+  .tr-table tr.race-start td{border-top:2px solid #b9c4cf}
+  .tr-table tr.lane-start td{border-top:1px solid #dfe4ea}
   .tr-table tr:hover td{background:#f8f9fa}
-  .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;width:96px;line-height:1.3}
+
+  .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;width:92px;line-height:1.3}
   .c-ts .ts-d{font-size:11px}
   .c-ts .ts-t{font-size:12px;font-weight:bold;color:#636e72}
-  .c-pos{width:34px;text-align:center;font-weight:bold;color:#2980b9}
-  .c-lane{width:44px;text-align:center}
-  .th-c{text-align:center}
-  .c-mode{text-align:center;vertical-align:top;width:58px}
+  .c-mode{text-align:center;vertical-align:top;width:56px}
   .mode-chip{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
+  .c-pos{width:34px;text-align:center;font-weight:bold;color:#2980b9;vertical-align:top}
+  .c-lane{width:44px;text-align:center;vertical-align:top}
   /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
   .lane-chip{display:inline-block;min-width:22px;padding:1px 6px;border-radius:4px;
     font-size:12px;font-weight:bold;color:#fff;text-align:center;line-height:1.5}
@@ -39,19 +42,26 @@
   .lane-1{background:#2980b9} .lane-2{background:#e74c3c}
   .lane-3{background:#f1c40f;color:#4a3b00}   /* 黄は白文字だと読めないので濃色に */
   .lane-4{background:#27ae60} .lane-5{background:#95a5a6}
-  .c-best{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:72px}
-  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#c0392b}
-  .c-max .unit{color:#bdc3c7;font-size:10px;margin-left:2px}
-  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:68px}
-  /* セクターは等幅・固定幅。上段=区間タイム / 下段=通過速度(秒速) */
-  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:70px;
+
+  /* TOTAL：レーンごとに1回だけ（rowspanで結合） */
+  .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:70px;vertical-align:top}
+  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:64px;color:#c0392b;vertical-align:top}
+  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:64px;vertical-align:top}
+  .unit{color:#bdc3c7;font-size:9px;margin-left:1px}
+
+  /* LAP：周ごと */
+  .c-lapno{width:26px;text-align:center;color:#7f8c8d;font-size:11px}
+  .c-lapt{width:66px;text-align:right;font-variant-numeric:tabular-nums;font-weight:bold}
+  .c-lapav{width:60px;text-align:right;font-variant-numeric:tabular-nums;color:#7f8c8d;font-size:11px}
+
+  /* SECTOR：0=S/G、1〜7=各区間。上段=区間タイム / 下段=通過速度 */
+  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:62px;
     background:#f7f9fb;border-left:1px solid #eef2f5;line-height:1.2}
+  .c-sec.sg{background:#eef4fa}
   .c-sec .sec-t{font-weight:bold}
   .c-sec .sec-v{color:#95a5a6;font-size:10px}
-  .c-sec .sec-v .u{font-size:9px;margin-left:1px}
-  .th-r{text-align:right}
-  .c-act{width:64px;text-align:center;vertical-align:top}
-  .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:10px;margin-left:6px}
+  .c-act{width:56px;text-align:center;vertical-align:top}
+  .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 6px;font-size:10px}
   .tr-wrap{overflow-x:auto}
 </style>
 
@@ -62,30 +72,40 @@
     <div class="tr-wrap">
       <table class="tr-table">
         <thead>
-          <tr>
-            <th>タイムスタンプ</th>
-            <th class="th-c">方式</th>
-            <th class="c-pos">POS</th>
-            <th class="th-c">LANE</th>
-            <th class="th-r">FINISH</th>
-            <th class="th-r">MAX SPEED</th>
-            <th class="th-r">GAP</th>
-            {% for n in sector_nos %}
-            <th class="th-r">S{{ n }}</th>
+          <tr class="g-row">
+            <th colspan="4"></th>
+            <th colspan="3">TOTAL</th>
+            <th colspan="3">LAP</th>
+            <th colspan="8">SECTOR</th>
+            <th></th>
+          </tr>
+          <tr class="h-row">
+            <th>TS</th>
+            <th>CASE</th>
+            <th>POS</th>
+            <th>LANE</th>
+            <th>TIME</th>
+            <th>MAX</th>
+            <th>GAP</th>
+            <th>#</th>
+            <th>TIME</th>
+            <th>Av.</th>
+            {% for n in range(0, 8) %}
+            <th>{% if n == 0 %}S/G{% else %}{{ n }}{% endif %}</th>
             {% endfor %}
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for row in rows %}
-          <tr {% if row.is_first_of_race %}class="race-start"{% endif %}>
-            {# タイムスタンプはレースごとにまとめて1回だけ表示 #}
+          <tr class="{% if row.is_first_of_race %}race-start{% elif row.is_first_of_lane %}lane-start{% endif %}">
+            {# TS・CASE はレースごとに1回だけ #}
             {% if row.is_first_of_race %}
             <td class="c-ts" rowspan="{{ row.race_row_count }}">
               <div class="ts-d">{{ row.date_part }}</div>
               <div class="ts-t">{{ row.time_part }}</div>
               {% if row.heat_id is not none %}
-              <span class="linked-badge">ヒート{{ row.heat_id }}</span>
+              <div><span class="linked-badge">ヒート{{ row.heat_id }}</span></div>
               {% endif %}
             </td>
             <td class="c-mode" rowspan="{{ row.race_row_count }}">
@@ -96,19 +116,36 @@
               {% endif %}
             </td>
             {% endif %}
-            <td class="c-pos">{{ row.pos }}</td>
-            <td class="c-lane"><span class="lane-chip lane-{{ ((row.start_lane - 1) % 5) + 1 }}">{{ row.start_lane }}</span></td>
-            <td class="c-best">{{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}</td>
-            <td class="c-max">{% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}</td>
-            <td class="c-gap">
-              {% if row.gap is none %}—
-              {% elif row.gap == 0 %}-
-              {% else %}+{{ '%.3f'|format(row.gap) }}{% endif %}
+            {# POS・LANE・TOTAL はレーンごとに1回だけ #}
+            {% if row.is_first_of_lane %}
+            <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}</td>
+            <td class="c-lane" rowspan="{{ row.lane_row_count }}">
+              <span class="lane-chip lane-{{ ((row.start_lane - 1) % 5) + 1 }}">{{ row.start_lane }}</span>
             </td>
-            {% for n in sector_nos %}
-            {% set sec = row.sectors[loop.index0] if loop.index0 < row.sectors|length else none %}
-            <td class="c-sec">
-              {% if sec %}<div class="sec-t">{{ '%.3f'|format(sec.s) }}</div><div class="sec-v">{{ '%.2f'|format(sec.ms) }}<span class="u">m/s</span></div>{% else %}—{% endif %}
+            <td class="c-total" rowspan="{{ row.lane_row_count }}">
+              {{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}
+            </td>
+            <td class="c-max" rowspan="{{ row.lane_row_count }}">
+              {% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+            </td>
+            <td class="c-gap" rowspan="{{ row.lane_row_count }}">
+              {% if row.gap is none %}—{% elif row.gap == 0 %}-{% else %}+{{ '%.3f'|format(row.gap) }}{% endif %}
+            </td>
+            {% endif %}
+            {# LAP：周ごと #}
+            <td class="c-lapno">{{ row.lap_no if row.lap_no is not none else '—' }}</td>
+            <td class="c-lapt">{{ '%.3f'|format(row.lap_s) if row.lap_s is not none else '—' }}</td>
+            <td class="c-lapav">
+              {% if row.lap_avg_ms is not none %}{{ '%.2f'|format(row.lap_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+            </td>
+            {# SECTOR 0〜7 #}
+            {% for n in range(0, 8) %}
+            {% set sec = row.sectors[n] %}
+            <td class="c-sec{% if n == 0 %} sg{% endif %}">
+              {% if sec %}
+                {% if sec.s is not none %}<div class="sec-t">{{ '%.3f'|format(sec.s) }}</div>{% endif %}
+                {% if sec.ms is not none %}<div class="sec-v">{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
+              {% else %}—{% endif %}
             </td>
             {% endfor %}
             {% if row.is_first_of_race %}
@@ -122,8 +159,8 @@
       </table>
     </div>
     <p style="margin-top:10px;color:#95a5a6;font-size:11px">
-      ※ セクタータイムは各周のうち最速の区間タイムです。速度は現在ダミー値です
-      （ビーム間隔の設定を追加すると実測値になります）。
+      ※ SECTOR上段=区間タイム／下段=通過速度(m/s)。S/Gはその周の起点で、1周目はスタート地点のため速度なし。
+      速度・Av.（周平均速度）は現在ダミー値です（ビーム間隔・コース全長の設定を追加すると実測値になります）。
     </p>
     {% else %}
     <p style="color:#7f8c8d">まだ計測結果がありません。ラップタイマーから計測データが届くと、ここに表示されます。</p>
