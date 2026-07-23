@@ -86,22 +86,27 @@ def match_ranking_to_lanes(ranking: list[dict], lanes: list[dict]) -> dict:
 def build_result_rows(matched: list[dict], calc_points=default_calc_points) -> list[dict]:
     """突き合わせ結果を heat_results への保存行に変換する（純粋関数）。
 
-    - rank は計測の順位（合計タイム昇順）をそのまま使う
-    - win は 1位のみ 1
+    - rank は **突き合わせできた人の中で振り直す**（1位から連番）
+      ⚠ 計測の順位をそのまま使うと、対象外のレーンが上位にいた場合に
+        「1位が不在で誰も勝者にならない」状態になるため。
+        例）2レーン対戦に3レーン計測を反映 → 計測1位が対象外なら
+            残り2人は元のまま2位・3位となり、勝者が決まらない。
+    - win は（振り直した）1位のみ 1
     - points は既存の配点ルール
     - best_time はベストラップ（秒）。無ければ None
     - lap_count は完走周回数
     """
+    # 計測順位の昇順に並べ、その並びで1位から振り直す
+    ordered = sorted(matched, key=lambda m: int(m["rank"]))
     rows = []
-    for m in matched:
-        rank = int(m["rank"])
+    for i, m in enumerate(ordered, start=1):
         rows.append({
             "lane_id": m["lane_id"],
-            "win": 1 if rank == 1 else 0,
+            "win": 1 if i == 1 else 0,
             "best_time": m.get("best_time"),
             "lap_count": int(m.get("completed_laps") or 0),
-            "rank": rank,
-            "points": calc_points(rank),
+            "rank": i,
+            "points": calc_points(i),
             "is_co": 0,   # 現段階は全員完走前提
         })
     return rows
@@ -145,14 +150,16 @@ async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
                 "unmatched_records": m["unmatched_records"]}
 
     # 順位を入れ直す（再反映しても重複しないよう一度消す）
+    # ⚠ 予選と同じく、突き合わせできた枠の中で1位から振り直す。
+    #    計測順位をそのまま使うと、対象外の枠が上位にいた場合に勝者が決まらない。
     await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id = ?", (group_id,))
     winner_slot_id = None
-    for x in matched:
+    for i, x in enumerate(sorted(matched, key=lambda m: int(m["rank"])), start=1):
         await db.execute(
             "INSERT INTO bracket_slot_ranks (group_id, slot_id, rank) VALUES (?,?,?)",
-            (group_id, x["lane_id"], x["rank"]),
+            (group_id, x["lane_id"], i),
         )
-        if x["rank"] == 1:
+        if i == 1:
             winner_slot_id = x["lane_id"]
 
     # 勝者を確定（既にあれば上書き）
