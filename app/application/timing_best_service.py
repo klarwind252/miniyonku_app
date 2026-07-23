@@ -43,26 +43,27 @@ def is_better(metric: str, new_value: float, old_value: float | None) -> bool:
     return new_value > old_value
 
 
-def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn) -> dict[str, dict]:
-    """1レース分の結果から、各指標のベスト候補を抜き出す（純粋関数）。
+def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn) -> dict[str, list[dict]]:
+    """1レース分の結果から、各指標の上位候補を抜き出す（純粋関数）。
 
     speed_fn(race_id, start_lane, sector_idx, lap) -> m/s
     lap_avg_fn(race_id, start_lane, lap)           -> m/s
         （実機のビーム間隔・コース全長が未設定のため、現状はダミー関数を渡す）
 
-    戻り値: {metric: {"value":.., "race_id":.., "start_lane":.., "lap":.., "sector_no":..}}
+    戻り値: {metric: [{"value":.., "race_id":.., "start_lane":.., "lap":.., "sector_no":..}, ...]}
+            各指標につき上位 TOP_N 件（良い順）。
     """
-    best: dict[str, dict] = {}
+    pool: dict[str, list[dict]] = {}
 
     def put(metric: str, value, **meta):
         if value is None:
             return
-        cur = best.get(metric)
-        if is_better(metric, value, cur["value"] if cur else None):
-            best[metric] = {"value": value, "race_id": race_id, **meta}
+        pool.setdefault(metric, []).append(
+            {"value": value, "race_id": race_id, **meta}
+        )
 
     if result is None:
-        return best
+        return {}
 
     for m in result.ranking():
         if m.total_time_us is not None:
@@ -85,45 +86,81 @@ def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn) -> dict[str,
                 put("max_ms", sp, start_lane=m.start_lane,
                     lap=lap.lap, sector_no=idx + 1)
 
-    return best
+    # 各指標につき上位 TOP_N 件に絞る（同一レコードの重複は除く）
+    return {metric: _merge_top(metric, [], cands) for metric, cands in pool.items()}
 
 
-async def load_bests(db, scope: str, scope_key: str) -> dict[str, dict]:
-    """保持済みのベストを読む。戻り値: {metric: {value, race_id, start_lane, lap, sector_no}}"""
+TOP_N = 3   # 保持する上位件数（画面で1〜3位を色分けするため）
+
+
+async def load_bests(db, scope: str, scope_key: str) -> dict[str, list[dict]]:
+    """保持済みのベストを読む（上位3件まで）。
+
+    戻り値: {metric: [ {rank, value, race_id, start_lane, lap, sector_no}, ... ]}
+            リストは rank 昇順（1位→3位）。
+    """
     async with db.execute(
-        "SELECT metric, value, race_id, start_lane, lap, sector_no "
-        "FROM timing_bests WHERE scope = ? AND scope_key = ?",
+        "SELECT metric, rank, value, race_id, start_lane, lap, sector_no "
+        "FROM timing_bests WHERE scope = ? AND scope_key = ? "
+        "ORDER BY metric, rank",
         (scope, str(scope_key)),
     ) as cur:
         rows = await cur.fetchall()
-    return {
-        r["metric"]: {
-            "value": r["value"], "race_id": r["race_id"],
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["metric"], []).append({
+            "rank": r["rank"], "value": r["value"], "race_id": r["race_id"],
             "start_lane": r["start_lane"], "lap": r["lap"], "sector_no": r["sector_no"],
-        }
-        for r in rows
-    }
+        })
+    return out
+
+
+def _merge_top(metric: str, existing: list[dict], cands: list[dict]) -> list[dict]:
+    """保持中の上位リストと候補をまとめ、良い順に TOP_N 件へ絞る（純粋関数）。
+
+    同じ値が複数あっても、別のマシン／周／セクターなら別の記録として扱う
+    （同一レコードの重複だけを除く）。
+    """
+    merged = list(existing) + list(cands)
+    seen = set()
+    uniq = []
+    for m in merged:
+        key = (round(m["value"], 6), m.get("race_id"), m.get("start_lane"),
+               m.get("lap"), m.get("sector_no"))
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(m)
+    uniq.sort(key=lambda x: x["value"], reverse=not LOWER_IS_BETTER.get(metric, True))
+    return uniq[:TOP_N]
 
 
 async def merge_bests(db, scope: str, scope_key: str, candidates: dict[str, dict]) -> int:
-    """候補と保持値を比べ、良い方だけ残して保存する。戻り値: 更新した指標数。"""
+    """候補を取り込み、上位3件を保持し直す。戻り値: 書き換えた指標数。
+
+    candidates は {metric: 候補1件} でも {metric: [候補...]} でも受け付ける。
+    """
     current = await load_bests(db, scope, scope_key)
     updated = 0
     for metric, cand in candidates.items():
-        cur = current.get(metric)
-        if not is_better(metric, cand["value"], cur["value"] if cur else None):
+        cands = cand if isinstance(cand, list) else [cand]
+        before = current.get(metric, [])
+        after = _merge_top(metric, before, cands)
+        # 中身が変わらなければ書かない（無駄なUPDATEを避ける）
+        if [x["value"] for x in before] == [x["value"] for x in after] and len(before) == len(after):
             continue
         await db.execute(
-            "INSERT INTO timing_bests "
-            "(scope, scope_key, metric, value, race_id, start_lane, lap, sector_no, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?, datetime('now','localtime')) "
-            "ON CONFLICT(scope, scope_key, metric) DO UPDATE SET "
-            "  value=excluded.value, race_id=excluded.race_id, "
-            "  start_lane=excluded.start_lane, lap=excluded.lap, "
-            "  sector_no=excluded.sector_no, updated_at=excluded.updated_at",
-            (scope, str(scope_key), metric, cand["value"], cand.get("race_id"),
-             cand.get("start_lane"), cand.get("lap"), cand.get("sector_no")),
+            "DELETE FROM timing_bests WHERE scope=? AND scope_key=? AND metric=?",
+            (scope, str(scope_key), metric),
         )
+        for i, m in enumerate(after, start=1):
+            await db.execute(
+                "INSERT INTO timing_bests "
+                "(scope, scope_key, metric, rank, value, race_id, start_lane, lap, sector_no, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?, datetime('now','localtime'))",
+                (scope, str(scope_key), metric, i, m["value"], m.get("race_id"),
+                 m.get("start_lane"), m.get("lap"), m.get("sector_no")),
+            )
         updated += 1
     await db.commit()
     return updated
@@ -157,7 +194,7 @@ async def aggregate_range(db, *, date_from: str, date_to: str, mode: str | None,
     リアルタイム性が不要なため timing_bests には保存せず、その場で計算して返す。
     戻り値: {"bests": {metric: {..., created_at, mode}}, "race_count": n}
     """
-    merged: dict[str, dict] = {}
+    merged: dict[str, list[dict]] = {}
     n_races = 0
 
     for r in await list_fn(date_from, date_to):
@@ -174,15 +211,19 @@ async def aggregate_range(db, *, date_from: str, date_to: str, mode: str | None,
         n_races += 1
 
         cands = collect_from_result(result, rid, speed_fn, lap_avg_fn)
-        for metric, cand in cands.items():
-            cur = merged.get(metric)
-            if is_better(metric, cand["value"], cur["value"] if cur else None):
-                cand = dict(cand)
-                cand["created_at"] = race["created_at"]   # いつ計測したものか
-                cand["mode"] = result.mode
-                merged[metric] = cand
+        for metric, lst in cands.items():
+            # 「いつ・どのタイプの計測か」を各候補に添える
+            enriched = []
+            for c in lst:
+                c = dict(c)
+                c["created_at"] = race["created_at"]
+                c["mode"] = result.mode
+                enriched.append(c)
+            merged[metric] = _merge_top(metric, merged.get(metric, []), enriched)
 
-    return {"bests": merged, "race_count": n_races}
+    # 期間集計は1位だけを返す（画面はベスト1件を表示する）
+    bests = {metric: lst[0] for metric, lst in merged.items() if lst}
+    return {"bests": bests, "race_count": n_races}
 
 
 async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_fn) -> int:
@@ -195,7 +236,7 @@ async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_f
     )
     await db.commit()
 
-    merged: dict[str, dict] = {}
+    merged: dict[str, list[dict]] = {}
     for r in await list_races_fn(date):
         rid = r["id"]
         try:
@@ -203,10 +244,8 @@ async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_f
         except Exception:
             continue
         cands = collect_from_result(result, rid, speed_fn, lap_avg_fn)
-        for metric, cand in cands.items():
-            cur = merged.get(metric)
-            if is_better(metric, cand["value"], cur["value"] if cur else None):
-                merged[metric] = cand
+        for metric, lst in cands.items():
+            merged[metric] = _merge_top(metric, merged.get(metric, []), lst)
 
     if merged:
         await merge_bests(db, "day", date, merged)

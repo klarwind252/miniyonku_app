@@ -159,7 +159,8 @@ async def results_page(
         if not d:
             continue
         stored = await best_svc.load_bests(db, "day", d)
-        day_best[d] = {k: v["value"] for k, v in stored.items()}
+        # {metric: [1位の値, 2位の値, 3位の値]} の形にしておく
+        day_best[d] = {k: [x["value"] for x in v] for k, v in stored.items()}
 
     rows = []          # 表示する明細行（1行=1レーンの1周）
 
@@ -219,8 +220,8 @@ async def results_page(
                         "s": None,
                         "ms": sg_ms,
                         "sg": True,
-                        "best_s": False,
-                        "best_ms": _eq_best(sg_ms, bst.get("sector_ms")),
+                        "rank_ms": _best_rank(sg_ms, bst.get("sector_ms")),
+                        "rank_s": 0,
                     }
                     for idx, sec in enumerate(lap.sectors):
                         if idx + 1 > 7:
@@ -231,22 +232,23 @@ async def results_page(
                             "ms": sp,
                             "sg": False,
                             # その日のベストか（タイムは最小・速度は最大）
-                            "best_s": _eq_best(sec.dt_us / 1e6, bst.get("sector")),
-                            "best_ms": _eq_best(sp, bst.get("sector_ms")),
+                            "rank_s": _best_rank(sec.dt_us / 1e6, bst.get("sector")),
+                            "rank_ms": _best_rank(sp, bst.get("sector_ms")),
                         }
 
                 lap_avg = (_dummy_lap_avg_ms(rid, m.start_lane, lap.lap)
                            if lap is not None else None)
                 rows.append({
                     # --- その日のベスト判定（ハイライト用） ---
-                    "best_total": _eq_best(
+                    # その日の上位3傑の何位か（0=該当なし）
+                    "rank_total": _best_rank(
                         m.total_time_us / 1e6 if m.total_time_us else None,
                         bst.get("total")),
-                    "best_max": _eq_best(max_ms, bst.get("max_ms")),
-                    "best_lap": _eq_best(
+                    "rank_max": _best_rank(max_ms, bst.get("max_ms")),
+                    "rank_lap": _best_rank(
                         lap.lap_time_us / 1e6 if lap is not None else None,
                         bst.get("lap")),
-                    "best_lap_avg": _eq_best(lap_avg, bst.get("lap_avg")),
+                    "rank_lap_avg": _best_rank(lap_avg, bst.get("lap_avg")),
                     "race_id": rid,
                     "created_at": race["created_at"],
                     "date_part": _split_ts(race["created_at"])[0],
@@ -455,12 +457,18 @@ async def pip_latest(
     return JSONResponse({"races": out})
 
 
-def _eq_best(value, best, tol: float = 1e-6) -> bool:
-    """保持しているベスト値と一致するか（浮動小数の誤差を許容）。
+def _best_rank(value, tops, tol: float = 1e-6) -> int:
+    """その日の上位3傑の何位かを返す（1〜3。該当なしは0）。
 
-    timing_bests には「秒」「m/s」で保存している。µs のまま比較しないこと。
+    tops は [1位の値, 2位の値, 3位の値]（timing_bests 由来・秒/m·s）。
+    µs のまま比較しないこと。浮動小数の誤差は許容する。
     """
-    return (value is not None and best is not None and abs(value - best) < tol)
+    if value is None or not tops:
+        return 0
+    for i, t in enumerate(tops, start=1):
+        if t is not None and abs(value - t) < tol:
+            return i
+    return 0
 
 
 def _split_ts(ts) -> tuple[str, str]:

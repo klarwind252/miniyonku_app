@@ -40,7 +40,7 @@
   .mode-chip{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
-  .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:top;font-size:16px}
+  .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:16px}
   /* LANEはセル全体を塗って白抜き文字にする（POSの素の数字と明確に分ける） */
   .c-lane{width:50px;text-align:center;vertical-align:middle;
     font-size:16px;font-weight:bold;color:#fff}
@@ -53,9 +53,9 @@
   /* レーン色は td.lane-N（詳細度が高く後に定義）が hover より優先される */
 
   /* TOTAL：レーンごとに1回だけ（rowspanで結合） */
-  .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:92px;vertical-align:top;font-size:20px;color:#2c3e50;letter-spacing:-.3px}
-  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#c0392b;vertical-align:top;font-size:16px}
-  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:80px;vertical-align:top;font-size:16px}
+  .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:92px;vertical-align:middle;font-size:20px;color:#2c3e50;letter-spacing:-.3px}
+  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#c0392b;vertical-align:middle;font-size:16px}
+  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:80px;vertical-align:middle;font-size:16px}
   .unit{color:#bdc3c7;font-size:10px;margin-left:1px}
 
   /* LAP：周ごと */
@@ -72,9 +72,11 @@
   .c-act{width:64px;text-align:center;vertical-align:top}
   .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:11px}
   .tr-wrap{overflow-x:auto}
-  /* その日のベスト記録をハイライト（F1のパープル相当） */
-  .best{background:#f3e8ff !important;color:#6b21a8;font-weight:bold;border-radius:3px}
-  .c-sec .best{display:block;padding:0 2px}
+  /* その日の上位3傑をハイライト（1位=紫 / 2位=青 / 3位=緑） */
+  .r1{background:#f3e8ff !important;color:#6b21a8;font-weight:bold;border-radius:3px}
+  .r2{background:#dbeafe !important;color:#1e40af;font-weight:bold;border-radius:3px}
+  .r3{background:#dcfce7 !important;color:#166534;font-weight:bold;border-radius:3px}
+  .c-sec .r1,.c-sec .r2,.c-sec .r3{display:block;padding:0 2px}
 </style>
 
 <div class="card">
@@ -148,25 +150,25 @@
             <td class="c-lane lane-{{ ((row.start_lane - 1) % 5) + 1 }}"
                 rowspan="{{ row.lane_row_count }}">{{ row.start_lane }}</td>
             <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}</td>
-            <td class="c-total gsep{% if row.best_total %} best{% endif %}"
+            <td class="c-total gsep{% if row.rank_total %} r{{ row.rank_total }}{% endif %}"
                 rowspan="{{ row.lane_row_count }}"
-                {% if row.best_total %}title="この日のベストタイム"{% endif %}>
+                {% if row.rank_total %}title="この日の{{ row.rank_total }}位（トータルタイム）"{% endif %}>
               {{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}
             </td>
-            <td class="c-max{% if row.best_max %} best{% endif %}" rowspan="{{ row.lane_row_count }}"
-                {% if row.best_max %}title="この日の最高速"{% endif %}>
+            <td class="c-max{% if row.rank_max %} r{{ row.rank_max }}{% endif %}" rowspan="{{ row.lane_row_count }}"
+                {% if row.rank_max %}title="この日の{{ row.rank_max }}位（最高速）"{% endif %}>
               {% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
             </td>
             <td class="c-gap" rowspan="{{ row.lane_row_count }}">
-              {% if row.gap is none %}—{% elif row.gap == 0 %}-{% else %}+{{ '%.3f'|format(row.gap) }}{% endif %}
+              {% if row.gap is none %}—{% elif row.gap == 0 %}-{% else %}+{{ '%.3f'|format(row.gap|abs) }}{% endif %}
             </td>
             {% endif %}
             {# LAP：周ごと #}
             <td class="c-lapno gsep">{{ row.lap_no if row.lap_no is not none else '—' }}</td>
-            <td class="c-lapt{% if row.best_lap %} best{% endif %}"
-                {% if row.best_lap %}title="この日のベストラップ"{% endif %}>{{ '%.3f'|format(row.lap_s) if row.lap_s is not none else '—' }}</td>
-            <td class="c-lapav{% if row.best_lap_avg %} best{% endif %}"
-                {% if row.best_lap_avg %}title="この日のラップ平均速度ベスト"{% endif %}>
+            <td class="c-lapt{% if row.rank_lap %} r{{ row.rank_lap }}{% endif %}"
+                {% if row.rank_lap %}title="この日の{{ row.rank_lap }}位（ラップタイム）"{% endif %}>{{ '%.3f'|format(row.lap_s) if row.lap_s is not none else '—' }}</td>
+            <td class="c-lapav{% if row.rank_lap_avg %} r{{ row.rank_lap_avg }}{% endif %}"
+                {% if row.rank_lap_avg %}title="この日の{{ row.rank_lap_avg }}位（ラップ平均速度）"{% endif %}>
               {% if row.lap_avg_ms is not none %}{{ '%.2f'|format(row.lap_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
             </td>
             {# SECTOR 0〜7 #}
@@ -174,10 +176,10 @@
             {% set sec = row.sectors[n] %}
             <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
               {% if sec %}
-                {% if sec.s is not none %}<div class="sec-t{% if sec.best_s %} best{% endif %}"
-                     {% if sec.best_s %}title="この日のベストセクター"{% endif %}>{{ '%.3f'|format(sec.s) }}</div>{% endif %}
-                {% if sec.ms is not none %}<div class="sec-v{% if sec.best_ms %} best{% endif %}"
-                     {% if sec.best_ms %}title="この日の最高通過速度"{% endif %}>{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
+                {% if sec.s is not none %}<div class="sec-t{% if sec.rank_s %} r{{ sec.rank_s }}{% endif %}"
+                     {% if sec.rank_s %}title="この日の{{ sec.rank_s }}位（セクタータイム）"{% endif %}>{{ '%.3f'|format(sec.s) }}</div>{% endif %}
+                {% if sec.ms is not none %}<div class="sec-v{% if sec.rank_ms %} r{{ sec.rank_ms }}{% endif %}"
+                     {% if sec.rank_ms %}title="この日の{{ sec.rank_ms }}位（通過速度）"{% endif %}>{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
               {% else %}—{% endif %}
             </td>
             {% endfor %}
@@ -193,7 +195,10 @@
       </table>
     </div>
     <p style="margin-top:10px;color:#95a5a6;font-size:11px">
-      ※ SECTOR上段=区間タイム／下段=通過速度(m/s)。0はS/G（その周の起点）で、1周目はスタート地点のため速度なし。<br>※ <span class="best" style="padding:1px 5px">紫の網掛け</span>はその日のベスト記録（トータル・最高速・ラップ・ラップ平均速度・セクター・セクター速度）。
+      ※ SECTOR上段=区間タイム／下段=通過速度(m/s)。0はS/G（その周の起点）で、1周目はスタート地点のため速度なし。<br>※ その日の上位3傑を色分け：<span class="r1" style="padding:1px 6px">1位</span>
+      <span class="r2" style="padding:1px 6px">2位</span>
+      <span class="r3" style="padding:1px 6px">3位</span>
+      （トータル・最高速・ラップ・ラップ平均速度・セクター・セクター速度の6項目それぞれ）
       速度・Av.（周平均速度）は現在ダミー値です（ビーム間隔・コース全長の設定を追加すると実測値になります）。
     </p>
     {% else %}

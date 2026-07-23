@@ -67,6 +67,34 @@ def _open(req, redirects_left: int = 5):
         raise
 
 
+def _resolve_base(base: str) -> str:
+    """http でアクセスしたとき https へ恒久リダイレクトされるなら、最初から https を使う。
+
+    毎回のリダイレクト（1リクエストにつき2往復）を避けるための前処理。
+    判定できない場合は与えられた base をそのまま返す。
+    """
+    if base.startswith("https://"):
+        return base
+    try:
+        req = urllib.request.Request(base + "/api/timing/pip/latest")
+        try:
+            urllib.request.urlopen(req, timeout=8, context=_SSL_CTX)
+            return base                      # リダイレクトなし＝そのままでよい
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 308):
+                loc = e.headers.get("Location") or ""
+                if loc.startswith("https://"):
+                    from urllib.parse import urlsplit
+                    u = urlsplit(loc)
+                    new = f"https://{u.netloc}"
+                    print(f"  ※ https へ恒久リダイレクトされるため {new} を使用します")
+                    return new
+            # 404等はエンドポイントの問題であってリダイレクトではない
+            return base
+    except Exception:
+        return base
+
+
 def post(url: str, payload: dict, token: str | None):
     body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body, method="POST")
@@ -191,6 +219,10 @@ def main() -> int:
     args = ap.parse_args()
 
     base = args.base.rstrip("/")
+    # サーバーが常時SSL（http→https の308リダイレクト）の場合、
+    # http のままだと毎リクエストで2往復する。最初に1度だけ確かめて
+    # https に寄せ、以降のリダイレクトを不要にする。
+    base = _resolve_base(base)
     gates = ([int(x) for x in args.gates.split(",")] if args.gates else [6, 0, 1])
 
     print(f"サーバー : {base}")

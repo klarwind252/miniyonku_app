@@ -100,6 +100,7 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         --   scope     : 'day'（その日）/ 'race'（そのレース内）
         --   scope_key : 'YYYY-MM-DD' / レースID(文字列)
         --   metric    : total / max_ms / lap / lap_avg / sector / sector_ms
+        --   rank      : 1..3（上位3傑を保持。画面で色分けするため）
         --   value     : 秒 または m/s（タイム系は最小・速度系は最大が「ベスト」）
         -- 期間指定などの集計は、このテーブルを走査せず timing_events から
         -- 別途まとめて計算する（リアルタイム性を求めないため）。
@@ -107,18 +108,47 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             scope       TEXT NOT NULL,
             scope_key   TEXT NOT NULL,
             metric      TEXT NOT NULL,
+            rank        INTEGER NOT NULL DEFAULT 1,   -- 1=最良 2=2番目 3=3番目
             value       REAL NOT NULL,
             race_id     INTEGER,            -- どのレースで出た記録か
             start_lane  INTEGER,            -- どのマシンか（スタートレーン）
             lap         INTEGER,            -- 何周目か（lap/sector系のみ）
             sector_no   INTEGER,            -- 何番セクターか（sector系のみ）
             updated_at  TEXT DEFAULT (datetime('now','localtime')),
-            PRIMARY KEY (scope, scope_key, metric)
+            PRIMARY KEY (scope, scope_key, metric, rank)
         );
 
         CREATE INDEX IF NOT EXISTS idx_timing_bests_scope
             ON timing_bests(scope, scope_key);
     """)
+
+    # --- timing_bests のマイグレーション ---
+    # 旧版は上位1件のみ（rank カラムなし）だった。rank が無ければ作り直す。
+    # このテーブルは受信時に再構築されるため、作り直しても実害はない。
+    async with db.execute("PRAGMA table_info(timing_bests)") as cur:
+        cols = {r[1] for r in await cur.fetchall()}
+    if "rank" not in cols:
+        await db.execute("DROP TABLE IF EXISTS timing_bests")
+        await db.execute("""
+            CREATE TABLE timing_bests (
+                scope       TEXT NOT NULL,
+                scope_key   TEXT NOT NULL,
+                metric      TEXT NOT NULL,
+                rank        INTEGER NOT NULL DEFAULT 1,
+                value       REAL NOT NULL,
+                race_id     INTEGER,
+                start_lane  INTEGER,
+                lap         INTEGER,
+                sector_no   INTEGER,
+                updated_at  TEXT DEFAULT (datetime('now','localtime')),
+                PRIMARY KEY (scope, scope_key, metric, rank)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_timing_bests_scope "
+            "ON timing_bests(scope, scope_key)"
+        )
+        await db.commit()
 
     # 固定12台を投入（既にあれば無視＝冪等）
     for node_id, kind, label in FIXED_DEVICES:
