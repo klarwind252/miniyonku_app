@@ -130,6 +130,7 @@ async def pip_latest(
     GWから送られてきた記録をそのまま見せるだけ。まだ誰のものかは紐づけない。
     （組み合わせ情報はGWへ送らない方針のため、突き合わせはアプリ側で後から行う）
     """
+    repo = TimingRaceRepository(db)
     races = await repo.list_races(limit=max(1, min(limit, 20)))
     out = []
     for r in races:
