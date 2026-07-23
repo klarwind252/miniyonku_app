@@ -13,20 +13,20 @@
 </div>
 
 <style>
-  .tr-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+  .tr-table{width:auto;border-collapse:collapse;font-size:13px;table-layout:fixed}
   .tr-table th{
     padding:6px 8px;text-align:left;font-size:10px;font-weight:bold;
     color:#95a5a6;letter-spacing:.5px;border-bottom:2px solid #dfe4ea;white-space:nowrap;
   }
-  .tr-table td{padding:5px 8px;border-bottom:1px solid #eef2f5;white-space:nowrap}
+  .tr-table td{padding:3px 8px;border-bottom:1px solid #eef2f5;white-space:nowrap}
   /* レースの切れ目に太い罫線を入れ、どこまでが同じレースか分かるようにする */
   .tr-table tr.race-start td{border-top:2px solid #dfe4ea}
   .tr-table tr:hover td{background:#f8f9fa}
-  .c-ts{color:#7f8c8d;font-size:11px;font-variant-numeric:tabular-nums;vertical-align:top;width:170px}
-  .c-pos{width:38px;text-align:center;font-weight:bold;color:#2980b9}
-  .c-lane{width:52px;text-align:center}
+  .c-ts{color:#7f8c8d;font-size:11px;font-variant-numeric:tabular-nums;vertical-align:top;width:148px}
+  .c-pos{width:34px;text-align:center;font-weight:bold;color:#2980b9}
+  .c-lane{width:44px;text-align:center}
   .th-c{text-align:center}
-  .c-mode{text-align:center;vertical-align:top;width:64px}
+  .c-mode{text-align:center;vertical-align:top;width:58px}
   .mode-chip{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
@@ -37,17 +37,18 @@
   .lane-1{background:#2980b9} .lane-2{background:#e74c3c}
   .lane-3{background:#f1c40f;color:#4a3b00}   /* 黄は白文字だと読めないので濃色に */
   .lane-4{background:#27ae60} .lane-5{background:#95a5a6}
-  .c-best{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:78px}
-  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:86px;color:#c0392b}
+  .c-best{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:72px}
+  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#c0392b}
   .c-max .unit{color:#bdc3c7;font-size:10px;margin-left:2px}
-  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:76px}
+  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:68px}
   /* セクターは等幅・固定幅。上段=区間タイム / 下段=通過速度(秒速) */
-  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:76px;
-    background:#f7f9fb;border-left:1px solid #eef2f5;line-height:1.25}
+  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:70px;
+    background:#f7f9fb;border-left:1px solid #eef2f5;line-height:1.2}
   .c-sec .sec-t{font-weight:bold}
   .c-sec .sec-v{color:#95a5a6;font-size:10px}
   .c-sec .sec-v .u{font-size:9px;margin-left:1px}
   .th-r{text-align:right}
+  .c-act{width:64px;text-align:center;vertical-align:top}
   .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:10px;margin-left:6px}
   .tr-wrap{overflow-x:auto}
 </style>
@@ -108,7 +109,7 @@
             </td>
             {% endfor %}
             {% if row.is_first_of_race %}
-            <td rowspan="{{ row.race_row_count }}">
+            <td class="c-act" rowspan="{{ row.race_row_count }}">
               <a href="/admin/timing/results/{{ row.race_id }}" class="btn btn-secondary btn-sm">詳細</a>
             </td>
             {% endif %}

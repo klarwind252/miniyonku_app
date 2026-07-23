@@ -117,7 +117,6 @@ async def results_page(
     races = await repo.list_races(limit=50)
 
     rows = []          # 表示する明細行（1行=1レーン）
-    max_sectors = 0    # 表のセクター列数（レイアウトにより可変）
 
     for r in races:
         rid = r["id"]
@@ -152,7 +151,6 @@ async def results_page(
                     "s": round(best_by_sector[idx] / 1e6, 3),
                     "ms": _dummy_speed_ms(rid, m.start_lane, idx),
                 })
-            max_sectors = max(max_sectors, len(sectors))
 
             # MAX SPEED：S/G・各セクションゲートを通過したときの速度のうち最速（m/s）
             max_ms = max((s["ms"] for s in sectors), default=None)
@@ -181,7 +179,9 @@ async def results_page(
         {
             "request": request,
             "rows": rows,
-            "sector_nos": list(range(1, max_sectors + 1)),
+            # セクションゲートは最大6基＝区間は最大7（S/G→SQ1…SQ6→S/G）。
+            # レイアウトによらず常に S1〜S7 の枠を出し、無い区間は「—」を表示する。
+            "sector_nos": list(range(1, 8)),
             "races": races,
         },
     )
