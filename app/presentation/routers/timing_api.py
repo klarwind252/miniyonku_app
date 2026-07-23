@@ -162,6 +162,8 @@ async def results_page(
             rows.append({
                 "race_id": rid,
                 "created_at": race["created_at"],
+                "date_part": _split_ts(race["created_at"])[0],
+                "time_part": _split_ts(race["created_at"])[1],
                 "heat_id": race["heat_id"],
                 "mode": result.mode,               # 'f1'=レース / 'run'=フリー
                 "pos": pos,
@@ -185,6 +187,22 @@ async def results_page(
             "races": races,
         },
     )
+
+
+def _split_ts(ts) -> tuple[str, str]:
+    """受信時刻を「日付」と「時刻」に分ける（表示で2行に折り返すため）。
+
+    DBの値は "2026-07-23 05:57:06" 形式。想定外の形でも落ちないよう、
+    分割できなければ全体を日付側に入れて時刻は空にする。
+    戻り値: ("2026/07/23", "05:57:06")
+    """
+    if not ts:
+        return ("", "")
+    s = str(ts)
+    parts = s.split(" ", 1)
+    date_part = parts[0].replace("-", "/")
+    time_part = parts[1] if len(parts) > 1 else ""
+    return (date_part, time_part)
 
 
 def _dummy_speed_ms(race_id: int, lane: int, sector_idx: int) -> float:
