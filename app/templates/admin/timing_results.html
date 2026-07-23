@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-title">
   <h1>計測結果</h1>
-  <p>ラップタイマーから届いたレースの一覧です。行を選ぶと詳細（ラップ・セクター・順位）を表示します。</p>
+  <p>ラップタイマーから届いた記録です。1行が1レーン、S1〜はセクター（区間）タイムと通過速度です。</p>
 </div>
 
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
@@ -12,42 +12,88 @@
   <a href="/admin/timing/results" class="btn btn-primary btn-sm">🏁 計測結果</a>
 </div>
 
+<style>
+  .tr-table{width:100%;border-collapse:collapse;font-size:13px}
+  .tr-table th{
+    padding:6px 8px;text-align:left;font-size:10px;font-weight:bold;
+    color:#95a5a6;letter-spacing:.5px;border-bottom:2px solid #dfe4ea;white-space:nowrap;
+  }
+  .tr-table td{padding:5px 8px;border-bottom:1px solid #eef2f5;white-space:nowrap}
+  /* レースの切れ目に太い罫線を入れ、どこまでが同じレースか分かるようにする */
+  .tr-table tr.race-start td{border-top:2px solid #dfe4ea}
+  .tr-table tr:hover td{background:#f8f9fa}
+  .c-ts{color:#7f8c8d;font-size:11px;font-variant-numeric:tabular-nums;vertical-align:top}
+  .c-pos{width:38px;text-align:center;font-weight:bold;color:#2980b9}
+  .c-lane{width:64px;color:#636e72}
+  .c-best{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums}
+  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:70px}
+  .c-sec{text-align:right;font-variant-numeric:tabular-nums}
+  .c-sec .kmh{color:#95a5a6;font-size:11px;margin-left:4px}
+  .th-r{text-align:right}
+  .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:10px;margin-left:6px}
+  .tr-wrap{overflow-x:auto}
+</style>
+
 <div class="card">
   <div class="card-header">計測結果の一覧</div>
   <div class="card-body">
-    {% if races %}
-    <table style="width:100%;border-collapse:collapse;font-size:14px">
-      <thead>
-        <tr style="text-align:left;border-bottom:2px solid #dfe4ea">
-          <th style="padding:8px">レースID</th>
-          <th style="padding:8px">ヒート</th>
-          <th style="padding:8px">周回</th>
-          <th style="padding:8px">方式</th>
-          <th style="padding:8px">受信時刻</th>
-          <th style="padding:8px"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in races %}
-        <tr style="border-bottom:1px solid #eef2f5">
-          <td style="padding:8px;font-weight:bold">#{{ r.id }}</td>
-          <td style="padding:8px">{{ r.heat_tag if r.heat_tag is not none else '—' }}</td>
-          <td style="padding:8px">{{ r.target_laps }}周</td>
-          <td style="padding:8px">
-            {% if r.green_t_us is not none %}
-              <span class="status" style="background:#fdeaea;color:#c0392b">F1式</span>
-            {% else %}
-              <span class="status" style="background:#eafaf1;color:#27ae60">走行式</span>
+    {% if rows %}
+    <div class="tr-wrap">
+      <table class="tr-table">
+        <thead>
+          <tr>
+            <th>タイムスタンプ</th>
+            <th class="c-pos">POS</th>
+            <th>LANE</th>
+            <th class="th-r">BEST</th>
+            <th class="th-r">GAP</th>
+            {% for n in sector_nos %}
+            <th class="th-r">S{{ n }}</th>
+            {% endfor %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr {% if row.is_first_of_race %}class="race-start"{% endif %}>
+            {# タイムスタンプはレースごとにまとめて1回だけ表示 #}
+            {% if row.is_first_of_race %}
+            <td class="c-ts" rowspan="{{ row.race_row_count }}">
+              {{ row.created_at }}
+              {% if row.heat_id is not none %}
+              <span class="linked-badge">ヒート{{ row.heat_id }}</span>
+              {% endif %}
+            </td>
             {% endif %}
-          </td>
-          <td style="padding:8px;color:#7f8c8d;font-size:12px">{{ r.created_at }}</td>
-          <td style="padding:8px">
-            <a href="/admin/timing/results/{{ r.id }}" class="btn btn-secondary btn-sm">結果を見る</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+            <td class="c-pos">{{ row.pos }}</td>
+            <td class="c-lane">レーン{{ row.start_lane }}</td>
+            <td class="c-best">{{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}</td>
+            <td class="c-gap">
+              {% if row.gap is none %}—
+              {% elif row.gap == 0 %}-
+              {% else %}+{{ '%.3f'|format(row.gap) }}{% endif %}
+            </td>
+            {% for n in sector_nos %}
+            {% set sec = row.sectors[loop.index0] if loop.index0 < row.sectors|length else none %}
+            <td class="c-sec">
+              {% if sec %}{{ '%.3f'|format(sec.s) }}<span class="kmh">{{ '%.1f'|format(sec.kmh) }}km</span>
+              {% else %}—{% endif %}
+            </td>
+            {% endfor %}
+            {% if row.is_first_of_race %}
+            <td rowspan="{{ row.race_row_count }}">
+              <a href="/admin/timing/results/{{ row.race_id }}" class="btn btn-secondary btn-sm">詳細</a>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:10px;color:#95a5a6;font-size:11px">
+      ※ セクタータイムは各周のうち最速の区間タイムです。速度は現在ダミー値です
+      （ビーム間隔の設定を追加すると実測値になります）。
+    </p>
     {% else %}
     <p style="color:#7f8c8d">まだ計測結果がありません。ラップタイマーから計測データが届くと、ここに表示されます。</p>
     {% endif %}

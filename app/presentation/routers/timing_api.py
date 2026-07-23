@@ -108,12 +108,91 @@ async def results_page(
     db: aiosqlite.Connection = Depends(get_db),
     _guard: bool = Depends(require_m4laps),
 ):
+    """計測結果の一覧（レーン単位の明細・セクター/速度つき）。
+
+    1行 = 1レーン。POS/LANE/BEST/GAP に続けて S1..Sn のセクタータイムと速度を出す。
+    速度はビーム間隔の設定が未実装のため、現状はダミー値（_dummy_speed_kmh 参照）。
+    """
     repo = TimingRaceRepository(db)
     races = await repo.list_races(limit=50)
+
+    rows = []          # 表示する明細行（1行=1レーン）
+    max_sectors = 0    # 表のセクター列数（レイアウトにより可変）
+
+    for r in races:
+        rid = r["id"]
+        try:
+            race, result = await build_race_result(db, rid)
+        except Exception:
+            continue
+        if race is None or result is None:
+            continue
+
+        ordered = result.ranking()          # 合計タイム昇順
+        top_us = None
+        for m in ordered:
+            if m.total_time_us is not None:
+                top_us = m.total_time_us
+                break
+
+        for pos, m in enumerate(ordered, start=1):
+            # セクター：各周の同じ区間のうち最速を代表値にする
+            # （1周だけ見ると遅い周に引っ張られるため。F1のセクター表示と同じ考え方）
+            best_by_sector: dict[int, int] = {}
+            for lap in m.laps:
+                for idx, s in enumerate(lap.sectors):
+                    cur = best_by_sector.get(idx)
+                    if cur is None or s.dt_us < cur:
+                        best_by_sector[idx] = s.dt_us
+
+            sectors = []
+            for idx in sorted(best_by_sector):
+                sectors.append({
+                    "no": idx + 1,
+                    "s": round(best_by_sector[idx] / 1e6, 3),
+                    "kmh": _dummy_speed_kmh(rid, m.start_lane, idx),
+                })
+            max_sectors = max(max_sectors, len(sectors))
+
+            gap = None
+            if m.total_time_us is not None and top_us is not None:
+                gap = round((m.total_time_us - top_us) / 1e6, 3)
+
+            rows.append({
+                "race_id": rid,
+                "created_at": race["created_at"],
+                "heat_id": race["heat_id"],
+                "pos": pos,
+                "start_lane": m.start_lane,
+                "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+                "gap": gap,
+                "sectors": sectors,
+                "is_first_of_race": pos == 1,      # 同一レースの先頭行だけ時刻を出す
+                "race_row_count": len(ordered),
+            })
+
     return templates.TemplateResponse(
         "admin/timing_results.html",
-        {"request": request, "races": races},
+        {
+            "request": request,
+            "rows": rows,
+            "sector_nos": list(range(1, max_sectors + 1)),
+            "races": races,
+        },
     )
+
+
+def _dummy_speed_kmh(race_id: int, lane: int, sector_idx: int) -> float:
+    """⚠ 仮の速度値（実機のビーム間隔設定が未実装のためのダミー）。
+
+    本実装時はここを削除し、PassEvent の t_us / t_us_b の差と
+    ゲートのビーム間隔(mm)から算出する:
+        v[m/s]  = 間隔mm / 1000 / ((t_us_b - t_us) / 1e6)
+        v[km/h] = v[m/s] * 3.6
+    表示のたびに値が変わると見づらいので、入力から決まる再現可能な擬似値にしている。
+    """
+    seed = (race_id * 31 + lane * 7 + sector_idx * 13) % 100
+    return round(24.0 + seed * 0.11, 1)   # おおよそ 24.0〜35.0 km/h
 
 
 @router.get("/api/timing/pip/latest")
