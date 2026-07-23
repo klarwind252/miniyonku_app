@@ -1053,19 +1053,16 @@ function _showPubToast(msg) {
     padding:1px 4px; border:none; border-bottom:1px solid #e9ecef;
     font-size:9px; font-weight:bold; color:#95a5a6; letter-spacing:.5px;
   }
-  #m4pip .pip-pos{width:30px; font-weight:bold; color:#2980b9; text-align:center}
-  #m4pip .pip-lane{width:44px; text-align:center}
-  /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
-  #m4pip .lane-chip{
-    display:inline-block; min-width:20px; padding:1px 5px; border-radius:4px;
-    font-size:12px; font-weight:bold; color:#fff; text-align:center; line-height:1.4;
-  }
-  /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
-  #m4pip .lane-1{background:#2980b9}
-  #m4pip .lane-2{background:#e74c3c}
-  #m4pip .lane-3{background:#f1c40f; color:#4a3b00}  /* 黄は白文字だと読めないので濃色に */
-  #m4pip .lane-4{background:#27ae60}
-  #m4pip .lane-5{background:#95a5a6}
+  /* POSは黒。LANEはセル全体を塗って白抜き（計測結果一覧と同じ見た目） */
+  #m4pip .pip-pos{width:34px; font-weight:bold; color:#2c3e50; text-align:center}
+  #m4pip .pip-lane{width:40px; text-align:center; font-weight:bold; color:#fff}
+  /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー
+     セル全体を塗ることでPOSの素の数字と明確に分ける（計測結果一覧と同じ） */
+  #m4pip td.lane-1{background:#2980b9}
+  #m4pip td.lane-2{background:#e74c3c}
+  #m4pip td.lane-3{background:#f1c40f; color:#4a3b00}  /* 黄は白文字だと読めないので濃色に */
+  #m4pip td.lane-4{background:#27ae60}
+  #m4pip td.lane-5{background:#95a5a6}
   #m4pip .pip-total{text-align:right; font-weight:bold; font-variant-numeric:tabular-nums}
   #m4pip .pip-gap{
     text-align:right; width:66px; color:#8e44ad;
@@ -1232,22 +1229,27 @@ function _showPubToast(msg) {
         r.ranking.forEach(function(m){
           if(top===null && m.total_s!=null) top=m.total_s;
         });
+        // 表示は必ずレーン番号順（計測結果一覧と同じ並び）。
+        // POS（順位）はAPIが返す合計タイム順のまま。
+        var byLane = r.ranking.slice().sort(function(a,b){
+          return (a.start_lane||0) - (b.start_lane||0);
+        });
         html+='<table>'
           + '<thead><tr>'
-          + '<th class="pip-pos">POS</th>'
           + '<th class="pip-lane">LANE</th>'
+          + '<th class="pip-pos">POS</th>'
           + '<th class="pip-total">FINISH</th>'
           + '<th class="pip-gap">GAP</th>'
           + '</tr></thead><tbody>';
-        r.ranking.forEach(function(m){
+        byLane.forEach(function(m){
           var gap='\u2014';
           if(m.total_s!=null && top!=null){
             gap = (m.total_s===top) ? '-' : ('+'+(m.total_s-top).toFixed(3));
           }
           html+='<tr>'
+            + '<td class="pip-lane lane-' + (((m.start_lane-1)%5)+1) + '">'
+              + esc(m.start_lane) + '</td>'
             + '<td class="pip-pos">'+esc(m.pos)+'</td>'
-            + '<td class="pip-lane"><span class="lane-chip lane-'
-              + (((m.start_lane-1)%5)+1) + '">'+esc(m.start_lane)+'</span></td>'
             + '<td class="pip-total">'+fmt(m.total_s)+'</td>'
             + '<td class="pip-gap">'+gap+'</td>'
             + '</tr>';
