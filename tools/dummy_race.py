@@ -100,15 +100,24 @@ def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
 
     gates: 通過順のノードID列（先頭がS/G）。例 [6, 0, 1] なら S/G(GW6)→SQ0→SQ1。
          ※ LC（レーンチェンジ）はセンサーが無いので指定不要。
-    各レーンに少しずつ違うペースを与え、毎周わずかに揺らして現実に近づける。
+
+    合計タイムが 30〜50 秒に収まるよう、目標タイムから1区間あたりの時間を逆算する。
+    （周回数やゲート数が変わっても合計が大きくブレないようにするため）
+    レーンごとに少しずつ違うペースを与え、毎周わずかに揺らして現実に近づける。
     """
     events: list[dict] = []
     seq = seq_start
     t0 = 1_000_000  # 基準時刻(µs)
 
+    # 1周あたりの区間数（先頭以外のゲート＋S/Gへ戻る分）
+    seg_per_lap = len(gates)
+    total_segments = max(1, laps * seg_per_lap)
+
     for lane in range(1, lanes + 1):
-        # レーンごとの基礎ペース（区間あたり）: 0.90〜1.10秒くらい
-        base = random.randint(900_000, 1_100_000)
+        # このレーンの目標合計タイム（30.0〜50.0秒）
+        target_total_us = random.randint(30_000_000, 50_000_000)
+        # 1区間あたりの基礎ペース＝目標合計 ÷ 総区間数
+        base = target_total_us // total_segments
         t = t0
         # スタート通過（S/G）
         seq += 1
@@ -119,7 +128,7 @@ def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
         for _lap in range(laps):
             # 各周：先頭以外のゲート → 最後にS/Gへ戻る
             for node in gates[1:] + [gates[0]]:
-                # 毎区間 ±3% の揺らぎ
+                # 毎区間 ±3% の揺らぎ（合計は目標付近に収まる）
                 dt = int(base * random.uniform(0.97, 1.03))
                 t += dt
                 seq += 1
