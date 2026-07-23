@@ -1044,12 +1044,22 @@ function _showPubToast(msg) {
   #m4pip .pip-race-h{display:flex; align-items:center; gap:6px; margin-bottom:4px; color:#636e72; font-size:11px}
   #m4pip .pip-badge{background:#eaf4fb; color:#1a5276; border-radius:8px; padding:1px 7px; font-size:11px}
   #m4pip .pip-badge.linked{background:#eafaf1; color:#1e8449}
+  #m4pip .pip-time{color:#8395a7; font-size:11px; font-variant-numeric:tabular-nums; margin-left:auto}
   #m4pip table{width:100%; border-collapse:collapse}
   #m4pip td{padding:2px 4px; border:none; font-size:13px}
-  #m4pip .pip-pos{width:22px; font-weight:bold; color:#2980b9; text-align:center}
-  #m4pip .pip-lane{width:52px; color:#636e72; font-size:12px}
+  #m4pip th{
+    padding:1px 4px; border:none; border-bottom:1px solid #e9ecef;
+    font-size:9px; font-weight:bold; color:#95a5a6; letter-spacing:.5px;
+  }
+  #m4pip .pip-pos{width:30px; font-weight:bold; color:#2980b9; text-align:center}
+  #m4pip .pip-lane{width:56px; color:#636e72; font-size:12px; text-align:left}
   #m4pip .pip-total{text-align:right; font-weight:bold; font-variant-numeric:tabular-nums}
-  #m4pip .pip-best{text-align:right; color:#8e44ad; font-size:11px; font-variant-numeric:tabular-nums; width:64px}
+  #m4pip .pip-gap{
+    text-align:right; width:66px; color:#8e44ad;
+    font-size:12px; font-variant-numeric:tabular-nums;
+  }
+  #m4pip th.pip-lane{text-align:left}
+  #m4pip th.pip-total, #m4pip th.pip-gap{text-align:right}
   #m4pip .pip-empty{padding:14px 8px; text-align:center; color:#95a5a6; font-size:12px}
   #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:14px; line-height:1; padding:0 2px}
   /* スマホは今回対象外（別途対応予定） */
@@ -1093,23 +1103,45 @@ function _showPubToast(msg) {
     var html='';
     races.forEach(function(r){
       var linked = (r.heat_id!=null);
+      // 受信時刻（"2026-07-23 04:07:10" → "04:07:10"）。取れなければ空。
+      var ts='';
+      if(r.created_at){
+        var m=String(r.created_at).match(/(\d{2}:\d{2}:\d{2})/);
+        ts = m ? m[1] : String(r.created_at);
+      }
       html+='<div class="pip-race">'
         + '<div class="pip-race-h">'
-        + '<span class="pip-badge'+(linked?' linked':'')+'">'
-        + (linked ? ('\u30d2\u30fc\u30c8'+esc(r.heat_id)+'\u306b\u53cd\u6620\u6e08') : ('\u30ec\u30fc\u30b9#'+esc(r.race_id)))
-        + '</span>'
-        + (r.target_laps!=null ? ('<span>'+esc(r.target_laps)+'\u5468</span>') : '')
+        + (linked
+            ? ('<span class="pip-badge linked">\u30d2\u30fc\u30c8'+esc(r.heat_id)+'\u306b\u53cd\u6620\u6e08</span>')
+            : '')
+        + (ts ? ('<span class="pip-time">'+esc(ts)+'</span>') : '')
         + '</div>';
       if(!r.ranking || r.ranking.length===0){
         html+='<div class="pip-empty" style="padding:6px">\u8a08\u6e2c\u4e2d\uff0f\u8a18\u9332\u306a\u3057</div>';
       } else {
-        html+='<table><tbody>';
+        // GAPは先頭（＝最速）との差。PIPは受信内容をそのまま映すだけなので、
+        // 全体ベスト／個人ベストの判別はしない（色分けもしない）。
+        var top=null;
         r.ranking.forEach(function(m){
+          if(top===null && m.total_s!=null) top=m.total_s;
+        });
+        html+='<table>'
+          + '<thead><tr>'
+          + '<th class="pip-pos">POS</th>'
+          + '<th class="pip-lane">LANE</th>'
+          + '<th class="pip-total">BEST</th>'
+          + '<th class="pip-gap">GAP</th>'
+          + '</tr></thead><tbody>';
+        r.ranking.forEach(function(m){
+          var gap='\u2014';
+          if(m.total_s!=null && top!=null){
+            gap = (m.total_s===top) ? '-' : ('+'+(m.total_s-top).toFixed(3));
+          }
           html+='<tr>'
             + '<td class="pip-pos">'+esc(m.pos)+'</td>'
             + '<td class="pip-lane">\u30ec\u30fc\u30f3'+esc(m.start_lane)+'</td>'
             + '<td class="pip-total">'+fmt(m.total_s)+'</td>'
-            + '<td class="pip-best">B '+fmt(m.best_s)+'</td>'
+            + '<td class="pip-gap">'+gap+'</td>'
             + '</tr>';
         });
         html+='</tbody></table>';
