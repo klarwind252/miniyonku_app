@@ -543,7 +543,47 @@ async def apply_latest_to_bracket(
     if res.get("error"):
         raise HTTPException(status_code=400,
                             detail="このグループの出走枠が見つかりません")
-    return JSONResponse({"ok": True, "race_id": race["id"], **res})
+
+    # --- 手動で勝者を決めたときと同じ後処理を行う ---
+    # ⚠ これを呼ばないと勝者が次ラウンドへ進まず、トーナメントが停止する。
+    #    bracket.py の bracket_save と同じ流れを踏襲する。
+    advanced = False
+    try:
+        from app.presentation.routers import bracket as bracket_mod
+
+        async with db.execute(
+            "SELECT br.id AS round_id, br.round_no, br.tournament_id "
+            "FROM bracket_groups bg JOIN bracket_rounds br ON br.id = bg.round_id "
+            "WHERE bg.id = ?",
+            (group_id,),
+        ) as cur:
+            rnd = await cur.fetchone()
+
+        if rnd:
+            tid = rnd["tournament_id"]
+            # 勝者を次ラウンドの対応スロットへ仮反映
+            await bracket_mod._prefill_next_round(
+                tid, rnd["round_id"], rnd["round_no"], db
+            )
+            # 全グループ完了なら次ラウンドを生成
+            advanced = await bracket_mod._try_advance_round(tid, rnd["round_id"], db)
+            # 裏トーナメント（有効時のみ）
+            await bracket_mod._sync_losers_bracket(tid, db)
+            await bracket_mod._try_insert_reviver(tid, db)
+
+            # 参加者向けHTMLの再配信
+            try:
+                from app.services.publish_scheduler import schedule_publish
+                schedule_publish()
+            except Exception:
+                pass
+    except Exception as e:
+        # 後処理に失敗しても順位保存は済んでいるので、結果は返す
+        return JSONResponse({"ok": True, "race_id": race["id"],
+                             "advance_error": str(e), **res})
+
+    return JSONResponse({"ok": True, "race_id": race["id"],
+                         "advanced": bool(advanced), **res})
 
 
 async def _pick_race(db, repo, race_id: int | None):
