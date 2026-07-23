@@ -23,6 +23,11 @@
 }
 .time-input:focus { outline:none; border-color:#2980b9; }
 .race-row td { vertical-align:middle; padding:4px 10px; }
+/* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
+.m4-apply-btn{padding:2px 7px;font-size:12px;background:#eef4fa;border:1px solid #2980b9;
+  color:#1a5276;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
+.m4-apply-btn:hover{background:#2980b9;color:#fff}
+.m4-apply-btn:disabled{opacity:.5;cursor:wait}
 .save-btn {
   padding:4px 12px; border:none; border-radius:4px; cursor:pointer;
   font-size:12px; font-weight:bold; font-family:inherit; transition:all .12s;
@@ -937,6 +942,10 @@ document.addEventListener('DOMContentLoaded', function(){
              style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
             ✏️
           </a>
+          {% endif %}
+          {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
+          <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
+                  title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱</button>
           {% endif %}
         </div>
       </td>
@@ -2281,4 +2290,38 @@ function printQualSchedule() {
 </script>
 {% endif %}
 
+
+{% if IS_CLOUD and request.state.m4laps_licensed %}
+<script>
+// ラップタイマーの「最新の計測結果」をこのヒートに反映する。
+// レーン番号で突き合わせ、順位・勝敗・ポイントを自動確定する。
+async function applyTimingToHeat(heatId, btn){
+  if(!confirm('ラップタイマーの最新の計測結果を、このヒートに反映します。\n\n'
+            + 'レーン番号で突き合わせ、順位・勝敗・ポイントを自動で確定します。\n'
+            + '既に入力済みの結果は上書きされます。よろしいですか？')) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const res = await fetch('/api/timing/apply/heat/' + heatId, {method:'POST'});
+    if(res.ok){
+      const d = await res.json();
+      let msg = d.saved + '件の順位を反映しました。';
+      if(d.unmatched_lanes && d.unmatched_lanes.length)
+        msg += '\n※ 計測記録が無いレーン: ' + d.unmatched_lanes.join(', ');
+      if(d.unmatched_records && d.unmatched_records.length)
+        msg += '\n※ 対応するレーンが無い記録: レーン' + d.unmatched_records.join(', ');
+      alert(msg);
+      location.reload();
+      return;
+    }
+    let detail='';
+    try{ const e = await res.json(); detail = e.detail || ''; }catch(_){}
+    alert('反映できませんでした。' + (detail ? '\n' + detail : ''));
+  }catch(e){
+    alert('通信エラーが発生しました: ' + e);
+  }
+  btn.disabled = false; btn.textContent = orig;
+}
+</script>
+{% endif %}
 {% endblock %}

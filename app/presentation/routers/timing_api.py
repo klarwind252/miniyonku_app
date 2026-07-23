@@ -492,6 +492,90 @@ async def bests_page(
     )
 
 
+@router.post("/api/timing/apply/heat/{heat_id}")
+async def apply_latest_to_heat(
+    heat_id: int,
+    race_id: int | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """最新の計測結果を予選ヒートへ反映する。
+
+    race_id を省略した場合は「記録のある最新レース」を使う。
+    運用上、走り終わった直後にその組のカードで押す想定のため、
+    どのレースかを選ばせず常に最新を採る。
+    """
+    repo = TimingRaceRepository(db)
+    race, result = await _pick_race(db, repo, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="反映できる計測結果がありません")
+
+    ranking = _ranking_payload(result)
+    res = await bridge_svc.apply_race_to_heat(
+        db, race_id=race["id"], heat_id=heat_id, ranking=ranking
+    )
+    if res.get("error"):
+        raise HTTPException(status_code=400,
+                            detail="このヒートのレーン割当が見つかりません")
+    return JSONResponse({"ok": True, "race_id": race["id"], **res})
+
+
+@router.post("/api/timing/apply/bracket/{group_id}")
+async def apply_latest_to_bracket(
+    group_id: int,
+    race_id: int | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """最新の計測結果を決勝グループへ反映する（slot_no ↔ レーン番号で照合）。"""
+    repo = TimingRaceRepository(db)
+    race, result = await _pick_race(db, repo, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="反映できる計測結果がありません")
+
+    ranking = _ranking_payload(result)
+    res = await bridge_svc.apply_race_to_bracket_group(
+        db, race_id=race["id"], group_id=group_id, ranking=ranking
+    )
+    if res.get("error"):
+        raise HTTPException(status_code=400,
+                            detail="このグループの出走枠が見つかりません")
+    return JSONResponse({"ok": True, "race_id": race["id"], **res})
+
+
+async def _pick_race(db, repo, race_id: int | None):
+    """反映元のレースを決める。race_id 未指定なら記録のある最新レース。"""
+    if race_id is not None:
+        race = await repo.get_race(race_id)
+        if race is None:
+            return None, None
+        _r, result = await build_race_result(db, race_id)
+        return race, result
+
+    for r in await repo.list_races(limit=20):
+        try:
+            race, result = await build_race_result(db, r["id"])
+        except Exception:
+            continue
+        if result is not None and result.ranking():
+            return race, result
+    return None, None
+
+
+def _ranking_payload(result) -> list[dict]:
+    """RaceResult を橋渡しサービスが期待する形（順位つきリスト）に変換する。"""
+    rows = []
+    for pos, m in enumerate(result.ranking(), start=1):
+        rows.append({
+            "pos": pos,
+            "start_lane": m.start_lane,
+            "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+            "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
+            "completed_laps": m.completed_laps,
+        })
+    return rows
+
+
 @router.get("/api/timing/pip/latest")
 async def pip_latest(
     limit: int = 5,

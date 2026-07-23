@@ -63,6 +63,11 @@
   .detail-actionbar .btn[data-short]::before{content:attr(data-short); font-size:12px; line-height:1}
 }
 .bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:8px 16px; margin-bottom:6px; }
+/* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
+.m4-apply-btn{padding:2px 9px;font-size:11px;background:#eef4fa;border:1px solid #2980b9;
+  color:#1a5276;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
+.m4-apply-btn:hover{background:#2980b9;color:#fff}
+.m4-apply-btn:disabled{opacity:.5;cursor:wait}
 .bracket-group.done { border-color:#27ae60; }
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
@@ -1142,8 +1147,14 @@ window.initBracketConnectors = initBracketConnectors;
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
   <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
-    <div style="font-size:14px;color:#333333;margin-bottom:4px">
-      グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
+    <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span>グループ{{ g.group_no }}</span>
+      {% if result %}<span style="color:#27ae60">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
+      {% if IS_CLOUD and request.state.m4laps_licensed %}
+      <span style="flex:1"></span>
+      <button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
+              title="ラップタイマーの最新の計測結果をこの組に反映します">⏱ 計測反映</button>
+      {% endif %}
     </div>
     {% for slot in slots %}
     <div class="slot-row">
@@ -2119,6 +2130,40 @@ function postToXDefault(){ const text=['🏁【レース結果】'+POST_VARS['{r
   window.open('https://twitter.com/intent/tweet?text='+encodeURIComponent(text),'_blank','width=600,height=500'); }
 function togglePostMenu(){ const m=document.getElementById('postMenu'); if(m) m.style.display=(m.style.display==='none'?'block':'none'); }
 document.addEventListener('click',function(e){ const m=document.getElementById('postMenu'); if(m && !m.parentElement.contains(e.target)) m.style.display='none'; });
+</script>
+{% endif %}
+
+{% if IS_CLOUD and request.state.m4laps_licensed %}
+<script>
+// ラップタイマーの「最新の計測結果」をこの組に反映する。
+// レーン番号（=スロット番号）で突き合わせ、順位と勝者を自動確定する。
+async function applyTimingToBracket(groupId, btn){
+  if(!confirm('ラップタイマーの最新の計測結果を、この組に反映します。\n\n'
+            + 'レーン番号とスロット番号で突き合わせ、順位と勝者を自動で確定します。\n'
+            + '既に入力済みの結果は上書きされます。よろしいですか？')) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '反映中…';
+  try{
+    const res = await fetch('/api/timing/apply/bracket/' + groupId, {method:'POST'});
+    if(res.ok){
+      const d = await res.json();
+      let msg = d.saved + '件の順位を反映しました。';
+      if(d.unmatched_slots && d.unmatched_slots.length)
+        msg += '\n※ 計測記録が無い枠: ' + d.unmatched_slots.join(', ');
+      if(d.unmatched_records && d.unmatched_records.length)
+        msg += '\n※ 対応する枠が無い記録: レーン' + d.unmatched_records.join(', ');
+      alert(msg);
+      location.reload();
+      return;
+    }
+    let detail='';
+    try{ const e = await res.json(); detail = e.detail || ''; }catch(_){}
+    alert('反映できませんでした。' + (detail ? '\n' + detail : ''));
+  }catch(e){
+    alert('通信エラーが発生しました: ' + e);
+  }
+  btn.disabled = false; btn.textContent = orig;
+}
 </script>
 {% endif %}
 {% endblock %}
