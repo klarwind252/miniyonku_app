@@ -111,7 +111,7 @@ async def results_page(
     """計測結果の一覧（レーン単位の明細・セクター/速度つき）。
 
     1行 = 1レーン。POS/LANE/BEST/GAP に続けて S1..Sn のセクタータイムと速度を出す。
-    速度はビーム間隔の設定が未実装のため、現状はダミー値（_dummy_speed_kmh 参照）。
+    速度は秒速(m/s)。ビーム間隔の設定が未実装のため、現状はダミー値（_dummy_speed_ms 参照）。
     """
     repo = TimingRaceRepository(db)
     races = await repo.list_races(limit=50)
@@ -150,12 +150,12 @@ async def results_page(
                 sectors.append({
                     "no": idx + 1,
                     "s": round(best_by_sector[idx] / 1e6, 3),
-                    "kmh": _dummy_speed_kmh(rid, m.start_lane, idx),
+                    "ms": _dummy_speed_ms(rid, m.start_lane, idx),
                 })
             max_sectors = max(max_sectors, len(sectors))
 
-            # MAX SPEED：S/G・各セクションゲートを通過したときの速度のうち最速
-            max_kmh = max((s["kmh"] for s in sectors), default=None)
+            # MAX SPEED：S/G・各セクションゲートを通過したときの速度のうち最速（m/s）
+            max_ms = max((s["ms"] for s in sectors), default=None)
 
             gap = None
             if m.total_time_us is not None and top_us is not None:
@@ -169,7 +169,7 @@ async def results_page(
                 "pos": pos,
                 "start_lane": m.start_lane,
                 "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
-                "max_kmh": max_kmh,
+                "max_ms": max_ms,
                 "gap": gap,
                 "sectors": sectors,
                 "is_first_of_race": pos == 1,      # 同一レースの先頭行だけ時刻を出す
@@ -187,63 +187,17 @@ async def results_page(
     )
 
 
-def _dummy_speed_kmh(race_id: int, lane: int, sector_idx: int) -> float:
-    """⚠ 仮の速度値（実機のビーム間隔設定が未実装のためのダミー）。
+def _dummy_speed_ms(race_id: int, lane: int, sector_idx: int) -> float:
+    """⚠ 仮の速度値（秒速 m/s）。実機のビーム間隔設定が未実装のためのダミー。
 
     本実装時はここを削除し、PassEvent の t_us / t_us_b の差と
     ゲートのビーム間隔(mm)から算出する:
-        v[m/s]  = 間隔mm / 1000 / ((t_us_b - t_us) / 1e6)
-        v[km/h] = v[m/s] * 3.6
+        v[m/s] = 間隔mm / 1000 / ((t_us_b - t_us) / 1e6)
     表示のたびに値が変わると見づらいので、入力から決まる再現可能な擬似値にしている。
+    ミニ四駆の実速度域（およそ 6.5〜9.5 m/s ＝ 23〜34 km/h）に合わせてある。
     """
     seed = (race_id * 31 + lane * 7 + sector_idx * 13) % 100
-    return round(24.0 + seed * 0.11, 1)   # おおよそ 24.0〜35.0 km/h
-
-
-@router.get("/api/timing/pip/latest")
-async def pip_latest(
-    limit: int = 5,
-    db: aiosqlite.Connection = Depends(get_db),
-    _guard: bool = Depends(require_m4laps),
-):
-    """PIP（右下小窓）用：最近の計測レースを新しい順に、順位つきで返す。
-
-    ⚠ クラウド版かつライセンス登録済みの環境でのみ利用可（require_m4laps）。
-       オンプレ版・未登録環境では 404 を返し、機能自体を隠す。
-
-    GWから送られてきた記録をそのまま見せるだけ。まだ誰のものかは紐づけない。
-    （組み合わせ情報はGWへ送らない方針のため、突き合わせはアプリ側で後から行う）
-    """
-    repo = TimingRaceRepository(db)
-    races = await repo.list_races(limit=max(1, min(limit, 20)))
-    out = []
-    for r in races:
-        rid = r["id"]
-        try:
-            race, result = await build_race_result(db, rid)
-        except Exception:
-            continue
-        if race is None:
-            continue
-        rows = []
-        if result is not None:
-            for pos, m in enumerate(result.ranking(), start=1):
-                rows.append({
-                    "pos": pos,
-                    "start_lane": m.start_lane,
-                    "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
-                    "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
-                    "completed_laps": m.completed_laps,
-                })
-        keys = race.keys() if hasattr(race, "keys") else []
-        out.append({
-            "race_id": rid,
-            "heat_id": (race["heat_id"] if "heat_id" in keys else None),
-            "target_laps": (race["target_laps"] if "target_laps" in keys else None),
-            "created_at": (race["created_at"] if "created_at" in keys else None),
-            "ranking": rows,
-        })
-    return JSONResponse({"races": out})
+    return round(6.5 + seed * 0.03, 2)   # おおよそ 6.50〜9.47 m/s
 
 
 @router.get("/admin/timing/results/{race_id}", response_class=HTMLResponse)

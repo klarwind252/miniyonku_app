@@ -41,9 +41,12 @@
   .c-max{text-align:right;font-variant-numeric:tabular-nums;width:86px;color:#c0392b}
   .c-max .unit{color:#bdc3c7;font-size:10px;margin-left:2px}
   .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:76px}
-  /* セクターは等幅・固定幅で縦に揃える（F1のライブタイミング風） */
-  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:72px;
-    background:#f7f9fb;border-left:1px solid #eef2f5}
+  /* セクターは等幅・固定幅。上段=区間タイム / 下段=通過速度(秒速) */
+  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:76px;
+    background:#f7f9fb;border-left:1px solid #eef2f5;line-height:1.25}
+  .c-sec .sec-t{font-weight:bold}
+  .c-sec .sec-v{color:#95a5a6;font-size:10px}
+  .c-sec .sec-v .u{font-size:9px;margin-left:1px}
   .th-r{text-align:right}
   .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:10px;margin-left:6px}
   .tr-wrap{overflow-x:auto}
@@ -92,7 +95,7 @@
             <td class="c-pos">{{ row.pos }}</td>
             <td class="c-lane"><span class="lane-chip lane-{{ ((row.start_lane - 1) % 5) + 1 }}">{{ row.start_lane }}</span></td>
             <td class="c-best">{{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}</td>
-            <td class="c-max">{% if row.max_kmh is not none %}{{ '%.1f'|format(row.max_kmh) }}<span class="unit">km/h</span>{% else %}—{% endif %}</td>
+            <td class="c-max">{% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}</td>
             <td class="c-gap">
               {% if row.gap is none %}—
               {% elif row.gap == 0 %}-
@@ -101,7 +104,7 @@
             {% for n in sector_nos %}
             {% set sec = row.sectors[loop.index0] if loop.index0 < row.sectors|length else none %}
             <td class="c-sec">
-              {% if sec %}{{ '%.3f'|format(sec.s) }}{% else %}—{% endif %}
+              {% if sec %}<div class="sec-t">{{ '%.3f'|format(sec.s) }}</div><div class="sec-v">{{ '%.2f'|format(sec.ms) }}<span class="u">m/s</span></div>{% else %}—{% endif %}
             </td>
             {% endfor %}
             {% if row.is_first_of_race %}
