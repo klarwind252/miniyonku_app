@@ -1223,6 +1223,7 @@ function _showPubToast(msg) {
         + (ts ? ('<span class="pip-time">'+esc(ts)+'</span>') : '')
         + '</div>';
       if(!r.ranking || r.ranking.length===0){
+        // 通常はAPI側で記録なしを除外しているため到達しない（保険として残す）
         html+='<div class="pip-empty" style="padding:6px">\u8a08\u6e2c\u4e2d\uff0f\u8a18\u9332\u306a\u3057</div>';
       } else {
         // GAPは先頭（＝最速）との差。PIPは受信内容をそのまま映すだけなので、

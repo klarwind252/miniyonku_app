@@ -333,7 +333,10 @@ async def pip_latest(
     （組み合わせ情報はGWへ送らない方針のため、突き合わせはアプリ側で後から行う）
     """
     repo = TimingRaceRepository(db)
-    races = await repo.list_races(limit=max(1, min(limit, 20)))
+    want = max(1, min(limit, 20))
+    # 記録なし（レイアウト未設定・組み立て不能）のレースは表示しないため、
+    # 多めに取得してから絞り込む。古い壊れたデータがPIPを埋めるのを防ぐ。
+    races = await repo.list_races(limit=min(want * 5 + 10, 100))
     out = []
     for r in races:
         rid = r["id"]
@@ -353,6 +356,10 @@ async def pip_latest(
                     "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
                     "completed_laps": m.completed_laps,
                 })
+        # 記録が組み立てられなかったレースは出さない（「計測中／記録なし」を除外）
+        if not rows:
+            continue
+
         keys = race.keys() if hasattr(race, "keys") else []
         out.append({
             "race_id": rid,
@@ -361,6 +368,8 @@ async def pip_latest(
             "created_at": (race["created_at"] if "created_at" in keys else None),
             "ranking": rows,
         })
+        if len(out) >= want:
+            break
     return JSONResponse({"races": out})
 
 
