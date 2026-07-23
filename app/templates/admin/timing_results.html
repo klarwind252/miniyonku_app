@@ -13,55 +13,58 @@
 </div>
 
 <style>
-  .tr-table{width:auto;border-collapse:collapse;font-size:13px;table-layout:fixed}
+  .tr-table{width:auto;border-collapse:collapse;font-size:15px;table-layout:fixed}
   .tr-table th{
-    padding:4px 6px;text-align:center;font-size:10px;font-weight:bold;
+    padding:5px 7px;text-align:center;font-size:11px;font-weight:bold;
     color:#95a5a6;letter-spacing:.5px;white-space:nowrap;
   }
-  .tr-table thead tr.g-row th{border-bottom:1px solid #e9ecef;color:#7f8c8d;font-size:10px}
+  .tr-table thead tr.g-row th{border-bottom:1px solid #e9ecef;color:#7f8c8d;font-size:11px}
+  /* グループ（TOTAL / LAP / SECTOR）の境界に縦線を入れて区切りを明確にする */
+  .tr-table th.gsep, .tr-table td.gsep{border-left:2px solid #c8d2dc}
+  .tr-table thead tr.g-row th.gsep{border-left:2px solid #c8d2dc}
   .tr-table thead tr.h-row th{border-bottom:2px solid #dfe4ea}
-  .tr-table td{padding:2px 6px;border-bottom:1px solid #f4f6f8;white-space:nowrap}
+  .tr-table td{padding:4px 7px;border-bottom:1px solid #f4f6f8;white-space:nowrap}
   /* レースの切れ目に太い罫線。レーンの切れ目は中太で区切る */
   .tr-table tr.race-start td{border-top:2px solid #b9c4cf}
   .tr-table tr.lane-start td{border-top:1px solid #dfe4ea}
   .tr-table tr:hover td{background:#f8f9fa}
 
-  .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;width:92px;line-height:1.3}
-  .c-ts .ts-d{font-size:11px}
-  .c-ts .ts-t{font-size:12px;font-weight:bold;color:#636e72}
-  .c-mode{text-align:center;vertical-align:top;width:56px}
-  .mode-chip{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold}
+  .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;width:104px;line-height:1.35}
+  .c-ts .ts-d{font-size:12px}
+  .c-ts .ts-t{font-size:14px;font-weight:bold;color:#636e72}
+  .c-mode{text-align:center;vertical-align:top;width:64px}
+  .mode-chip{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
-  .c-pos{width:34px;text-align:center;font-weight:bold;color:#2980b9;vertical-align:top}
-  .c-lane{width:44px;text-align:center;vertical-align:top}
+  .c-pos{width:40px;text-align:center;font-weight:bold;color:#2980b9;vertical-align:top;font-size:16px}
+  .c-lane{width:50px;text-align:center;vertical-align:top}
   /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
-  .lane-chip{display:inline-block;min-width:22px;padding:1px 6px;border-radius:4px;
-    font-size:12px;font-weight:bold;color:#fff;text-align:center;line-height:1.5}
+  .lane-chip{display:inline-block;min-width:26px;padding:2px 7px;border-radius:4px;
+    font-size:14px;font-weight:bold;color:#fff;text-align:center;line-height:1.5}
   /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
   .lane-1{background:#2980b9} .lane-2{background:#e74c3c}
   .lane-3{background:#f1c40f;color:#4a3b00}   /* 黄は白文字だと読めないので濃色に */
   .lane-4{background:#27ae60} .lane-5{background:#95a5a6}
 
   /* TOTAL：レーンごとに1回だけ（rowspanで結合） */
-  .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:70px;vertical-align:top}
-  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:64px;color:#c0392b;vertical-align:top}
-  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:64px;vertical-align:top}
-  .unit{color:#bdc3c7;font-size:9px;margin-left:1px}
+  .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:92px;vertical-align:top;font-size:20px;color:#2c3e50;letter-spacing:-.3px}
+  .c-max{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#c0392b;vertical-align:top;font-size:16px}
+  .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:80px;vertical-align:top;font-size:16px}
+  .unit{color:#bdc3c7;font-size:10px;margin-left:1px}
 
   /* LAP：周ごと */
-  .c-lapno{width:26px;text-align:center;color:#7f8c8d;font-size:11px}
-  .c-lapt{width:66px;text-align:right;font-variant-numeric:tabular-nums;font-weight:bold}
-  .c-lapav{width:60px;text-align:right;font-variant-numeric:tabular-nums;color:#7f8c8d;font-size:11px}
+  .c-lapno{width:30px;text-align:center;color:#7f8c8d;font-size:12px}
+  .c-lapt{width:78px;text-align:right;font-variant-numeric:tabular-nums;font-weight:bold;font-size:16px}
+  .c-lapav{width:72px;text-align:right;font-variant-numeric:tabular-nums;color:#5a6b7a;font-size:13px}
 
   /* SECTOR：0=S/G、1〜7=各区間。上段=区間タイム / 下段=通過速度 */
-  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:62px;
+  .c-sec{text-align:right;font-variant-numeric:tabular-nums;width:74px;
     background:#f7f9fb;border-left:1px solid #eef2f5;line-height:1.2}
   .c-sec.sg{background:#eef4fa}
   .c-sec .sec-t{font-weight:bold}
-  .c-sec .sec-v{color:#95a5a6;font-size:10px}
-  .c-act{width:56px;text-align:center;vertical-align:top}
-  .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 6px;font-size:10px}
+  .c-sec .sec-v{color:#5a6b7a;font-size:12px}
+  .c-act{width:64px;text-align:center;vertical-align:top}
+  .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:11px}
   .tr-wrap{overflow-x:auto}
 </style>
 
@@ -74,9 +77,9 @@
         <thead>
           <tr class="g-row">
             <th colspan="4"></th>
-            <th colspan="3">TOTAL</th>
-            <th colspan="3">LAP</th>
-            <th colspan="8">SECTOR</th>
+            <th colspan="3" class="gsep">TOTAL</th>
+            <th colspan="3" class="gsep">LAP</th>
+            <th colspan="8" class="gsep">SECTOR</th>
             <th></th>
           </tr>
           <tr class="h-row">
@@ -84,14 +87,14 @@
             <th>CASE</th>
             <th>POS</th>
             <th>LANE</th>
-            <th>TIME</th>
+            <th class="gsep">TIME</th>
             <th>MAX</th>
             <th>GAP</th>
-            <th>#</th>
+            <th class="gsep">#</th>
             <th>TIME</th>
             <th>Av.</th>
             {% for n in range(0, 8) %}
-            <th>{% if n == 0 %}S/G{% else %}{{ n }}{% endif %}</th>
+            <th{% if n == 0 %} class="gsep"{% endif %}>{{ n }}</th>
             {% endfor %}
             <th></th>
           </tr>
@@ -122,7 +125,7 @@
             <td class="c-lane" rowspan="{{ row.lane_row_count }}">
               <span class="lane-chip lane-{{ ((row.start_lane - 1) % 5) + 1 }}">{{ row.start_lane }}</span>
             </td>
-            <td class="c-total" rowspan="{{ row.lane_row_count }}">
+            <td class="c-total gsep" rowspan="{{ row.lane_row_count }}">
               {{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}
             </td>
             <td class="c-max" rowspan="{{ row.lane_row_count }}">
@@ -133,7 +136,7 @@
             </td>
             {% endif %}
             {# LAP：周ごと #}
-            <td class="c-lapno">{{ row.lap_no if row.lap_no is not none else '—' }}</td>
+            <td class="c-lapno gsep">{{ row.lap_no if row.lap_no is not none else '—' }}</td>
             <td class="c-lapt">{{ '%.3f'|format(row.lap_s) if row.lap_s is not none else '—' }}</td>
             <td class="c-lapav">
               {% if row.lap_avg_ms is not none %}{{ '%.2f'|format(row.lap_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
@@ -141,7 +144,7 @@
             {# SECTOR 0〜7 #}
             {% for n in range(0, 8) %}
             {% set sec = row.sectors[n] %}
-            <td class="c-sec{% if n == 0 %} sg{% endif %}">
+            <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
               {% if sec %}
                 {% if sec.s is not none %}<div class="sec-t">{{ '%.3f'|format(sec.s) }}</div>{% endif %}
                 {% if sec.ms is not none %}<div class="sec-v">{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
@@ -159,7 +162,7 @@
       </table>
     </div>
     <p style="margin-top:10px;color:#95a5a6;font-size:11px">
-      ※ SECTOR上段=区間タイム／下段=通過速度(m/s)。S/Gはその周の起点で、1周目はスタート地点のため速度なし。
+      ※ SECTOR上段=区間タイム／下段=通過速度(m/s)。0はS/G（その周の起点）で、1周目はスタート地点のため速度なし。
       速度・Av.（周平均速度）は現在ダミー値です（ビーム間隔・コース全長の設定を追加すると実測値になります）。
     </p>
     {% else %}
