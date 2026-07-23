@@ -163,6 +163,30 @@ class TimingRaceRepository:
         ) as cur:
             return await cur.fetchall()
 
+    async def list_race_dates(self, limit: int = 60):
+        """計測実績のある日付を新しい順に返す（絞り込みプルダウン用）。
+
+        created_at は "YYYY-MM-DD HH:MM:SS" 形式なので日付部分で集計する。
+        戻り値: [{"date": "2026-07-23", "n": 12}, ...]
+        """
+        async with self.db.execute(
+            "SELECT substr(created_at,1,10) AS d, COUNT(*) AS n "
+            "FROM timing_races GROUP BY d ORDER BY d DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [{"date": r["d"], "n": int(r["n"])} for r in rows]
+
+    async def list_races_by_date(self, date: str, limit: int = 500):
+        """指定日（YYYY-MM-DD）のレースを新しい順に返す。"""
+        async with self.db.execute(
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, created_at "
+            "FROM timing_races WHERE substr(created_at,1,10) = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (date, limit),
+        ) as cur:
+            return await cur.fetchall()
+
     async def delete_race(self, race_id: int) -> int:
         """レースを1件削除する（通過イベントも一緒に消える）。
 

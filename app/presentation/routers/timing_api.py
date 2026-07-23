@@ -44,8 +44,12 @@ async def create_race(
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
     x_timing_token: str | None = Header(default=None),
+    _guard: bool = Depends(require_m4laps),
 ):
     """レースを開始し race_id を払い出す。
+
+    ⚠ M4LAPSはクラウド版限定。オンプレ版・ライセンス未登録では 404（require_m4laps）。
+       トークン(X-Timing-Token)と併用し、二重に保護する。
 
     body(JSON): {"heat_tag":int?, "layout_id":int?, "target_laps":int,
                  "green_t_us":int?}
@@ -68,8 +72,11 @@ async def post_events(
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
     x_timing_token: str | None = Header(default=None),
+    _guard: bool = Depends(require_m4laps),
 ):
     """通過イベントのバッチ受信（冪等・D11/D12）。
+
+    ⚠ M4LAPSはクラウド版限定。オンプレ版・ライセンス未登録では 404（require_m4laps）。
 
     body(JSON): {"events":[{device_id,src,src_boot_id,seq,lane,t_us,t_us_b?,quality?}, ...]}
     戻り値: {"inserted":n, "duplicate":m}
@@ -105,20 +112,74 @@ async def post_events(
 @router.get("/admin/timing/results", response_class=HTMLResponse)
 async def results_page(
     request: Request,
+    date: str | None = None,
+    limit: int = 10,
     db: aiosqlite.Connection = Depends(get_db),
     _guard: bool = Depends(require_m4laps),
 ):
     """計測結果の一覧（レーン×周回の明細）。
 
+    既定は最新10レース。date=YYYY-MM-DD を指定するとその日の全レースを表示する。
+    件数を絞らないと日が経つほど重くなるため、既定で制限をかけている。
+
     1行 = 1レーンの1周。TS/CASE/POS/LANE/TOTAL はレーンごとに rowspan で結合し、
     LAP（周回番号・ラップタイム・平均速度）と SECTOR 0〜7 を周ごとに並べる。
-    これにより「S1が何周目のものか」が明確になり、1周タイムも表示できる。
 
     速度は秒速(m/s)。ビーム間隔・コース全長の設定が未実装のため、現状はダミー値
     （_dummy_speed_ms / _dummy_lap_avg_ms 参照）。
     """
     repo = TimingRaceRepository(db)
-    races = await repo.list_races(limit=50)
+
+    # 絞り込み用の日付一覧（プルダウン）
+    date_options = await repo.list_race_dates(limit=60)
+
+    if date:
+        races = await repo.list_races_by_date(date, limit=500)
+    else:
+        races = await repo.list_races(limit=max(1, min(limit, 100)))
+
+    # --- その日のベスト記録を求める（ハイライト用） ---
+    # 表示中の行だけでなく「その日全体」で最速を出す。
+    # 表示を10件に絞っていても、日ベストは正しく判定できるようにするため。
+    day_best: dict[str, dict] = {}   # date -> {total, max_ms, lap, lap_avg, sector, sector_ms}
+    target_dates = sorted({(r["created_at"] or "")[:10] for r in races if r["created_at"]})
+    for d in target_dates:
+        if not d:
+            continue
+        best = {"total": None, "max_ms": None, "lap": None,
+                "lap_avg": None, "sector": None, "sector_ms": None}
+        day_races = await repo.list_races_by_date(d, limit=500)
+        for dr in day_races:
+            try:
+                _race, _res = await build_race_result(db, dr["id"])
+            except Exception:
+                continue
+            if _res is None:
+                continue
+            for m in _res.ranking():
+                # トータルタイム（最小）
+                if m.total_time_us is not None:
+                    if best["total"] is None or m.total_time_us < best["total"]:
+                        best["total"] = m.total_time_us
+                for lap in m.laps:
+                    # ラップタイム（最小）
+                    if best["lap"] is None or lap.lap_time_us < best["lap"]:
+                        best["lap"] = lap.lap_time_us
+                    # ラップ平均速度（最大）
+                    av = _dummy_lap_avg_ms(dr["id"], m.start_lane, lap.lap)
+                    if best["lap_avg"] is None or av > best["lap_avg"]:
+                        best["lap_avg"] = av
+                    for idx, sec in enumerate(lap.sectors):
+                        # セクタータイム（最小）
+                        if best["sector"] is None or sec.dt_us < best["sector"]:
+                            best["sector"] = sec.dt_us
+                        # セクター通過速度（最大）＝MAX SPEEDの母数でもある
+                        sp = _dummy_speed_ms(dr["id"], m.start_lane, idx, lap.lap)
+                        if best["sector_ms"] is None or sp > best["sector_ms"]:
+                            best["sector_ms"] = sp
+                        if best["max_ms"] is None or sp > best["max_ms"]:
+                            best["max_ms"] = sp
+        day_best[d] = best
 
     rows = []          # 表示する明細行（1行=1レーンの1周）
 
@@ -130,6 +191,9 @@ async def results_page(
             continue
         if race is None or result is None:
             continue
+
+        # このレースの日のベスト（ハイライト判定に使う）
+        bst = day_best.get((race["created_at"] or "")[:10], {})
 
         ordered = result.ranking()          # 合計タイム昇順
         top_us = None
@@ -162,22 +226,44 @@ async def results_page(
                 sectors = [None] * 8
                 if lap is not None:
                     # S/G通過：1周目は計測開始の瞬間なので速度なし
+                    sg_ms = (None if lap.lap == 1
+                             else _dummy_speed_ms(rid, m.start_lane, 0, lap.lap))
                     sectors[0] = {
                         "s": None,
-                        "ms": (None if lap.lap == 1
-                               else _dummy_speed_ms(rid, m.start_lane, 0, lap.lap)),
+                        "ms": sg_ms,
                         "sg": True,
+                        "best_s": False,
+                        "best_ms": (bst.get("sector_ms") is not None
+                                    and sg_ms is not None
+                                    and sg_ms == bst["sector_ms"]),
                     }
                     for idx, sec in enumerate(lap.sectors):
                         if idx + 1 > 7:
                             break
+                        sp = _dummy_speed_ms(rid, m.start_lane, idx, lap.lap)
                         sectors[idx + 1] = {
                             "s": round(sec.dt_us / 1e6, 3),
-                            "ms": _dummy_speed_ms(rid, m.start_lane, idx, lap.lap),
+                            "ms": sp,
                             "sg": False,
+                            # その日のベストか（タイムは最小・速度は最大）
+                            "best_s": (bst.get("sector") is not None
+                                       and sec.dt_us == bst["sector"]),
+                            "best_ms": (bst.get("sector_ms") is not None
+                                        and sp == bst["sector_ms"]),
                         }
 
+                lap_avg = (_dummy_lap_avg_ms(rid, m.start_lane, lap.lap)
+                           if lap is not None else None)
                 rows.append({
+                    # --- その日のベスト判定（ハイライト用） ---
+                    "best_total": (bst.get("total") is not None
+                                   and m.total_time_us == bst["total"]),
+                    "best_max": (bst.get("max_ms") is not None
+                                 and max_ms is not None and max_ms == bst["max_ms"]),
+                    "best_lap": (lap is not None and bst.get("lap") is not None
+                                 and lap.lap_time_us == bst["lap"]),
+                    "best_lap_avg": (lap_avg is not None and bst.get("lap_avg") is not None
+                                     and lap_avg == bst["lap_avg"]),
                     "race_id": rid,
                     "created_at": race["created_at"],
                     "date_part": _split_ts(race["created_at"])[0],
@@ -192,8 +278,7 @@ async def results_page(
                     # LAP
                     "lap_no": lap.lap if lap is not None else None,
                     "lap_s": round(lap.lap_time_us / 1e6, 3) if lap is not None else None,
-                    "lap_avg_ms": (_dummy_lap_avg_ms(rid, m.start_lane, lap.lap)
-                                   if lap is not None else None),
+                    "lap_avg_ms": lap_avg,
                     "sectors": sectors,
                     # 結合制御
                     "is_first_of_lane": li == 0,       # レーンの先頭行（POS等を結合）
@@ -212,6 +297,9 @@ async def results_page(
             # レイアウトによらず常に S1〜S7 の枠を出し、無い区間は「—」を表示する。
             "sector_nos": list(range(1, 8)),
             "races": races,
+            "date_options": date_options,   # 絞り込みプルダウン用
+            "current_date": date,           # 選択中の日付（Noneなら最新n件）
+            "current_limit": limit,
         },
     )
 

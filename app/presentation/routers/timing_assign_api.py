@@ -17,13 +17,19 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.infrastructure.db.repositories import timing_assignment_repository as repo
+from app.presentation.routers.m4laps_guard import require_m4laps
 
-router = APIRouter(prefix="/api/timing", tags=["m4laps-assign"])
-admin_router = APIRouter(prefix="/admin/timing", tags=["m4laps-assign-admin"])
+# ⚠ M4LAPSはクラウド版限定。両ルーターとも require_m4laps を通し、
+#    オンプレ版・ライセンス未登録では 404（機能自体を隠す）。
+#    timing_settings.py と同じ流儀でルーター全体に適用する。
+router = APIRouter(prefix="/api/timing", tags=["m4laps-assign"],
+                   dependencies=[Depends(require_m4laps)])
+admin_router = APIRouter(prefix="/admin/timing", tags=["m4laps-assign-admin"],
+                         dependencies=[Depends(require_m4laps)])
 
 _TIMING_TOKEN = os.environ.get("TIMING_TOKEN", "")
 
