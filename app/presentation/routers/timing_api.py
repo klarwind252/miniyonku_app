@@ -154,6 +154,9 @@ async def results_page(
                 })
             max_sectors = max(max_sectors, len(sectors))
 
+            # MAX SPEED：S/G・各セクションゲートを通過したときの速度のうち最速
+            max_kmh = max((s["kmh"] for s in sectors), default=None)
+
             gap = None
             if m.total_time_us is not None and top_us is not None:
                 gap = round((m.total_time_us - top_us) / 1e6, 3)
@@ -166,6 +169,7 @@ async def results_page(
                 "pos": pos,
                 "start_lane": m.start_lane,
                 "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+                "max_kmh": max_kmh,
                 "gap": gap,
                 "sectors": sectors,
                 "is_first_of_race": pos == 1,      # 同一レースの先頭行だけ時刻を出す
