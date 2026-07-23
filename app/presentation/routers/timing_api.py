@@ -291,6 +291,9 @@ async def results_page(
     )
 
 
+# ⚠ 以下3つは計測結果ページの「反映モーダル」用に作ったが、
+#    反映は予選/決勝の各カード（/api/timing/apply/*）で行う方針に変更したため
+#    現在UIからは呼ばれていない。外部から叩く用途のため残してある。
 @router.get("/admin/timing/bridge/heats")
 async def bridge_heats(
     tournament_id: int | None = None,
