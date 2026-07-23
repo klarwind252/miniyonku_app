@@ -236,7 +236,8 @@ async def results_page(
                         "s": None,
                         "ms": sg_ms,
                         "sg": True,
-                        "rank_ms": _best_rank(sg_ms, bst.get("sector_ms")),
+                        # S/Gは区間0。通過速度は全区間の最高速(max_ms)と比べる
+                        "rank_ms": _best_rank(sg_ms, bst.get("max_ms")),
                         "rank_s": 0,
                     }
                     for idx, sec in enumerate(lap.sectors):
@@ -248,8 +249,12 @@ async def results_page(
                             "ms": sp,
                             "sg": False,
                             # その日のベストか（タイムは最小・速度は最大）
-                            "rank_s": _best_rank(sec.dt_us / 1e6, bst.get("sector")),
-                            "rank_ms": _best_rank(sp, bst.get("sector_ms")),
+                            # 区間ごとに独立して順位を判定する（S1はS1の中で）
+                            "rank_s": _best_rank(
+                                sec.dt_us / 1e6,
+                                bst.get(best_svc.sector_metric(idx + 1))),
+                            "rank_ms": _best_rank(
+                                sp, bst.get(best_svc.sector_speed_metric(idx + 1))),
                         }
 
                 lap_avg = (spd_svc.lap_avg_speed_ms(lap.lap_time_us, lap_len_m)
@@ -389,14 +394,23 @@ async def bests_page(
         )
 
     # 表示用に整形（順番と単位・説明を固定）
+    # セクターは区間ごとに独立して集計しているため、S1〜S7 を個別に出す。
+    # （区間の長さが違うので、まとめて比べると短い区間ばかりが上位になる）
     METRIC_VIEW = [
         ("total",     "トータルタイム",     "秒",  "最速"),
         ("max_ms",    "MAX SPEED",          "m/s", "最高"),
         ("lap",       "ラップタイム",       "秒",  "最速"),
         ("lap_avg",   "ラップ平均SPEED",    "m/s", "最高"),
-        ("sector",    "セクタータイム",     "秒",  "最速"),
-        ("sector_ms", "セクター通過SPEED",  "m/s", "最高"),
     ]
+    for i in range(1, best_svc.MAX_SECTORS + 1):
+        # 記録が無い区間は出さない（レイアウトによって区間数が違うため）
+        if result["bests"].get(best_svc.sector_metric(i)):
+            METRIC_VIEW.append(
+                (best_svc.sector_metric(i), f"S{i} セクタータイム", "秒", "最速"))
+        if result["bests"].get(best_svc.sector_speed_metric(i)):
+            METRIC_VIEW.append(
+                (best_svc.sector_speed_metric(i), f"S{i} 通過SPEED", "m/s", "最高"))
+
     items = []
     for key, label, unit, kind in METRIC_VIEW:
         b = result["bests"].get(key)

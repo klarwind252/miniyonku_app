@@ -22,16 +22,34 @@
 from __future__ import annotations
 
 # 指標ごとの「良い方向」。True=小さいほど良い（タイム系）
+# セクターは **区間ごとに独立** して3傑を出す。
+# 区間の長さが違うため、全セクターをまとめて比べると短い区間ばかりが上位を占め、
+# S1やS2の速いタイムが評価されなくなるため。
+#   sector1..sector7      … 区間1〜7の区間タイム（最小が良い）
+#   sector_ms1..sector_ms7 … 区間1〜7の通過速度（最大が良い）
+MAX_SECTORS = 7
+
 LOWER_IS_BETTER = {
     "total": True,
     "lap": True,
-    "sector": True,
     "max_ms": False,
     "lap_avg": False,
-    "sector_ms": False,
 }
+for _i in range(1, MAX_SECTORS + 1):
+    LOWER_IS_BETTER[f"sector{_i}"] = True       # 区間タイム：小さいほど良い
+    LOWER_IS_BETTER[f"sector_ms{_i}"] = False   # 通過速度：大きいほど良い
 
 METRICS = tuple(LOWER_IS_BETTER.keys())
+
+
+def sector_metric(sector_no: int) -> str:
+    """区間番号 → 区間タイムの metric 名。"""
+    return f"sector{sector_no}"
+
+
+def sector_speed_metric(sector_no: int) -> str:
+    """区間番号 → 通過速度の metric 名。"""
+    return f"sector_ms{sector_no}"
 
 
 def is_better(metric: str, new_value: float, old_value: float | None) -> bool:
@@ -77,14 +95,18 @@ def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn) -> dict[str,
                 start_lane=m.start_lane, lap=lap.lap, sector_no=None)
 
             for idx, sec in enumerate(lap.sectors):
-                put("sector", sec.dt_us / 1e6, start_lane=m.start_lane,
-                    lap=lap.lap, sector_no=idx + 1)
+                sno = idx + 1
+                if sno > MAX_SECTORS:
+                    break
+                # 区間ごとに独立した metric へ入れる（S1はS1の中だけで競う）
+                put(sector_metric(sno), sec.dt_us / 1e6, start_lane=m.start_lane,
+                    lap=lap.lap, sector_no=sno)
                 sp = speed_fn(race_id, m.start_lane, idx, lap.lap)
-                put("sector_ms", sp, start_lane=m.start_lane,
-                    lap=lap.lap, sector_no=idx + 1)
-                # 最高速はセクター通過速度の最大＝同じ母数
+                put(sector_speed_metric(sno), sp, start_lane=m.start_lane,
+                    lap=lap.lap, sector_no=sno)
+                # 最高速は全区間を通じた最大（こちらは横断で正しい）
                 put("max_ms", sp, start_lane=m.start_lane,
-                    lap=lap.lap, sector_no=idx + 1)
+                    lap=lap.lap, sector_no=sno)
 
     # 各指標につき上位 TOP_N 件に絞る（同一レコードの重複は除く）
     return {metric: _merge_top(metric, [], cands) for metric, cands in pool.items()}
