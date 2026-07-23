@@ -95,15 +95,22 @@ def get(url: str):
 
 
 def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
-                 seq_start: int) -> list[dict]:
+                 seq_start: int, lc_per_lap: int = 1) -> list[dict]:
     """1レース分の通過イベントを組み立てる。
 
     gates: 通過順のノードID列（先頭がS/G）。例 [6, 0, 1] なら S/G(GW6)→SQ0→SQ1。
          ※ LC（レーンチェンジ）はセンサーが無いので指定不要。
 
-    合計タイムが 30〜50 秒に収まるよう、目標タイムから1区間あたりの時間を逆算する。
-    （周回数やゲート数が変わっても合計が大きくブレないようにするため）
-    レーンごとに少しずつ違うペースを与え、毎周わずかに揺らして現実に近づける。
+    合計タイムが 30〜50 秒に収まるよう、目標タイムから1周あたりの時間を逆算する。
+    ラップ間のばらつきは **±2秒以内**（実際はレーンチェンジ程度の差しか出ないため）。
+
+    ⚠ ローテーション（レーンチェンジ）を再現すること。
+      M4LAPSは車両にタグを付けず、「スタートレーン＋LCによるレーンのずれ」で
+      どの車の記録かを同定する（ローテーション追跡）。実機では1周ごとに走行レーンが
+      ずれていくため、同じレーンを走り続けるデータを送るとサーバー側の同定が
+      かみ合わず、ラップタイムが乱れて見える。
+      物理レーン = ((start_lane-1) + 周回・ゲートごとのLC累積) mod lanes + 1
+      （lc_per_lap は1周あたりのLC数。既定1＝1周で1レーンずれる）
     """
     events: list[dict] = []
     seq = seq_start
@@ -111,30 +118,55 @@ def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
 
     # 1周あたりの区間数（先頭以外のゲート＋S/Gへ戻る分）
     seg_per_lap = len(gates)
-    total_segments = max(1, laps * seg_per_lap)
 
-    for lane in range(1, lanes + 1):
-        # このレーンの目標合計タイム（30.0〜50.0秒）
+    def phys_lane(start_lane: int, lap_idx: int, gate_pos: int) -> int:
+        """その周・その地点での物理レーンを返す（lap_idxは0始まり）。
+
+        gate_pos: 0=S/G, 1..=その周で何番目のゲートを通過したか。
+        ここでは「1周に lc_per_lap 回、区間を等分する位置でLCを通る」と仮定する。
+        """
+        shift = lap_idx * lc_per_lap
+        if gate_pos > 0 and seg_per_lap > 0:
+            # 周内でのLC通過数（等分位置で通ると仮定）
+            shift += (gate_pos * lc_per_lap) // seg_per_lap
+        return ((start_lane - 1) + shift) % lanes + 1
+
+    for start_lane in range(1, lanes + 1):
+        # このマシンの目標合計タイム（30.0〜50.0秒）
         target_total_us = random.randint(30_000_000, 50_000_000)
-        # 1区間あたりの基礎ペース＝目標合計 ÷ 総区間数
-        base = target_total_us // total_segments
+        lap_base = target_total_us / laps
+        # ラップ間の揺らぎ幅：±2秒。ただし基準の±8%を超えない
+        lap_jitter = min(2_000_000, lap_base * 0.08)
+
         t = t0
-        # スタート通過（S/G）
+        # スタート通過（S/G・その周の起点）
         seq += 1
         events.append({
             "device_id": f"sim-{gates[0]}", "src": gates[0], "src_boot_id": boot_id,
-            "seq": seq, "lane": lane, "t_us": t, "quality": 0,
+            "seq": seq, "lane": phys_lane(start_lane, 0, 0), "t_us": t, "quality": 0,
         })
-        for _lap in range(laps):
-            # 各周：先頭以外のゲート → 最後にS/Gへ戻る
-            for node in gates[1:] + [gates[0]]:
-                # 毎区間 ±3% の揺らぎ（合計は目標付近に収まる）
-                dt = int(base * random.uniform(0.97, 1.03))
+        for lap_idx in range(laps):
+            # この周の目標ラップタイム（基準 ±2秒以内）
+            lap_target = lap_base + random.uniform(-lap_jitter, lap_jitter)
+
+            # 区間へ配分：重みを振り、合計がラップ目標と一致するよう正規化する
+            weights = [random.uniform(0.85, 1.15) for _ in range(seg_per_lap)]
+            wsum = sum(weights)
+            seg_us = [int(lap_target * w / wsum) for w in weights]
+            seg_us[-1] += int(lap_target) - sum(seg_us)   # 端数を吸収
+
+            order = gates[1:] + [gates[0]]   # 周内の通過順（最後にS/Gへ戻る）
+            for gi, (node, dt) in enumerate(zip(order, seg_us), start=1):
                 t += dt
                 seq += 1
+                # 最後（S/Gへ戻る）は次の周の起点＝lap_idx+1 の位置で数える
+                if node == gates[0]:
+                    ln = phys_lane(start_lane, lap_idx + 1, 0)
+                else:
+                    ln = phys_lane(start_lane, lap_idx, gi)
                 events.append({
                     "device_id": f"sim-{node}", "src": node, "src_boot_id": boot_id,
-                    "seq": seq, "lane": lane, "t_us": t, "quality": 0,
+                    "seq": seq, "lane": ln, "t_us": t, "quality": 0,
                 })
     return events
 
@@ -149,6 +181,8 @@ def main() -> int:
     ap.add_argument("--races", type=int, default=1, help="作るレース本数（既定1）")
     ap.add_argument("--token", default=None, help="TIMING_TOKEN（設定時のみ）")
     ap.add_argument("--heat", type=int, default=None, help="紐づけるヒートID（省略可）")
+    ap.add_argument("--lc", type=int, default=1,
+                    help="1周あたりのレーンチェンジ数（既定1）")
     ap.add_argument("--gates", default=None,
                     help="通過順ノードID（例 '6,0,1'）。省略時は 6,0,1＝S/G(GW6)→SQ0→SQ1")
     args = ap.parse_args()
@@ -183,7 +217,7 @@ def main() -> int:
 
         boot_id += 1  # ★レースごとに変える（重複判定回避）
         events = build_events(lanes=args.lanes, laps=args.laps, gates=gates,
-                              boot_id=boot_id, seq_start=seq)
+                              boot_id=boot_id, seq_start=seq, lc_per_lap=args.lc)
         seq += len(events)
 
         try:

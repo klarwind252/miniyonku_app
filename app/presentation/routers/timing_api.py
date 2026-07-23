@@ -216,6 +216,24 @@ async def results_page(
     )
 
 
+@router.post("/admin/timing/results/{race_id}/delete")
+async def delete_race(
+    race_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """計測レースを削除する（通過イベントも一緒に消える・復元不可）。
+
+    ⚠ 取り消しできない操作。画面側で確認ダイアログを出してから呼ぶこと。
+    """
+    repo = TimingRaceRepository(db)
+    race = await repo.get_race(race_id)
+    if race is None:
+        raise HTTPException(status_code=404, detail="race not found")
+    n_events = await repo.delete_race(race_id)
+    return JSONResponse({"ok": True, "race_id": race_id, "deleted_events": n_events})
+
+
 @router.get("/api/timing/pip/latest")
 async def pip_latest(
     limit: int = 5,

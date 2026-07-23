@@ -1,5 +1,30 @@
 {% extends "admin/base.html" %}
-{% block title %}計測結果{% endblock %}
+{% block title %}計測結果<script>
+// 計測レースの削除（復元不可のため二段階で確認する）
+async function deleteRace(raceId, ts){
+  const msg =
+    '【警告】この計測結果を削除します。\n\n'
+    + '対象: ' + ts + '\n\n'
+    + 'ラップ・セクター・通過記録がすべて削除され、\n'
+    + '二度と復元できません。\n\n'
+    + '本当に削除しますか？';
+  if(!confirm(msg)) return;
+
+  try{
+    const res = await fetch('/admin/timing/results/' + raceId + '/delete', {method:'POST'});
+    if(res.ok){
+      location.reload();
+      return;
+    }
+    let detail = '';
+    try { const d = await res.json(); detail = d.detail || ''; } catch(e){}
+    alert('削除できませんでした。' + (detail ? '\n' + detail : ''));
+  }catch(e){
+    alert('通信エラーが発生しました: ' + e);
+  }
+}
+</script>
+{% endblock %}
 {% block content %}
 <div class="page-title">
   <h1>計測結果</h1>
@@ -153,7 +178,8 @@
             {% endfor %}
             {% if row.is_first_of_race %}
             <td class="c-act" rowspan="{{ row.race_row_count }}">
-              <a href="/admin/timing/results/{{ row.race_id }}" class="btn btn-secondary btn-sm">詳細</a>
+              <button type="button" class="btn btn-danger btn-sm"
+                      onclick="deleteRace({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">🗑 削除</button>
             </td>
             {% endif %}
           </tr>
@@ -170,4 +196,29 @@
     {% endif %}
   </div>
 </div>
+<script>
+// 計測レースの削除（復元不可のため二段階で確認する）
+async function deleteRace(raceId, ts){
+  const msg =
+    '【警告】この計測結果を削除します。\n\n'
+    + '対象: ' + ts + '\n\n'
+    + 'ラップ・セクター・通過記録がすべて削除され、\n'
+    + '二度と復元できません。\n\n'
+    + '本当に削除しますか？';
+  if(!confirm(msg)) return;
+
+  try{
+    const res = await fetch('/admin/timing/results/' + raceId + '/delete', {method:'POST'});
+    if(res.ok){
+      location.reload();
+      return;
+    }
+    let detail = '';
+    try { const d = await res.json(); detail = d.detail || ''; } catch(e){}
+    alert('削除できませんでした。' + (detail ? '\n' + detail : ''));
+  }catch(e){
+    alert('通信エラーが発生しました: ' + e);
+  }
+}
+</script>
 {% endblock %}

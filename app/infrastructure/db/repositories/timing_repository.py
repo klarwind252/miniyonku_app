@@ -163,6 +163,28 @@ class TimingRaceRepository:
         ) as cur:
             return await cur.fetchall()
 
+    async def delete_race(self, race_id: int) -> int:
+        """レースを1件削除する（通過イベントも一緒に消える）。
+
+        timing_events は ON DELETE CASCADE だが、既存の delete_layout と同じ流儀で
+        明示的に消してから親を消す（PRAGMAの状態に依存しないようにするため）。
+        戻り値: 削除した通過イベント件数（0でもレース自体は削除する）
+        """
+        async with self.db.execute(
+            "SELECT COUNT(*) AS n FROM timing_events WHERE race_id = ?", (race_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        n_events = int(row["n"]) if row else 0
+
+        await self.db.execute(
+            "DELETE FROM timing_events WHERE race_id = ?", (race_id,)
+        )
+        await self.db.execute(
+            "DELETE FROM timing_races WHERE id = ?", (race_id,)
+        )
+        await self.db.commit()
+        return n_events
+
     async def insert_event(self, race_id: int, ev: dict) -> bool:
         """通過イベントを1件挿入。冪等キー（D12）で重複は無視。
 
