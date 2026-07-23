@@ -47,6 +47,7 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL,
             target_laps INTEGER NOT NULL DEFAULT 3,  -- 3の倍数・最大9
+            lap_length_m REAL,                       -- 1周の距離(m)。ラップ平均速度の算出に使う
             created_at  TEXT DEFAULT (datetime('now','localtime')),
             updated_at  TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -58,6 +59,7 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             position    INTEGER NOT NULL,      -- 0,1,2... 通過順
             kind        TEXT NOT NULL,         -- 'SG'/'SQ'/'LC'
             node_id     INTEGER,               -- SG/SQ のとき台帳参照（LCはNULL）
+            beam_gap_mm REAL,                  -- 2本のビームの間隔(mm)。通過速度の算出に使う
             FOREIGN KEY (layout_id) REFERENCES timing_layouts(id) ON DELETE CASCADE
         );
 
@@ -121,6 +123,21 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_timing_bests_scope
             ON timing_bests(scope, scope_key);
     """)
+
+    # --- 速度算出用カラムのマイグレーション ---
+    # lap_length_m（1周の距離）と beam_gap_mm（ビーム間隔）は後から追加したため、
+    # 既存DBには存在しない。無ければ ALTER TABLE で足す（データは保持される）。
+    async with db.execute("PRAGMA table_info(timing_layouts)") as cur:
+        _cols = {r[1] for r in await cur.fetchall()}
+    if "lap_length_m" not in _cols:
+        await db.execute("ALTER TABLE timing_layouts ADD COLUMN lap_length_m REAL")
+        await db.commit()
+
+    async with db.execute("PRAGMA table_info(timing_layout_elements)") as cur:
+        _cols = {r[1] for r in await cur.fetchall()}
+    if "beam_gap_mm" not in _cols:
+        await db.execute("ALTER TABLE timing_layout_elements ADD COLUMN beam_gap_mm REAL")
+        await db.commit()
 
     # --- timing_bests のマイグレーション ---
     # 旧版は上位1件のみ（rank カラムなし）だった。rank が無ければ作り直す。

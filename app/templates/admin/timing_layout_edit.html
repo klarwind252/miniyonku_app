@@ -17,6 +17,10 @@
   .el .grip { color:#b2bec3; font-size:18px; cursor:grab; }
   .el .pos { color:#9aa7ad; font-size:12px; width:20px; text-align:center; }
   .el .kind-badge { font-weight:bold; font-size:13px; padding:3px 10px; border-radius:12px; }
+  /* ビーム間隔(mm)：通過速度の算出に使う */
+  .gap-wrap { display:inline-flex; align-items:center; gap:2px; margin-left:6px; }
+  .gap-input { width:66px; text-align:right; font-size:12px; padding:3px 5px; }
+  .gap-unit { font-size:11px; color:#95a5a6; }
   .el.sg .kind-badge { background:#fdeaea; color:#c0392b; }
   .el.sq .kind-badge { background:#e8f4fd; color:#2980b9; }
   .el.lc .kind-badge { background:#f4ecf7; color:#8e44ad; }
@@ -66,6 +70,15 @@
           <option value="6" {% if layout.target_laps==6 %}selected{% endif %}>6周</option>
           <option value="9" {% if layout.target_laps==9 %}selected{% endif %}>9周</option>
         </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label title="1周の距離。ラップ平均速度の算出に使います">1周の距離</label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input type="number" id="lap-length" step="0.1" min="0" placeholder="未設定"
+                 value="{{ layout.lap_length_m if layout.lap_length_m else '' }}"
+                 style="width:90px;text-align:right">
+          <span style="font-size:12px;color:#7f8c8d">m</span>
+        </div>
       </div>
       <div style="flex:1"></div>
       <div style="display:flex;align-items:center;gap:12px">
@@ -117,7 +130,7 @@ const SQ_DEVICES = {{ sq_devices | tojson }};   // SQ実機
 // 現在の要素列（順序＝配列順）
 let els = {{ elements | tojson }};
 // elements は [{position,kind,node_id}, ...]。無ければ空。
-els = (els || []).map(e => ({kind: e.kind, node_id: e.node_id}));
+els = (els || []).map(e => ({kind: e.kind, node_id: e.node_id, beam_gap_mm: e.beam_gap_mm}));
 
 const track = document.getElementById('track');
 
@@ -140,12 +153,14 @@ window.addEventListener('beforeunload', function(e){
     e.returnValue = '';  // 標準の離脱確認を表示
   }
 });
-// コース名・周回数の変更も未保存にする
+// コース名・周回数・1周の距離の変更も未保存にする
 window.addEventListener('DOMContentLoaded', function(){
   const nm = document.getElementById('layout-name');
   const tl = document.getElementById('target-laps');
+  const ll = document.getElementById('lap-length');
   if(nm) nm.addEventListener('input', markDirty);
   if(tl) tl.addEventListener('change', markDirty);
+  if(ll) ll.addEventListener('input', markDirty);
 });
 
 function usedNodeIds(exceptIdx){
@@ -174,6 +189,20 @@ function deviceOptions(kind, selected, idx){
   return html;
 }
 
+// ビーム間隔(mm)の入力欄。通過速度の算出に使う（未入力なら速度は「—」表示）
+function gapInput(idx, val){
+  const v = (val === null || val === undefined) ? '' : val;
+  return `<span class="gap-wrap" title="2本のビームの間隔(mm)。通過速度の算出に使います">`
+       + `<input type="number" class="gap-input" step="0.1" min="0" placeholder="間隔"`
+       + ` value="${v}" onchange="setGap(${idx}, this.value)">`
+       + `<span class="gap-unit">mm</span></span>`;
+}
+
+function setGap(idx, v){
+  els[idx].beam_gap_mm = (v === '' ? null : parseFloat(v));
+  markDirty();
+}
+
 function render(){
   track.classList.toggle('empty', els.length === 0);
   track.innerHTML = '';
@@ -196,9 +225,11 @@ function render(){
     if(el.kind === 'SG'){
       inner += `<span class="kind-badge">S/G</span>`;
       inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SG', el.node_id, idx)}</select>`;
+      inner += gapInput(idx, el.beam_gap_mm);
     } else if(el.kind === 'SQ'){
       inner += `<span class="kind-badge">SQ</span>`;
       inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SQ', el.node_id, idx)}</select>`;
+      inner += gapInput(idx, el.beam_gap_mm);
     } else {
       inner += `<span class="kind-badge">LC レーンチェンジ</span><span style="flex:1"></span>`;
     }
@@ -301,9 +332,12 @@ async function validate(){
 }
 
 async function save(force){
+  const _ll = document.getElementById('lap-length').value;
   const body = {
     name: document.getElementById('layout-name').value,
     target_laps: parseInt(document.getElementById('target-laps').value),
+    // 1周の距離（m）。空欄なら null＝未設定（ラップ平均速度は「—」表示になる）
+    lap_length_m: (_ll === '' ? null : parseFloat(_ll)),
     elements: els,
     force: force
   };

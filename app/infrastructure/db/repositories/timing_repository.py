@@ -70,8 +70,8 @@ class TimingLayoutRepository:
     async def get_elements(self, layout_id: int):
         """通過順に並んだ要素列を返す。"""
         async with self.db.execute(
-            "SELECT id, position, kind, node_id FROM timing_layout_elements "
-            "WHERE layout_id = ? ORDER BY position",
+            "SELECT id, position, kind, node_id, beam_gap_mm "
+            "FROM timing_layout_elements WHERE layout_id = ? ORDER BY position",
             (layout_id,),
         ) as cur:
             return await cur.fetchall()
@@ -87,7 +87,9 @@ class TimingLayoutRepository:
     async def save_elements(self, layout_id: int, elements: list[dict]):
         """要素列を丸ごと置き換える（position 0..N-1 で入れ直す）。
 
-        elements: [{"kind": "SG"|"SQ"|"LC", "node_id": int|None}, ...]（通過順）
+        elements: [{"kind": "SG"|"SQ"|"LC", "node_id": int|None,
+                    "beam_gap_mm": float|None}, ...]（通過順）
+        beam_gap_mm は2本のビームの間隔(mm)。通過速度の算出に使う（省略可）。
         """
         await self.db.execute(
             "DELETE FROM timing_layout_elements WHERE layout_id = ?",
@@ -96,8 +98,10 @@ class TimingLayoutRepository:
         for pos, el in enumerate(elements):
             await self.db.execute(
                 "INSERT INTO timing_layout_elements "
-                "(layout_id, position, kind, node_id) VALUES (?, ?, ?, ?)",
-                (layout_id, pos, el["kind"], el.get("node_id")),
+                "(layout_id, position, kind, node_id, beam_gap_mm) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (layout_id, pos, el["kind"], el.get("node_id"),
+                 el.get("beam_gap_mm")),
             )
         await self.db.execute(
             "UPDATE timing_layouts SET updated_at = datetime('now','localtime') "
@@ -106,12 +110,32 @@ class TimingLayoutRepository:
         )
         await self.db.commit()
 
-    async def update_meta(self, layout_id: int, name: str, target_laps: int):
-        await self.db.execute(
-            "UPDATE timing_layouts SET name = ?, target_laps = ?, "
-            "updated_at = datetime('now','localtime') WHERE id = ?",
-            (name, target_laps, layout_id),
-        )
+    # 「指定なし＝変更しない」と「明示的にNone＝クリア」を区別するための番兵
+    _UNSET = object()
+
+    async def update_meta(self, layout_id: int, name: str, target_laps: int,
+                          lap_length_m=_UNSET):
+        """レイアウトの基本情報を更新する。
+
+        lap_length_m: 1周の距離(m)。ラップ平均速度の算出に使う。
+          - 省略  … 変更しない
+          - float … その値を設定
+          - None  … 未設定に戻す（クリア）
+        ⚠ None を「変更しない」と扱うと設定を解除できなくなるため、
+           省略時の番兵(_UNSET)と明確に区別している。
+        """
+        if lap_length_m is self._UNSET:
+            await self.db.execute(
+                "UPDATE timing_layouts SET name = ?, target_laps = ?, "
+                "updated_at = datetime('now','localtime') WHERE id = ?",
+                (name, target_laps, layout_id),
+            )
+        else:
+            await self.db.execute(
+                "UPDATE timing_layouts SET name = ?, target_laps = ?, lap_length_m = ?, "
+                "updated_at = datetime('now','localtime') WHERE id = ?",
+                (name, target_laps, lap_length_m, layout_id),
+            )
         await self.db.commit()
 
     async def delete_layout(self, layout_id: int):

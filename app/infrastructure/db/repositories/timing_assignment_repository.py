@@ -20,14 +20,18 @@ from app.domain.node_assignment import (
     validate_bind,
 )
 
-# ⚠ 既存実装に合わせて差し替える。ここでは環境変数 or 既定パスで開く最小版。
-import os
-
-_DB_PATH = os.environ.get("MINIYONKU_DB", "miniyonku.db")
-
-
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(_DB_PATH)
+    """アプリ本体と同じDBに接続する。
+
+    ⚠ 以前は環境変数 MINIYONKU_DB から固定パスを読んでいたが、
+       アプリ本体は data/miniyonku.db を使い、さらにクラウド版では
+       **店舗ごとにDBが分かれる**（current_db_path が店舗DBを返す）。
+       固定パスのままだと別のDBを見てしまい、割当が反映されない・
+       他店舗のデータを触るといった事故になるため、本体と同じ解決に合わせる。
+    """
+    from app.infrastructure.db.connection import current_db_path
+
+    c = sqlite3.connect(current_db_path())
     c.row_factory = sqlite3.Row
     return c
 
@@ -62,16 +66,31 @@ def current_bindings() -> dict[int, str]:
 
 
 def assignments_map() -> list[dict]:
-    """GWが取得する MAC->node_id の一覧（オンライン時にキャッシュさせる）。"""
+    """GWが取得する MAC->node_id の一覧（オンライン時にキャッシュさせる）。
+
+    ⚠ timing_devices.kind は 'SQ'/'GW'/'RC'/'SG' の**文字列**で保存されている。
+       GWへは protocol.h の NodeKind（数値）で返す必要があるため、ここで変換する。
+       （以前は int(r["kind"]) としており、実機のJOIN時に必ず落ちていた）
+    """
     with _conn() as c:
         rows = c.execute(
             "SELECT node_id, kind, mac FROM timing_devices "
             "WHERE mac IS NOT NULL AND mac != '' ORDER BY node_id"
         ).fetchall()
-    return [
-        {"node_id": int(r["node_id"]), "kind": int(r["kind"]), "mac": r["mac"]}
-        for r in rows
-    ]
+
+    out = []
+    for r in rows:
+        raw = r["kind"]
+        try:
+            # 文字列('SQ')でも数値(1)でも受け付ける
+            kind_val = int(raw)
+        except (TypeError, ValueError):
+            try:
+                kind_val = int(NodeKind[str(raw).strip().upper()])
+            except KeyError:
+                continue          # 未知の種別は返さない（GWを混乱させない）
+        out.append({"node_id": int(r["node_id"]), "kind": kind_val, "mac": r["mac"]})
+    return out
 
 
 # ---- 未割当ノードの記録（GWのJOIN受信で呼ぶ） -------------------------------

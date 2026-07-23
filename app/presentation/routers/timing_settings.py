@@ -151,7 +151,7 @@ async def layout_save(
 ):
     """確定時バリデーションを通してから保存する。
 
-    body(JSON): {"name":..., "target_laps":..., "force":bool,
+    body(JSON): {"name":..., "target_laps":..., "lap_length_m":float|None, "force":bool,
                  "elements":[...]}
     warning のみなら force=true で保存可。error があれば拒否。
     """
@@ -163,6 +163,15 @@ async def layout_save(
     except (ValueError, TypeError):
         target_laps = 3
     force = bool(data.get("force"))
+
+    # 1周の距離(m)。ラップ平均速度の算出に使う。未設定(None)なら速度は「—」表示。
+    lap_length_m = data.get("lap_length_m")
+    try:
+        lap_length_m = float(lap_length_m) if lap_length_m not in (None, "") else None
+        if lap_length_m is not None and lap_length_m <= 0:
+            lap_length_m = None
+    except (TypeError, ValueError):
+        lap_length_m = None
 
     layout = [LayoutElement(kind=e["kind"], node_id=e.get("node_id")) for e in raw]
     result = validate_layout(layout)
@@ -189,7 +198,7 @@ async def layout_save(
         }, status_code=409)
 
     lrepo = TimingLayoutRepository(db)
-    await lrepo.update_meta(layout_id, name, target_laps)
+    await lrepo.update_meta(layout_id, name, target_laps, lap_length_m=lap_length_m)
     await lrepo.save_elements(layout_id, raw)
     return JSONResponse({"ok": True})
 

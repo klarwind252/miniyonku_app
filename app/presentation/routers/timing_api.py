@@ -23,7 +23,7 @@ from app.infrastructure.db.repositories.timing_repository import (
 from app.application.timing_race_service import build_race_result
 from app.application import timing_best_service as best_svc
 from app.application import timing_bridge_service as bridge_svc
-from app.infrastructure.db.repositories import timing_bridge_repository as bridge_repo
+from app.application import timing_speed_service as spd_svc
 from app.presentation.templates import templates
 from app.presentation.routers.m4laps_guard import require_m4laps
 
@@ -110,7 +110,7 @@ async def post_events(
     bests = {}
     try:
         bests = await best_svc.update_for_race(
-            db, race_id, build_race_result, _dummy_speed_ms, _dummy_lap_avg_ms
+            db, race_id, build_race_result, *(await _speed_fns_for_race(db, race_id))
         )
     except Exception:
         pass
@@ -139,8 +139,8 @@ async def results_page(
     1行 = 1レーンの1周。TS/CASE/POS/LANE/TOTAL はレーンごとに rowspan で結合し、
     LAP（周回番号・ラップタイム・平均速度）と SECTOR 0〜7 を周ごとに並べる。
 
-    速度は秒速(m/s)。ビーム間隔・コース全長の設定が未実装のため、現状はダミー値
-    （_dummy_speed_ms / _dummy_lap_avg_ms 参照）。
+    速度は秒速(m/s)。レイアウトに「ビーム間隔(mm)」「1周の距離(m)」を設定すると
+    実測値になる。未設定なら None＝画面では「—」を表示する。
     """
     repo = TimingRaceRepository(db)
 
@@ -175,6 +175,18 @@ async def results_page(
         if race is None or result is None:
             continue
 
+        # 速度算出の設定（ビーム間隔・コース全長）。未設定なら None＝「—」表示
+        cfg, ev_key = await _build_speed_context(db, race)
+        gap_by_node = cfg.get("beam_gap_by_node") or {}
+        lap_len_m = cfg.get("lap_length_m")
+
+        def _pass_speed(lane, lap_no, sector_idx):
+            rec = ev_key.get((lane, lap_no, sector_idx))
+            if not rec:
+                return None
+            t_us, t_us_b, node_id = rec
+            return spd_svc.pass_speed_ms(t_us, t_us_b, gap_by_node.get(node_id))
+
         # このレースの日のベスト（ハイライト判定に使う）
         bst = day_best.get((race["created_at"] or "")[:10], {})
 
@@ -205,7 +217,9 @@ async def results_page(
             all_ms = []
             for lap in m.laps:
                 for idx in range(len(lap.sectors)):
-                    all_ms.append(_dummy_speed_ms(rid, m.start_lane, idx, lap.lap))
+                    v = _pass_speed(m.start_lane, lap.lap, idx + 1)
+                    if v is not None:
+                        all_ms.append(v)
             max_ms = max(all_ms, default=None)
 
             lap_count = max(1, len(m.laps))
@@ -217,7 +231,7 @@ async def results_page(
                 if lap is not None:
                     # S/G通過：1周目は計測開始の瞬間なので速度なし
                     sg_ms = (None if lap.lap == 1
-                             else _dummy_speed_ms(rid, m.start_lane, 0, lap.lap))
+                             else _pass_speed(m.start_lane, lap.lap, 0))
                     sectors[0] = {
                         "s": None,
                         "ms": sg_ms,
@@ -228,7 +242,7 @@ async def results_page(
                     for idx, sec in enumerate(lap.sectors):
                         if idx + 1 > 7:
                             break
-                        sp = _dummy_speed_ms(rid, m.start_lane, idx, lap.lap)
+                        sp = _pass_speed(m.start_lane, lap.lap, idx + 1)
                         sectors[idx + 1] = {
                             "s": round(sec.dt_us / 1e6, 3),
                             "ms": sp,
@@ -238,7 +252,7 @@ async def results_page(
                             "rank_ms": _best_rank(sp, bst.get("sector_ms")),
                         }
 
-                lap_avg = (_dummy_lap_avg_ms(rid, m.start_lane, lap.lap)
+                lap_avg = (spd_svc.lap_avg_speed_ms(lap.lap_time_us, lap_len_m)
                            if lap is not None else None)
                 rows.append({
                     # --- その日のベスト判定（ハイライト用） ---
@@ -291,97 +305,6 @@ async def results_page(
     )
 
 
-# ⚠ 以下3つは計測結果ページの「反映モーダル」用に作ったが、
-#    反映は予選/決勝の各カード（/api/timing/apply/*）で行う方針に変更したため
-#    現在UIからは呼ばれていない。外部から叩く用途のため残してある。
-@router.get("/admin/timing/bridge/heats")
-async def bridge_heats(
-    tournament_id: int | None = None,
-    db: aiosqlite.Connection = Depends(get_db),
-    _guard: bool = Depends(require_m4laps),
-):
-    """反映先のヒート候補を返す（レース選択→ヒート選択のUI用）。
-
-    tournament_id 未指定なら大会一覧だけを返す。
-    """
-    tournaments = await bridge_repo.list_recent_tournaments(db, limit=20)
-    heats = []
-    if tournament_id:
-        heats = await bridge_repo.list_heats_with_lanes(db, tournament_id)
-    return JSONResponse({"tournaments": tournaments, "heats": heats})
-
-
-@router.post("/admin/timing/results/{race_id}/apply")
-async def apply_race(
-    race_id: int,
-    request: Request,
-    db: aiosqlite.Connection = Depends(get_db),
-    _guard: bool = Depends(require_m4laps),
-):
-    """計測結果を指定ヒートへ反映する（タイム挿入・順位/勝敗の自動確定）。
-
-    body(JSON): {"heat_id": int}
-
-    レーン番号で突き合わせるだけなので、組み合わせを入力し直す必要はない。
-    保存形式は手入力と同じなので、反映後に画面から上書き訂正できる。
-    """
-    data = await request.json()
-    heat_id = data.get("heat_id")
-    if not heat_id:
-        raise HTTPException(status_code=400, detail="heat_id required")
-
-    summary = await bridge_repo.get_heat_summary(db, int(heat_id))
-    if summary is None:
-        raise HTTPException(status_code=404, detail="heat not found")
-
-    race, result = await build_race_result(db, race_id)
-    if race is None:
-        raise HTTPException(status_code=404, detail="race not found")
-    if result is None:
-        raise HTTPException(status_code=400,
-                            detail="この計測には記録がありません（レイアウト未設定の可能性）")
-
-    ranking = [
-        {"pos": pos, "start_lane": m.start_lane,
-         "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
-         "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
-         "completed_laps": m.completed_laps}
-        for pos, m in enumerate(result.ranking(), start=1)
-    ]
-
-    res = await bridge_svc.apply_race_to_heat(
-        db, race_id=race_id, heat_id=int(heat_id), ranking=ranking
-    )
-    if res.get("error"):
-        raise HTTPException(status_code=400, detail=res["error"])
-
-    return JSONResponse({
-        "ok": True,
-        "race_id": race_id,
-        "heat_id": int(heat_id),
-        "saved": res["saved"],
-        "unmatched_lanes": res["unmatched_lanes"],
-        "unmatched_records": res["unmatched_records"],
-        "tournament_name": summary["tournament_name"],
-    })
-
-
-@router.post("/admin/timing/results/{race_id}/unlink")
-async def unlink_race(
-    race_id: int,
-    db: aiosqlite.Connection = Depends(get_db),
-    _guard: bool = Depends(require_m4laps),
-):
-    """ヒートへの紐付けだけを解除する（heat_results は残す）。
-
-    誤ったヒートに反映したときの取り消し用。結果そのものは
-    予選/決勝の画面から手で直せるため、ここでは消さない。
-    """
-    await db.execute("UPDATE timing_races SET heat_id = NULL WHERE id = ?", (race_id,))
-    await db.commit()
-    return JSONResponse({"ok": True, "race_id": race_id})
-
-
 @router.post("/admin/timing/results/{race_id}/delete")
 async def delete_race(
     race_id: int,
@@ -407,10 +330,12 @@ async def delete_race(
     recalculated = 0
     if day:
         try:
+            day_races = await repo.list_races_by_date(day, limit=500)
+            sf, lf = await _speed_fns_for_races(db, [r["id"] for r in day_races])
             recalculated = await best_svc.recalc_day(
                 db, day,
                 lambda d: repo.list_races_by_date(d, limit=500),
-                build_race_result, _dummy_speed_ms, _dummy_lap_avg_ms,
+                build_race_result, sf, lf,
             )
         except Exception:
             pass
@@ -449,13 +374,18 @@ async def bests_page(
 
     result = {"bests": {}, "race_count": 0}
     if d_from and d_to:
+        # 期間内の全レース分の速度を先に読み込む（speed_fn は同期関数のため）
+        range_races = await repo.list_races_between(d_from, d_to)
+        agg_speed_fn, agg_lap_avg_fn = await _speed_fns_for_races(
+            db, [r["id"] for r in range_races]
+        )
         result = await best_svc.aggregate_range(
             db,
             date_from=d_from, date_to=d_to,
             mode=(mode if mode in ("f1", "run") else None),
             list_fn=lambda a, b: repo.list_races_between(a, b),
             build_fn=build_race_result,
-            speed_fn=_dummy_speed_ms, lap_avg_fn=_dummy_lap_avg_ms,
+            speed_fn=agg_speed_fn, lap_avg_fn=agg_lap_avg_fn,
         )
 
     # 表示用に整形（順番と単位・説明を固定）
@@ -704,29 +634,173 @@ def _split_ts(ts) -> tuple[str, str]:
     return (date_part, time_part)
 
 
-def _dummy_speed_ms(race_id: int, lane: int, sector_idx: int, lap: int = 1) -> float:
-    """⚠ 仮の通過速度（秒速 m/s）。実機のビーム間隔設定が未実装のためのダミー。
+def _make_speed_fns(cfg: dict, events_by_key: dict | None = None):
+    """速度算出関数を作る（設定があれば実測・無ければ None）。
 
-    本実装時はここを削除し、PassEvent の t_us / t_us_b の差と
-    ゲートのビーム間隔(mm)から算出する:
-        v[m/s] = 間隔mm / 1000 / ((t_us_b - t_us) / 1e6)
-    表示のたびに値が変わると見づらいので、入力から決まる再現可能な擬似値にしている。
-    ミニ四駆の実速度域（およそ 6.5〜9.5 m/s ＝ 23〜34 km/h）に合わせてある。
+    cfg: timing_speed_service.load_speed_config() の戻り値
+         {"lap_length_m":.., "beam_gap_by_node":{node_id: mm}, ...}
+
+    戻り値: (speed_fn, lap_avg_fn)
+      speed_fn(race_id, lane, sector_idx, lap)  -> m/s | None
+      lap_avg_fn(race_id, lane, lap)            -> m/s | None
+
+    ⚠ 通過速度は本来「そのゲートの t_us / t_us_b」から求める。
+       events_by_key に (lane, lap, sector_idx) -> (t_us, t_us_b, node_id) を
+       渡せば実測できる。未指定なら設定不足として None を返す。
     """
-    seed = (race_id * 31 + lane * 7 + sector_idx * 13 + lap * 17) % 100
-    return round(6.5 + seed * 0.03, 2)   # おおよそ 6.50〜9.47 m/s
+    gap_by_node = cfg.get("beam_gap_by_node") or {}
+    lap_len = cfg.get("lap_length_m")
+
+    def speed_fn(race_id, lane, sector_idx, lap=1):
+        if not events_by_key:
+            return None
+        key = (lane, lap, sector_idx)
+        rec = events_by_key.get(key)
+        if not rec:
+            return None
+        t_us, t_us_b, node_id = rec
+        return spd_svc.pass_speed_ms(t_us, t_us_b, gap_by_node.get(node_id))
+
+    def lap_avg_fn(race_id, lane, lap):
+        # ラップタイムは呼び出し側が持っていないため、ここでは全長のみ保持し
+        # 実際の算出は _lap_avg_for() で行う（下記参照）
+        return None
+
+    return speed_fn, lap_avg_fn
 
 
-def _dummy_lap_avg_ms(race_id: int, lane: int, lap: int) -> float:
-    """⚠ 仮のラップ平均速度（秒速 m/s）。コース全長の設定が未実装のためのダミー。
+async def _speed_fns_for_races(db, race_ids: list[int]):
+    """複数レース分の速度をまとめて読み、(speed_fn, lap_avg_fn) を返す。
 
-    本実装時はここを削除し、コース1周の距離から算出する:
-        v[m/s] = コース全長m / ラップタイム秒
-    （コース全長はレイアウト編集画面に「1周の距離(m)」を追加して保持する想定）
-    通過速度より少し低め＝現実的な平均値になるようにしてある。
+    ベストの再計算（日単位）で使う。speed_fn は同期関数のためDBを引けないので、
+    先に全レース分を辞書に展開しておく。
     """
-    seed = (race_id * 23 + lane * 11 + lap * 29) % 100
-    return round(5.8 + seed * 0.022, 2)  # おおよそ 5.80〜7.98 m/s
+    speed_map: dict = {}     # (race_id, lane, lap, sector_idx) -> m/s
+    lapavg_map: dict = {}    # (race_id, lane, lap) -> m/s
+
+    for rid in race_ids:
+        sf, lf = await _speed_fns_for_race(db, rid)
+        try:
+            _r, result = await build_race_result(db, rid)
+        except Exception:
+            continue
+        if result is None:
+            continue
+        for m in result.ranking():
+            for lap in m.laps:
+                v = lf(rid, m.start_lane, lap.lap)
+                if v is not None:
+                    lapavg_map[(rid, m.start_lane, lap.lap)] = v
+                for idx in range(len(lap.sectors)):
+                    sv = sf(rid, m.start_lane, idx, lap.lap)
+                    if sv is not None:
+                        speed_map[(rid, m.start_lane, lap.lap, idx)] = sv
+
+    def speed_fn(rid, lane, sector_idx, lap=1):
+        return speed_map.get((rid, lane, lap, sector_idx))
+
+    def lap_avg_fn(rid, lane, lap):
+        return lapavg_map.get((rid, lane, lap))
+
+    return speed_fn, lap_avg_fn
+
+
+async def _speed_fns_for_race(db, race_id: int):
+    """レースIDから (speed_fn, lap_avg_fn) を作る。ベスト算出・集計で使う。
+
+    設定（ビーム間隔・コース全長）が無ければ常に None を返す関数になる。
+    """
+    repo = TimingRaceRepository(db)
+    race = await repo.get_race(race_id)
+    if race is None:
+        return (lambda *a, **k: None), (lambda *a, **k: None)
+
+    cfg, ev_key = await _build_speed_context(db, race)
+    gap_by_node = cfg.get("beam_gap_by_node") or {}
+    lap_len_m = cfg.get("lap_length_m")
+
+    # ラップタイムは呼び出し側が持たないため、ここで引けるようにしておく
+    lap_time_by_key: dict = {}
+    try:
+        _r, result = await build_race_result(db, race_id)
+        if result is not None:
+            for m in result.ranking():
+                for lap in m.laps:
+                    lap_time_by_key[(m.start_lane, lap.lap)] = lap.lap_time_us
+    except Exception:
+        pass
+
+    def speed_fn(_rid, lane, sector_idx, lap=1):
+        rec = ev_key.get((lane, lap, sector_idx + 1))
+        if not rec:
+            return None
+        t_us, t_us_b, node_id = rec
+        return spd_svc.pass_speed_ms(t_us, t_us_b, gap_by_node.get(node_id))
+
+    def lap_avg_fn(_rid, lane, lap):
+        return spd_svc.lap_avg_speed_ms(lap_time_by_key.get((lane, lap)), lap_len_m)
+
+    return speed_fn, lap_avg_fn
+
+
+async def _build_speed_context(db, race_row):
+    """レースから速度算出に必要な情報を組み立てる。
+
+    戻り値: (cfg, events_by_key)
+      events_by_key: (lane, lap, sector_idx) -> (t_us, t_us_b, node_id)
+    区間 idx は「その周で何番目のゲートを通過したか」に対応する。
+    """
+    keys = race_row.keys() if hasattr(race_row, "keys") else []
+    layout_id = race_row["layout_id"] if "layout_id" in keys else None
+    cfg = await spd_svc.load_speed_config(db, layout_id)
+
+    events_by_key: dict = {}
+    if not cfg.get("beam_gap_by_node"):
+        return cfg, events_by_key      # 設定が無ければ実測できない
+
+    # レイアウトの通過順（S/G + ゲート列）を得る
+    async with db.execute(
+        "SELECT position, node_id FROM timing_layout_elements "
+        "WHERE layout_id = ? AND node_id IS NOT NULL ORDER BY position",
+        (layout_id,),
+    ) as cur:
+        order = [r["node_id"] for r in await cur.fetchall()]
+    if not order:
+        return cfg, events_by_key
+
+    # 通過イベントをレーン・時刻順に読み、周回と区間を数える
+    async with db.execute(
+        "SELECT lane, src, t_us, t_us_b FROM timing_events "
+        "WHERE race_id = ? ORDER BY lane, t_us",
+        (race_row["id"],),
+    ) as cur:
+        rows = await cur.fetchall()
+
+    sg = order[0]
+    for r in rows:
+        if r["t_us_b"] is None:
+            continue                    # 2本目の打刻が無ければ速度は出せない
+        events_by_key.setdefault("_seen", {})
+    # レーンごとに周回・区間を数える
+    state: dict = {}
+    for r in rows:
+        lane = r["lane"]
+        st = state.setdefault(lane, {"lap": 0, "idx": 0, "started": False})
+        if r["src"] == sg:
+            if st["started"]:
+                st["lap"] += 1          # S/Gに戻った＝次の周へ
+            else:
+                st["started"] = True
+                st["lap"] = 1
+            st["idx"] = 0
+        else:
+            st["idx"] += 1
+        if r["t_us_b"] is not None and st["started"]:
+            events_by_key[(lane, st["lap"], st["idx"])] = (
+                r["t_us"], r["t_us_b"], r["src"]
+            )
+    events_by_key.pop("_seen", None)
+    return cfg, events_by_key
 
 
 @router.get("/admin/timing/results/{race_id}", response_class=HTMLResponse)
