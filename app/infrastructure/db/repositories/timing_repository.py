@@ -173,7 +173,7 @@ class TimingRaceRepository:
 
     async def get_race(self, race_id: int):
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, heat_id, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, heat_id, applied_group_id, created_at "
             "FROM timing_races WHERE id = ?",
             (race_id,),
         ) as cur:
@@ -181,7 +181,7 @@ class TimingRaceRepository:
 
     async def list_races(self, limit: int = 50):
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
             "FROM timing_races ORDER BY id DESC LIMIT ?",
             (limit,),
         ) as cur:
@@ -204,7 +204,7 @@ class TimingRaceRepository:
     async def list_races_by_date(self, date: str, limit: int = 500):
         """指定日（YYYY-MM-DD）のレースを新しい順に返す。"""
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
             "FROM timing_races WHERE substr(created_at,1,10) = ? "
             "ORDER BY id DESC LIMIT ?",
             (date, limit),
@@ -217,7 +217,7 @@ class TimingRaceRepository:
         created_at は "YYYY-MM-DD HH:MM:SS" 形式なので日付部分で比較する。
         """
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
             "FROM timing_races "
             "WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ? "
             "ORDER BY id ASC LIMIT ?",

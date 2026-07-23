@@ -2143,14 +2143,26 @@ document.addEventListener('click',function(e){ const m=document.getElementById('
 <script>
 // ラップタイマーの「最新の計測結果」をこの組に反映する。
 // レーン番号（=スロット番号）で突き合わせ、順位と勝者を自動確定する。
-async function applyTimingToBracket(groupId, btn){
-  if(!confirm('ラップタイマーの最新の計測結果を、この組に反映します。\n\n'
-            + 'レーン番号とスロット番号で突き合わせ、順位と勝者を自動で確定します。\n'
-            + '既に入力済みの結果は上書きされます。よろしいですか？')) return;
-  const orig = btn.textContent;
+async function applyTimingToBracket(groupId, btn, force){
+  // 通常は確認なしで即反映する。
+  // サーバーが警告（上書き／重複反映）を返したときだけ確認を取り、force で再送する。
+  const orig = btn.dataset.origLabel || btn.textContent;
+  btn.dataset.origLabel = orig;
   btn.disabled = true; btn.textContent = '反映中…';
   try{
-    const res = await fetch('/api/timing/apply/bracket/' + groupId, {method:'POST'});
+    const url = '/api/timing/apply/bracket/' + groupId + (force ? '?force=true' : '');
+    const res = await fetch(url, {method:'POST'});
+
+    if(res.status === 409){
+      const d = await res.json();
+      const msg = (d.warnings || []).map(function(w){ return '・' + w.message; }).join('\n');
+      btn.disabled = false; btn.textContent = orig;
+      if(confirm(msg + '\n\nそれでも反映しますか？')){
+        return applyTimingToBracket(groupId, btn, true);
+      }
+      return;
+    }
+
     if(res.ok){
       const d = await res.json();
       let msg = d.saved + '件の順位を反映しました。';
@@ -2158,10 +2170,12 @@ async function applyTimingToBracket(groupId, btn){
         msg += '\n※ 計測記録が無い枠: ' + d.unmatched_slots.join(', ');
       if(d.unmatched_records && d.unmatched_records.length)
         msg += '\n※ 対応する枠が無い記録: レーン' + d.unmatched_records.join(', ');
-      alert(msg);
+      // 取りこぼしがあるときだけ知らせる（通常は黙って反映する）
+      if(d.unmatched_slots?.length || d.unmatched_records?.length) alert(msg);
       location.reload();
       return;
     }
+
     let detail='';
     try{ const e = await res.json(); detail = e.detail || ''; }catch(_){}
     alert('反映できませんでした。' + (detail ? '\n' + detail : ''));

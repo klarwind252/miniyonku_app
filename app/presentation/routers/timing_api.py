@@ -471,14 +471,52 @@ async def apply_latest_to_heat(
 async def apply_latest_to_bracket(
     group_id: int,
     race_id: int | None = None,
+    force: bool = False,
     db: aiosqlite.Connection = Depends(get_db),
     _guard: bool = Depends(require_m4laps),
 ):
-    """最新の計測結果を決勝グループへ反映する（slot_no ↔ レーン番号で照合）。"""
+    """最新の計測結果を決勝グループへ反映する（slot_no ↔ レーン番号で照合）。
+
+    通常は確認なしで反映する。ただし次のときは 409 を返し、
+    画面側で確認を取ってから force=true で再送してもらう。
+      - そのグループに既に結果が入っている（上書きになる）
+      - 同じ計測結果を既に別のグループへ反映している（重複反映）
+    """
     repo = TimingRaceRepository(db)
     race, result = await _pick_race(db, repo, race_id)
     if result is None:
         raise HTTPException(status_code=404, detail="反映できる計測結果がありません")
+
+    if not force:
+        warnings = []
+        # ① このグループに既に結果があるか
+        async with db.execute(
+            "SELECT 1 FROM bracket_results WHERE group_id = ?", (group_id,)
+        ) as cur:
+            if await cur.fetchone():
+                warnings.append({
+                    "code": "already_has_result",
+                    "message": "この組には既に結果が入力されています。上書きされます。",
+                })
+        # ② この計測結果を既に別のグループへ反映していないか
+        keys = race.keys() if hasattr(race, "keys") else []
+        prev = race["applied_group_id"] if "applied_group_id" in keys else None
+        if prev is not None and int(prev) != int(group_id):
+            async with db.execute(
+                "SELECT group_no FROM bracket_groups WHERE id = ?", (prev,)
+            ) as cur:
+                g = await cur.fetchone()
+            gname = f"グループ{g['group_no']}" if g else f"グループID {prev}"
+            warnings.append({
+                "code": "already_applied_to_other",
+                "message": f"この計測結果は既に{gname}へ反映済みです。"
+                           f"同じ結果を二重に使うことになります。",
+            })
+        if warnings:
+            return JSONResponse(
+                {"ok": False, "reason": "warning", "warnings": warnings},
+                status_code=409,
+            )
 
     ranking = _ranking_payload(result)
     res = await bridge_svc.apply_race_to_bracket_group(

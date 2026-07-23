@@ -139,6 +139,16 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE timing_layout_elements ADD COLUMN beam_gap_mm REAL")
         await db.commit()
 
+    # --- 反映先の記録（重複反映の警告に使う）---
+    # どの計測レースを決勝のどのグループへ反映したかを保持する。
+    # 「同じ結果を別のグループにも反映しようとしている」を検出するために必要。
+    # （予選ヒートへの反映は既存の heat_id を使う）
+    async with db.execute("PRAGMA table_info(timing_races)") as cur:
+        _cols = {r[1] for r in await cur.fetchall()}
+    if "applied_group_id" not in _cols:
+        await db.execute("ALTER TABLE timing_races ADD COLUMN applied_group_id INTEGER")
+        await db.commit()
+
     # --- timing_bests のマイグレーション ---
     # 旧版は上位1件のみ（rank カラムなし）だった。rank が無ければ作り直す。
     # このテーブルは受信時に再構築されるため、作り直しても実害はない。

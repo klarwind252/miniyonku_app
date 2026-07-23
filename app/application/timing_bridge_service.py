@@ -173,9 +173,10 @@ async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
             (group_id, winner_slot_id),
         )
 
-    # 紐づけを記録（PIP等で「反映済」と出せる）
+    # どのグループへ反映したかを記録する（同じ結果の重複反映を検出するため）
     await db.execute(
-        "UPDATE timing_races SET heat_id = ? WHERE id = ?", (None, race_id)
+        "UPDATE timing_races SET applied_group_id = ? WHERE id = ?",
+        (group_id, race_id),
     )
     await db.commit()
 
