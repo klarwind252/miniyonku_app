@@ -116,6 +116,47 @@ async def results_page(
     )
 
 
+@router.get("/api/timing/pip/latest")
+async def pip_latest(
+    limit: int = 5,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """PIP（右下小窓）用：最近の計測レースを新しい順に、順位つきで返す。
+
+    GWから送られてきた記録をそのまま見せるだけ。まだ誰のものかは紐づけない。
+    （組み合わせ情報はGWへ送らない方針のため、突き合わせはアプリ側で後から行う）
+    """
+    races = await repo.list_races(limit=max(1, min(limit, 20)))
+    out = []
+    for r in races:
+        rid = r["id"]
+        try:
+            race, result = await build_race_result(db, rid)
+        except Exception:
+            continue
+        if race is None:
+            continue
+        rows = []
+        if result is not None:
+            for pos, m in enumerate(result.ranking(), start=1):
+                rows.append({
+                    "pos": pos,
+                    "start_lane": m.start_lane,
+                    "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+                    "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
+                    "completed_laps": m.completed_laps,
+                })
+        keys = race.keys() if hasattr(race, "keys") else []
+        out.append({
+            "race_id": rid,
+            "heat_id": (race["heat_id"] if "heat_id" in keys else None),
+            "target_laps": (race["target_laps"] if "target_laps" in keys else None),
+            "created_at": (race["created_at"] if "created_at" in keys else None),
+            "ranking": rows,
+        })
+    return JSONResponse({"races": out})
+
+
 @router.get("/admin/timing/results/{race_id}", response_class=HTMLResponse)
 async def result_detail_page(
     race_id: int,

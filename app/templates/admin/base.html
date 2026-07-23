@@ -1017,5 +1017,137 @@ function _showPubToast(msg) {
 })();
 </script>
 
+<!-- ============ M4LAPS PIP（ラップタイマー受信・全admin画面共通／PC） ============ -->
+<style>
+  #m4pip{
+    position:fixed; right:16px; bottom:70px; z-index:9998;
+    width:320px; max-width:calc(100vw - 32px);
+    background:#fff; border:2px solid #2c3e50; border-radius:10px;
+    box-shadow:0 6px 24px rgba(0,0,0,.28); overflow:hidden;
+    font-size:13px; color:#2c3e50;
+  }
+  #m4pip .pip-head{
+    display:flex; align-items:center; gap:8px;
+    padding:8px 10px; background:#2c3e50; color:#fff; cursor:pointer; user-select:none;
+  }
+  #m4pip .pip-title{font-weight:bold; font-size:13px}
+  #m4pip .pip-dot{
+    width:8px; height:8px; border-radius:50%; background:#7f8c8d; flex-shrink:0;
+    transition:background .3s;
+  }
+  #m4pip .pip-dot.live{background:#2ecc71; box-shadow:0 0 6px rgba(46,204,113,.9)}
+  #m4pip .pip-body{max-height:min(46vh,340px); overflow-y:auto; padding:6px 8px}
+  #m4pip.collapsed .pip-body{display:none}
+  #m4pip .pip-race{border:1px solid #e9ecef; border-radius:8px; padding:6px 8px; margin-bottom:6px}
+  #m4pip .pip-race:last-child{margin-bottom:0}
+  #m4pip .pip-race-h{display:flex; align-items:center; gap:6px; margin-bottom:4px; color:#636e72; font-size:11px}
+  #m4pip .pip-badge{background:#eaf4fb; color:#1a5276; border-radius:8px; padding:1px 7px; font-size:11px}
+  #m4pip .pip-badge.linked{background:#eafaf1; color:#1e8449}
+  #m4pip table{width:100%; border-collapse:collapse}
+  #m4pip td{padding:2px 4px; border:none; font-size:13px}
+  #m4pip .pip-pos{width:22px; font-weight:bold; color:#2980b9; text-align:center}
+  #m4pip .pip-lane{width:52px; color:#636e72; font-size:12px}
+  #m4pip .pip-total{text-align:right; font-weight:bold; font-variant-numeric:tabular-nums}
+  #m4pip .pip-best{text-align:right; color:#8e44ad; font-size:11px; font-variant-numeric:tabular-nums; width:64px}
+  #m4pip .pip-empty{padding:14px 8px; text-align:center; color:#95a5a6; font-size:12px}
+  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:14px; line-height:1; padding:0 2px}
+  /* スマホは今回対象外（別途対応予定） */
+  @media(max-width:700px){ #m4pip{display:none} }
+  @media print{ #m4pip{display:none} }
+</style>
+<div id="m4pip" class="collapsed" style="display:none">
+  <div class="pip-head" onclick="m4pipToggle()">
+    <span class="pip-dot" id="m4pipDot"></span>
+    <span class="pip-title">⏱ ラップタイマー</span>
+    <button type="button" class="pip-toggle" id="m4pipToggleBtn" onclick="event.stopPropagation();m4pipToggle()">▲</button>
+  </div>
+  <div class="pip-body" id="m4pipBody">
+    <div class="pip-empty">受信待ち…</div>
+  </div>
+</div>
+<script>
+(function(){
+  var pip=document.getElementById('m4pip');
+  var body=document.getElementById('m4pipBody');
+  var dot=document.getElementById('m4pipDot');
+  var btn=document.getElementById('m4pipToggleBtn');
+  var lastSig='';
+  var failCount=0;
+
+  window.m4pipToggle=function(){
+    pip.classList.toggle('collapsed');
+    btn.textContent = pip.classList.contains('collapsed') ? '\u25b2' : '\u25bc';
+    try{ localStorage.setItem('m4pip_collapsed', pip.classList.contains('collapsed')?'1':'0'); }catch(e){}
+  };
+
+  function fmt(v){ return (v==null) ? '\u2014' : v.toFixed(3); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  function render(races){
+    if(!races || races.length===0){
+      body.innerHTML='<div class="pip-empty">まだ計測記録がありません</div>';
+      return;
+    }
+    var html='';
+    races.forEach(function(r){
+      var linked = (r.heat_id!=null);
+      html+='<div class="pip-race">'
+        + '<div class="pip-race-h">'
+        + '<span class="pip-badge'+(linked?' linked':'')+'">'
+        + (linked ? ('\u30d2\u30fc\u30c8'+esc(r.heat_id)+'\u306b\u53cd\u6620\u6e08') : ('\u30ec\u30fc\u30b9#'+esc(r.race_id)))
+        + '</span>'
+        + (r.target_laps!=null ? ('<span>'+esc(r.target_laps)+'\u5468</span>') : '')
+        + '</div>';
+      if(!r.ranking || r.ranking.length===0){
+        html+='<div class="pip-empty" style="padding:6px">\u8a08\u6e2c\u4e2d\uff0f\u8a18\u9332\u306a\u3057</div>';
+      } else {
+        html+='<table><tbody>';
+        r.ranking.forEach(function(m){
+          html+='<tr>'
+            + '<td class="pip-pos">'+esc(m.pos)+'</td>'
+            + '<td class="pip-lane">\u30ec\u30fc\u30f3'+esc(m.start_lane)+'</td>'
+            + '<td class="pip-total">'+fmt(m.total_s)+'</td>'
+            + '<td class="pip-best">B '+fmt(m.best_s)+'</td>'
+            + '</tr>';
+        });
+        html+='</tbody></table>';
+      }
+      html+='</div>';
+    });
+    body.innerHTML=html;
+  }
+
+  function poll(){
+    fetch('/api/timing/pip/latest?limit=3',{cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+      .then(function(d){
+        failCount=0;
+        var races=(d && d.races) || [];
+        pip.style.display = races.length ? '' : 'none';
+        var sig=JSON.stringify(races);
+        if(sig!==lastSig){
+          lastSig=sig;
+          render(races);
+          dot.classList.add('live');
+          setTimeout(function(){ dot.classList.remove('live'); }, 1500);
+        }
+      })
+      .catch(function(){
+        failCount++;
+        if(failCount>=3){ pip.style.display='none'; }
+      });
+  }
+
+  try{
+    if(localStorage.getItem('m4pip_collapsed')==='0'){
+      pip.classList.remove('collapsed'); btn.textContent='\u25bc';
+    }
+  }catch(e){}
+
+  poll();
+  setInterval(poll, 3000);
+})();
+</script>
 </body>
 </html>
