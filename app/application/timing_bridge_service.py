@@ -156,8 +156,9 @@ async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
     winner_slot_id = None
     for i, x in enumerate(sorted(matched, key=lambda m: int(m["rank"])), start=1):
         await db.execute(
-            "INSERT INTO bracket_slot_ranks (group_id, slot_id, rank) VALUES (?,?,?)",
-            (group_id, x["lane_id"], i),
+            "INSERT INTO bracket_slot_ranks "
+            "(group_id, slot_id, rank, total_time, best_time) VALUES (?,?,?,?,?)",
+            (group_id, x["lane_id"], i, x.get("total_time"), x.get("best_time")),
         )
         if i == 1:
             winner_slot_id = x["lane_id"]

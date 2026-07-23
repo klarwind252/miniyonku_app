@@ -132,7 +132,8 @@ def get(url: str):
 
 
 def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
-                 seq_start: int, lc_per_lap: int = 1) -> list[dict]:
+                 seq_start: int, lc_per_lap: int = 1,
+                 beam_gap_mm: float = 0.0) -> list[dict]:
     """1レース分の通過イベントを組み立てる。
 
     gates: 通過順のノードID列（先頭がS/G）。例 [6, 0, 1] なら S/G(GW6)→SQ0→SQ1。
@@ -155,6 +156,20 @@ def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
 
     # 1周あたりの区間数（先頭以外のゲート＋S/Gへ戻る分）
     seg_per_lap = len(gates)
+
+    def beam_b(t_us: int) -> dict:
+        """2本目ビームの打刻を作る（速度表示の確認用）。
+
+        beam_gap_mm が指定されていれば、ミニ四駆の実速度域（6.5〜9.5 m/s）で
+        通過したときの時間差を逆算して t_us_b を返す。0なら送らない
+        （＝実機で速度センサーが無い場合と同じ扱い）。
+        \u26a0 実機では GW/SQ が2本のビームの打刻を実測して送る。
+        """
+        if not beam_gap_mm:
+            return {}
+        v = random.uniform(6.5, 9.5)              # m/s
+        dt_us = int((beam_gap_mm / 1000.0) / v * 1e6)
+        return {"t_us_b": t_us + max(1, dt_us)}
 
     def phys_lane(start_lane: int, lap_idx: int, gate_pos: int) -> int:
         """その周・その地点での物理レーンを返す（lap_idxは0始まり）。
@@ -181,6 +196,7 @@ def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
         events.append({
             "device_id": f"sim-{gates[0]}", "src": gates[0], "src_boot_id": boot_id,
             "seq": seq, "lane": phys_lane(start_lane, 0, 0), "t_us": t, "quality": 0,
+            **beam_b(t),
         })
         for lap_idx in range(laps):
             # この周の目標ラップタイム（基準 ±2秒以内）
@@ -204,6 +220,7 @@ def build_events(*, lanes: int, laps: int, gates: list[int], boot_id: int,
                 events.append({
                     "device_id": f"sim-{node}", "src": node, "src_boot_id": boot_id,
                     "seq": seq, "lane": ln, "t_us": t, "quality": 0,
+                    **beam_b(t),
                 })
     return events
 
@@ -221,6 +238,9 @@ def main() -> int:
     ap.add_argument("--type", choices=("race", "free"), default="free",
                     help="計測タイプ。race=レース(F1式・緑ランプあり) / "
                          "free=フリー(走行式・既定)")
+    ap.add_argument("--beam-gap", type=float, default=30.0, dest="beam_gap",
+                    help="ビーム間隔(mm)。速度表示の確認用に t_us_b を生成する。"
+                         "0で送らない（既定30）")
     ap.add_argument("--lc", type=int, default=1,
                     help="1周あたりのレーンチェンジ数（既定1）")
     ap.add_argument("--gates", default=None,
@@ -264,7 +284,8 @@ def main() -> int:
 
         boot_id += 1  # ★レースごとに変える（重複判定回避）
         events = build_events(lanes=args.lanes, laps=args.laps, gates=gates,
-                              boot_id=boot_id, seq_start=seq, lc_per_lap=args.lc)
+                              boot_id=boot_id, seq_start=seq, lc_per_lap=args.lc,
+                              beam_gap_mm=args.beam_gap)
         seq += len(events)
 
         try:

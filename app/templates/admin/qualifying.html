@@ -24,7 +24,7 @@
 .time-input:focus { outline:none; border-color:#2980b9; }
 .race-row td { vertical-align:middle; padding:4px 10px; }
 /* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
-.m4-apply-btn{padding:2px 7px;font-size:12px;background:#eef4fa;border:1px solid #2980b9;
+.m4-apply-btn{padding:4px 10px;font-size:14px;background:#eef4fa;border:1px solid #2980b9;
   color:#1a5276;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
 .m4-apply-btn:hover{background:#2980b9;color:#fff}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
@@ -945,7 +945,7 @@ document.addEventListener('DOMContentLoaded', function(){
           {% endif %}
           {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
           <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
-                  title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱</button>
+                  title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
           {% endif %}
         </div>
       </td>

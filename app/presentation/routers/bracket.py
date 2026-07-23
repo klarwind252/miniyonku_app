@@ -3567,10 +3567,17 @@ async def _get_group_detail(group_id: int, db: aiosqlite.Connection):
         result = await cur.fetchone()
 
     async with db.execute(
-        "SELECT slot_id, rank FROM bracket_slot_ranks WHERE group_id=? ORDER BY rank",
+        "SELECT slot_id, rank, total_time, best_time "
+        "FROM bracket_slot_ranks WHERE group_id=? ORDER BY rank",
         (group_id,),
     ) as cur:
-        ranks = {r["slot_id"]: r["rank"] for r in await cur.fetchall()}
+        _rank_rows = await cur.fetchall()
+    ranks = {r["slot_id"]: r["rank"] for r in _rank_rows}
+    # M4LAPSから反映した合計タイムを各スロットに埋める。
+    # 手入力運用ではNULLのままで、画面には何も表示されない（後方互換）。
+    _times = {r["slot_id"]: r["total_time"] for r in _rank_rows}
+    for _s in slots:
+        _s["total_time"] = _times.get(_s["slot_id"])
 
     return slots, result, ranks
 
@@ -3592,7 +3599,8 @@ def _build_svg_data(groups_data: list) -> dict:
                  "name": s["name"], "entry_id": s["entry_id"],
                  "qual_rank": s.get("qual_rank"),
                  "is_seed_slot": s.get("is_seed_slot", False),
-                 "rank": gd.get("ranks", {}).get(s["slot_id"])}
+                 "rank": gd.get("ranks", {}).get(s["slot_id"]),
+                 "total_time": s.get("total_time")}
                 for s in gd["slots"]
             ],
             "result": {"winner_slot_id": gd["result"]["winner_slot_id"]} if gd["result"] else None,

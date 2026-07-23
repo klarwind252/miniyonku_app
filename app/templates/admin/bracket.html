@@ -64,7 +64,7 @@
 }
 .bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:8px 16px; margin-bottom:6px; }
 /* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
-.m4-apply-btn{padding:2px 9px;font-size:11px;background:#eef4fa;border:1px solid #2980b9;
+.m4-apply-btn{padding:4px 12px;font-size:14px;background:#eef4fa;border:1px solid #2980b9;
   color:#1a5276;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
 .m4-apply-btn:hover{background:#2980b9;color:#fff}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
@@ -75,6 +75,9 @@
 .slot-row:last-child { border-bottom:none; }
 .slot-no { display:none; }
 .slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; }
+/* ラップタイマーから反映した合計タイム。名前と○の間に右寄せで出す */
+.slot-time { font-size:16px; font-weight:bold; color:#2c3e50;
+  font-variant-numeric:tabular-nums; text-align:right; margin-right:8px; white-space:nowrap; }
 .win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
@@ -1153,7 +1156,7 @@ window.initBracketConnectors = initBracketConnectors;
       {% if IS_CLOUD and request.state.m4laps_licensed %}
       <span style="flex:1"></span>
       <button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
-              title="ラップタイマーの最新の計測結果をこの組に反映します">⏱ 計測反映</button>
+              title="ラップタイマーの最新の計測結果をこの組に反映します">⏱ 反映</button>
       {% endif %}
     </div>
     {% for slot in slots %}
@@ -1167,6 +1170,9 @@ window.initBracketConnectors = initBracketConnectors;
         <span class="seed-badge">予選{{ slot.qual_rank }}位</span>
         {% endif %}
       </div>
+      {% if slot.total_time is not none %}
+      <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
+      {% endif %}
       <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
               id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
               onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">○</button>

@@ -319,7 +319,9 @@ async def init_db(db_path: str = None):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     group_id INTEGER NOT NULL,
                     slot_id INTEGER NOT NULL,
-                    rank INTEGER NOT NULL
+                    rank INTEGER NOT NULL,
+                    total_time REAL,          -- 合計タイム(秒)。M4LAPSから反映したとき保存
+                    best_time REAL            -- ベストラップ(秒)。同上
                 );
                 ''')
                 print("[DB] migration: bracket tables created")
@@ -592,6 +594,18 @@ async def init_db(db_path: str = None):
         if "advance_to_slot_id" not in bg_cols:
             await db.execute("ALTER TABLE bracket_groups ADD COLUMN advance_to_slot_id INTEGER DEFAULT NULL")
             print("[DB] migration: bracket_groups.advance_to_slot_id added")
+
+        # bracket_slot_ranks.total_time / best_time（M4LAPS連携・v6.1+）
+        # ラップタイマーから反映した合計タイム・ベストラップを保持し、
+        # 決勝の結果カードに表示する。手入力運用のときはNULLのまま（後方互換）。
+        async with db.execute("PRAGMA table_info(bracket_slot_ranks)") as cur:
+            bsr_cols = {r["name"] async for r in cur}
+        if "total_time" not in bsr_cols:
+            await db.execute("ALTER TABLE bracket_slot_ranks ADD COLUMN total_time REAL")
+            print("[DB] migration: bracket_slot_ranks.total_time added")
+        if "best_time" not in bsr_cols:
+            await db.execute("ALTER TABLE bracket_slot_ranks ADD COLUMN best_time REAL")
+            print("[DB] migration: bracket_slot_ranks.best_time added")
 
         # ht_groups.advance_to_slot_id（予選ヒートトーナメント用 固定リンク・v5.7+）
         # 次ラウンド生成時に焼き付け。NULLの既存ヒートは従来の位置対応で動作（後方互換）。
