@@ -175,7 +175,13 @@ async def results_page(
         # このレースの日のベスト（ハイライト判定に使う）
         bst = day_best.get((race["created_at"] or "")[:10], {})
 
-        ordered = result.ranking()          # 合計タイム昇順
+        # 順位（POS）は合計タイム昇順で決める
+        ranked = result.ranking()
+        pos_map = {m.start_lane: i for i, m in enumerate(ranked, start=1)}
+        # ただし表示は必ずレーン番号順（1,2,3…）にする。
+        # 毎回同じ位置に同じレーンが来るので、現場で見比べやすい。
+        ordered = sorted(ranked, key=lambda m: m.start_lane)
+
         top_us = None
         for m in ordered:
             if m.total_time_us is not None:
@@ -186,7 +192,8 @@ async def results_page(
         race_row_count = sum(max(1, len(m.laps)) for m in ordered)
         race_row_index = 0
 
-        for pos, m in enumerate(ordered, start=1):
+        for m in ordered:
+            pos = pos_map.get(m.start_lane)
             gap = None
             if m.total_time_us is not None and top_us is not None:
                 gap = round((m.total_time_us - top_us) / 1e6, 3)

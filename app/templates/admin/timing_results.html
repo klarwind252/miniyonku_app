@@ -30,22 +30,27 @@
   .tr-table tr.lane-start td{border-top:2px solid #e2e8ee}
   .tr-table tr:hover td{background:#f8f9fa}
 
-  .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;width:104px;line-height:1.35}
+  /* TIMESTAMP と CASE を1列に統合（上段=日付 / 中段=時刻 / 下段=タイプ） */
+  .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;
+    width:112px;line-height:1.35;text-align:center}
   .c-ts .ts-d{font-size:12px}
   .c-ts .ts-t{font-size:14px;font-weight:bold;color:#636e72}
-  .c-mode{text-align:center;vertical-align:top;width:64px}
+  .c-ts .ts-c{margin-top:3px}
+  .tr-table th.c-ts{line-height:1.3}
   .mode-chip{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:top;font-size:16px}
-  .c-lane{width:50px;text-align:center;vertical-align:top}
-  /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
-  .lane-chip{display:inline-block;min-width:26px;padding:2px 7px;border-radius:4px;
-    font-size:14px;font-weight:bold;color:#fff;text-align:center;line-height:1.5}
+  /* LANEはセル全体を塗って白抜き文字にする（POSの素の数字と明確に分ける） */
+  .c-lane{width:50px;text-align:center;vertical-align:middle;
+    font-size:16px;font-weight:bold;color:#fff}
   /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
-  .lane-1{background:#2980b9} .lane-2{background:#e74c3c}
-  .lane-3{background:#f1c40f;color:#4a3b00}   /* 黄は白文字だと読めないので濃色に */
-  .lane-4{background:#27ae60} .lane-5{background:#95a5a6}
+  .tr-table td.lane-1{background:#2980b9}
+  .tr-table td.lane-2{background:#e74c3c}
+  .tr-table td.lane-3{background:#f1c40f;color:#4a3b00}  /* 黄は白文字だと読めないので濃色に */
+  .tr-table td.lane-4{background:#27ae60}
+  .tr-table td.lane-5{background:#95a5a6}
+  /* レーン色は td.lane-N（詳細度が高く後に定義）が hover より優先される */
 
   /* TOTAL：レーンごとに1回だけ（rowspanで結合） */
   .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:92px;vertical-align:top;font-size:20px;color:#2c3e50;letter-spacing:-.3px}
@@ -96,17 +101,16 @@
       <table class="tr-table">
         <thead>
           <tr class="g-row">
-            <th colspan="4"></th>
+            <th colspan="3"></th>
             <th colspan="3" class="gsep">TOTAL</th>
             <th colspan="3" class="gsep">LAP</th>
             <th colspan="8" class="gsep">SECTOR</th>
             <th></th>
           </tr>
           <tr class="h-row">
-            <th>TS</th>
-            <th>CASE</th>
-            <th>POS</th>
+            <th class="c-ts"><div>TIMESTAMP</div><div>CASE</div></th>
             <th>LANE</th>
+            <th>POS</th>
             <th class="gsep">TIME</th>
             <th>MAX</th>
             <th>GAP</th>
@@ -127,24 +131,23 @@
             <td class="c-ts" rowspan="{{ row.race_row_count }}">
               <div class="ts-d">{{ row.date_part }}</div>
               <div class="ts-t">{{ row.time_part }}</div>
-              {% if row.heat_id is not none %}
-              <div><span class="linked-badge">ヒート{{ row.heat_id }}</span></div>
-              {% endif %}
-            </td>
-            <td class="c-mode" rowspan="{{ row.race_row_count }}">
-              {% if row.mode == 'f1' %}
-              <span class="mode-chip mode-race">レース</span>
-              {% else %}
-              <span class="mode-chip mode-free">フリー</span>
-              {% endif %}
+              <div class="ts-c">
+                {% if row.mode == 'f1' %}
+                <span class="mode-chip mode-race">レース</span>
+                {% else %}
+                <span class="mode-chip mode-free">フリー</span>
+                {% endif %}
+                {% if row.heat_id is not none %}
+                <span class="linked-badge">ヒート{{ row.heat_id }}</span>
+                {% endif %}
+              </div>
             </td>
             {% endif %}
             {# POS・LANE・TOTAL はレーンごとに1回だけ #}
             {% if row.is_first_of_lane %}
+            <td class="c-lane lane-{{ ((row.start_lane - 1) % 5) + 1 }}"
+                rowspan="{{ row.lane_row_count }}">{{ row.start_lane }}</td>
             <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}</td>
-            <td class="c-lane" rowspan="{{ row.lane_row_count }}">
-              <span class="lane-chip lane-{{ ((row.start_lane - 1) % 5) + 1 }}">{{ row.start_lane }}</span>
-            </td>
             <td class="c-total gsep{% if row.best_total %} best{% endif %}"
                 rowspan="{{ row.lane_row_count }}"
                 {% if row.best_total %}title="この日のベストタイム"{% endif %}>
