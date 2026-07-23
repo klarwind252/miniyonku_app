@@ -1,0 +1,138 @@
+{% extends "admin/base.html" %}
+{% block title %}ベスト集計{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>ベスト集計</h1>
+  <p>期間とタイプを指定して、その範囲でのベスト記録を集計します。</p>
+</div>
+
+<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+  <a href="/admin/timing/layouts" class="btn btn-secondary btn-sm">🗺️ コースレイアウト</a>
+  <a href="/admin/timing/devices" class="btn btn-secondary btn-sm">📟 計測端末台帳</a>
+  <a href="/admin/timing/results" class="btn btn-secondary btn-sm">🏁 計測結果</a>
+  <a href="/admin/timing/bests" class="btn btn-primary btn-sm">🏆 ベスト集計</a>
+</div>
+
+<style>
+  .agg-form{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .agg-form .fg{display:flex;flex-direction:column;gap:4px}
+  .agg-form label{font-size:12px;color:#7f8c8d;margin:0;font-weight:normal}
+  .agg-form input[type=date],.agg-form select{width:auto;font-size:14px;padding:6px 10px}
+  .bt-table{width:auto;border-collapse:collapse;font-size:14px}
+  .bt-table th{padding:8px 12px;text-align:left;font-size:11px;font-weight:bold;
+    color:#95a5a6;letter-spacing:.5px;border-bottom:2px solid #dfe4ea;white-space:nowrap}
+  .bt-table td{padding:10px 12px;border-bottom:1px solid #eef2f5;white-space:nowrap}
+  .bt-label{font-weight:bold;color:#2c3e50;width:190px}
+  .bt-kind{font-size:11px;color:#95a5a6;font-weight:normal;margin-left:6px}
+  .bt-value{text-align:right;font-variant-numeric:tabular-nums;font-size:22px;
+    font-weight:bold;color:#6b21a8;width:130px;letter-spacing:-.5px}
+  .bt-unit{font-size:11px;color:#bdc3c7;margin-left:2px;font-weight:normal}
+  .bt-when{color:#7f8c8d;font-size:12px;font-variant-numeric:tabular-nums;width:150px}
+  .bt-where{color:#636e72;font-size:13px}
+  .bt-none{color:#bdc3c7}
+  .mode-chip{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold}
+  .mode-race{background:#fdeaea;color:#c0392b}
+  .mode-free{background:#eafaf1;color:#27ae60}
+  .lane-chip{display:inline-block;min-width:24px;padding:1px 7px;border-radius:4px;
+    font-size:12px;font-weight:bold;color:#fff;text-align:center}
+  /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
+  .lane-1{background:#2980b9} .lane-2{background:#e74c3c}
+  .lane-3{background:#f1c40f;color:#4a3b00}
+  .lane-4{background:#27ae60} .lane-5{background:#95a5a6}
+</style>
+
+<div class="card">
+  <div class="card-header">集計条件</div>
+  <div class="card-body">
+    <form method="get" action="/admin/timing/bests" class="agg-form">
+      <div class="fg">
+        <label for="df">期間（開始）</label>
+        <input type="date" id="df" name="date_from" value="{{ date_from }}">
+      </div>
+      <div class="fg">
+        <label for="dt">期間（終了）</label>
+        <input type="date" id="dt" name="date_to" value="{{ date_to }}">
+      </div>
+      <div class="fg">
+        <label for="md">タイプ</label>
+        <select id="md" name="mode">
+          <option value="" {% if not mode %}selected{% endif %}>すべて</option>
+          <option value="f1" {% if mode == 'f1' %}selected{% endif %}>レース</option>
+          <option value="run" {% if mode == 'run' %}selected{% endif %}>フリー</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">🏆 集計する</button>
+    </form>
+    {% if date_options %}
+    <p style="margin-top:10px;color:#95a5a6;font-size:12px">
+      計測実績のある期間：{{ date_options[-1].date }} 〜 {{ date_options[0].date }}
+      （{{ date_options|length }}日分）
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span>集計結果</span>
+    <span style="font-size:12px;color:#7f8c8d;font-weight:normal">
+      {{ date_from }} 〜 {{ date_to }}
+      {% if mode == 'f1' %}／レースのみ{% elif mode == 'run' %}／フリーのみ{% else %}／すべて{% endif %}
+    </span>
+    <span style="flex:1"></span>
+    <span class="badge">{{ race_count }} レース</span>
+  </div>
+  <div class="card-body">
+    {% if race_count == 0 %}
+    <p style="color:#7f8c8d">この条件に該当する計測記録がありません。期間やタイプを変えてください。</p>
+    {% else %}
+    <table class="bt-table">
+      <thead>
+        <tr>
+          <th>項目</th>
+          <th style="text-align:right">記録</th>
+          <th>計測日時</th>
+          <th>タイプ</th>
+          <th>該当箇所</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td class="bt-label">{{ it.label }}<span class="bt-kind">{{ it.kind }}</span></td>
+          <td class="bt-value">
+            {% if it.value is not none %}
+              {{ '%.3f'|format(it.value) if it.unit == '秒' else '%.2f'|format(it.value) }}<span class="bt-unit">{{ it.unit }}</span>
+            {% else %}<span class="bt-none">—</span>{% endif %}
+          </td>
+          <td class="bt-when">
+            {% if it.created_at %}{{ it.created_at }}{% else %}<span class="bt-none">—</span>{% endif %}
+          </td>
+          <td>
+            {% if it.mode == 'f1' %}<span class="mode-chip mode-race">レース</span>
+            {% elif it.mode == 'run' %}<span class="mode-chip mode-free">フリー</span>
+            {% else %}<span class="bt-none">—</span>{% endif %}
+          </td>
+          <td class="bt-where">
+            {% if it.race_id %}
+              <a href="/admin/timing/results?date={{ it.created_at[:10] if it.created_at else '' }}">#{{ it.race_id }}</a>
+              {% if it.start_lane %}
+              <span class="lane-chip lane-{{ ((it.start_lane - 1) % 5) + 1 }}">{{ it.start_lane }}</span>
+              {% endif %}
+              {% if it.lap %}Lap{{ it.lap }}{% endif %}
+              {% if it.sector_no %}S{{ it.sector_no }}{% endif %}
+            {% else %}<span class="bt-none">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="margin-top:12px;color:#95a5a6;font-size:11px">
+      ※ タイム系は最速、速度系は最高がベストです。速度・ラップ平均SPEEDは現在ダミー値です
+      （ビーム間隔・コース全長の設定を追加すると実測値になります）。<br>
+      ※ この集計は保存せず、表示のたびに計算しています（その日のベストは受信時に保持）。
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

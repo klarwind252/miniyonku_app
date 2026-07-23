@@ -318,6 +318,81 @@ async def delete_race(
                          "bests_recalculated": recalculated})
 
 
+@router.get("/admin/timing/bests", response_class=HTMLResponse)
+async def bests_page(
+    request: Request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mode: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """ベスト集計（期間・タイプ指定）。
+
+    その日のベストは受信時に保持しているが、任意期間のベストは保持しない。
+    リアルタイム性が不要なため、この画面を開いた（＝集計ボタンを押した）ときに
+    その場で計算する。
+    """
+    repo = TimingRaceRepository(db)
+    date_options = await repo.list_race_dates(limit=365)
+
+    # 既定：計測実績のある最古〜最新（＝全期間）
+    if date_options:
+        default_to = date_options[0]["date"]
+        default_from = date_options[-1]["date"]
+    else:
+        default_to = default_from = ""
+    d_from = date_from or default_from
+    d_to = date_to or default_to
+
+    result = {"bests": {}, "race_count": 0}
+    if d_from and d_to:
+        result = await best_svc.aggregate_range(
+            db,
+            date_from=d_from, date_to=d_to,
+            mode=(mode if mode in ("f1", "run") else None),
+            list_fn=lambda a, b: repo.list_races_between(a, b),
+            build_fn=build_race_result,
+            speed_fn=_dummy_speed_ms, lap_avg_fn=_dummy_lap_avg_ms,
+        )
+
+    # 表示用に整形（順番と単位・説明を固定）
+    METRIC_VIEW = [
+        ("total",     "トータルタイム",     "秒",  "最速"),
+        ("max_ms",    "MAX SPEED",          "m/s", "最高"),
+        ("lap",       "ラップタイム",       "秒",  "最速"),
+        ("lap_avg",   "ラップ平均SPEED",    "m/s", "最高"),
+        ("sector",    "セクタータイム",     "秒",  "最速"),
+        ("sector_ms", "セクター通過SPEED",  "m/s", "最高"),
+    ]
+    items = []
+    for key, label, unit, kind in METRIC_VIEW:
+        b = result["bests"].get(key)
+        items.append({
+            "key": key, "label": label, "unit": unit, "kind": kind,
+            "value": (round(b["value"], 3) if b else None),
+            "race_id": (b.get("race_id") if b else None),
+            "start_lane": (b.get("start_lane") if b else None),
+            "lap": (b.get("lap") if b else None),
+            "sector_no": (b.get("sector_no") if b else None),
+            "created_at": (b.get("created_at") if b else None),
+            "mode": (b.get("mode") if b else None),
+        })
+
+    return templates.TemplateResponse(
+        "admin/timing_bests.html",
+        {
+            "request": request,
+            "items": items,
+            "race_count": result["race_count"],
+            "date_from": d_from,
+            "date_to": d_to,
+            "mode": mode or "",
+            "date_options": date_options,
+        },
+    )
+
+
 @router.get("/api/timing/pip/latest")
 async def pip_latest(
     limit: int = 5,

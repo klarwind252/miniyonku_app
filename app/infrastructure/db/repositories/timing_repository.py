@@ -187,6 +187,20 @@ class TimingRaceRepository:
         ) as cur:
             return await cur.fetchall()
 
+    async def list_races_between(self, date_from: str, date_to: str, limit: int = 5000):
+        """期間（両端を含む）のレースを古い順に返す。ベスト集計用。
+
+        created_at は "YYYY-MM-DD HH:MM:SS" 形式なので日付部分で比較する。
+        """
+        async with self.db.execute(
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, created_at "
+            "FROM timing_races "
+            "WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ? "
+            "ORDER BY id ASC LIMIT ?",
+            (date_from, date_to, limit),
+        ) as cur:
+            return await cur.fetchall()
+
     async def delete_race(self, race_id: int) -> int:
         """レースを1件削除する（通過イベントも一緒に消える）。
 

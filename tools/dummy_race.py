@@ -181,6 +181,9 @@ def main() -> int:
     ap.add_argument("--races", type=int, default=1, help="作るレース本数（既定1）")
     ap.add_argument("--token", default=None, help="TIMING_TOKEN（設定時のみ）")
     ap.add_argument("--heat", type=int, default=None, help="紐づけるヒートID（省略可）")
+    ap.add_argument("--type", choices=("race", "free"), default="free",
+                    help="計測タイプ。race=レース(F1式・緑ランプあり) / "
+                         "free=フリー(走行式・既定)")
     ap.add_argument("--lc", type=int, default=1,
                     help="1周あたりのレーンチェンジ数（既定1）")
     ap.add_argument("--gates", default=None,
@@ -192,7 +195,8 @@ def main() -> int:
 
     print(f"サーバー : {base}")
     print(f"レイアウト: {args.layout} / ゲート通過順: {gates}")
-    print(f"条件     : {args.lanes}レーン × {args.laps}周 × {args.races}レース\n")
+    print(f"条件     : {args.lanes}レーン × {args.laps}周 × {args.races}レース"
+          f" / タイプ={'レース' if args.type == 'race' else 'フリー'}\n")
 
     boot_id = random.randint(10_000, 99_999)
     seq = 0
@@ -202,7 +206,9 @@ def main() -> int:
         payload = {
             "layout_id": args.layout,
             "target_laps": args.laps,
-            "green_t_us": 0,
+            # green_t_us の有無で方式が決まる（サーバー側 race_builder）
+            #   あり → 'f1'（レース） / なし → 'run'（フリー）
+            **({"green_t_us": 0} if args.type == "race" else {}),
         }
         if args.heat is not None:
             payload["heat_tag"] = args.heat

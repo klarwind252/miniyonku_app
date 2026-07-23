@@ -146,6 +146,45 @@ async def update_for_race(db, race_id: int, build_fn, speed_fn, lap_avg_fn) -> d
     return {"race": n_race, "day": n_day, "date": day}
 
 
+async def aggregate_range(db, *, date_from: str, date_to: str, mode: str | None,
+                          list_fn, build_fn, speed_fn, lap_avg_fn) -> dict:
+    """期間・タイプを指定してベストを集計する（保持しない・都度計算）。
+
+    date_from / date_to : 'YYYY-MM-DD'（両端を含む）
+    mode                : 'f1'（レース）/ 'run'（フリー）/ None（すべて）
+    list_fn(date_from, date_to) -> レース行の列挙
+
+    リアルタイム性が不要なため timing_bests には保存せず、その場で計算して返す。
+    戻り値: {"bests": {metric: {..., created_at, mode}}, "race_count": n}
+    """
+    merged: dict[str, dict] = {}
+    n_races = 0
+
+    for r in await list_fn(date_from, date_to):
+        rid = r["id"]
+        try:
+            race, result = await build_fn(db, rid)
+        except Exception:
+            continue
+        if race is None or result is None:
+            continue
+        # タイプで絞る（result.mode は 'f1'=レース / 'run'=フリー）
+        if mode and result.mode != mode:
+            continue
+        n_races += 1
+
+        cands = collect_from_result(result, rid, speed_fn, lap_avg_fn)
+        for metric, cand in cands.items():
+            cur = merged.get(metric)
+            if is_better(metric, cand["value"], cur["value"] if cur else None):
+                cand = dict(cand)
+                cand["created_at"] = race["created_at"]   # いつ計測したものか
+                cand["mode"] = result.mode
+                merged[metric] = cand
+
+    return {"bests": merged, "race_count": n_races}
+
+
 async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_fn) -> int:
     """指定日のベストを一から計算し直す（レース削除後に呼ぶ）。
 
