@@ -67,28 +67,37 @@ def _open(req, redirects_left: int = 5):
         raise
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """リダイレクトを追従しないハンドラ（Locationを自分で読むため）。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _resolve_base(base: str) -> str:
     """http でアクセスしたとき https へ恒久リダイレクトされるなら、最初から https を使う。
 
     毎回のリダイレクト（1リクエストにつき2往復）を避けるための前処理。
-    判定できない場合は与えられた base をそのまま返す。
+    ⚠ urlopen は GET の 301/308 を自動追従してしまうため、追従しないオープナーで
+       Location を直接読む。判定できない場合は与えられた base をそのまま返す。
     """
     if base.startswith("https://"):
         return base
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
         req = urllib.request.Request(base + "/api/timing/pip/latest")
         try:
-            urllib.request.urlopen(req, timeout=8, context=_SSL_CTX)
+            opener.open(req, timeout=8)
             return base                      # リダイレクトなし＝そのままでよい
         except urllib.error.HTTPError as e:
-            if e.code in (301, 308):
+            if e.code in (301, 302, 307, 308):
                 loc = e.headers.get("Location") or ""
                 if loc.startswith("https://"):
                     from urllib.parse import urlsplit
                     u = urlsplit(loc)
-                    new = f"https://{u.netloc}"
-                    print(f"  ※ https へ恒久リダイレクトされるため {new} を使用します")
-                    return new
+                    new_base = f"https://{u.netloc}"
+                    print(f"  ※ https へリダイレクトされるため {new_base} を使用します")
+                    return new_base
             # 404等はエンドポイントの問題であってリダイレクトではない
             return base
     except Exception:

@@ -107,6 +107,78 @@ def build_result_rows(matched: list[dict], calc_points=default_calc_points) -> l
     return rows
 
 
+async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
+                                      ranking: list[dict]) -> dict:
+    """計測結果を決勝のグループへ反映して保存する。
+
+    決勝は予選と別系統のテーブルを使う。
+        bracket_slots      (group_id, slot_no, entry_id)   … 誰がどの枠か
+        bracket_results    (group_id, winner_slot_id)      … 勝者
+        bracket_slot_ranks (group_id, slot_id, rank)       … 各枠の順位
+
+    突き合わせの鍵は **slot_no ↔ start_lane**（予選の lane_no と同じ考え方）。
+    スロット番号がそのままレーン番号に対応する前提。
+
+    戻り値: {"saved": n, "winner_slot_id":.., "unmatched_slots":[], "unmatched_records":[]}
+    """
+    async with db.execute(
+        "SELECT id AS slot_id, slot_no, entry_id, is_bye FROM bracket_slots "
+        "WHERE group_id = ? ORDER BY slot_no",
+        (group_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    # 不戦勝(BYE)や空き枠は対象外
+    slots = [
+        {"lane_id": r["slot_id"], "lane_no": r["slot_no"], "entry_id": r["entry_id"]}
+        for r in rows if r["entry_id"] is not None and not r["is_bye"]
+    ]
+    if not slots:
+        return {"saved": 0, "error": "bracket_slots not found",
+                "winner_slot_id": None, "unmatched_slots": [], "unmatched_records": []}
+
+    m = match_ranking_to_lanes(ranking, slots)
+    matched = m["matched"]
+    if not matched:
+        return {"saved": 0, "error": "no match",
+                "winner_slot_id": None,
+                "unmatched_slots": m["unmatched_lanes"],
+                "unmatched_records": m["unmatched_records"]}
+
+    # 順位を入れ直す（再反映しても重複しないよう一度消す）
+    await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id = ?", (group_id,))
+    winner_slot_id = None
+    for x in matched:
+        await db.execute(
+            "INSERT INTO bracket_slot_ranks (group_id, slot_id, rank) VALUES (?,?,?)",
+            (group_id, x["lane_id"], x["rank"]),
+        )
+        if x["rank"] == 1:
+            winner_slot_id = x["lane_id"]
+
+    # 勝者を確定（既にあれば上書き）
+    if winner_slot_id is not None:
+        await db.execute(
+            "INSERT INTO bracket_results (group_id, winner_slot_id, recorded_at) "
+            "VALUES (?,?, datetime('now','localtime')) "
+            "ON CONFLICT(group_id) DO UPDATE SET "
+            "  winner_slot_id=excluded.winner_slot_id, recorded_at=excluded.recorded_at",
+            (group_id, winner_slot_id),
+        )
+
+    # 紐づけを記録（PIP等で「反映済」と出せる）
+    await db.execute(
+        "UPDATE timing_races SET heat_id = ? WHERE id = ?", (None, race_id)
+    )
+    await db.commit()
+
+    return {
+        "saved": len(matched),
+        "winner_slot_id": winner_slot_id,
+        "unmatched_slots": m["unmatched_lanes"],
+        "unmatched_records": m["unmatched_records"],
+    }
+
+
 async def apply_race_to_heat(db, *, race_id: int, heat_id: int,
                              ranking: list[dict], calc_points=default_calc_points) -> dict:
     """計測結果を指定ヒートへ反映して保存する。

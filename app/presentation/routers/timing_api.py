@@ -22,6 +22,8 @@ from app.infrastructure.db.repositories.timing_repository import (
 )
 from app.application.timing_race_service import build_race_result
 from app.application import timing_best_service as best_svc
+from app.application import timing_bridge_service as bridge_svc
+from app.infrastructure.db.repositories import timing_bridge_repository as bridge_repo
 from app.presentation.templates import templates
 from app.presentation.routers.m4laps_guard import require_m4laps
 
@@ -287,6 +289,94 @@ async def results_page(
             "current_limit": limit,
         },
     )
+
+
+@router.get("/admin/timing/bridge/heats")
+async def bridge_heats(
+    tournament_id: int | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """反映先のヒート候補を返す（レース選択→ヒート選択のUI用）。
+
+    tournament_id 未指定なら大会一覧だけを返す。
+    """
+    tournaments = await bridge_repo.list_recent_tournaments(db, limit=20)
+    heats = []
+    if tournament_id:
+        heats = await bridge_repo.list_heats_with_lanes(db, tournament_id)
+    return JSONResponse({"tournaments": tournaments, "heats": heats})
+
+
+@router.post("/admin/timing/results/{race_id}/apply")
+async def apply_race(
+    race_id: int,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """計測結果を指定ヒートへ反映する（タイム挿入・順位/勝敗の自動確定）。
+
+    body(JSON): {"heat_id": int}
+
+    レーン番号で突き合わせるだけなので、組み合わせを入力し直す必要はない。
+    保存形式は手入力と同じなので、反映後に画面から上書き訂正できる。
+    """
+    data = await request.json()
+    heat_id = data.get("heat_id")
+    if not heat_id:
+        raise HTTPException(status_code=400, detail="heat_id required")
+
+    summary = await bridge_repo.get_heat_summary(db, int(heat_id))
+    if summary is None:
+        raise HTTPException(status_code=404, detail="heat not found")
+
+    race, result = await build_race_result(db, race_id)
+    if race is None:
+        raise HTTPException(status_code=404, detail="race not found")
+    if result is None:
+        raise HTTPException(status_code=400,
+                            detail="この計測には記録がありません（レイアウト未設定の可能性）")
+
+    ranking = [
+        {"pos": pos, "start_lane": m.start_lane,
+         "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+         "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
+         "completed_laps": m.completed_laps}
+        for pos, m in enumerate(result.ranking(), start=1)
+    ]
+
+    res = await bridge_svc.apply_race_to_heat(
+        db, race_id=race_id, heat_id=int(heat_id), ranking=ranking
+    )
+    if res.get("error"):
+        raise HTTPException(status_code=400, detail=res["error"])
+
+    return JSONResponse({
+        "ok": True,
+        "race_id": race_id,
+        "heat_id": int(heat_id),
+        "saved": res["saved"],
+        "unmatched_lanes": res["unmatched_lanes"],
+        "unmatched_records": res["unmatched_records"],
+        "tournament_name": summary["tournament_name"],
+    })
+
+
+@router.post("/admin/timing/results/{race_id}/unlink")
+async def unlink_race(
+    race_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """ヒートへの紐付けだけを解除する（heat_results は残す）。
+
+    誤ったヒートに反映したときの取り消し用。結果そのものは
+    予選/決勝の画面から手で直せるため、ここでは消さない。
+    """
+    await db.execute("UPDATE timing_races SET heat_id = NULL WHERE id = ?", (race_id,))
+    await db.commit()
+    return JSONResponse({"ok": True, "race_id": race_id})
 
 
 @router.post("/admin/timing/results/{race_id}/delete")
