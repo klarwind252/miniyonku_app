@@ -24,7 +24,13 @@
   .tr-table tr:hover td{background:#f8f9fa}
   .c-ts{color:#7f8c8d;font-size:11px;font-variant-numeric:tabular-nums;vertical-align:top}
   .c-pos{width:38px;text-align:center;font-weight:bold;color:#2980b9}
-  .c-lane{width:64px;color:#636e72}
+  .c-lane{width:52px;text-align:center}
+  .th-c{text-align:center}
+  /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
+  .lane-chip{display:inline-block;min-width:22px;padding:1px 6px;border-radius:4px;
+    font-size:12px;font-weight:bold;color:#fff;text-align:center;line-height:1.5}
+  .lane-1{background:#e74c3c} .lane-2{background:#2980b9} .lane-3{background:#f39c12}
+  .lane-4{background:#27ae60} .lane-5{background:#8e44ad} .lane-6{background:#16a085}
   .c-best{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums}
   .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:70px}
   .c-sec{text-align:right;font-variant-numeric:tabular-nums}
@@ -44,8 +50,8 @@
           <tr>
             <th>タイムスタンプ</th>
             <th class="c-pos">POS</th>
-            <th>LANE</th>
-            <th class="th-r">BEST</th>
+            <th class="th-c">LANE</th>
+            <th class="th-r">FINISH</th>
             <th class="th-r">GAP</th>
             {% for n in sector_nos %}
             <th class="th-r">S{{ n }}</th>
@@ -66,7 +72,7 @@
             </td>
             {% endif %}
             <td class="c-pos">{{ row.pos }}</td>
-            <td class="c-lane">レーン{{ row.start_lane }}</td>
+            <td class="c-lane"><span class="lane-chip lane-{{ ((row.start_lane - 1) % 6) + 1 }}">{{ row.start_lane }}</span></td>
             <td class="c-best">{{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}</td>
             <td class="c-gap">
               {% if row.gap is none %}—

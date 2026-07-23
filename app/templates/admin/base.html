@@ -1052,13 +1052,24 @@ function _showPubToast(msg) {
     font-size:9px; font-weight:bold; color:#95a5a6; letter-spacing:.5px;
   }
   #m4pip .pip-pos{width:30px; font-weight:bold; color:#2980b9; text-align:center}
-  #m4pip .pip-lane{width:56px; color:#636e72; font-size:12px; text-align:left}
+  #m4pip .pip-lane{width:44px; text-align:center}
+  /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
+  #m4pip .lane-chip{
+    display:inline-block; min-width:20px; padding:1px 5px; border-radius:4px;
+    font-size:12px; font-weight:bold; color:#fff; text-align:center; line-height:1.4;
+  }
+  #m4pip .lane-1{background:#e74c3c}
+  #m4pip .lane-2{background:#2980b9}
+  #m4pip .lane-3{background:#f39c12}
+  #m4pip .lane-4{background:#27ae60}
+  #m4pip .lane-5{background:#8e44ad}
+  #m4pip .lane-6{background:#16a085}
   #m4pip .pip-total{text-align:right; font-weight:bold; font-variant-numeric:tabular-nums}
   #m4pip .pip-gap{
     text-align:right; width:66px; color:#8e44ad;
     font-size:12px; font-variant-numeric:tabular-nums;
   }
-  #m4pip th.pip-lane{text-align:left}
+  #m4pip th.pip-lane{text-align:center}
   #m4pip th.pip-total, #m4pip th.pip-gap{text-align:right}
   #m4pip .pip-empty{padding:14px 8px; text-align:center; color:#95a5a6; font-size:12px}
   #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:14px; line-height:1; padding:0 2px}
@@ -1129,7 +1140,7 @@ function _showPubToast(msg) {
           + '<thead><tr>'
           + '<th class="pip-pos">POS</th>'
           + '<th class="pip-lane">LANE</th>'
-          + '<th class="pip-total">BEST</th>'
+          + '<th class="pip-total">FINISH</th>'
           + '<th class="pip-gap">GAP</th>'
           + '</tr></thead><tbody>';
         r.ranking.forEach(function(m){
@@ -1139,7 +1150,8 @@ function _showPubToast(msg) {
           }
           html+='<tr>'
             + '<td class="pip-pos">'+esc(m.pos)+'</td>'
-            + '<td class="pip-lane">\u30ec\u30fc\u30f3'+esc(m.start_lane)+'</td>'
+            + '<td class="pip-lane"><span class="lane-chip lane-'
+              + (((m.start_lane-1)%6)+1) + '">'+esc(m.start_lane)+'</span></td>'
             + '<td class="pip-total">'+fmt(m.total_s)+'</td>'
             + '<td class="pip-gap">'+gap+'</td>'
             + '</tr>';
