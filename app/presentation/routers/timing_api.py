@@ -21,6 +21,7 @@ from app.infrastructure.db.repositories.timing_repository import (
     TimingLayoutRepository,
 )
 from app.application.timing_race_service import build_race_result
+from app.application import timing_best_service as best_svc
 from app.presentation.templates import templates
 from app.presentation.routers.m4laps_guard import require_m4laps
 
@@ -102,7 +103,18 @@ async def post_events(
         else:
             duplicate += 1
 
-    return JSONResponse({"inserted": inserted, "duplicate": duplicate})
+    # ベスト記録を更新（毎回の再計算をやめ、受信時に保持する）
+    # 失敗しても受信自体は成功として扱う（記録の取りこぼしを防ぐため）
+    bests = {}
+    try:
+        bests = await best_svc.update_for_race(
+            db, race_id, build_race_result, _dummy_speed_ms, _dummy_lap_avg_ms
+        )
+    except Exception:
+        pass
+
+    return JSONResponse({"inserted": inserted, "duplicate": duplicate,
+                         "bests_updated": bests})
 
 
 # ---------------------------------------------------------------------------
@@ -138,48 +150,16 @@ async def results_page(
     else:
         races = await repo.list_races(limit=max(1, min(limit, 100)))
 
-    # --- その日のベスト記録を求める（ハイライト用） ---
-    # 表示中の行だけでなく「その日全体」で最速を出す。
-    # 表示を10件に絞っていても、日ベストは正しく判定できるようにするため。
-    day_best: dict[str, dict] = {}   # date -> {total, max_ms, lap, lap_avg, sector, sector_ms}
+    # --- その日のベスト記録（ハイライト用） ---
+    # 受信時に timing_bests へ保持しているので、ここでは読むだけ。
+    # （以前は画面を開くたびに全レースを再計算していた）
+    day_best: dict[str, dict] = {}
     target_dates = sorted({(r["created_at"] or "")[:10] for r in races if r["created_at"]})
     for d in target_dates:
         if not d:
             continue
-        best = {"total": None, "max_ms": None, "lap": None,
-                "lap_avg": None, "sector": None, "sector_ms": None}
-        day_races = await repo.list_races_by_date(d, limit=500)
-        for dr in day_races:
-            try:
-                _race, _res = await build_race_result(db, dr["id"])
-            except Exception:
-                continue
-            if _res is None:
-                continue
-            for m in _res.ranking():
-                # トータルタイム（最小）
-                if m.total_time_us is not None:
-                    if best["total"] is None or m.total_time_us < best["total"]:
-                        best["total"] = m.total_time_us
-                for lap in m.laps:
-                    # ラップタイム（最小）
-                    if best["lap"] is None or lap.lap_time_us < best["lap"]:
-                        best["lap"] = lap.lap_time_us
-                    # ラップ平均速度（最大）
-                    av = _dummy_lap_avg_ms(dr["id"], m.start_lane, lap.lap)
-                    if best["lap_avg"] is None or av > best["lap_avg"]:
-                        best["lap_avg"] = av
-                    for idx, sec in enumerate(lap.sectors):
-                        # セクタータイム（最小）
-                        if best["sector"] is None or sec.dt_us < best["sector"]:
-                            best["sector"] = sec.dt_us
-                        # セクター通過速度（最大）＝MAX SPEEDの母数でもある
-                        sp = _dummy_speed_ms(dr["id"], m.start_lane, idx, lap.lap)
-                        if best["sector_ms"] is None or sp > best["sector_ms"]:
-                            best["sector_ms"] = sp
-                        if best["max_ms"] is None or sp > best["max_ms"]:
-                            best["max_ms"] = sp
-        day_best[d] = best
+        stored = await best_svc.load_bests(db, "day", d)
+        day_best[d] = {k: v["value"] for k, v in stored.items()}
 
     rows = []          # 表示する明細行（1行=1レーンの1周）
 
@@ -233,9 +213,7 @@ async def results_page(
                         "ms": sg_ms,
                         "sg": True,
                         "best_s": False,
-                        "best_ms": (bst.get("sector_ms") is not None
-                                    and sg_ms is not None
-                                    and sg_ms == bst["sector_ms"]),
+                        "best_ms": _eq_best(sg_ms, bst.get("sector_ms")),
                     }
                     for idx, sec in enumerate(lap.sectors):
                         if idx + 1 > 7:
@@ -246,24 +224,22 @@ async def results_page(
                             "ms": sp,
                             "sg": False,
                             # その日のベストか（タイムは最小・速度は最大）
-                            "best_s": (bst.get("sector") is not None
-                                       and sec.dt_us == bst["sector"]),
-                            "best_ms": (bst.get("sector_ms") is not None
-                                        and sp == bst["sector_ms"]),
+                            "best_s": _eq_best(sec.dt_us / 1e6, bst.get("sector")),
+                            "best_ms": _eq_best(sp, bst.get("sector_ms")),
                         }
 
                 lap_avg = (_dummy_lap_avg_ms(rid, m.start_lane, lap.lap)
                            if lap is not None else None)
                 rows.append({
                     # --- その日のベスト判定（ハイライト用） ---
-                    "best_total": (bst.get("total") is not None
-                                   and m.total_time_us == bst["total"]),
-                    "best_max": (bst.get("max_ms") is not None
-                                 and max_ms is not None and max_ms == bst["max_ms"]),
-                    "best_lap": (lap is not None and bst.get("lap") is not None
-                                 and lap.lap_time_us == bst["lap"]),
-                    "best_lap_avg": (lap_avg is not None and bst.get("lap_avg") is not None
-                                     and lap_avg == bst["lap_avg"]),
+                    "best_total": _eq_best(
+                        m.total_time_us / 1e6 if m.total_time_us else None,
+                        bst.get("total")),
+                    "best_max": _eq_best(max_ms, bst.get("max_ms")),
+                    "best_lap": _eq_best(
+                        lap.lap_time_us / 1e6 if lap is not None else None,
+                        bst.get("lap")),
+                    "best_lap_avg": _eq_best(lap_avg, bst.get("lap_avg")),
                     "race_id": rid,
                     "created_at": race["created_at"],
                     "date_part": _split_ts(race["created_at"])[0],
@@ -318,8 +294,28 @@ async def delete_race(
     race = await repo.get_race(race_id)
     if race is None:
         raise HTTPException(status_code=404, detail="race not found")
+    day = (race["created_at"] or "")[:10]
     n_events = await repo.delete_race(race_id)
-    return JSONResponse({"ok": True, "race_id": race_id, "deleted_events": n_events})
+
+    # 削除したレースがベストだった場合に備え、その日のベストを再計算する
+    # （消した記録がベストのまま残らないようにするため）
+    await db.execute("DELETE FROM timing_bests WHERE scope='race' AND scope_key=?",
+                     (str(race_id),))
+    await db.commit()
+    recalculated = 0
+    if day:
+        try:
+            recalculated = await best_svc.recalc_day(
+                db, day,
+                lambda d: repo.list_races_by_date(d, limit=500),
+                build_race_result, _dummy_speed_ms, _dummy_lap_avg_ms,
+            )
+        except Exception:
+            pass
+
+    return JSONResponse({"ok": True, "race_id": race_id,
+                         "deleted_events": n_events,
+                         "bests_recalculated": recalculated})
 
 
 @router.get("/api/timing/pip/latest")
@@ -366,6 +362,14 @@ async def pip_latest(
             "ranking": rows,
         })
     return JSONResponse({"races": out})
+
+
+def _eq_best(value, best, tol: float = 1e-6) -> bool:
+    """保持しているベスト値と一致するか（浮動小数の誤差を許容）。
+
+    timing_bests には「秒」「m/s」で保存している。µs のまま比較しないこと。
+    """
+    return (value is not None and best is not None and abs(value - best) < tol)
 
 
 def _split_ts(ts) -> tuple[str, str]:

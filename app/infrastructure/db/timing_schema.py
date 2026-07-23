@@ -95,6 +95,29 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_timing_events_race
             ON timing_events(race_id);
+
+        -- ベスト記録の保持（毎回の再計算をやめ、受信時に更新する）
+        --   scope     : 'day'（その日）/ 'race'（そのレース内）
+        --   scope_key : 'YYYY-MM-DD' / レースID(文字列)
+        --   metric    : total / max_ms / lap / lap_avg / sector / sector_ms
+        --   value     : 秒 または m/s（タイム系は最小・速度系は最大が「ベスト」）
+        -- 期間指定などの集計は、このテーブルを走査せず timing_events から
+        -- 別途まとめて計算する（リアルタイム性を求めないため）。
+        CREATE TABLE IF NOT EXISTS timing_bests (
+            scope       TEXT NOT NULL,
+            scope_key   TEXT NOT NULL,
+            metric      TEXT NOT NULL,
+            value       REAL NOT NULL,
+            race_id     INTEGER,            -- どのレースで出た記録か
+            start_lane  INTEGER,            -- どのマシンか（スタートレーン）
+            lap         INTEGER,            -- 何周目か（lap/sector系のみ）
+            sector_no   INTEGER,            -- 何番セクターか（sector系のみ）
+            updated_at  TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (scope, scope_key, metric)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_timing_bests_scope
+            ON timing_bests(scope, scope_key);
     """)
 
     # 固定12台を投入（既にあれば無視＝冪等）
