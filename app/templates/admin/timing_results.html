@@ -1,30 +1,5 @@
 {% extends "admin/base.html" %}
-{% block title %}計測結果<script>
-// 計測レースの削除（復元不可のため二段階で確認する）
-async function deleteRace(raceId, ts){
-  const msg =
-    '【警告】この計測結果を削除します。\n\n'
-    + '対象: ' + ts + '\n\n'
-    + 'ラップ・セクター・通過記録がすべて削除され、\n'
-    + '二度と復元できません。\n\n'
-    + '本当に削除しますか？';
-  if(!confirm(msg)) return;
-
-  try{
-    const res = await fetch('/admin/timing/results/' + raceId + '/delete', {method:'POST'});
-    if(res.ok){
-      location.reload();
-      return;
-    }
-    let detail = '';
-    try { const d = await res.json(); detail = d.detail || ''; } catch(e){}
-    alert('削除できませんでした。' + (detail ? '\n' + detail : ''));
-  }catch(e){
-    alert('通信エラーが発生しました: ' + e);
-  }
-}
-</script>
-{% endblock %}
+{% block title %}計測結果{% endblock %}
 {% block content %}
 <div class="page-title">
   <h1>計測結果</h1>
@@ -51,7 +26,7 @@ async function deleteRace(raceId, ts){
   .tr-table td{padding:4px 7px;border-bottom:1px solid #f4f6f8;white-space:nowrap}
   /* レースの切れ目に太い罫線。レーンの切れ目は中太で区切る */
   .tr-table tr.race-start td{border-top:2px solid #b9c4cf}
-  .tr-table tr.lane-start td{border-top:1px solid #dfe4ea}
+  .tr-table tr.lane-start td{border-top:2px solid #e2e8ee}
   .tr-table tr:hover td{background:#f8f9fa}
 
   .c-ts{color:#7f8c8d;font-variant-numeric:tabular-nums;vertical-align:top;width:104px;line-height:1.35}
@@ -61,7 +36,7 @@ async function deleteRace(raceId, ts){
   .mode-chip{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
-  .c-pos{width:40px;text-align:center;font-weight:bold;color:#2980b9;vertical-align:top;font-size:16px}
+  .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:top;font-size:16px}
   .c-lane{width:50px;text-align:center;vertical-align:top}
   /* LANEは色付きの四角。POSの素の数字と混同しないよう見た目を明確に分ける */
   .lane-chip{display:inline-block;min-width:26px;padding:2px 7px;border-radius:4px;
@@ -196,6 +171,31 @@ async function deleteRace(raceId, ts){
     {% endif %}
   </div>
 </div>
+<script>
+// 計測レースの削除（復元不可のため二段階で確認する）
+async function deleteRace(raceId, ts){
+  const msg =
+    '【警告】この計測結果を削除します。\n\n'
+    + '対象: ' + ts + '\n\n'
+    + 'ラップ・セクター・通過記録がすべて削除され、\n'
+    + '二度と復元できません。\n\n'
+    + '本当に削除しますか？';
+  if(!confirm(msg)) return;
+
+  try{
+    const res = await fetch('/admin/timing/results/' + raceId + '/delete', {method:'POST'});
+    if(res.ok){
+      location.reload();
+      return;
+    }
+    let detail = '';
+    try { const d = await res.json(); detail = d.detail || ''; } catch(e){}
+    alert('削除できませんでした。' + (detail ? '\n' + detail : ''));
+  }catch(e){
+    alert('通信エラーが発生しました: ' + e);
+  }
+}
+</script>
 <script>
 // 計測レースの削除（復元不可のため二段階で確認する）
 async function deleteRace(raceId, ts){
