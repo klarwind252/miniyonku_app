@@ -62,18 +62,18 @@
   .detail-actionbar .btn[data-short]{font-size:0!important}
   .detail-actionbar .btn[data-short]::before{content:attr(data-short); font-size:12px; line-height:1}
 }
-.bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:16px; margin-bottom:12px; }
+.bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:8px 16px; margin-bottom:6px; }
 .bracket-group.done { border-color:#27ae60; }
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
-.slot-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+.slot-row { display:flex; align-items:center; gap:10px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
 .slot-row:last-child { border-bottom:none; }
 .slot-no { display:none; }
 .slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; }
 .win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
-.round-header { font-size:15px; font-weight:bold; color:#fff; padding:6px 16px; display:block; margin-bottom:14px; border-radius:6px; }
+.round-header { font-size:15px; font-weight:bold; color:#fff; padding:6px 16px; display:block; margin-bottom:7px; border-radius:6px; }
 .rh-normal { background:linear-gradient(90deg, #2980b9 0%, #5dade2 100%); }
 .rh-final { background:linear-gradient(90deg, #d4a017 0%, #f4d03f 100%); }
 .rh-third { background:#7f8c8d; }
@@ -1133,16 +1133,16 @@ window.initBracketConnectors = initBracketConnectors;
 {% for rno in rounds_list | sort %}
 {% set rg = normal_groups | selectattr("round.round_no", "equalto", rno) | list %}
 {% set rnd_label = rg[0].round.label if rg and rg[0].round.label is defined else "ラウンド" ~ rno %}
-<div style="margin-bottom:6px">
+<div style="margin-bottom:3px">
   <span class="round-header {% if rnd_label == '決勝' %}rh-final{% else %}rh-normal{% endif %}">
     {{ rnd_label }}
   </span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
   <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
-    <div style="font-size:14px;color:#333333;margin-bottom:8px">
+    <div style="font-size:14px;color:#333333;margin-bottom:4px">
       グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
     </div>
     {% for slot in slots %}
@@ -1176,7 +1176,7 @@ window.initBracketConnectors = initBracketConnectors;
 {% set third_round_nos = third_groups | map(attribute='round.round_no') | unique | list %}
 {% for rno in third_round_nos | sort %}
 {% set rg = third_groups | selectattr('round.round_no', 'equalto', rno) | list %}
-<div style="margin-bottom:6px">
+<div style="margin-bottom:3px">
   <span class="round-header rh-third">
     {% set rnd_type = (rg | first).round.round_type %}
     {% if rnd_type == "revival" %}
@@ -1186,11 +1186,11 @@ window.initBracketConnectors = initBracketConnectors;
     {% endif %}
   </span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
   <div class="bracket-group third-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
-    <div style="font-size:12px;color:#7f8c8d;margin-bottom:8px">
+    <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px">
       グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
     </div>
     {% for slot in slots %}
@@ -1214,12 +1214,12 @@ window.initBracketConnectors = initBracketConnectors;
 {% endif %}
 
 {% if final_groups %}
-<div style="margin-bottom:6px"><span class="round-header rh-final">🏆 決勝</span></div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:20px">
+<div style="margin-bottom:3px"><span class="round-header rh-final">🏆 決勝</span></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in final_groups %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group final-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
-    <div style="font-size:12px;color:#d4a017;margin-bottom:8px;font-weight:bold">
+    <div style="font-size:12px;color:#d4a017;margin-bottom:4px;font-weight:bold">
       決勝{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span>{% endif %}
     </div>
     {% for slot in slots %}
