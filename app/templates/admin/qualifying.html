@@ -111,6 +111,37 @@
 /* 全レース入力完了時：自動集計ボタンを大きく・強い緑グローで最も目立たせる */
 @keyframes m4AutoCalcPulse{0%{box-shadow:0 0 0 0 rgba(39,174,96,.75)}70%{box-shadow:0 0 0 14px rgba(39,174,96,0)}100%{box-shadow:0 0 0 0 rgba(39,174,96,0)}}
 .btn-autocalc-hl{animation:m4AutoCalcPulse 1.1s ease-out infinite;font-size:18px!important;padding:11px 28px!important;font-weight:bold!important;transform:scale(1.03)}
+
+/* ===== スマホ（〜640px）向けのレーススケジュール表 =====
+   横に3コース分を並べたまま、セルの中身を縦積みにする。
+      [順位枠] 名前
+               よみ
+               タイム
+   ⚠ min-width:600px のままだと画面からはみ出して右端のコースが読めない。
+      インラインstyleを上書きするため !important を付けている。 */
+@media (max-width:640px){
+  /* 順位表とエントリー一覧の横並びは、狭い画面では縦に積む。
+     ⚠ 1fr/3fr のままだと右側が数十pxまで潰れ、文字が縦に折り返る。 */
+  .qual-cols{grid-template-columns:1fr !important}
+  .sched-tbl{min-width:0 !important;font-size:13px}
+  .sched-tbl th,.sched-tbl td{padding:4px 3px !important}
+  .sched-tbl th:first-child,.sched-tbl td:first-child{width:22px !important;font-size:11px}
+  /* コース列は残り幅を等分（fixedレイアウトなのでautoで自動配分される） */
+  .sched-tbl th.crs{width:auto !important;font-size:11px}
+  .sched-tbl th.st{width:54px !important;font-size:11px}
+  /* セル内：順位枠は小さく、名前ブロックは縦積み */
+  .sched-tbl .rc{gap:4px !important;align-items:flex-start !important}
+  .sched-tbl .rc-rank{min-width:34px !important;height:34px !important;
+    font-size:12px !important;margin-right:4px !important;padding:0 2px !important}
+  .sched-tbl .rc-body{height:auto !important;flex-direction:column !important;
+    align-items:flex-start !important;gap:0 !important;margin-left:0 !important}
+  .sched-tbl .rc-gap{display:none !important}
+  .sched-tbl .rc-name{font-size:14px !important}
+  .sched-tbl .rc-yomi{font-size:9px !important}
+  .sched-tbl .rc-finish{font-size:14px !important;padding-right:0 !important}
+  /* 状態欄のボタンも詰める */
+  .sched-tbl .m4-apply-btn{font-size:10px !important;padding:3px 5px !important}
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -887,7 +918,7 @@ document.addEventListener('DOMContentLoaded', function(){
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
         {% if ld %}{% set lane = ld[0] %}{% set lc = ["#2980b9","#e74c3c","#27ae60"] %}
         <td>
-          <div style="display:flex;align-items:center;gap:6px">
+          <div class="rc" style="display:flex;align-items:center;gap:6px">
             {% if is_roundrobin or is_heat_roundrobin or is_none_roundrobin %}
             {# 総当たり系：○×ボタンを名前の左に配置 #}
             {% set _win_val = inline_results.get((heat.id, lane.entry_id), {}).get('win') %}
@@ -901,14 +932,14 @@ document.addEventListener('DOMContentLoaded', function(){
                    value="{{ '' if _win_val is none else _win_val }}">
             {# 名前とよみがなを2段に。右端にFINISHタイム（計測反映済みのみ）を右寄せで置く #}
             {% set _finish_rr = inline_results.get((heat.id, lane.entry_id), {}).get('total_time') %}
-            <div style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;margin-left:10px">
-              <div style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
-                <strong style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
-                {% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
+            <div class="rc-body" style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;margin-left:10px">
+              <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
+                <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
+                {% if lane.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
               </div>
-              <span style="flex:1 1 auto"></span>
+              <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish_rr is not none %}
-              <span title="FINISHタイム（ラップタイマー反映）"
+              <span class="rc-finish" title="FINISHタイム（ラップタイマー反映）"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish_rr) }}</span>
               {% endif %}
@@ -920,7 +951,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {% set cur_rank = inline_results.get((heat.id, lane.entry_id), {}).get('rank', 0) %}
             {% set cur_co = inline_results.get((heat.id, lane.entry_id), {}).get('is_co', 0) %}
             {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
-            <div id="rank-cell-{{ heat.id }}-{{ lane.entry_id }}"
+            <div class="rc-rank" id="rank-cell-{{ heat.id }}-{{ lane.entry_id }}"
                  onclick="toggleCO({{ heat.id }}, {{ lane.entry_id }}, {{ n_lanes }}, {{ t.id }})"
                  style="min-width:48px;height:48px;border-radius:5px;font-size:14px;font-weight:bold;cursor:pointer;margin-right:10px;
                         border:2px solid {% if cur_co %}#e74c3c{% elif cur_rank %}{{ rc.get(cur_rank,'#95a5a6') }}{% else %}#dee2e6{% endif %};
@@ -931,15 +962,15 @@ document.addEventListener('DOMContentLoaded', function(){
             </div>
             {# 名前とよみがなを2段に。右端にはFINISHタイム（計測反映済みのみ）を右寄せで置く #}
             {% set _finish = inline_results.get((heat.id, lane.entry_id), {}).get('total_time') %}
-            <div onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
+            <div class="rc-body" onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
                  style="display:flex;align-items:center;gap:8px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0">
-              <div style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
-                <strong style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
-                {% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
+              <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
+                <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
+                {% if lane.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
               </div>
-              <span style="flex:1 1 auto"></span>
+              <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish is not none %}
-              <span title="FINISHタイム（ラップタイマー反映）"
+              <span class="rc-finish" title="FINISHタイム（ラップタイマー反映）"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish) }}</span>
               {% endif %}
@@ -1054,8 +1085,8 @@ document.addEventListener('DOMContentLoaded', function(){
     <div style="background:#e8f4fd;padding:6px 16px;font-size:13px;color:#2980b9;border-bottom:1px solid #c8e0f4;font-weight:bold">
       グループ {{ gno }}
     </div>
-    <table style="min-width:500px;width:100%;table-layout:fixed">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
+    <table class="sched-tbl" style="min-width:500px;width:100%;table-layout:fixed">
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1351,8 +1382,8 @@ document.addEventListener('DOMContentLoaded', function(){
             <span style="font-size:12px;font-weight:normal;opacity:0.8">✓完了</span>
             {% endif %}
           </div>
-          <table style="min-width:600px;width:100%;table-layout:fixed">
-            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
+          <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat) }}
@@ -1362,8 +1393,8 @@ document.addEventListener('DOMContentLoaded', function(){
         </div>
         {% endfor %}
       {% else %}
-        <table style="min-width:600px;width:100%;table-layout:fixed">
-          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
+        <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
           </tbody>
@@ -1371,8 +1402,8 @@ document.addEventListener('DOMContentLoaded', function(){
       {% endif %}
     {% else %}
     {# 通常ヒート・総当たり #}
-    <table style="min-width:600px;width:100%;table-layout:fixed">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
+    <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
       <tbody>
       {% for heat in heats %}
       {{ race_row(heat) }}
@@ -1391,9 +1422,9 @@ document.addEventListener('DOMContentLoaded', function(){
 {% if not is_heat_roundrobin %}
 {# none_roundrobin: 順位表 + 勝敗表を横並び #}
 {% if is_none_roundrobin %}
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+<div class="qual-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
 {% else %}
-<div style="display:grid;grid-template-columns:3fr 1fr;gap:16px">
+<div class="qual-cols" style="display:grid;grid-template-columns:3fr 1fr;gap:16px">
 {% endif %}
   <div class="card">
     <div class="card-header">
@@ -2357,7 +2388,12 @@ async function applyTimingToHeat(heatId, btn, force){
   btn.dataset.origLabel = orig;
   btn.disabled = true; btn.textContent = '…';
   try{
-    const url = '/api/timing/apply/heat/' + heatId + (force ? '?force=true' : '');
+    // PIPで選んだレースがあればそれを、無ければ最新を反映する
+    const picked = (typeof m4pipSelectedRaceId === 'function') ? m4pipSelectedRaceId() : null;
+    const qs = [];
+    if (picked) qs.push('race_id=' + picked);
+    if (force)  qs.push('force=true');
+    const url = '/api/timing/apply/heat/' + heatId + (qs.length ? '?' + qs.join('&') : '');
     const res = await fetch(url, {method:'POST'});
 
     if(res.status === 409){

@@ -2215,7 +2215,12 @@ async function applyTimingToBracket(groupId, btn, force){
   btn.dataset.origLabel = orig;
   btn.disabled = true; btn.textContent = '反映中…';
   try{
-    const url = '/api/timing/apply/bracket/' + groupId + (force ? '?force=true' : '');
+    // PIPで選んだレースがあればそれを、無ければ最新を反映する
+    const picked = (typeof m4pipSelectedRaceId === 'function') ? m4pipSelectedRaceId() : null;
+    const qs = [];
+    if (picked) qs.push('race_id=' + picked);
+    if (force)  qs.push('force=true');
+    const url = '/api/timing/apply/bracket/' + groupId + (qs.length ? '?' + qs.join('&') : '');
     const res = await fetch(url, {method:'POST'});
 
     if(res.status === 409){
