@@ -127,6 +127,7 @@
   .sched-tbl{font-size:13px}
   .sched-tbl th,.sched-tbl td{padding:4px 5px !important}
   .sched-tbl th.st{width:76px !important;font-size:11px}
+  .sched-tbl th.ed{width:36px !important}
   .sched-tbl th.crs{font-size:11px}
   /* セル内：順位枠は小さく、名前ブロックは縦積み */
   .sched-tbl .rc{gap:4px !important;align-items:flex-start !important}
@@ -925,15 +926,9 @@ document.addEventListener('DOMContentLoaded', function(){
                     title="このレースの結果を取り消して未入力に戻します"
                     style="font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">取消</button>
             {% endif %}
-          {% else %}
-            <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
-               style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
-              ✏️
-            </a>
-            {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
+          {% elif IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
             <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
                     title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
-            {% endif %}
           {% endif %}
         </div>
       </td>
@@ -1011,6 +1006,14 @@ document.addEventListener('DOMContentLoaded', function(){
         <td style="color:#bdc3c7;text-align:center">ー</td>
         {% endif %}
       {% endfor %}
+      {# 編集はめったに使わないので右端。結果が入っている行では出さない #}
+      <td class="ed" style="text-align:center">
+        {% if heat.id not in done_heat_ids %}
+        <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
+           title="このレースの内容を編集します"
+           style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">✏️</a>
+        {% endif %}
+      </td>
     </tr>
     {% endmacro %}
 
@@ -1085,7 +1088,8 @@ document.addEventListener('DOMContentLoaded', function(){
       グループ {{ gno }}
     </div>
     <table class="sched-tbl" style="min-width:500px;width:100%;table-layout:fixed">
-      <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
+      <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1382,7 +1386,8 @@ document.addEventListener('DOMContentLoaded', function(){
             {% endif %}
           </div>
           <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-            <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
+            <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat) }}
@@ -1393,7 +1398,8 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endfor %}
       {% else %}
         <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-          <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
+          <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
           </tbody>
@@ -1402,7 +1408,8 @@ document.addEventListener('DOMContentLoaded', function(){
     {% else %}
     {# 通常ヒート・総当たり #}
     <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-      <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
+      <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
       {% for heat in heats %}
       {{ race_row(heat) }}
@@ -1909,6 +1916,9 @@ function markHeatDone(heatId, tid){
               || (cell && cell.parentElement);
   if (!holder) return;
   holder.innerHTML = '';
+  // 結果が入ったら編集（右端）は隠す。サーバー描画時の出し分けと合わせる
+  const ed = document.querySelector(`#row-${heatId} td.ed`);
+  if (ed) ed.innerHTML = '';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = `status-${heatId}`;
