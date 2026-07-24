@@ -126,6 +126,43 @@ async def post_events(
 # 結果表示（admin画面）
 # ---------------------------------------------------------------------------
 
+def _best_items(bests: dict) -> list[dict]:
+    """ベスト辞書 {metric: 記録} を、画面表示用の並び・単位付きリストにする。
+
+    セクターは区間ごとに独立して集計しているため、S1〜S7 を個別に出す。
+    （区間の長さが違うので、まとめて比べると短い区間ばかりが上位になる）
+    記録が無い区間は行ごと出さない（レイアウトによって区間数が違うため）。
+    """
+    metric_view = [
+        ("total",     "トータルタイム",     "秒",  "最速"),
+        ("max_ms",    "MAX SPEED",          "m/s", "最高"),
+        ("lap",       "ラップタイム",       "秒",  "最速"),
+        ("lap_avg",   "ラップ平均SPEED",    "m/s", "最高"),
+    ]
+    for i in range(1, best_svc.MAX_SECTORS + 1):
+        if bests.get(best_svc.sector_metric(i)):
+            metric_view.append(
+                (best_svc.sector_metric(i), f"S{i} セクタータイム", "秒", "最速"))
+        if bests.get(best_svc.sector_speed_metric(i)):
+            metric_view.append(
+                (best_svc.sector_speed_metric(i), f"S{i} 通過SPEED", "m/s", "最高"))
+
+    items = []
+    for key, label, unit, kind in metric_view:
+        b = bests.get(key)
+        items.append({
+            "key": key, "label": label, "unit": unit, "kind": kind,
+            "value": (round(b["value"], 3) if b else None),
+            "race_id": (b.get("race_id") if b else None),
+            "start_lane": (b.get("start_lane") if b else None),
+            "lap": (b.get("lap") if b else None),
+            "sector_no": (b.get("sector_no") if b else None),
+            "created_at": (b.get("created_at") if b else None),
+            "mode": (b.get("mode") if b else None),
+        })
+    return items
+
+
 @router.get("/admin/timing/results", response_class=HTMLResponse)
 async def results_page(
     request: Request,
@@ -297,6 +334,30 @@ async def results_page(
                 })
                 race_row_index += 1
 
+    # --- 当日のベスト（09:00〜翌08:59 の24時間・各項目の1位だけ）---
+    # 深夜まで走る運用があるため、カレンダーの日付ではなく09:00区切りで集計する。
+    # 保持済みの timing_bests はカレンダー日付キーなのでここでは使わず、その場で計算する。
+    ts_from, ts_to, today_label = best_svc.business_day_window()
+    today_bests: list[dict] = []
+    today_race_count = 0
+    try:
+        today_races = await repo.list_races_between_ts(ts_from, ts_to)
+        if today_races:
+            t_sf, t_lf = await _speed_fns_for_races(db, [r["id"] for r in today_races])
+            agg = await best_svc.aggregate_range(
+                db,
+                date_from=ts_from, date_to=ts_to, mode=None,
+                list_fn=lambda a, b: repo.list_races_between_ts(a, b),
+                build_fn=build_race_result,
+                speed_fn=t_sf, lap_avg_fn=t_lf,
+            )
+            today_race_count = agg["race_count"]
+            today_bests = [x for x in _best_items(agg["bests"])
+                           if x["value"] is not None]
+    except Exception:
+        # ベストが出せなくても一覧そのものは表示する
+        today_bests = []
+
     return templates.TemplateResponse(
         "admin/timing_results.html",
         {
@@ -309,6 +370,12 @@ async def results_page(
             "date_options": date_options,   # 絞り込みプルダウン用
             "current_date": date,           # 選択中の日付（Noneなら最新n件）
             "current_limit": limit,
+            # 当日のベスト（09:00区切り）
+            "today_bests": today_bests,
+            "today_label": today_label,
+            "today_from": ts_from,
+            "today_to": ts_to,
+            "today_race_count": today_race_count,
             # テスト用サンプル送信パネル（M4LAPS_SAMPLE=0 で非表示）
             "sample_enabled": sample_svc.SAMPLE_ENABLED,
             "sample_layouts": await TimingLayoutRepository(db).list_layouts(),
@@ -483,37 +550,8 @@ async def bests_page(
             speed_fn=agg_speed_fn, lap_avg_fn=agg_lap_avg_fn,
         )
 
-    # 表示用に整形（順番と単位・説明を固定）
-    # セクターは区間ごとに独立して集計しているため、S1〜S7 を個別に出す。
-    # （区間の長さが違うので、まとめて比べると短い区間ばかりが上位になる）
-    METRIC_VIEW = [
-        ("total",     "トータルタイム",     "秒",  "最速"),
-        ("max_ms",    "MAX SPEED",          "m/s", "最高"),
-        ("lap",       "ラップタイム",       "秒",  "最速"),
-        ("lap_avg",   "ラップ平均SPEED",    "m/s", "最高"),
-    ]
-    for i in range(1, best_svc.MAX_SECTORS + 1):
-        # 記録が無い区間は出さない（レイアウトによって区間数が違うため）
-        if result["bests"].get(best_svc.sector_metric(i)):
-            METRIC_VIEW.append(
-                (best_svc.sector_metric(i), f"S{i} セクタータイム", "秒", "最速"))
-        if result["bests"].get(best_svc.sector_speed_metric(i)):
-            METRIC_VIEW.append(
-                (best_svc.sector_speed_metric(i), f"S{i} 通過SPEED", "m/s", "最高"))
-
-    items = []
-    for key, label, unit, kind in METRIC_VIEW:
-        b = result["bests"].get(key)
-        items.append({
-            "key": key, "label": label, "unit": unit, "kind": kind,
-            "value": (round(b["value"], 3) if b else None),
-            "race_id": (b.get("race_id") if b else None),
-            "start_lane": (b.get("start_lane") if b else None),
-            "lap": (b.get("lap") if b else None),
-            "sector_no": (b.get("sector_no") if b else None),
-            "created_at": (b.get("created_at") if b else None),
-            "mode": (b.get("mode") if b else None),
-        })
+    # 表示用に整形（順番と単位・説明は _best_items に集約）
+    items = _best_items(result["bests"])
 
     return templates.TemplateResponse(
         "admin/timing_bests.html",
@@ -533,6 +571,7 @@ async def bests_page(
 async def apply_latest_to_heat(
     heat_id: int,
     race_id: int | None = None,
+    force: bool = False,
     db: aiosqlite.Connection = Depends(get_db),
     _guard: bool = Depends(require_m4laps),
 ):
@@ -541,11 +580,54 @@ async def apply_latest_to_heat(
     race_id を省略した場合は「記録のある最新レース」を使う。
     運用上、走り終わった直後にその組のカードで押す想定のため、
     どのレースかを選ばせず常に最新を採る。
+
+    通常は確認なしで反映する。ただし次のときは 409 を返し、
+    画面側で確認を取ってから force=true で再送してもらう（決勝と同じ流儀）。
+      - そのヒートに既に結果が入っている（上書きになる）
+      - 同じ計測結果を既に別のヒートへ反映している（重複反映）
     """
     repo = TimingRaceRepository(db)
     race, result = await _pick_race(db, repo, race_id)
     if result is None:
         raise HTTPException(status_code=404, detail="反映できる計測結果がありません")
+
+    if not force:
+        warnings = []
+        # ① このヒートに既に結果があるか
+        async with db.execute(
+            "SELECT 1 FROM heat_results hr JOIN heat_lanes hl ON hl.id = hr.heat_lane_id "
+            "WHERE hl.heat_id = ? LIMIT 1",
+            (heat_id,),
+        ) as cur:
+            if await cur.fetchone():
+                warnings.append({
+                    "code": "already_has_result",
+                    "message": "このヒートには既に結果が入力されています。上書きされます。",
+                })
+        # ② この計測結果を既に別のヒートへ反映していないか
+        keys = race.keys() if hasattr(race, "keys") else []
+        prev = race["heat_id"] if "heat_id" in keys else None
+        if prev is not None and int(prev) != int(heat_id):
+            async with db.execute(
+                "SELECT heat_no, round_no FROM heats WHERE id = ?", (prev,)
+            ) as cur:
+                h = await cur.fetchone()
+            if h and h["round_no"]:
+                hname = f"予選{h['round_no']}回目の{h['heat_no']}レース目"
+            elif h:
+                hname = f"{h['heat_no']}レース目"
+            else:
+                hname = f"ヒートID {prev}"
+            warnings.append({
+                "code": "already_applied_to_other",
+                "message": f"この計測結果は既に{hname}へ反映済みです。"
+                           f"同じ結果を二重に使うことになります。",
+            })
+        if warnings:
+            return JSONResponse(
+                {"ok": False, "reason": "warning", "warnings": warnings},
+                status_code=409,
+            )
 
     ranking = _ranking_payload(result)
     res = await bridge_svc.apply_race_to_heat(
@@ -694,6 +776,7 @@ def _ranking_payload(result) -> list[dict]:
 @router.get("/api/timing/pip/latest")
 async def pip_latest(
     limit: int = 5,
+    mode: str = "race",
     db: aiosqlite.Connection = Depends(get_db),
     _guard: bool = Depends(require_m4laps),
 ):
@@ -704,15 +787,24 @@ async def pip_latest(
 
     GWから送られてきた記録をそのまま見せるだけ。まだ誰のものかは紐づけない。
     （組み合わせ情報はGWへ送らない方針のため、突き合わせはアプリ側で後から行う）
+
+    mode: "race"（既定・緑ランプありのレースのみ）/ "free"（走行式のみ）/ "all"
+      PIPは進行中のレースを見るための小窓なので、既定ではフリー走行を出さない。
+      練習の記録が混ざると、どれが今のヒートの結果か分からなくなるため。
     """
     repo = TimingRaceRepository(db)
     want = max(1, min(limit, 20))
-    # 記録なし（レイアウト未設定・組み立て不能）のレースは表示しないため、
+    mode = mode if mode in ("race", "free", "all") else "race"
+    # 記録なし（レイアウト未設定・組み立て不能）やモード違いのレースは表示しないため、
     # 多めに取得してから絞り込む。古い壊れたデータがPIPを埋めるのを防ぐ。
-    races = await repo.list_races(limit=min(want * 5 + 10, 100))
+    races = await repo.list_races(limit=min(want * 10 + 20, 200))
     out = []
     for r in races:
         rid = r["id"]
+        # レース(F1式)は green_t_us あり、フリー(走行式)は None で見分ける
+        is_race = r["green_t_us"] is not None
+        if (mode == "race" and not is_race) or (mode == "free" and is_race):
+            continue
         try:
             race, result = await build_race_result(db, rid)
         except Exception:

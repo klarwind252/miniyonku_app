@@ -83,6 +83,30 @@
 {% endif %}
 
 <style>
+  /* 当日のベスト（カード上部の帯） */
+  .tb-strip{border:1px solid #ede0ff;background:#faf6ff;border-radius:6px;
+    padding:10px 12px;margin-bottom:16px}
+  .tb-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .tb-title{font-size:13px;font-weight:bold;color:#6b21a8}
+  .tb-range{font-size:11px;color:#9b87b5;font-variant-numeric:tabular-nums}
+  .tb-count{font-size:11px;color:#9b87b5}
+  .tb-list{display:flex;gap:8px;flex-wrap:wrap}
+  .tb-item{background:#fff;border:1px solid #ece4f7;border-radius:5px;
+    padding:6px 10px;min-width:118px}
+  .tb-label{font-size:10px;color:#95a5a6;letter-spacing:.3px;white-space:nowrap}
+  .tb-value{font-size:19px;font-weight:bold;color:#6b21a8;
+    font-variant-numeric:tabular-nums;letter-spacing:-.4px;line-height:1.25}
+  .tb-unit{font-size:10px;color:#bdc3c7;margin-left:2px;font-weight:normal}
+  .tb-where{font-size:11px;color:#7f8c8d;white-space:nowrap}
+  .tb-time{margin-left:4px;font-variant-numeric:tabular-nums}
+  .tb-none{margin:0;color:#9b87b5;font-size:12px}
+  .tb-lane{display:inline-block;min-width:18px;padding:0 5px;border-radius:3px;
+    font-size:10px;font-weight:bold;color:#fff;text-align:center;margin-right:3px}
+  /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
+  .tb-lane.lane-1{background:#2980b9} .tb-lane.lane-2{background:#e74c3c}
+  .tb-lane.lane-3{background:#f1c40f;color:#4a3b00}
+  .tb-lane.lane-4{background:#27ae60} .tb-lane.lane-5{background:#95a5a6}
+
   .tr-table{width:auto;border-collapse:collapse;font-size:15px;table-layout:fixed}
   .tr-table th{
     padding:5px 7px;text-align:center;font-size:11px;font-weight:bold;
@@ -170,6 +194,35 @@
     </form>
   </div>
   <div class="card-body">
+    {# --- 当日のベスト（09:00〜翌08:59の24時間・各項目の1位だけ）--- #}
+    <div class="tb-strip">
+      <div class="tb-head">
+        <span class="tb-title">🏆 当日のベスト</span>
+        <span class="tb-range">{{ today_from[5:16] }} 〜 {{ today_to[5:16] }}（09:00区切り）</span>
+        <span style="flex:1"></span>
+        <span class="tb-count">{{ today_race_count }} レース</span>
+      </div>
+      {% if today_bests %}
+      <div class="tb-list">
+        {% for it in today_bests %}
+        <div class="tb-item">
+          <div class="tb-label">{{ it.label }}</div>
+          <div class="tb-value">
+            {% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}{% endif %}<span class="tb-unit">{{ it.unit }}</span>
+          </div>
+          <div class="tb-where">
+            {% if it.start_lane %}<span class="tb-lane lane-{{ ((it.start_lane - 1) % 5) + 1 }}">{{ it.start_lane }}</span>{% endif %}
+            {% if it.lap %}Lap{{ it.lap }}{% endif %}
+            {% if it.created_at %}<span class="tb-time">{{ it.created_at[11:16] }}</span>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="tb-none">当日の計測記録がまだありません。</p>
+      {% endif %}
+    </div>
+
     {% if rows %}
     <div class="tr-wrap">
       <table class="tr-table">

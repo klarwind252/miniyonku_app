@@ -225,6 +225,21 @@ class TimingRaceRepository:
         ) as cur:
             return await cur.fetchall()
 
+    async def list_races_between_ts(self, ts_from: str, ts_to: str, limit: int = 2000):
+        """作成日時の範囲（両端を含む）でレースを古い順に返す。
+
+        ts_from / ts_to は created_at と同じ 'YYYY-MM-DD HH:MM:SS' 形式。
+        「当日」を 09:00〜翌08:59 の24時間で扱うため、日付だけでなく時刻まで見る。
+        固定長・ゼロ埋めの文字列なので、辞書順の比較で日時の比較になる。
+        """
+        async with self.db.execute(
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
+            "FROM timing_races WHERE created_at >= ? AND created_at <= ? "
+            "ORDER BY id ASC LIMIT ?",
+            (ts_from, ts_to, limit),
+        ) as cur:
+            return await cur.fetchall()
+
     async def delete_race(self, race_id: int) -> int:
         """レースを1件削除する（通過イベントも一緒に消える）。
 

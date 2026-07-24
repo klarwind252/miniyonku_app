@@ -21,6 +21,31 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
+# 「当日」の切り替わり時刻。09:00 に始まり、翌 08:59:59 に終わる24時間を1日とする。
+# ⚠ 深夜まで走る運用（ナイトレース）では、0時をまたいだ記録も同じ日の記録として
+#    扱いたいため、カレンダーの日付ではなくこの区切りを使う。
+DAY_START_HOUR = 9
+
+
+def business_day_window(now: datetime | None = None) -> tuple[str, str, str]:
+    """now が属する「当日」の範囲を返す（純粋関数）。
+
+    戻り値: (開始, 終了, 当日ラベル)
+      開始・終了 … 'YYYY-MM-DD HH:MM:SS'（created_at と同じ形式・両端を含む）
+      当日ラベル … 'YYYY-MM-DD'（09:00を迎えた側の日付）
+
+    例) 7/26 02:30 → ('2026-07-25 09:00:00', '2026-07-26 08:59:59', '2026-07-25')
+    """
+    now = now or datetime.now()
+    start = now.replace(hour=DAY_START_HOUR, minute=0, second=0, microsecond=0)
+    if now < start:                      # 09:00前は前日のセッションの続き
+        start -= timedelta(days=1)
+    end = start + timedelta(days=1) - timedelta(seconds=1)
+    fmt = "%Y-%m-%d %H:%M:%S"
+    return start.strftime(fmt), end.strftime(fmt), start.strftime("%Y-%m-%d")
+
 # 指標ごとの「良い方向」。True=小さいほど良い（タイム系）
 # セクターは **区間ごとに独立** して3傑を出す。
 # 区間の長さが違うため、全セクターをまとめて比べると短い区間ばかりが上位を占め、
