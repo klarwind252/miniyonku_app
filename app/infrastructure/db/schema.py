@@ -153,6 +153,7 @@ async def init_db(db_path: str = None):
                     heat_lane_id  INTEGER NOT NULL UNIQUE,
                     lap_count     INTEGER DEFAULT 0,
                     best_time     REAL,
+                    total_time    REAL,
                     rank          INTEGER,
                     points        INTEGER DEFAULT 0,
                     win           INTEGER DEFAULT NULL,
@@ -169,6 +170,7 @@ async def init_db(db_path: str = None):
                     heat_lane_id  INTEGER NOT NULL UNIQUE,
                     lap_count     INTEGER DEFAULT 0,
                     best_time     REAL,
+                    total_time    REAL,
                     rank          INTEGER,
                     points        INTEGER DEFAULT 0,
                     win           INTEGER DEFAULT NULL,
@@ -177,6 +179,14 @@ async def init_db(db_path: str = None):
             """)
             await db.execute("DROP TABLE heat_results_old")
             print("[DB] migration: heat_results schema updated")
+
+        # heat_results.total_time カラム追加（M4LAPS反映時のFINISHタイム＝合計タイム）
+        # ⚠ 手入力では埋まらない。計測結果を反映したときだけ入る（未反映は NULL）。
+        async with db.execute("PRAGMA table_info(heat_results)") as cur:
+            hr_cols2 = [r["name"] for r in await cur.fetchall()]
+        if hr_cols2 and "total_time" not in hr_cols2:
+            await db.execute("ALTER TABLE heat_results ADD COLUMN total_time REAL")
+            print("[DB] migration: heat_results.total_time added")
 
         # entries.seeded カラム
         async with db.execute("PRAGMA table_info(entries)") as cur:

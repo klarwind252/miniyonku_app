@@ -858,14 +858,14 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
 
             hr_advanced_by_heat[rno] = slots
 
-    # インライン表示用：(heat_id, entry_id) -> {win, best_time, lap_count}
+    # インライン表示用：(heat_id, entry_id) -> {win, best_time, total_time, lap_count}
     inline_results = {}
     if heats:
         hids = [h["id"] for h in heats]
         ph = ",".join("?" * len(hids))
         async with db.execute(
             f"""SELECT hl.heat_id, hl.entry_id, hl.id as lane_id,
-                       hr.win, hr.best_time, hr.lap_count, hr.rank, hr.points,
+                       hr.win, hr.best_time, hr.total_time, hr.lap_count, hr.rank, hr.points,
                        COALESCE(hr.is_co, 0) as is_co
                 FROM heat_lanes hl
                 JOIN heats h ON h.id=hl.heat_id

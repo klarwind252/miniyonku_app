@@ -94,6 +94,7 @@ def build_result_rows(matched: list[dict], calc_points=default_calc_points) -> l
     - win は（振り直した）1位のみ 1
     - points は既存の配点ルール
     - best_time はベストラップ（秒）。無ければ None
+    - total_time はFINISHタイム（合計・秒）。無ければ None
     - lap_count は完走周回数
     """
     # 計測順位の昇順に並べ、その並びで1位から振り直す
@@ -104,6 +105,9 @@ def build_result_rows(matched: list[dict], calc_points=default_calc_points) -> l
             "lane_id": m["lane_id"],
             "win": 1 if i == 1 else 0,
             "best_time": m.get("best_time"),
+            # FINISHタイム（合計）。予選画面に出すため保存する。
+            # 手入力では埋まらない項目なので、未反映のヒートは NULL のまま。
+            "total_time": m.get("total_time"),
             "lap_count": int(m.get("completed_laps") or 0),
             "rank": i,
             "points": calc_points(i),
@@ -225,10 +229,10 @@ async def apply_race_to_heat(db, *, race_id: int, heat_id: int,
         )
         await db.execute(
             "INSERT INTO heat_results "
-            "(heat_lane_id, win, best_time, lap_count, rank, points, is_co) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (row["lane_id"], row["win"], row["best_time"], row["lap_count"],
-             row["rank"], row["points"], row["is_co"]),
+            "(heat_lane_id, win, best_time, total_time, lap_count, rank, points, is_co) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (row["lane_id"], row["win"], row["best_time"], row.get("total_time"),
+             row["lap_count"], row["rank"], row["points"], row["is_co"]),
         )
 
     # 4) 紐づけを記録

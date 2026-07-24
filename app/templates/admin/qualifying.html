@@ -916,9 +916,20 @@ document.addEventListener('DOMContentLoaded', function(){
                         display:flex;align-items:center;justify-content:center;padding:0 6px;user-select:none">
               {% if cur_co %}CO{% elif cur_rank %}{{ cur_rank }}位{% else %}—{% endif %}
             </div>
+            {# 名前とよみがなを2段に。右端にはFINISHタイム（計測反映済みのみ）を右寄せで置く #}
+            {% set _finish = inline_results.get((heat.id, lane.entry_id), {}).get('total_time') %}
             <div onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
-                 style="display:flex;align-items:center;gap:4px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0">
-              <strong style="font-size:18px">{{ lane.name }}</strong>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ lane.yomi }}</span>{% endif %}
+                 style="display:flex;align-items:center;gap:8px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0">
+              <div style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
+                <strong style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
+                {% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
+              </div>
+              <span style="flex:1 1 auto"></span>
+              {% if _finish is not none %}
+              <span title="FINISHタイム（ラップタイマー反映）"
+                    style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
+                           letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish) }}</span>
+              {% endif %}
             </div>
             {% if t.qualifying_type == 'order' and heat.id not in done_heat_ids and order_status != 'closed' and not is_finalized %}
             <button type="button" title="このレーサーの走行受付を取り消す"
