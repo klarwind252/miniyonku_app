@@ -113,22 +113,21 @@
 .btn-autocalc-hl{animation:m4AutoCalcPulse 1.1s ease-out infinite;font-size:18px!important;padding:11px 28px!important;font-weight:bold!important;transform:scale(1.03)}
 
 /* ===== スマホ（〜640px）向けのレーススケジュール表 =====
-   横に3コース分を並べたまま、セルの中身を縦積みにする。
+   セルの中身は縦積みにする。
       [順位枠] 名前
                よみ
                タイム
-   ⚠ min-width:600px のままだと画面からはみ出して右端のコースが読めない。
-      インラインstyleを上書きするため !important を付けている。 */
+   ⚠ 幅は詰めない。画面に押し込めると名前が読めなくなるため、
+      最低幅(min-width:600px)を保ったまま横スクロールさせる。
+      操作列（取消／反映）は左端に置いてあるので、スクロールしなくても押せる。 */
 @media (max-width:640px){
   /* 順位表とエントリー一覧の横並びは、狭い画面では縦に積む。
      ⚠ 1fr/3fr のままだと右側が数十pxまで潰れ、文字が縦に折り返る。 */
   .qual-cols{grid-template-columns:1fr !important}
-  .sched-tbl{min-width:0 !important;font-size:13px}
-  .sched-tbl th,.sched-tbl td{padding:4px 3px !important}
-  .sched-tbl th:first-child,.sched-tbl td:first-child{width:22px !important;font-size:11px}
-  /* コース列は残り幅を等分（fixedレイアウトなのでautoで自動配分される） */
-  .sched-tbl th.crs{width:auto !important;font-size:11px}
-  .sched-tbl th.st{width:54px !important;font-size:11px}
+  .sched-tbl{font-size:13px}
+  .sched-tbl th,.sched-tbl td{padding:4px 5px !important}
+  .sched-tbl th.st{width:76px !important;font-size:11px}
+  .sched-tbl th.crs{font-size:11px}
   /* セル内：順位枠は小さく、名前ブロックは縦積み */
   .sched-tbl .rc{gap:4px !important;align-items:flex-start !important}
   .sched-tbl .rc-rank{min-width:34px !important;height:34px !important;
@@ -140,7 +139,7 @@
   .sched-tbl .rc-yomi{font-size:9px !important}
   .sched-tbl .rc-finish{font-size:14px !important;padding-right:0 !important}
   /* 状態欄のボタンも詰める */
-  .sched-tbl .m4-apply-btn{font-size:10px !important;padding:3px 5px !important}
+  .sched-tbl .m4-apply-btn{font-size:11px !important;padding:4px 6px !important}
 }
 </style>
 {% endblock %}
@@ -913,6 +912,31 @@ document.addEventListener('DOMContentLoaded', function(){
     {% macro race_row(heat) %}
     {% set lanes = heat_lanes_map.get(heat.id, []) %}
     <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
+      {# 状態（取消／反映）は左端。結果の有無は順位枠とFINISHで分かるので状態バッジは置かない。
+         結果ありのときは「反映」を隠して「取消」だけを出す（誤って上書きしないため）。 #}
+      <td class="st">
+        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-start">
+          {% if heat.id in done_heat_ids %}
+            {% if is_finalized %}
+            <span style="font-size:11px;color:#95a5a6">確定済</span>
+            {% else %}
+            <button type="button" id="status-{{ heat.id }}"
+                    onclick="resetRace({{ heat.id }}, {{ t.id }})"
+                    title="このレースの結果を取り消して未入力に戻します"
+                    style="font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">取消</button>
+            {% endif %}
+          {% else %}
+            <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
+               style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
+              ✏️
+            </a>
+            {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
+            <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
+                    title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
+            {% endif %}
+          {% endif %}
+        </div>
+      </td>
       <td style="color:#636e72;font-weight:bold">{{ heat.heat_no }}</td>
       {% for col in course_cols %}
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
@@ -987,31 +1011,6 @@ document.addEventListener('DOMContentLoaded', function(){
         <td style="color:#bdc3c7;text-align:center">ー</td>
         {% endif %}
       {% endfor %}
-      <td>
-        {# 結果が入っているかは行の見た目（順位・FINISH）で分かるので、状態バッジは置かない。
-           結果ありのときは「反映」を隠して「取り消し」だけを出す（誤って上書きしないため）。 #}
-        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end">
-          {% if heat.id in done_heat_ids %}
-            {% if is_finalized %}
-            <span style="font-size:11px;color:#95a5a6">確定済</span>
-            {% else %}
-            <button type="button" id="status-{{ heat.id }}"
-                    onclick="resetRace({{ heat.id }}, {{ t.id }})"
-                    title="このレースの結果を取り消して未入力に戻します"
-                    style="font-size:11px;padding:3px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">↩ 取り消し</button>
-            {% endif %}
-          {% else %}
-            <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
-               style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
-              ✏️
-            </a>
-            {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
-            <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
-                    title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
-            {% endif %}
-          {% endif %}
-        </div>
-      </td>
     </tr>
     {% endmacro %}
 
@@ -1086,7 +1085,7 @@ document.addEventListener('DOMContentLoaded', function(){
       グループ {{ gno }}
     </div>
     <table class="sched-tbl" style="min-width:500px;width:100%;table-layout:fixed">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
+      <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1383,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {% endif %}
           </div>
           <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
+            <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat) }}
@@ -1394,7 +1393,7 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endfor %}
       {% else %}
         <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
+          <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
           </tbody>
@@ -1403,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {% else %}
     {# 通常ヒート・総当たり #}
     <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th class="crs" style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="st" style="width:92px">状態</th></tr></thead>
+      <thead><tr>{# 状態（取消/反映）は左端に置く。狭い画面で横スクロールしても操作列だけは常に見える #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 120px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}</tr></thead>
       <tbody>
       {% for heat in heats %}
       {{ race_row(heat) }}
@@ -1900,13 +1899,13 @@ function showSchedRound(rno) {
   });
 }
 
-// 結果が入ったヒートの状態欄を「↩ 取り消し」に差し替える。
+// 結果が入ったヒートの状態欄を「取消」ボタンに差し替える。
 // ⚠ 状態バッジを廃止したので、保存後にその場で書き換えないと
 //    「⏱ 反映」が残ったままになり、二重反映の元になる。
 function markHeatDone(heatId, tid){
   const cell = document.getElementById(`status-${heatId}`);
   if (cell && cell.tagName === 'BUTTON') return;   // 既に取り消しボタン
-  const holder = document.querySelector(`#row-${heatId} td:last-child > div`)
+  const holder = document.querySelector(`#row-${heatId} td.st > div`)
               || (cell && cell.parentElement);
   if (!holder) return;
   holder.innerHTML = '';
@@ -1914,8 +1913,8 @@ function markHeatDone(heatId, tid){
   btn.type = 'button';
   btn.id = `status-${heatId}`;
   btn.title = 'このレースの結果を取り消して未入力に戻します';
-  btn.textContent = '↩ 取り消し';
-  btn.style.cssText = 'font-size:11px;padding:3px 8px;border:1px solid #f5b7b1;'
+  btn.textContent = '取消';
+  btn.style.cssText = 'font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;'
     + 'border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap';
   btn.onclick = function(){ resetRace(heatId, tid); };
   holder.appendChild(btn);
