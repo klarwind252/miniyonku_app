@@ -35,7 +35,9 @@ from app.domain.rotation import (
 SAMPLE_ENABLED = os.environ.get("M4LAPS_SAMPLE", "1") != "0"
 
 # 生成の既定値
-DEFAULT_LAP_MS = 7000        # 1周の目安（ms）。ミニ四駆3レーンの実測レンジに合わせた
+TARGET_TOTAL_S = 35.0        # FINISHタイムの目安（秒）
+TOTAL_JITTER_S = 5.0         # 上のブレ幅（±）。1台ずつ独立に引く
+SECTOR_MAX_S = 2.0           # 1区間の上限（秒）。収まらない構成のときは総合タイムを優先する
 DEFAULT_BEAM_GAP_MM = 20.0   # ビーム間隔の仮定値（mm）。t_us_b の打刻に使う
 SPEED_RANGE_MS = (5.0, 9.0)  # 通過速度の生成レンジ（m/s）
 
@@ -59,13 +61,56 @@ def _gate_order(course):
     return gates[sg_pos:] + gates[:sg_pos]
 
 
+def split_evenly(total: float, n: int, rnd, spread: float = 0.15,
+                 cap: float | None = None) -> list[float]:
+    """total を n 個に、ばらつきを付けて分ける（合計は必ず total）。
+
+    cap を指定し、かつ total/n <= cap なら、各値が cap を超えないように整える。
+    total/n > cap のときは物理的に無理なので、そのまま均等寄りに分ける。
+    """
+    if n <= 0:
+        return []
+    w = [rnd.uniform(1.0 - spread, 1.0 + spread) for _ in range(n)]
+    sw = sum(w)
+    out = [total * x / sw for x in w]
+
+    if cap is not None and total / n <= cap:
+        # capを超えたぶんを、余裕のある区間へ配り直す（最大数回で収束する）
+        for _ in range(20):
+            over = [i for i, v in enumerate(out) if v > cap]
+            if not over:
+                break
+            excess = sum(out[i] - cap for i in over)
+            for i in over:
+                out[i] = cap
+            room = [i for i in range(n) if out[i] < cap]
+            if not room:
+                break
+            free = sum(cap - out[i] for i in room)
+            for i in room:
+                out[i] += excess * (cap - out[i]) / free
+    return out
+
+
+def estimate_sector_s(layout_elems: list[LayoutElement], target_laps: int,
+                      total_s: float = TARGET_TOTAL_S) -> tuple[int, float]:
+    """(1周あたりの区間数, 1区間の平均タイム見込み) を返す。
+
+    区間数が少ないと、総合タイムを35秒前後にしたときに1区間が長くなる。
+    画面で注意を出すために使う。
+    """
+    course = build_course(layout_elems)
+    n_sections = max(1, len(course.gates))
+    return n_sections, total_s / max(1, target_laps) / n_sections
+
+
 def build_sample_events(
     layout_elems: list[LayoutElement],
     target_laps: int,
     lanes: int = LANES,
     mode: str = "free",
     base_t_us: int | None = None,
-    lap_ms: int = DEFAULT_LAP_MS,
+    total_s: float = TARGET_TOTAL_S,
     beam_gap_by_node: dict | None = None,
     seed: int | None = None,
 ) -> tuple[int | None, list[dict]]:
@@ -76,6 +121,14 @@ def build_sample_events(
       {device_id, src, src_boot_id, seq, lane, t_us, t_us_b, quality}
 
     mode: "race"（F1式・緑ランプあり）/ "free"（走行式・緑なし）
+
+    タイムの決め方:
+      - 各マシンのFINISHタイムを total_s ± TOTAL_JITTER_S から**独立に**引く。
+        ⚠ 速さの係数を1つ引いて全周に掛ける作り方だと、レーン間の差が
+           そのまま順位になり、見た目の並びが偏りやすい。1台ずつ独立に
+           目標タイムを引けば、順位は毎回まんべんなく入れ替わる。
+      - その目標タイムを周に分け、さらに周を区間へ分ける。
+        区間は SECTOR_MAX_S 以内に収める（収まらない構成なら総合タイムを優先）。
     """
     rnd = random.Random(seed)
     course = build_course(layout_elems)
@@ -89,6 +142,7 @@ def build_sample_events(
         raise ValueError(f"レーン数は1〜{LANES}です")
 
     n_gates = len(gates)
+    n_sections = n_gates          # 1周の区間数（S/G→SQ1…SQn→S/G）
     sg = gates[0]
     rot_total = course.rot_total
     gaps = beam_gap_by_node or {}
@@ -120,33 +174,39 @@ def build_sample_events(
         })
 
     for start_lane in range(1, lanes + 1):
-        # マシンごとの実力差（速い子・遅い子）
-        skill = rnd.uniform(0.93, 1.10)
+        # このマシンのFINISHタイム（1台ずつ独立に引く＝順位は毎回ランダム）
+        target = rnd.uniform(total_s - TOTAL_JITTER_S, total_s + TOTAL_JITTER_S)
 
         # スタート（S/G 0回目の通過）
         if mode == "race":
-            # 緑からの反応＋助走
-            t_cross0 = base + int(rnd.uniform(0.10, 0.45) * 1_000_000)
+            # 緑からの反応＋助走。FINISHは緑からの経過なので、この分を差し引く
+            react = rnd.uniform(0.10, 0.45)
+            t_cross0 = base + int(react * 1_000_000)
+            run_s = max(target - react, 1.0)
         else:
-            # 走行式は思い思いのタイミングでS/Gを通る
+            # 走行式は思い思いのタイミングでS/Gを通る（FINISHはS/G間の合計）
             t_cross0 = base + int(rnd.uniform(0.0, 1.5) * 1_000_000)
+            run_s = target
         _emit(sg, expected_sg_lane(start_lane, 0, rot_total, lanes), t_cross0)
 
+        lap_times = split_evenly(run_s, target_laps, rnd, spread=0.06)
         t_lap_start = t_cross0
         for lap in range(1, target_laps + 1):
-            lap_us = int(lap_ms * 1000 * skill * rnd.uniform(0.97, 1.03))
+            lap_us = int(lap_times[lap - 1] * 1_000_000)
+            secs = split_evenly(lap_times[lap - 1], n_sections, rnd,
+                                spread=0.18, cap=SECTOR_MAX_S)
 
-            # 周回の途中にあるセクションゲート（S/Gからの位置で等分＋ゆらぎ）
+            # 周の途中にあるセクションゲート（区間タイムを積み上げて打刻）
+            acc = 0.0
             for i, g in enumerate(gates[1:], start=1):
-                frac = i / n_gates + rnd.uniform(-0.03, 0.03)
-                frac = min(max(frac, 0.05), 0.95)
+                acc += secs[i - 1]
                 _emit(
                     g,
                     expected_lane(start_lane, lap, g.rot_to_gate, rot_total, lanes),
-                    t_lap_start + int(lap_us * frac),
+                    t_lap_start + int(acc * 1_000_000),
                 )
 
-            # 周回完了（S/G lap回目の通過）
+            # 周回完了（S/G lap回目の通過）。端数はここで吸収する
             t_lap_start += lap_us
             _emit(sg, expected_sg_lane(start_lane, lap, rot_total, lanes), t_lap_start)
 

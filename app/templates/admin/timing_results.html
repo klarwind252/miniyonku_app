@@ -466,6 +466,14 @@ async function sendSample(){
       const d = await res.json();
       msg.style.color = '#27ae60';
       msg.textContent = '投入しました（レースID: ' + d.race_ids.join(', ') + '）。表示を更新します…';
+      if(d.note){
+        // 区間タイムが条件に収まらないなど、生成時の制約は黙って隠さず伝える
+        msg.style.color = '#b9770e';
+        msg.textContent += '\n※ ' + d.note;
+        msg.style.whiteSpace = 'pre-line';
+        setTimeout(function(){ location.reload(); }, 3500);
+        return;
+      }
       setTimeout(function(){ location.reload(); }, 700);
       return;
     }

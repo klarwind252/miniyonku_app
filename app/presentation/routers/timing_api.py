@@ -490,7 +490,7 @@ async def create_sample_race(
                 lanes=lanes,
                 mode=mode,
                 # レース同士が時間的に重ならないよう、1本ぶんずつ後ろにずらす
-                base_t_us=base + i * (laps + 2) * sample_svc.DEFAULT_LAP_MS * 1000,
+                base_t_us=base + int(i * (sample_svc.TARGET_TOTAL_S + 10) * 1_000_000),
                 beam_gap_by_node=gaps,
             )
         except ValueError as e:
@@ -515,8 +515,20 @@ async def create_sample_race(
             pass
         race_ids.append(race_id)
 
+    # 区間数が少ないと、FINISHを35秒前後にしたとき1区間が2秒に収まらない。
+    # 黙って条件を外すのではなく、画面に理由を出す。
+    n_sections, est = sample_svc.estimate_sector_s(layout_elems, laps)
+    note = None
+    if est > sample_svc.SECTOR_MAX_S:
+        need = -(-int(sample_svc.TARGET_TOTAL_S)
+                 // int(n_sections * sample_svc.SECTOR_MAX_S))
+        note = (f"1周{n_sections}区間×{laps}周では、FINISH約"
+                f"{sample_svc.TARGET_TOTAL_S:.0f}秒に対して1区間が約{est:.1f}秒になります"
+                f"（2秒以内にするには{need}周以上、またはセクションゲートの追加が必要）。")
+
     return JSONResponse({"ok": True, "race_ids": race_ids,
-                         "laps": laps, "lanes": lanes, "mode": mode})
+                         "laps": laps, "lanes": lanes, "mode": mode,
+                         "note": note})
 
 
 @router.get("/admin/timing/bests", response_class=HTMLResponse)
