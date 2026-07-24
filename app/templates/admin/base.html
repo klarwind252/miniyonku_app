@@ -1238,6 +1238,7 @@ function _showPubToast(msg) {
   // ⚠ PIPは3秒ごとに描き直すので、DOMではなくこの変数を正とする。
   var selectedRaceId = null;
   var lastRaceIds = [];
+  var lastTopId = null;   // 直前の描画時点での最新レースID（新着の検知に使う）
 
   // 予選・決勝画面の「反映」ボタンから参照する（未選択なら null＝最新）
   window.m4pipSelectedRaceId = function(){ return selectedRaceId; };
@@ -1265,6 +1266,11 @@ function _showPubToast(msg) {
       return;
     }
     lastRaceIds = races.map(function(x){ return x.race_id; });
+    // 新しい結果が届いたら選択を解除して最新へ戻す。
+    // ⚠ 走り終えた直後に古いレースが選ばれたままだと、誤ってそれを反映してしまう。
+    var topId = races[0].race_id;
+    if(lastTopId !== null && topId !== lastTopId){ selectedRaceId = null; }
+    lastTopId = topId;
     // 選んでいたレースが一覧から消えたら（削除・古くなった）最新に戻す
     if(selectedRaceId !== null && lastRaceIds.indexOf(selectedRaceId) < 0){
       selectedRaceId = null;
