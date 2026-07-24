@@ -1032,11 +1032,13 @@ function _showPubToast(msg) {
     padding:0 6px; background:#2c3e50; color:#fff; user-select:none;
     cursor:move;   /* ヘッダをつまんで移動できる */
     touch-action:none;
-    /* 帯を最小の高さにする。文字サイズは変えず、余白と行間だけを詰める */
-    line-height:1.1;
-    min-height:0;
+    /* 帯の高さを固定して余白をなくす。文字サイズ(11px)は変えない。
+       ⚠ 高さが縮まなかった原因は絵文字(⏱)。絵文字は英数字より字面が高く、
+          line-height 指定だけでは行ボックスが広がってしまうため、
+          height と overflow で行ボックスごと抑え込む。 */
+    height:16px; line-height:16px; overflow:hidden;
   }
-  #m4pip .pip-title{font-weight:bold; font-size:11px; line-height:1.1}
+  #m4pip .pip-title{font-weight:bold; font-size:11px; line-height:16px; white-space:nowrap}
   #m4pip .pip-dot{
     width:7px; height:7px; border-radius:50%; background:#7f8c8d; flex-shrink:0;
     transition:background .3s;
@@ -1086,7 +1088,7 @@ function _showPubToast(msg) {
   #m4pip th.pip-lane{text-align:center}
   #m4pip th.pip-total, #m4pip th.pip-gap{text-align:right}
   #m4pip .pip-empty{padding:14px 8px; text-align:center; color:#95a5a6; font-size:12px}
-  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:11px; line-height:1.1; padding:0 2px; display:block}
+  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:11px; line-height:16px; height:16px; padding:0 2px; display:block}
   /* スマホは今回対象外（別途対応予定） */
   @media(max-width:700px){ #m4pip{display:none} }
   @media print{ #m4pip{display:none} }

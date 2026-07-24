@@ -325,7 +325,12 @@
       <span class="r2" style="padding:1px 6px">2位</span>
       <span class="r3" style="padding:1px 6px">3位</span>
       （トータル・最高速・ラップ・ラップ平均速度・セクター・セクター速度の6項目それぞれ）
-      速度・Av.（周平均速度）は現在ダミー値です（ビーム間隔・コース全長の設定を追加すると実測値になります）。
+      {% if not speed_ready.pass_speed or not speed_ready.lap_avg %}
+      <br>※ 速度を出すには
+      <a href="/admin/timing/layouts">コースレイアウト</a>で
+      {% if not speed_ready.pass_speed %}<b>ビーム間隔(mm)</b>{% endif %}{% if not speed_ready.pass_speed and not speed_ready.lap_avg %}と{% endif %}{% if not speed_ready.lap_avg %}<b>1周の距離(m)</b>{% endif %}
+      を設定してください（未設定の項目は「—」と表示します）。
+      {% endif %}
     </p>
     {% else %}
     <p style="color:#7f8c8d">まだ計測結果がありません。ラップタイマーから計測データが届くと、ここに表示されます。</p>
@@ -365,15 +370,61 @@ function toggleSample(){
   c.style.display = (c.style.display === 'none') ? 'block' : 'none';
 }
 
-// レイアウトを選び直したら、そのレイアウトの既定周回数に合わせる
+// 入力内容は端末に覚えさせ、次に開いたときも同じ条件で送れるようにする
+const SMP_KEY = 'm4sample_form';
+const SMP_FIELDS = ['smpLayout','smpMode','smpLaps','smpLanes','smpRaces','smpHeat'];
+
+function smpSave(){
+  try{
+    const o = {};
+    SMP_FIELDS.forEach(function(id){
+      const el = document.getElementById(id);
+      if(el) o[id] = el.value;
+    });
+    localStorage.setItem(SMP_KEY, JSON.stringify(o));
+  }catch(e){}
+}
+
+function smpRestore(){
+  let o = null;
+  try{ o = JSON.parse(localStorage.getItem(SMP_KEY) || 'null'); }catch(e){}
+  if(!o) return false;
+  let restored = false;
+  SMP_FIELDS.forEach(function(id){
+    const el = document.getElementById(id);
+    if(!el || o[id] === undefined || o[id] === null) return;
+    // 消えたレイアウトが保存されていることがあるので、選択肢の有無を確かめる
+    if(el.tagName === 'SELECT'){
+      const ok = Array.prototype.some.call(el.options, function(op){ return op.value === o[id]; });
+      if(!ok) return;
+    }
+    el.value = o[id];
+    restored = true;
+  });
+  return restored;
+}
+
 document.addEventListener('DOMContentLoaded', function(){
   const sel = document.getElementById('smpLayout');
   if(!sel) return;
+  // レイアウトを「選び直したとき」だけ、そのレイアウトの既定周回数に合わせる。
+  // ⚠ 読み込み時に走らせると、覚えておいた周回数が上書きされてしまう。
   sel.addEventListener('change', function(){
     const laps = sel.options[sel.selectedIndex].dataset.laps;
     if(laps) document.getElementById('smpLaps').value = laps;
+    smpSave();
   });
-  sel.dispatchEvent(new Event('change'));
+  const had = smpRestore();
+  if(!had){
+    // 初回だけ、選択中レイアウトの既定周回数を入れておく
+    const laps = sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].dataset.laps;
+    if(laps) document.getElementById('smpLaps').value = laps;
+  }
+  // 変更のたびに保存（送信しなくても覚える）
+  SMP_FIELDS.forEach(function(id){
+    const el = document.getElementById(id);
+    if(el && id !== 'smpLayout') el.addEventListener('change', smpSave);
+  });
 });
 
 async function sendSample(){
@@ -390,6 +441,7 @@ async function sendSample(){
   };
   if(!confirm('サンプルの計測記録を ' + body.races + ' レース分投入します。\n'
       + '本物の記録と同じ扱いになります。よろしいですか？')) return;
+  smpSave();
 
   btn.disabled = true;
   msg.style.color = '#7f8c8d';

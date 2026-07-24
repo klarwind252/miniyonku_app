@@ -205,6 +205,8 @@ async def results_page(
         day_best[d] = {k: [x["value"] for x in v] for k, v in stored.items()}
 
     rows = []          # 表示する明細行（1行=1レーンの1周）
+    # 速度の設定状況（1レースでも設定済みなら True）。画面下の注記に使う。
+    speed_ready = {"pass_speed": False, "lap_avg": False}
 
     for r in races:
         rid = r["id"]
@@ -219,6 +221,10 @@ async def results_page(
         cfg, ev_key = await _build_speed_context(db, race)
         gap_by_node = cfg.get("beam_gap_by_node") or {}
         lap_len_m = cfg.get("lap_length_m")
+        # 画面の注記用：どの指標が実測できる設定になっているか
+        _ok = spd_svc.is_configured(cfg)
+        speed_ready["pass_speed"] = speed_ready["pass_speed"] or _ok["pass_speed"]
+        speed_ready["lap_avg"] = speed_ready["lap_avg"] or _ok["lap_avg"]
 
         def _pass_speed(lane, lap_no, sector_idx):
             rec = ev_key.get((lane, lap_no, sector_idx))
@@ -376,6 +382,8 @@ async def results_page(
             "today_from": ts_from,
             "today_to": ts_to,
             "today_race_count": today_race_count,
+            # 速度が実測できる設定になっているか（未設定なら画面に案内を出す）
+            "speed_ready": speed_ready,
             # テスト用サンプル送信パネル（M4LAPS_SAMPLE=0 で非表示）
             "sample_enabled": sample_svc.SAMPLE_ENABLED,
             "sample_layouts": await TimingLayoutRepository(db).list_layouts(),
@@ -868,41 +876,6 @@ def _split_ts(ts) -> tuple[str, str]:
     return (date_part, time_part)
 
 
-def _make_speed_fns(cfg: dict, events_by_key: dict | None = None):
-    """速度算出関数を作る（設定があれば実測・無ければ None）。
-
-    cfg: timing_speed_service.load_speed_config() の戻り値
-         {"lap_length_m":.., "beam_gap_by_node":{node_id: mm}, ...}
-
-    戻り値: (speed_fn, lap_avg_fn)
-      speed_fn(race_id, lane, sector_idx, lap)  -> m/s | None
-      lap_avg_fn(race_id, lane, lap)            -> m/s | None
-
-    ⚠ 通過速度は本来「そのゲートの t_us / t_us_b」から求める。
-       events_by_key に (lane, lap, sector_idx) -> (t_us, t_us_b, node_id) を
-       渡せば実測できる。未指定なら設定不足として None を返す。
-    """
-    gap_by_node = cfg.get("beam_gap_by_node") or {}
-    lap_len = cfg.get("lap_length_m")
-
-    def speed_fn(race_id, lane, sector_idx, lap=1):
-        if not events_by_key:
-            return None
-        key = (lane, lap, sector_idx)
-        rec = events_by_key.get(key)
-        if not rec:
-            return None
-        t_us, t_us_b, node_id = rec
-        return spd_svc.pass_speed_ms(t_us, t_us_b, gap_by_node.get(node_id))
-
-    def lap_avg_fn(race_id, lane, lap):
-        # ラップタイムは呼び出し側が持っていないため、ここでは全長のみ保持し
-        # 実際の算出は _lap_avg_for() で行う（下記参照）
-        return None
-
-    return speed_fn, lap_avg_fn
-
-
 async def _speed_fns_for_races(db, race_ids: list[int]):
     """複数レース分の速度をまとめて読み、(speed_fn, lap_avg_fn) を返す。
 
@@ -980,61 +953,43 @@ async def _speed_fns_for_race(db, race_id: int):
 async def _build_speed_context(db, race_row):
     """レースから速度算出に必要な情報を組み立てる。
 
-    戻り値: (cfg, events_by_key)
-      events_by_key: (lane, lap, sector_idx) -> (t_us, t_us_b, node_id)
-    区間 idx は「その周で何番目のゲートを通過したか」に対応する。
+    戻り値: (cfg, pass_index)
+      pass_index: (start_lane, lap, idx) -> (t_us, t_us_b, node_id)
+        idx 0    … その周の起点となるS/G通過
+        idx 1..G … その周に通ったセクションゲート（通過順）
+        idx G+1  … その周を終えるS/G通過
+
+    ⚠ キーは物理レーンではなく **スタートレーン**。レーンチェンジで
+       周回ごとに物理レーンがずれるため、画面側の start_lane と揃えている。
     """
     keys = race_row.keys() if hasattr(race_row, "keys") else []
     layout_id = race_row["layout_id"] if "layout_id" in keys else None
     cfg = await spd_svc.load_speed_config(db, layout_id)
 
-    events_by_key: dict = {}
     if not cfg.get("beam_gap_by_node"):
-        return cfg, events_by_key      # 設定が無ければ実測できない
+        return cfg, {}                 # ビーム間隔が未設定なら実測できない
 
-    # レイアウトの通過順（S/G + ゲート列）を得る
-    async with db.execute(
-        "SELECT position, node_id FROM timing_layout_elements "
-        "WHERE layout_id = ? AND node_id IS NOT NULL ORDER BY position",
-        (layout_id,),
-    ) as cur:
-        order = [r["node_id"] for r in await cur.fetchall()]
-    if not order:
-        return cfg, events_by_key
+    lrepo = TimingLayoutRepository(db)
+    elems = await lrepo.get_elements(layout_id)
+    layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems]
+    if not layout_elems:
+        return cfg, {}
 
-    # 通過イベントをレーン・時刻順に読み、周回と区間を数える
     async with db.execute(
         "SELECT lane, src, t_us, t_us_b FROM timing_events "
-        "WHERE race_id = ? ORDER BY lane, t_us",
+        "WHERE race_id = ? ORDER BY t_us",
         (race_row["id"],),
     ) as cur:
         rows = await cur.fetchall()
 
-    sg = order[0]
-    for r in rows:
-        if r["t_us_b"] is None:
-            continue                    # 2本目の打刻が無ければ速度は出せない
-        events_by_key.setdefault("_seen", {})
-    # レーンごとに周回・区間を数える
-    state: dict = {}
-    for r in rows:
-        lane = r["lane"]
-        st = state.setdefault(lane, {"lap": 0, "idx": 0, "started": False})
-        if r["src"] == sg:
-            if st["started"]:
-                st["lap"] += 1          # S/Gに戻った＝次の周へ
-            else:
-                st["started"] = True
-                st["lap"] = 1
-            st["idx"] = 0
-        else:
-            st["idx"] += 1
-        if r["t_us_b"] is not None and st["started"]:
-            events_by_key[(lane, st["lap"], st["idx"])] = (
-                r["t_us"], r["t_us_b"], r["src"]
-            )
-    events_by_key.pop("_seen", None)
-    return cfg, events_by_key
+    events = [
+        {"lane": r["lane"], "src": r["src"], "t_us": r["t_us"], "t_us_b": r["t_us_b"]}
+        for r in rows
+    ]
+    try:
+        return cfg, spd_svc.build_pass_index(layout_elems, events)
+    except Exception:
+        return cfg, {}
 
 
 @router.get("/admin/timing/results/{race_id}", response_class=HTMLResponse)
