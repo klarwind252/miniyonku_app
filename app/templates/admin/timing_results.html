@@ -83,24 +83,20 @@
 {% endif %}
 
 <style>
-  /* 当日のベスト（カード上部の帯）。下の明細表と同じ列構成で並べる */
-  .tb-strip{border:1px solid #ede0ff;background:#faf6ff;border-radius:6px;
-    padding:8px 10px;margin-bottom:16px}
-  .tb-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
-  .tb-title{font-size:13px;font-weight:bold;color:#6b21a8}
-  .tb-range{font-size:11px;color:#9b87b5;font-variant-numeric:tabular-nums}
-  .tb-count{font-size:11px;color:#9b87b5}
-  .tb-none{margin:0;color:#9b87b5;font-size:12px}
-  /* ベスト行：値は紫（＝1位の色）で統一し、下に小さくレーン・周を添える */
-  .tb-table tbody td{background:#fff;border-bottom:none;vertical-align:middle}
-  .tb-table .tb-v{color:#6b21a8;font-weight:bold;line-height:1.15}
-  .tb-table .c-total .tb-v{font-size:20px;letter-spacing:-.3px}
-  .tb-table .c-max .tb-v,.tb-table .c-lapt .tb-v,.tb-table .c-lapav .tb-v{font-size:16px}
-  .tb-table .sec-t{color:#6b21a8}
-  .tb-table .sec-v{color:#8e44ad}
+  /* 当日のベスト行（明細表のヘッダー直下に差し込む1行）
+     ⚠ 別表にすると列幅がずれて見比べられないため、同じ表の中に入れている。 */
+  .tb-row td{background:#faf6ff !important;border-bottom:2px solid #d9c8f0;
+    vertical-align:middle}
+  .tb-row .c-ts .ts-t{color:#6b21a8;font-weight:bold}
+  .tb-row .c-ts .ts-d{color:#9b87b5;font-size:10px}
+  .tb-row .tb-v{color:#6b21a8;font-weight:bold;line-height:1.15}
+  .tb-row .c-total .tb-v{font-size:20px;letter-spacing:-.3px}
+  .tb-row .c-max .tb-v,.tb-row .c-lapt .tb-v,.tb-row .c-lapav .tb-v{font-size:16px}
+  .tb-row .sec-t{color:#6b21a8;font-weight:bold}
+  .tb-row .sec-v{color:#8e44ad}
   .tb-m{font-size:10px;color:#95a5a6;white-space:nowrap;text-align:right;line-height:1.2}
-  .tb-blank{color:#d9d0e6 !important;background:#fff !important;font-weight:normal}
-  .tb-dash{color:#d9d0e6}
+  .tb-blank{color:#d3c7e6 !important;font-weight:normal}
+  .tb-dash{color:#d3c7e6}
   .tb-lane{display:inline-block;min-width:14px;padding:0 4px;border-radius:3px;
     font-size:10px;font-weight:bold;color:#fff;text-align:center;margin-right:2px}
   /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
@@ -196,83 +192,16 @@
   </div>
   <div class="card-body">
     {# --- 当日のベスト（09:00〜翌08:59の24時間・各項目の1位だけ）--- #}
-    {# 明細表と同じ列構成で並べる。どの列の記録かが一目で分かるようにするため、
-       ヘッダーも下の表とそろえ、値の下に「レーン・周・時刻」を小さく添える。 #}
-    <div class="tb-strip">
-      <div class="tb-head">
-        <span class="tb-title">🏆 当日のベスト</span>
-        <span class="tb-range">{{ today_from[5:16] }} 〜 {{ today_to[5:16] }}（09:00区切り）</span>
-        <span style="flex:1"></span>
-        <span class="tb-count">{{ today_race_count }} レース</span>
-      </div>
-      {% if today_bests %}
-      {% macro bestcell(it) %}
-        {% if it %}
-          <div class="tb-v">{% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}<span class="unit">m/s</span>{% endif %}</div>
-          <div class="tb-m">
-            {% if it.start_lane %}<span class="tb-lane lane-{{ ((it.start_lane - 1) % 5) + 1 }}">{{ it.start_lane }}</span>{% endif %}
-            {% if it.lap %}L{{ it.lap }}{% endif %}
-          </div>
-        {% else %}<span class="tb-dash">—</span>{% endif %}
-      {% endmacro %}
-      <div class="tr-wrap">
-        <table class="tr-table tb-table">
-          <thead>
-            <tr class="g-row">
-              <th colspan="3"></th>
-              <th colspan="3" class="gsep">TOTAL</th>
-              <th colspan="3" class="gsep">LAP</th>
-              <th colspan="8" class="gsep">SECTOR</th>
-              <th></th>
-            </tr>
-            <tr class="h-row">
-              <th class="c-ts"><div>TIMESTAMP</div><div>CASE</div></th>
-              <th>LANE</th>
-              <th>POS</th>
-              <th class="gsep">TIME</th>
-              <th>MAX</th>
-              <th>GAP</th>
-              <th class="gsep">#</th>
-              <th>TIME</th>
-              <th>Av.</th>
-              {% for n in range(0, 8) %}
-              <th{% if n == 0 %} class="gsep"{% endif %}>{{ n }}</th>
-              {% endfor %}
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="c-ts"><div class="ts-t">当日ベスト</div><div class="ts-d">各項目の1位</div></td>
-              <td class="c-lane tb-blank">—</td>
-              <td class="c-pos tb-blank">—</td>
-              <td class="c-total gsep">{{ bestcell(today_best_map.get('total')) }}</td>
-              <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
-              <td class="c-gap tb-blank">—</td>
-              <td class="c-lapno gsep tb-blank">—</td>
-              <td class="c-lapt">{{ bestcell(today_best_map.get('lap')) }}</td>
-              <td class="c-lapav">{{ bestcell(today_best_map.get('lap_avg')) }}</td>
-              {% for n in range(0, 8) %}
-              <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
-                {% if n == 0 %}<span class="tb-dash">-</span>
-                {% else %}
-                  {% set _st = today_best_map.get('sector' ~ n) %}
-                  {% set _sv = today_best_map.get('sector_ms' ~ n) %}
-                  {% if _st %}<div class="sec-t">{{ '%.3f'|format(_st.value) }}</div>{% endif %}
-                  {% if _sv %}<div class="sec-v">{{ '%.2f'|format(_sv.value) }}</div>{% endif %}
-                  {% if not _st and not _sv %}<span class="tb-dash">—</span>{% endif %}
-                {% endif %}
-              </td>
-              {% endfor %}
-              <td class="c-act"></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <p class="tb-none">当日の計測記録がまだありません。</p>
-      {% endif %}
-    </div>
+    {# 別表にすると列がずれて見比べにくいので、明細表のヘッダー直下に1行だけ差し込む。 #}
+    {% macro bestcell(it) %}
+      {% if it %}
+        <div class="tb-v">{% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}<span class="unit">m/s</span>{% endif %}</div>
+        <div class="tb-m">
+          {% if it.start_lane %}<span class="tb-lane lane-{{ ((it.start_lane - 1) % 5) + 1 }}">{{ it.start_lane }}</span>{% endif %}
+          {% if it.lap %}L{{ it.lap }}{% endif %}
+        </div>
+      {% else %}<span class="tb-dash">—</span>{% endif %}
+    {% endmacro %}
 
     {% if rows %}
     <div class="tr-wrap">
@@ -302,6 +231,36 @@
           </tr>
         </thead>
         <tbody>
+          {% if today_bests %}
+          {# 当日のベスト行。日付で絞り込んでいても「当日」の基準は 09:00〜翌08:59 で固定。 #}
+          <tr class="tb-row">
+            <td class="c-ts">
+              <div class="ts-t">🏆 当日ベスト</div>
+              <div class="ts-d">{{ today_from[5:16] }}〜{{ today_to[5:16] }} / {{ today_race_count }}レース</div>
+            </td>
+            <td class="c-lane tb-blank">—</td>
+            <td class="c-pos tb-blank">—</td>
+            <td class="c-total gsep">{{ bestcell(today_best_map.get('total')) }}</td>
+            <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
+            <td class="c-gap tb-blank">—</td>
+            <td class="c-lapno gsep tb-blank">—</td>
+            <td class="c-lapt">{{ bestcell(today_best_map.get('lap')) }}</td>
+            <td class="c-lapav">{{ bestcell(today_best_map.get('lap_avg')) }}</td>
+            {% for n in range(0, 8) %}
+            <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
+              {% if n == 0 %}<span class="tb-dash">-</span>
+              {% else %}
+                {% set _st = today_best_map.get('sector' ~ n) %}
+                {% set _sv = today_best_map.get('sector_ms' ~ n) %}
+                {% if _st %}<div class="sec-t">{{ '%.3f'|format(_st.value) }}</div>{% endif %}
+                {% if _sv %}<div class="sec-v">{{ '%.2f'|format(_sv.value) }}</div>{% endif %}
+                {% if not _st and not _sv %}<span class="tb-dash">—</span>{% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+            <td class="c-act"></td>
+          </tr>
+          {% endif %}
           {% for row in rows %}
           <tr class="{% if row.is_first_of_race %}race-start{% elif row.is_first_of_lane %}lane-start{% endif %}">
             {# TS・CASE はレースごとに1回だけ #}
