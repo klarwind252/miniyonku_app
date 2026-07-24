@@ -390,6 +390,10 @@ async def tournament_new(request: Request, db: aiosqlite.Connection = Depends(ge
     async with db.execute("SELECT value FROM app_settings WHERE key='default_qualifying'") as cur:
         dq_row = await cur.fetchone()
     default_qualifying = dq_row["value"] if dq_row else "heat_tournament"
+    # 勝ち抜け方式チェックの初期値（前回レース作成/編集時の選択を保持）
+    async with db.execute("SELECT value FROM app_settings WHERE key='qual_heat_exclude_default'") as cur:
+        ex_row = await cur.fetchone()
+    default_heat_exclude = (ex_row["value"] == "1") if ex_row else False
     garappa_enabled = (await _get_store1_name(db)).strip() == GARAPPA_STORE_NAME
     return templates.TemplateResponse("admin/tournament_form.html", {
         "request": request,
@@ -399,6 +403,7 @@ async def tournament_new(request: Request, db: aiosqlite.Connection = Depends(ge
         "regulation_labels": reg_labels,
         "qualifying_labels": QUALIFYING_LABELS,
         "default_qualifying": default_qualifying,
+        "default_heat_exclude": default_heat_exclude,
         "garappa_enabled": garappa_enabled,
         "race_assets": {k: [] for k in _ASSET_KINDS},
     })
@@ -479,6 +484,13 @@ async def tournament_add(
     if qualifying_type == "order_winner":
         stages = parse_order_winner_stages(await request.form())
         await save_order_winner_stages(new_tid, stages, db)
+    # 勝ち抜け方式チェックの「前回の選択」を保存（次回の新規作成フォームの初期値）
+    # ヒート系の予選形式のときだけ更新（無関係な形式で 0 に上書きしない）
+    if qualifying_type in ("heat_tournament", "heat_roundrobin"):
+        await db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('qual_heat_exclude_default', ?)",
+            ("1" if qual_heat_exclude else "0",),
+        )
     await db.commit()
     return RedirectResponse(url="/admin/tournaments/", status_code=303)
 
@@ -1668,6 +1680,12 @@ async def tournament_edit_save(
     if qualifying_type == "order_winner":
         stages = parse_order_winner_stages(await request.form())
         await save_order_winner_stages(tid, stages, db)
+    # 勝ち抜け方式チェックの「前回の選択」を保存（次回の新規作成フォームの初期値）
+    if qualifying_type in ("heat_tournament", "heat_roundrobin"):
+        await db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('qual_heat_exclude_default', ?)",
+            ("1" if qual_heat_exclude else "0",),
+        )
     await db.commit()
     return RedirectResponse(url=f"/admin/tournaments/{tid}", status_code=303)
 

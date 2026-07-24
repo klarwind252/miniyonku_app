@@ -68,6 +68,10 @@
   color:#1a5276;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
 .m4-apply-btn:hover{background:#2980b9;color:#fff}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
+/* 結果取消ボタン。反映ボタンのすぐ左に並べるため文字サイズ・余白を揃える */
+.m4-reset-btn{padding:4px 12px;font-size:14px;background:#fff;border:1px solid #e74c3c;
+  color:#e74c3c;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
+.m4-reset-btn:hover{background:#e74c3c;color:#fff}
 .bracket-group.done { border-color:#27ae60; }
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
@@ -1152,11 +1156,18 @@ window.initBracketConnectors = initBracketConnectors;
   <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
     <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span>グループ{{ g.group_no }}</span>
-      {% if result %}<span style="color:#27ae60">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
+      {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if IS_CLOUD and request.state.m4laps_licensed %}
       <span style="flex:1"></span>
+      {# 取消は反映のすぐ左隣に置く（文字サイズも反映ボタンと同じ） #}
+      {% if result %}<button type="button" class="m4-reset-btn"
+              onclick="resetGroupResult({{ g.id }},{{ t.id }})">取消</button>{% endif %}
       <button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
               title="ラップタイマーの最新の計測結果をこの組に反映します">⏱ 反映</button>
+      {% elif result %}
+      {# M4LAPS無効時は従来どおり「✓完了」の右に小さく置く #}
+      <button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})"
+              style="padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>
       {% endif %}
     </div>
     {% for slot in slots %}
@@ -2172,6 +2183,8 @@ async function applyTimingToBracket(groupId, btn, force){
         msg += '\n※ 対応する枠が無い記録: レーン' + d.unmatched_records.join(', ');
       // 取りこぼしがあるときだけ知らせる（通常は黙って反映する）
       if(d.unmatched_slots?.length || d.unmatched_records?.length) alert(msg);
+      // リロードで先頭へ戻らないよう、現在のスクロール位置を持ち越す
+      try{ sessionStorage.setItem('m4BracketScroll', String(window.scrollY)); }catch(_){}
       location.reload();
       return;
     }
@@ -2184,6 +2197,25 @@ async function applyTimingToBracket(groupId, btn, force){
   }
   btn.disabled = false; btn.textContent = orig;
 }
+
+// 反映によるリロード直後は、保存しておいたスクロール位置へ戻す。
+// トーナメント表やカードは後から高さが確定するので、数回に分けて追従させる。
+(function(){
+  var y = null;
+  try{
+    var v = sessionStorage.getItem('m4BracketScroll');
+    if(v !== null){ y = parseInt(v, 10); sessionStorage.removeItem('m4BracketScroll'); }
+  }catch(_){}
+  if(y === null || isNaN(y) || y <= 0) return;
+  if('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  var tries = 0;
+  function restore(){
+    window.scrollTo(0, y);
+    if(++tries < 12) setTimeout(restore, 100);   // 最大約1.2秒ぶん追従
+  }
+  if(document.readyState === 'complete') restore();
+  else window.addEventListener('load', restore);
+})();
 </script>
 {% endif %}
 {% endblock %}

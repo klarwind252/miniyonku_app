@@ -1028,14 +1028,15 @@ function _showPubToast(msg) {
     font-size:13px; color:#2c3e50;
   }
   #m4pip .pip-head{
-    display:flex; align-items:center; gap:8px;
-    padding:8px 10px; background:#2c3e50; color:#fff; user-select:none;
+    display:flex; align-items:center; gap:6px;
+    padding:2px 8px; background:#2c3e50; color:#fff; user-select:none;
     cursor:move;   /* ヘッダをつまんで移動できる */
     touch-action:none;
+    line-height:1.35;   /* 高さを詰める（従来の約半分） */
   }
-  #m4pip .pip-title{font-weight:bold; font-size:13px}
+  #m4pip .pip-title{font-weight:bold; font-size:11px}
   #m4pip .pip-dot{
-    width:8px; height:8px; border-radius:50%; background:#7f8c8d; flex-shrink:0;
+    width:7px; height:7px; border-radius:50%; background:#7f8c8d; flex-shrink:0;
     transition:background .3s;
   }
   #m4pip .pip-dot.live{background:#2ecc71; box-shadow:0 0 6px rgba(46,204,113,.9)}
@@ -1074,7 +1075,7 @@ function _showPubToast(msg) {
   #m4pip th.pip-lane{text-align:center}
   #m4pip th.pip-total, #m4pip th.pip-gap{text-align:right}
   #m4pip .pip-empty{padding:14px 8px; text-align:center; color:#95a5a6; font-size:12px}
-  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:14px; line-height:1; padding:0 2px}
+  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:11px; line-height:1; padding:0 2px}
   /* スマホは今回対象外（別途対応予定） */
   @media(max-width:700px){ #m4pip{display:none} }
   @media print{ #m4pip{display:none} }
