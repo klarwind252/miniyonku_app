@@ -1871,6 +1871,15 @@ async def heat_result_reset(tid: int, heat_id: int, db: aiosqlite.Connection = D
         for lid in lane_ids:
             await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
         await db.execute("UPDATE heats SET status='prepare' WHERE id=?", (heat_id,))
+        # ラップタイマーからの反映も取り消す。
+        # 紐づけを外さないとPIPが「反映済」のままになり、再反映もできなくなる。
+        # ⚠ オンプレ版など timing_races が無い環境では素通りさせる。
+        try:
+            await db.execute(
+                "UPDATE timing_races SET heat_id=NULL WHERE heat_id=?", (heat_id,)
+            )
+        except Exception:
+            pass
 
     return JSONResponse({"ok": True})
 

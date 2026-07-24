@@ -957,21 +957,27 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endif %}
       {% endfor %}
       <td>
+        {# 結果が入っているかは行の見た目（順位・FINISH）で分かるので、状態バッジは置かない。
+           結果ありのときは「反映」を隠して「取り消し」だけを出す（誤って上書きしないため）。 #}
         <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end">
-          <span class="status {% if heat.id in done_heat_ids %}status-finished{% else %}status-prepare{% endif %}"
-                id="status-{{ heat.id }}" style="cursor:pointer"
-                onclick="resetRace({{ heat.id }}, {{ t.id }})">
-            {% if heat.id in done_heat_ids %}入力済{% else %}未入力{% endif %}
-          </span>
-          {% if heat.id not in done_heat_ids %}
-          <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
-             style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
-            ✏️
-          </a>
-          {% endif %}
-          {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
-          <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
-                  title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
+          {% if heat.id in done_heat_ids %}
+            {% if is_finalized %}
+            <span style="font-size:11px;color:#95a5a6">確定済</span>
+            {% else %}
+            <button type="button" id="status-{{ heat.id }}"
+                    onclick="resetRace({{ heat.id }}, {{ t.id }})"
+                    title="このレースの結果を取り消して未入力に戻します"
+                    style="font-size:11px;padding:3px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">↩ 取り消し</button>
+            {% endif %}
+          {% else %}
+            <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
+               style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">
+              ✏️
+            </a>
+            {% if IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
+            <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
+                    title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
+            {% endif %}
           {% endif %}
         </div>
       </td>
@@ -1049,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', function(){
       グループ {{ gno }}
     </div>
     <table style="min-width:500px;width:100%;table-layout:fixed">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1346,7 +1352,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {% endif %}
           </div>
           <table style="min-width:600px;width:100%;table-layout:fixed">
-            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+            <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat) }}
@@ -1357,7 +1363,7 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endfor %}
       {% else %}
         <table style="min-width:600px;width:100%;table-layout:fixed">
-          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+          <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
           </tbody>
@@ -1366,7 +1372,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {% else %}
     {# 通常ヒート・総当たり #}
     <table style="min-width:600px;width:100%;table-layout:fixed">
-      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}<th style="width:{{ (100 / course_cols|length) | round(2) }}%">{{ c }}コース</th>{% endfor %}<th style="width:80px">状態</th></tr></thead>
+      <thead><tr><th style="width:40px">#</th>{% for c in course_cols %}{# 固定幅の列（#・状態）を差し引いた残りを等分。%指定だと合計が100%を超えて右端が切れる #}<th style="width:calc((100% - 132px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th style="width:92px">状態</th></tr></thead>
       <tbody>
       {% for heat in heats %}
       {{ race_row(heat) }}
@@ -1832,8 +1838,9 @@ async function saveRanks(heatId, tid, nLanes) {
     const res = await fetch(`/admin/tournaments/${tid}/qualifying/heat/${heatId}/save-rank`, {method:'POST',body:form});
     const data = await res.json();
     if (data.ok) {
-      const st = document.getElementById(`status-${heatId}`);
-      if (st) { st.textContent = '入力済'; st.className = 'status status-finished'; }
+      // 状態バッジは廃止。結果が入ると「反映」→「取り消し」に変わるため、
+      // 出し分けを正しく反映させるには行ごと描き直す必要がある。
+      markHeatDone(heatId, tid);
       updateStandings();
     }
   } catch(e) { console.error(e); }
@@ -1862,6 +1869,27 @@ function showSchedRound(rno) {
   });
 }
 
+// 結果が入ったヒートの状態欄を「↩ 取り消し」に差し替える。
+// ⚠ 状態バッジを廃止したので、保存後にその場で書き換えないと
+//    「⏱ 反映」が残ったままになり、二重反映の元になる。
+function markHeatDone(heatId, tid){
+  const cell = document.getElementById(`status-${heatId}`);
+  if (cell && cell.tagName === 'BUTTON') return;   // 既に取り消しボタン
+  const holder = document.querySelector(`#row-${heatId} td:last-child > div`)
+              || (cell && cell.parentElement);
+  if (!holder) return;
+  holder.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = `status-${heatId}`;
+  btn.title = 'このレースの結果を取り消して未入力に戻します';
+  btn.textContent = '↩ 取り消し';
+  btn.style.cssText = 'font-size:11px;padding:3px 8px;border:1px solid #f5b7b1;'
+    + 'border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap';
+  btn.onclick = function(){ resetRace(heatId, tid); };
+  holder.appendChild(btn);
+}
+
 async function resetRace(heatId, tid) {
   if (!confirm('このレースの結果をリセットしますか？')) return;
   try {
@@ -1876,8 +1904,8 @@ async function resetRace(heatId, tid) {
         cell.style.color = '#bdc3c7';
         cell.textContent = '—';
       });
-      const st = document.getElementById(`status-${heatId}`);
-      if (st) { st.textContent = '未入力'; st.className = 'status status-prepare'; }
+      // FINISHタイムや「取り消し」ボタンの出し分けも戻すため、画面ごと読み直す
+      location.reload();
     }
   } catch(e) { console.error(e); }
 }
@@ -1972,12 +2000,13 @@ async function commitRace(heatId) {
     const res  = await fetch(`/admin/tournaments/${TID}/qualifying/heat/${heatId}/save-inline`,
                              { method: 'POST', body: form });
     const data = await res.json();
-    // 状態バッジ更新
+    // 状態バッジは廃止。結果の有無で「反映」/「取り消し」を出し分けるため、
+    // 状態が変わったときだけ行を描き直す。
     if (data.ok) {
-      const st = document.getElementById(`status-${heatId}`);
-      if (st) {
-        st.className = 'status ' + (data.status === 'done' ? 'status-finished' : 'status-prepare');
-        st.textContent = data.status === 'done' ? '入力済' : '未入力';
+      if (data.status === 'done') {
+        markHeatDone(heatId, TID);
+      } else if (document.getElementById(`status-${heatId}`)) {
+        location.reload();   // 結果が消えた場合は「反映」に戻す必要がある
       }
       updateStandings();
     }

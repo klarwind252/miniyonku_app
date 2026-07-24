@@ -364,6 +364,9 @@ async def results_page(
         # ベストが出せなくても一覧そのものは表示する
         today_bests = []
 
+    # 明細表と同じ列に並べるため、metric名で引ける形にもしておく
+    today_best_map = {x["key"]: x for x in today_bests}
+
     return templates.TemplateResponse(
         "admin/timing_results.html",
         {
@@ -378,6 +381,7 @@ async def results_page(
             "current_limit": limit,
             # 当日のベスト（09:00区切り）
             "today_bests": today_bests,
+            "today_best_map": today_best_map,
             "today_label": today_label,
             "today_from": ts_from,
             "today_to": ts_to,

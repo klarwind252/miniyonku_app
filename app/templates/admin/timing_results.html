@@ -83,25 +83,26 @@
 {% endif %}
 
 <style>
-  /* 当日のベスト（カード上部の帯） */
+  /* 当日のベスト（カード上部の帯）。下の明細表と同じ列構成で並べる */
   .tb-strip{border:1px solid #ede0ff;background:#faf6ff;border-radius:6px;
-    padding:10px 12px;margin-bottom:16px}
-  .tb-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+    padding:8px 10px;margin-bottom:16px}
+  .tb-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
   .tb-title{font-size:13px;font-weight:bold;color:#6b21a8}
   .tb-range{font-size:11px;color:#9b87b5;font-variant-numeric:tabular-nums}
   .tb-count{font-size:11px;color:#9b87b5}
-  .tb-list{display:flex;gap:8px;flex-wrap:wrap}
-  .tb-item{background:#fff;border:1px solid #ece4f7;border-radius:5px;
-    padding:6px 10px;min-width:118px}
-  .tb-label{font-size:10px;color:#95a5a6;letter-spacing:.3px;white-space:nowrap}
-  .tb-value{font-size:19px;font-weight:bold;color:#6b21a8;
-    font-variant-numeric:tabular-nums;letter-spacing:-.4px;line-height:1.25}
-  .tb-unit{font-size:10px;color:#bdc3c7;margin-left:2px;font-weight:normal}
-  .tb-where{font-size:11px;color:#7f8c8d;white-space:nowrap}
-  .tb-time{margin-left:4px;font-variant-numeric:tabular-nums}
   .tb-none{margin:0;color:#9b87b5;font-size:12px}
-  .tb-lane{display:inline-block;min-width:18px;padding:0 5px;border-radius:3px;
-    font-size:10px;font-weight:bold;color:#fff;text-align:center;margin-right:3px}
+  /* ベスト行：値は紫（＝1位の色）で統一し、下に小さくレーン・周を添える */
+  .tb-table tbody td{background:#fff;border-bottom:none;vertical-align:middle}
+  .tb-table .tb-v{color:#6b21a8;font-weight:bold;line-height:1.15}
+  .tb-table .c-total .tb-v{font-size:20px;letter-spacing:-.3px}
+  .tb-table .c-max .tb-v,.tb-table .c-lapt .tb-v,.tb-table .c-lapav .tb-v{font-size:16px}
+  .tb-table .sec-t{color:#6b21a8}
+  .tb-table .sec-v{color:#8e44ad}
+  .tb-m{font-size:10px;color:#95a5a6;white-space:nowrap;text-align:right;line-height:1.2}
+  .tb-blank{color:#d9d0e6 !important;background:#fff !important;font-weight:normal}
+  .tb-dash{color:#d9d0e6}
+  .tb-lane{display:inline-block;min-width:14px;padding:0 4px;border-radius:3px;
+    font-size:10px;font-weight:bold;color:#fff;text-align:center;margin-right:2px}
   /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
   .tb-lane.lane-1{background:#2980b9} .tb-lane.lane-2{background:#e74c3c}
   .tb-lane.lane-3{background:#f1c40f;color:#4a3b00}
@@ -195,6 +196,8 @@
   </div>
   <div class="card-body">
     {# --- 当日のベスト（09:00〜翌08:59の24時間・各項目の1位だけ）--- #}
+    {# 明細表と同じ列構成で並べる。どの列の記録かが一目で分かるようにするため、
+       ヘッダーも下の表とそろえ、値の下に「レーン・周・時刻」を小さく添える。 #}
     <div class="tb-strip">
       <div class="tb-head">
         <span class="tb-title">🏆 当日のベスト</span>
@@ -203,20 +206,68 @@
         <span class="tb-count">{{ today_race_count }} レース</span>
       </div>
       {% if today_bests %}
-      <div class="tb-list">
-        {% for it in today_bests %}
-        <div class="tb-item">
-          <div class="tb-label">{{ it.label }}</div>
-          <div class="tb-value">
-            {% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}{% endif %}<span class="tb-unit">{{ it.unit }}</span>
-          </div>
-          <div class="tb-where">
+      {% macro bestcell(it) %}
+        {% if it %}
+          <div class="tb-v">{% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}<span class="unit">m/s</span>{% endif %}</div>
+          <div class="tb-m">
             {% if it.start_lane %}<span class="tb-lane lane-{{ ((it.start_lane - 1) % 5) + 1 }}">{{ it.start_lane }}</span>{% endif %}
-            {% if it.lap %}Lap{{ it.lap }}{% endif %}
-            {% if it.created_at %}<span class="tb-time">{{ it.created_at[11:16] }}</span>{% endif %}
+            {% if it.lap %}L{{ it.lap }}{% endif %}
           </div>
-        </div>
-        {% endfor %}
+        {% else %}<span class="tb-dash">—</span>{% endif %}
+      {% endmacro %}
+      <div class="tr-wrap">
+        <table class="tr-table tb-table">
+          <thead>
+            <tr class="g-row">
+              <th colspan="3"></th>
+              <th colspan="3" class="gsep">TOTAL</th>
+              <th colspan="3" class="gsep">LAP</th>
+              <th colspan="8" class="gsep">SECTOR</th>
+              <th></th>
+            </tr>
+            <tr class="h-row">
+              <th class="c-ts"><div>TIMESTAMP</div><div>CASE</div></th>
+              <th>LANE</th>
+              <th>POS</th>
+              <th class="gsep">TIME</th>
+              <th>MAX</th>
+              <th>GAP</th>
+              <th class="gsep">#</th>
+              <th>TIME</th>
+              <th>Av.</th>
+              {% for n in range(0, 8) %}
+              <th{% if n == 0 %} class="gsep"{% endif %}>{{ n }}</th>
+              {% endfor %}
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="c-ts"><div class="ts-t">当日ベスト</div><div class="ts-d">各項目の1位</div></td>
+              <td class="c-lane tb-blank">—</td>
+              <td class="c-pos tb-blank">—</td>
+              <td class="c-total gsep">{{ bestcell(today_best_map.get('total')) }}</td>
+              <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
+              <td class="c-gap tb-blank">—</td>
+              <td class="c-lapno gsep tb-blank">—</td>
+              <td class="c-lapt">{{ bestcell(today_best_map.get('lap')) }}</td>
+              <td class="c-lapav">{{ bestcell(today_best_map.get('lap_avg')) }}</td>
+              {% for n in range(0, 8) %}
+              <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
+                {% if n == 0 %}<span class="tb-dash">-</span>
+                {% else %}
+                  {% set _st = today_best_map.get('sector' ~ n) %}
+                  {% set _sv = today_best_map.get('sector_ms' ~ n) %}
+                  {% if _st %}<div class="sec-t">{{ '%.3f'|format(_st.value) }}</div>{% endif %}
+                  {% if _sv %}<div class="sec-v">{{ '%.2f'|format(_sv.value) }}</div>{% endif %}
+                  {% if not _st and not _sv %}<span class="tb-dash">—</span>{% endif %}
+                {% endif %}
+              </td>
+              {% endfor %}
+              <td class="c-act"></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       {% else %}
       <p class="tb-none">当日の計測記録がまだありません。</p>
