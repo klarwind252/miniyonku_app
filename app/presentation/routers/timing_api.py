@@ -10,6 +10,7 @@ GWからのPOSTは、環境変数 TIMING_TOKEN があれば X-Timing-Token を�
 """
 
 import os
+import time
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -24,6 +25,8 @@ from app.application.timing_race_service import build_race_result
 from app.application import timing_best_service as best_svc
 from app.application import timing_bridge_service as bridge_svc
 from app.application import timing_speed_service as spd_svc
+from app.application import timing_sample_service as sample_svc
+from app.domain.rotation import LANES, LayoutElement
 from app.presentation.templates import templates
 from app.presentation.routers.m4laps_guard import require_m4laps
 
@@ -306,6 +309,10 @@ async def results_page(
             "date_options": date_options,   # 絞り込みプルダウン用
             "current_date": date,           # 選択中の日付（Noneなら最新n件）
             "current_limit": limit,
+            # テスト用サンプル送信パネル（M4LAPS_SAMPLE=0 で非表示）
+            "sample_enabled": sample_svc.SAMPLE_ENABLED,
+            "sample_layouts": await TimingLayoutRepository(db).list_layouts(),
+            "sample_lanes": LANES,
         },
     )
 
@@ -348,6 +355,89 @@ async def delete_race(
     return JSONResponse({"ok": True, "race_id": race_id,
                          "deleted_events": n_events,
                          "bests_recalculated": recalculated})
+
+
+@router.post("/admin/timing/sample")
+async def create_sample_race(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """テスト用のサンプル計測データを投入する（実機GWの代わり）。
+
+    実機が無いテスト環境で画面・集計を確認するための機能。
+    通常の受信口（POST /api/timing/races/{id}/events）と同じ形のイベントを
+    サーバ内で組み立てて保存するので、実機から届いた記録と同じ扱いになる。
+
+    body(JSON): {"layout_id":int, "mode":"race"|"free", "laps":int,
+                 "lanes":int, "races":int, "heat_tag":int?}
+
+    ⚠ 本番環境では .env に M4LAPS_SAMPLE=0 を入れて無効化する（404になる）。
+    """
+    if not sample_svc.SAMPLE_ENABLED:
+        raise HTTPException(status_code=404)
+
+    data = await request.json()
+    lrepo = TimingLayoutRepository(db)
+    rrepo = TimingRaceRepository(db)
+
+    layout_id = int(data.get("layout_id") or 0)
+    layout = await lrepo.get_layout(layout_id)
+    if layout is None:
+        raise HTTPException(status_code=404, detail="レイアウトが見つかりません")
+
+    mode = "race" if str(data.get("mode") or "free") == "race" else "free"
+    laps = max(1, min(int(data.get("laps") or layout["target_laps"] or 3),
+                      sample_svc.MAX_LAPS))
+    lanes = max(1, min(int(data.get("lanes") or LANES), LANES))
+    n_races = max(1, min(int(data.get("races") or 1), sample_svc.MAX_RACES))
+    heat_tag = data.get("heat_tag")
+    heat_tag = int(heat_tag) if heat_tag not in (None, "") else None
+
+    elems = await lrepo.get_elements(layout_id)
+    layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems]
+
+    # ビーム間隔が設定されていれば、それに合わせた打刻にする（通過速度が実測相当になる）
+    cfg = await spd_svc.load_speed_config(db, layout_id)
+    gaps = cfg.get("beam_gap_by_node") or {}
+
+    race_ids: list[int] = []
+    base = int(time.time() * 1_000_000)
+    for i in range(n_races):
+        try:
+            green_t_us, events = sample_svc.build_sample_events(
+                layout_elems,
+                target_laps=laps,
+                lanes=lanes,
+                mode=mode,
+                # レース同士が時間的に重ならないよう、1本ぶんずつ後ろにずらす
+                base_t_us=base + i * (laps + 2) * sample_svc.DEFAULT_LAP_MS * 1000,
+                beam_gap_by_node=gaps,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        race_id = await rrepo.create_race(
+            heat_tag=heat_tag,
+            layout_id=layout_id,
+            target_laps=laps,
+            green_t_us=green_t_us,
+        )
+        for ev in events:
+            await rrepo.insert_event(race_id, ev)
+
+        # 受信口と同じくベスト記録を更新する（失敗しても投入自体は成功扱い）
+        try:
+            await best_svc.update_for_race(
+                db, race_id, build_race_result,
+                *(await _speed_fns_for_race(db, race_id))
+            )
+        except Exception:
+            pass
+        race_ids.append(race_id)
+
+    return JSONResponse({"ok": True, "race_ids": race_ids,
+                         "laps": laps, "lanes": lanes, "mode": mode})
 
 
 @router.get("/admin/timing/bests", response_class=HTMLResponse)

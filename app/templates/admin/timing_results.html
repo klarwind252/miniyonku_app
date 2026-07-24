@@ -11,7 +11,76 @@
   <a href="/admin/timing/devices" class="btn btn-secondary btn-sm">📟 計測端末台帳</a>
   <a href="/admin/timing/results" class="btn btn-primary btn-sm">🏁 計測結果</a>
   <a href="/admin/timing/bests" class="btn btn-secondary btn-sm">🏆 ベスト集計</a>
+  {% if sample_enabled %}
+  <span style="flex:1"></span>
+  <button type="button" class="btn btn-secondary btn-sm" onclick="toggleSample()">🧪 サンプル送信</button>
+  {% endif %}
 </div>
+
+{% if sample_enabled %}
+<style>
+  .smp-card{border:1px dashed #f39c12;background:#fffdf5;border-radius:6px;
+    padding:12px 14px;margin-bottom:16px}
+  .smp-card h3{margin:0 0 4px;font-size:14px;color:#b9770e}
+  .smp-note{margin:0 0 10px;font-size:12px;color:#8e7000;line-height:1.5}
+  .smp-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .smp-row label{display:block;font-size:11px;color:#7f8c8d;margin:0 0 3px}
+  .smp-row select,.smp-row input{font-size:13px;padding:4px 8px;width:auto}
+  .smp-msg{margin-top:8px;font-size:12px}
+</style>
+<div class="smp-card" id="smpCard" style="display:none">
+  <h3>🧪 テスト用サンプル送信</h3>
+  <p class="smp-note">
+    実機のラップタイマーが無い環境で、画面と集計を確かめるためのダミー記録を投入します。<br>
+    実機から届いた記録と同じ扱いになるため、<b>本番のデータと混ざります</b>。
+    確認が終わったら各レースの「🗑 削除」で消してください。
+    （本番では .env に <code>M4LAPS_SAMPLE=0</code> を入れるとこのパネルごと無効になります）
+  </p>
+  {% if sample_layouts %}
+  <div class="smp-row">
+    <div>
+      <label for="smpLayout">コースレイアウト</label>
+      <select id="smpLayout">
+        {% for l in sample_layouts %}
+        <option value="{{ l.id }}" data-laps="{{ l.target_laps }}">{{ l.name }}（{{ l.target_laps }}周）</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="smpMode">タイプ</label>
+      <select id="smpMode">
+        <option value="free">フリー（走行式）</option>
+        <option value="race">レース（F1式・緑あり）</option>
+      </select>
+    </div>
+    <div>
+      <label for="smpLaps">周回数</label>
+      <input type="number" id="smpLaps" value="3" min="1" max="20" style="width:70px">
+    </div>
+    <div>
+      <label for="smpLanes">レーン数</label>
+      <input type="number" id="smpLanes" value="{{ sample_lanes }}" min="1" max="{{ sample_lanes }}" style="width:70px">
+    </div>
+    <div>
+      <label for="smpRaces">レース数</label>
+      <input type="number" id="smpRaces" value="1" min="1" max="20" style="width:70px">
+    </div>
+    <div>
+      <label for="smpHeat">ヒートID（任意）</label>
+      <input type="number" id="smpHeat" placeholder="なし" style="width:90px">
+    </div>
+    <div>
+      <button type="button" class="btn btn-primary btn-sm" id="smpBtn" onclick="sendSample()">📡 送信</button>
+    </div>
+  </div>
+  <div class="smp-msg" id="smpMsg"></div>
+  {% else %}
+  <p style="margin:0;color:#c0392b;font-size:13px">
+    コースレイアウトがまだありません。先に「🗺️ コースレイアウト」で1つ作って確定してください。
+  </p>
+  {% endif %}
+</div>
+{% endif %}
 
 <style>
   .tr-table{width:auto;border-collapse:collapse;font-size:15px;table-layout:fixed}
@@ -235,31 +304,69 @@ async function deleteRace(raceId, ts){
   }
 }
 </script>
+{% if sample_enabled %}
 <script>
-// 計測レースの削除（復元不可のため二段階で確認する）
-async function deleteRace(raceId, ts){
-  const msg =
-    '【警告】この計測結果を削除します。\n\n'
-    + '対象: ' + ts + '\n\n'
-    + 'ラップ・セクター・通過記録がすべて削除され、\n'
-    + '二度と復元できません。\n\n'
-    + '本当に削除しますか？';
-  if(!confirm(msg)) return;
+// テスト用サンプル送信（実機GWの代わりにダミー記録を投入する）
+function toggleSample(){
+  const c = document.getElementById('smpCard');
+  c.style.display = (c.style.display === 'none') ? 'block' : 'none';
+}
 
+// レイアウトを選び直したら、そのレイアウトの既定周回数に合わせる
+document.addEventListener('DOMContentLoaded', function(){
+  const sel = document.getElementById('smpLayout');
+  if(!sel) return;
+  sel.addEventListener('change', function(){
+    const laps = sel.options[sel.selectedIndex].dataset.laps;
+    if(laps) document.getElementById('smpLaps').value = laps;
+  });
+  sel.dispatchEvent(new Event('change'));
+});
+
+async function sendSample(){
+  const btn = document.getElementById('smpBtn');
+  const msg = document.getElementById('smpMsg');
+  const heat = document.getElementById('smpHeat').value;
+  const body = {
+    layout_id: parseInt(document.getElementById('smpLayout').value, 10),
+    mode: document.getElementById('smpMode').value,
+    laps: parseInt(document.getElementById('smpLaps').value, 10),
+    lanes: parseInt(document.getElementById('smpLanes').value, 10),
+    races: parseInt(document.getElementById('smpRaces').value, 10),
+    heat_tag: heat === '' ? null : parseInt(heat, 10)
+  };
+  if(!confirm('サンプルの計測記録を ' + body.races + ' レース分投入します。\n'
+      + '本物の記録と同じ扱いになります。よろしいですか？')) return;
+
+  btn.disabled = true;
+  msg.style.color = '#7f8c8d';
+  msg.textContent = '送信中…';
   try{
-    const res = await fetch('/admin/timing/results/' + raceId + '/delete', {method:'POST'});
+    const res = await fetch('/admin/timing/sample', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
     if(res.ok){
-      location.reload();
+      const d = await res.json();
+      msg.style.color = '#27ae60';
+      msg.textContent = '投入しました（レースID: ' + d.race_ids.join(', ') + '）。表示を更新します…';
+      setTimeout(function(){ location.reload(); }, 700);
       return;
     }
     let detail = '';
     try { const d = await res.json(); detail = d.detail || ''; } catch(e){}
-    alert('削除できませんでした。' + (detail ? '\n' + detail : ''));
+    msg.style.color = '#c0392b';
+    msg.textContent = '送信できませんでした。' + (detail ? '（' + detail + '）' : '');
   }catch(e){
-    alert('通信エラーが発生しました: ' + e);
+    msg.style.color = '#c0392b';
+    msg.textContent = '通信エラーが発生しました: ' + e;
+  }finally{
+    btn.disabled = false;
   }
 }
 </script>
+{% endif %}
 
 
 
