@@ -887,7 +887,7 @@ document.addEventListener('DOMContentLoaded', function(){
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
         {% if ld %}{% set lane = ld[0] %}{% set lc = ["#2980b9","#e74c3c","#27ae60"] %}
         <td>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px">
             {% if is_roundrobin or is_heat_roundrobin or is_none_roundrobin %}
             {# 総当たり系：○×ボタンを名前の左に配置 #}
             {% set _win_val = inline_results.get((heat.id, lane.entry_id), {}).get('win') %}
@@ -899,7 +899,20 @@ document.addEventListener('DOMContentLoaded', function(){
                     {% if not is_confirmed_nr %}onclick="setWin({{ heat.id }}, {{ lane.entry_id }}, 0)"{% else %}disabled style="opacity:0.5;cursor:not-allowed"{% endif %}>×</button>
             <input type="hidden" id="winval-{{ heat.id }}-{{ lane.entry_id }}"
                    value="{{ '' if _win_val is none else _win_val }}">
-            <strong style="font-size:18px;margin-left:10px">{{ lane.name }}</strong>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:4px">{{ lane.yomi }}</span>{% endif %}
+            {# 名前とよみがなを2段に。右端にFINISHタイム（計測反映済みのみ）を右寄せで置く #}
+            {% set _finish_rr = inline_results.get((heat.id, lane.entry_id), {}).get('total_time') %}
+            <div style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;margin-left:10px">
+              <div style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
+                <strong style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
+                {% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
+              </div>
+              <span style="flex:1 1 auto"></span>
+              {% if _finish_rr is not none %}
+              <span title="FINISHタイム（ラップタイマー反映）"
+                    style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
+                           letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish_rr) }}</span>
+              {% endif %}
+            </div>
             {% else %}
             {# 通常ヒート・ポイント制：着順枠（左端）→ レーサー名（クリック可）→ よみがな #}
             {# ポイント制：着順枠（クリック順で自動入力、枠クリックでCO） #}

@@ -1768,6 +1768,31 @@ async def qualifying_standings_json(tid: int, db: aiosqlite.Connection = Depends
     return JSONResponse({"ok": True, "standings": [dict(s) for s in standings]})
 
 
+async def _keep_total_time(db, lane_id) -> float | None:
+    """heat_results を作り直す前に、計測由来のFINISHタイムを退避する。
+
+    total_time は手入力では埋まらない「計測の事実」なので、
+    ○×や着順の手直し（DELETE→INSERT）で消えないよう持ち回る。
+    """
+    async with db.execute(
+        "SELECT total_time FROM heat_results WHERE heat_lane_id=?", (lane_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    keys = row.keys() if hasattr(row, "keys") else []
+    return row["total_time"] if "total_time" in keys else None
+
+
+async def _restore_total_time(db, lane_id, value) -> None:
+    """_keep_total_time で退避した値を、作り直した行へ戻す。"""
+    if value is None:
+        return
+    await db.execute(
+        "UPDATE heat_results SET total_time=? WHERE heat_lane_id=?", (value, lane_id)
+    )
+
+
 @router.post("/{tid}/qualifying/heat/{heat_id}/save-rank")
 async def heat_result_save_rank(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """インライン順位入力の保存（ポイント制）"""
@@ -1805,11 +1830,13 @@ async def heat_result_save_rank(tid: int, heat_id: int, request: Request, db: ai
         points = point_map.get(0 if is_co else rank, 0)
         win = 1 if (rank == 1 and not is_co) else 0
 
+        _tt = await _keep_total_time(db, lane["lane_id"])
         await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lane["lane_id"],))
         await db.execute(
             "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points, is_co) VALUES (?,?,0,0,?,?,?)",
             (lane["lane_id"], win, rank, points, is_co),
         )
+        await _restore_total_time(db, lane["lane_id"], _tt)
 
     # 全レーンの結果が保存済みなら完了
     async with db.execute(
@@ -1874,11 +1901,13 @@ async def heat_result_save(tid: int, heat_id: int, request: Request, db: aiosqli
             time1 = float(t1_raw) if t1_raw else None
 
             for lid, win, best_time in [(l0, win0, time0), (l1, win1, time1)]:
+                _tt = await _keep_total_time(db, lid)
                 await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
                 await db.execute(
                     "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points) VALUES (?,?,?,0,0,0)",
                     (lid, win, best_time),
                 )
+                await _restore_total_time(db, lid, _tt)
         else:
             # ヒート制：周回数＋タイム→順位→ポイント
             results = []
@@ -1895,11 +1924,13 @@ async def heat_result_save(tid: int, heat_id: int, request: Request, db: aiosqli
                 r["points"] = calc_points(rank)
 
             for r in results:
+                _tt = await _keep_total_time(db, r["lane_id"])
                 await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (r["lane_id"],))
                 await db.execute(
                     "INSERT INTO heat_results (heat_lane_id, lap_count, best_time, rank, points) VALUES (?,?,?,?,?)",
                     (r["lane_id"], r["lap_count"], r["best_time"], r["rank"], r["points"]),
                 )
+                await _restore_total_time(db, r["lane_id"], _tt)
 
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
     # 参加者向けHTML配信（自動更新）
@@ -1947,11 +1978,13 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
         time0 = float(t0) if t0 else None
         time1 = float(t1) if t1 else None
         for lid, win, bt, is_co in [(l0, win0, time0, co0), (l1, win1, time1, co1)]:
+            _tt = await _keep_total_time(db, lid)
             await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
             await db.execute(
                 "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points, is_co) VALUES (?,?,?,0,0,0,?)",
                 (lid, win, bt, 1 if is_co else 0),
             )
+            await _restore_total_time(db, lid, _tt)
         status = "done" if win0 is not None else "pending"
         await db.execute("UPDATE heats SET status=? WHERE id=?", (status, heat_id))
         await db.commit()
@@ -1969,11 +2002,13 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
             r["rank"] = rank
             r["points"] = calc_points(rank)
         for r in results:
+            _tt = await _keep_total_time(db, r["lane_id"])
             await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (r["lane_id"],))
             await db.execute(
                 "INSERT INTO heat_results (heat_lane_id, lap_count, best_time, rank, points) VALUES (?,?,?,?,?)",
                 (r["lane_id"], r["lap_count"], r["best_time"], r["rank"], r["points"]),
             )
+            await _restore_total_time(db, r["lane_id"], _tt)
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
         await db.commit()
 
@@ -6309,12 +6344,14 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
             # 1着以外。該当者なし（全員CO）のときは is_co=1、通常敗はrank0/is_co0
             win, rank = 0, 0
             is_co = 1 if win_eid is None else 0
+        _tt = await _keep_total_time(db, ln["lane_id"])
         await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (ln["lane_id"],))
         await db.execute(
             "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points, is_co) "
             "VALUES (?,?,0,0,?,0,?)",
             (ln["lane_id"], win, rank, is_co),
         )
+        await _restore_total_time(db, ln["lane_id"], _tt)
 
     passed_now = None
     stage_closed = False

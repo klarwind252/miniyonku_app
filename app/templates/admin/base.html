@@ -1028,13 +1028,15 @@ function _showPubToast(msg) {
     font-size:13px; color:#2c3e50;
   }
   #m4pip .pip-head{
-    display:flex; align-items:center; gap:6px;
-    padding:2px 8px; background:#2c3e50; color:#fff; user-select:none;
+    display:flex; align-items:center; gap:5px;
+    padding:0 6px; background:#2c3e50; color:#fff; user-select:none;
     cursor:move;   /* ヘッダをつまんで移動できる */
     touch-action:none;
-    line-height:1.35;   /* 高さを詰める（従来の約半分） */
+    /* 帯を最小の高さにする。文字サイズは変えず、余白と行間だけを詰める */
+    line-height:1.1;
+    min-height:0;
   }
-  #m4pip .pip-title{font-weight:bold; font-size:11px}
+  #m4pip .pip-title{font-weight:bold; font-size:11px; line-height:1.1}
   #m4pip .pip-dot{
     width:7px; height:7px; border-radius:50%; background:#7f8c8d; flex-shrink:0;
     transition:background .3s;
@@ -1084,7 +1086,7 @@ function _showPubToast(msg) {
   #m4pip th.pip-lane{text-align:center}
   #m4pip th.pip-total, #m4pip th.pip-gap{text-align:right}
   #m4pip .pip-empty{padding:14px 8px; text-align:center; color:#95a5a6; font-size:12px}
-  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:11px; line-height:1; padding:0 2px}
+  #m4pip .pip-toggle{margin-left:auto; background:none; border:none; color:#fff; cursor:pointer; font-size:11px; line-height:1.1; padding:0 2px; display:block}
   /* スマホは今回対象外（別途対応予定） */
   @media(max-width:700px){ #m4pip{display:none} }
   @media print{ #m4pip{display:none} }
@@ -1276,7 +1278,8 @@ function _showPubToast(msg) {
   }
 
   function poll(){
-    fetch('/api/timing/pip/latest?limit=3',{cache:'no-store'})
+    // mode=race … 緑ランプありのレースだけ。フリー走行の記録は出さない
+    fetch('/api/timing/pip/latest?limit=3&mode=race',{cache:'no-store'})
       .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
       .then(function(d){
         failCount=0;
