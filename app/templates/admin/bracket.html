@@ -64,9 +64,11 @@
 }
 .bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:8px 16px; margin-bottom:6px; }
 /* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
-.m4-apply-btn{padding:4px 12px;font-size:14px;background:#eef4fa;border:1px solid #2980b9;
-  color:#1a5276;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
-.m4-apply-btn:hover{background:#2980b9;color:#fff}
+.m4-apply-btn{padding:4px 12px;font-size:14px;background:#0a84ff;border:1px solid #0a6fd8;
+  color:#fff;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold;
+  box-shadow:0 1px 3px rgba(10,132,255,.35)}
+.m4-apply-btn:hover{background:#0060df;border-color:#0060df;box-shadow:0 2px 6px rgba(10,132,255,.5)}
+.m4-apply-btn:active{background:#004fb5}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
 /* 結果取消ボタン。反映ボタンのすぐ左に並べるため文字サイズ・余白を揃える */
 .m4-reset-btn{padding:4px 12px;font-size:14px;background:#fff;border:1px solid #e74c3c;
@@ -76,6 +78,17 @@
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
 .slot-row { display:flex; align-items:center; gap:10px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+/* 結果入力カードの順位バッジ（1/2/3/CO）。
+   名前の頭を揃えるため、順位が無い行にも非表示の同サイズ枠を置く。 */
+.rank-badge{ display:inline-flex; align-items:center; justify-content:center;
+  min-width:26px; height:26px; padding:0 6px; border-radius:13px; line-height:1;
+  font-size:14px; font-weight:bold; flex-shrink:0; border:2px solid transparent; }
+.rank-badge.r1{ background:#fcf3cf; color:#7d6608; border-color:#d4a017; }
+.rank-badge.r2{ background:#eef1f4; color:#4a5057; border-color:#a4b0be; }
+.rank-badge.r3{ background:#f6e3d0; color:#6e4b1f; border-color:#c68642; }
+.rank-badge.rn{ background:#f4f6f7; color:#7f8c8d; border-color:#dfe4ea; }
+.rank-badge.co{ background:#fdecea; color:#c0392b; border-color:#e74c3c; font-size:11px; }
+.rank-badge.ph{ visibility:hidden; }
 .slot-row:last-child { border-bottom:none; }
 .slot-no { display:none; }
 .slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; }
@@ -927,6 +940,9 @@ updateSeedSummary(0);
 {% else %}
 {# ── トーナメント進行フェーズ ── #}
 {% set normal_groups = groups_data | selectattr("round.round_type", "equalto", "normal") | list %}
+{# M4LAPS（連動型ラップタイマー）の表示条件。
+   クラウド版かつライセンス登録済みのときだけ、反映ボタン・タイム・順位バッジを出す。 #}
+{% set m4_on = IS_CLOUD and request.state.m4laps_licensed %}
 {% set final_groups  = groups_data | selectattr("round.round_type", "equalto", "final")  | list %}
 {% set third_groups  = groups_data | selectattr("round.round_type", "in", ["third","revival"]) | list %}
 
@@ -1152,7 +1168,7 @@ window.initBracketConnectors = initBracketConnectors;
 </div>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in rg %}
-  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
+  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
     <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span>グループ{{ g.group_no }}</span>
@@ -1171,8 +1187,23 @@ window.initBracketConnectors = initBracketConnectors;
       {% endif %}
     </div>
     {% for slot in slots %}
+    {# 順位バッジ：ranks に入っていれば数字。全員ぶんの順位がある組（M4LAPS反映・
+       決勝形式）で、名前があるのに順位が無い枠は完走できなかった扱い＝CO。
+       勝者クリックだけの組（ranks が1件）は「1」だけ出し、他は空欄のままにする。 #}
+    {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
+    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
     <div class="slot-row">
       <div class="slot-no">{{ slot.slot_no }}</div>
+      {% if m4_on %}
+      {% if cur_rank %}
+      <span class="rank-badge {% if cur_rank == 1 %}r1{% elif cur_rank == 2 %}r2{% elif cur_rank == 3 %}r3{% else %}rn{% endif %}"
+            title="{{ cur_rank }}位">{{ cur_rank }}</span>
+      {% elif is_co %}
+      <span class="rank-badge co" title="コースアウト・記録なし">CO</span>
+      {% else %}
+      <span class="rank-badge ph">-</span>
+      {% endif %}
+      {% endif %}
       {% if slot.name %}
       <div class="slot-name" style="cursor:pointer;user-select:none;"
            onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">
@@ -1181,7 +1212,7 @@ window.initBracketConnectors = initBracketConnectors;
         <span class="seed-badge">予選{{ slot.qual_rank }}位</span>
         {% endif %}
       </div>
-      {% if slot.total_time is not none %}
+      {% if m4_on and slot.total_time is not none %}
       <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
       {% endif %}
       <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
@@ -1216,14 +1247,26 @@ window.initBracketConnectors = initBracketConnectors;
 </div>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in rg %}
-  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}
+  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group third-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
     <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px">
       グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
     </div>
     {% for slot in slots %}
+    {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
+    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
     <div class="slot-row">
       <div class="slot-no" style="background:#7f8c8d">{{ slot.slot_no }}</div>
+      {% if m4_on %}
+      {% if cur_rank %}
+      <span class="rank-badge {% if cur_rank == 1 %}r1{% elif cur_rank == 2 %}r2{% elif cur_rank == 3 %}r3{% else %}rn{% endif %}"
+            title="{{ cur_rank }}位">{{ cur_rank }}</span>
+      {% elif is_co %}
+      <span class="rank-badge co" title="コースアウト・記録なし">CO</span>
+      {% else %}
+      <span class="rank-badge ph">-</span>
+      {% endif %}
+      {% endif %}
       {% if slot.name %}
       <div class="slot-name" style="cursor:pointer;user-select:none;"
            onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">{{ slot.name }}</div>
@@ -1252,8 +1295,19 @@ window.initBracketConnectors = initBracketConnectors;
     </div>
     {% for slot in slots %}
     {% set cur_rank = ranks.get(slot.slot_id) %}
+    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
     <div class="slot-row">
       <div class="slot-no" style="background:#d4a017">{{ slot.slot_no }}</div>
+      {% if m4_on %}
+      {% if cur_rank %}
+      <span class="rank-badge {% if cur_rank == 1 %}r1{% elif cur_rank == 2 %}r2{% elif cur_rank == 3 %}r3{% else %}rn{% endif %}"
+            title="{{ cur_rank }}位">{{ cur_rank }}</span>
+      {% elif is_co %}
+      <span class="rank-badge co" title="コースアウト・記録なし">CO</span>
+      {% else %}
+      <span class="rank-badge ph">-</span>
+      {% endif %}
+      {% endif %}
       {% if slot.name %}
       <div class="slot-name" style="cursor:pointer;user-select:none;color:inherit;">{{ slot.name }}</div>
       {% else %}

@@ -1043,6 +1043,15 @@ function _showPubToast(msg) {
   #m4pip .pip-body{max-height:min(46vh,340px); overflow-y:auto; padding:6px 8px}
   #m4pip.collapsed .pip-body{display:none}
   #m4pip .pip-race{border:1px solid #e9ecef; border-radius:8px; padding:6px 8px; margin-bottom:6px}
+  /* 一番上＝最新の結果は枠を鮮やかな青にして目立たせる */
+  #m4pip .pip-race.latest{
+    border:2px solid #0a84ff; background:#f4f9ff;
+    box-shadow:0 0 0 2px rgba(10,132,255,.15);
+  }
+  #m4pip .pip-latest-tag{
+    background:#0a84ff; color:#fff; border-radius:8px;
+    padding:1px 7px; font-size:10px; font-weight:bold; letter-spacing:.5px;
+  }
   #m4pip .pip-race:last-child{margin-bottom:0}
   #m4pip .pip-race-h{display:flex; align-items:center; gap:6px; margin-bottom:4px; color:#636e72; font-size:11px}
   #m4pip .pip-badge{background:#eaf4fb; color:#1a5276; border-radius:8px; padding:1px 7px; font-size:11px}
@@ -1208,7 +1217,7 @@ function _showPubToast(msg) {
       return;
     }
     var html='';
-    races.forEach(function(r){
+    races.forEach(function(r, idx){
       var linked = (r.heat_id!=null);
       // 受信時刻（"2026-07-23 04:07:10" → "04:07:10"）。取れなければ空。
       var ts='';
@@ -1216,8 +1225,9 @@ function _showPubToast(msg) {
         var m=String(r.created_at).match(/(\d{2}:\d{2}:\d{2})/);
         ts = m ? m[1] : String(r.created_at);
       }
-      html+='<div class="pip-race">'
+      html+='<div class="pip-race'+(idx===0 ? ' latest' : '')+'">'
         + '<div class="pip-race-h">'
+        + (idx===0 ? '<span class="pip-latest-tag">\u6700\u65b0</span>' : '')
         + (linked
             ? ('<span class="pip-badge linked">\u30d2\u30fc\u30c8'+esc(r.heat_id)+'\u306b\u53cd\u6620\u6e08</span>')
             : '')
