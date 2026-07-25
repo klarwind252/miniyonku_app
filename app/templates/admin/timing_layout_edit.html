@@ -74,7 +74,7 @@
       <div class="form-group" style="margin:0">
         <label title="コース全体（全周）の合計距離。1周の距離＝合計距離÷周回数として平均速度を算出します">合計距離</label>
         <div style="display:flex;align-items:center;gap:4px">
-          <input type="number" id="lap-length" step="0.1" min="0" placeholder="未設定"
+          <input type="number" id="lap-length" step="1" min="0" placeholder="未設定"
                  value="{{ layout.lap_length_m if layout.lap_length_m else '' }}"
                  style="width:90px;text-align:right">
           <span style="font-size:12px;color:#7f8c8d">m</span>
