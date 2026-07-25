@@ -25,11 +25,19 @@
 .race-row td { vertical-align:middle; padding:4px 10px; }
 /* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示）
    取消（赤）とデザインを揃え、色だけ青にした淡色ボタン。 */
-.m4-apply-btn{font-size:12px;padding:4px 8px;border:1px solid #aecbfa;border-radius:4px;
-  background:#eef4ff;color:#1a56db;cursor:pointer;white-space:nowrap;font-weight:bold}
-.m4-apply-btn:hover{background:#dde9ff;border-color:#89b0f7}
-.m4-apply-btn:active{background:#cddffb}
+.m4-apply-btn{width:48px;height:48px;font-size:13px;border:none;border-radius:5px;
+  background:#1a56db;color:#fff;cursor:pointer;white-space:nowrap;font-weight:bold;
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.m4-apply-btn:hover{background:#1546b0}
+.m4-apply-btn:active{background:#113a92}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
+/* 取り消しボタン：反映と同じ大きさ（48×48）・濃い背景に白抜き。取消は赤系 */
+.m4-undo-btn{width:48px;height:48px;font-size:13px;border:none;border-radius:5px;
+  background:#c0392b;color:#fff;cursor:pointer;white-space:nowrap;font-weight:bold;
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.m4-undo-btn:hover{background:#a93226}
+.m4-undo-btn:active{background:#922b21}
+.m4-undo-btn:disabled{opacity:.5;cursor:wait}
 .save-btn {
   padding:4px 12px; border:none; border-radius:4px; cursor:pointer;
   font-size:12px; font-weight:bold; font-family:inherit; transition:all .12s;
@@ -141,20 +149,15 @@
   .sched-tbl .rc-name{font-size:14px !important}
   .sched-tbl .rc-yomi{font-size:9px !important}
   .sched-tbl .rc-finish{font-size:14px !important;padding-right:0 !important}
-  /* 状態欄のボタンも詰める */
-  .sched-tbl .m4-apply-btn{font-size:11px !important;padding:3px 5px !important}
+  /* 反映・取消は48×48固定のまま（枠と揃える） */
+  .sched-tbl .m4-apply-btn,.sched-tbl .m4-undo-btn{font-size:12px !important}
 }
-/* FINISHタイムの順位ハイライト（同一レース内の1・2・3位）。金・銀・銅。 */
-.rc-finish.fin-r1{color:#9a7000 !important;background:#fff4cf;border-radius:4px;padding:1px 6px}
-.rc-finish.fin-r2{color:#566069 !important;background:#eceff2;border-radius:4px;padding:1px 6px}
-.rc-finish.fin-r3{color:#9c5324 !important;background:#f7e5d9;border-radius:4px;padding:1px 6px}
-
-/* エントリー一覧：読み仮名順に横へ羅列して折り返す */
+/* エントリー一覧：読み仮名順に横へ羅列して折り返す。1チップは名前＋よみの2段 */
 .entry-wrap{display:flex;flex-wrap:wrap;gap:6px}
-.entry-chip{display:inline-flex;align-items:baseline;gap:4px;background:#f4f6f8;
-  border:1px solid #e3e8ee;border-radius:14px;padding:3px 10px;line-height:1.2}
-.entry-chip .ec-name{font-size:13px;font-weight:bold;color:#2c3e50}
-.entry-chip .ec-yomi{font-size:9px;color:#95a5a6}
+.entry-chip{display:inline-flex;flex-direction:column;align-items:flex-start;
+  background:#f4f6f8;border:1px solid #e3e8ee;border-radius:8px;padding:4px 10px;line-height:1.15}
+.entry-chip .ec-name{font-size:13px;font-weight:bold;color:#2c3e50;white-space:nowrap}
+.entry-chip .ec-yomi{font-size:9px;color:#95a5a6;white-space:nowrap}
 
 /* 予選順位表のベスト列（TOTAL/LAP/SECTOR BEST）。グループ境界に縦線。 */
 .std-tbl .std-grp th{font-size:11px;color:#7f8c8d;font-weight:bold;text-align:center;
@@ -946,9 +949,9 @@ document.addEventListener('DOMContentLoaded', function(){
             <span style="font-size:11px;color:#95a5a6">確定済</span>
             {% else %}
             <button type="button" id="status-{{ heat.id }}"
+                    class="m4-undo-btn"
                     onclick="resetRace({{ heat.id }}, {{ t.id }})"
-                    title="このレースの結果を取り消して未入力に戻します"
-                    style="font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">取消</button>
+                    title="このレースの結果を取り消して未入力に戻します">取消</button>
             {% endif %}
           {% elif IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
             <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
@@ -976,7 +979,6 @@ document.addEventListener('DOMContentLoaded', function(){
             {# 名前とよみがなを2段に。右端にFINISHタイム（計測反映済みのみ）を右寄せで置く #}
             {% set _ir_rr = inline_results.get((heat.id, lane.entry_id), {}) %}
             {% set _finish_rr = _ir_rr.get('total_time') %}
-            {% set _frank_rr = _ir_rr.get('finish_rank') %}
             <div class="rc-body" style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;margin-left:10px">
               <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
                 <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
@@ -984,8 +986,8 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish_rr is not none %}
-              <span class="rc-finish{% if _frank_rr %} fin-r{{ _frank_rr }}{% endif %}"
-                    title="FINISHタイム（ラップタイマー反映）{% if _frank_rr %}・このレース{{ _frank_rr }}位{% endif %}"
+              <span class="rc-finish"
+                    title="FINISHタイム（ラップタイマー反映）"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish_rr) }}</span>
               {% endif %}
@@ -1009,7 +1011,6 @@ document.addEventListener('DOMContentLoaded', function(){
             {# 名前とよみがなを2段に。右端にはFINISHタイム（計測反映済みのみ）を右寄せで置く #}
             {% set _ir = inline_results.get((heat.id, lane.entry_id), {}) %}
             {% set _finish = _ir.get('total_time') %}
-            {% set _frank = _ir.get('finish_rank') %}
             <div class="rc-body" onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
                  style="display:flex;align-items:center;gap:8px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0">
               <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
@@ -1018,8 +1019,8 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish is not none %}
-              <span class="rc-finish{% if _frank %} fin-r{{ _frank }}{% endif %}"
-                    title="FINISHタイム（ラップタイマー反映）{% if _frank %}・このレース{{ _frank }}位{% endif %}"
+              <span class="rc-finish"
+                    title="FINISHタイム（ラップタイマー反映）"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish) }}</span>
               {% endif %}
@@ -1981,8 +1982,7 @@ function markHeatDone(heatId, tid){
   btn.id = `status-${heatId}`;
   btn.title = 'このレースの結果を取り消して未入力に戻します';
   btn.textContent = '取消';
-  btn.style.cssText = 'font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;'
-    + 'border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap';
+  btn.className = 'm4-undo-btn';
   btn.onclick = function(){ resetRace(heatId, tid); };
   holder.appendChild(btn);
 }

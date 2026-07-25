@@ -234,14 +234,14 @@ select{background:#fff}
     <button type="button" id="bgmBtn"
             onclick="openBgmPopup()"
             title="BGMを再生"
-            style="display:flex;align-items:center;gap:6px;color:#ecf0f1;padding:14px 16px;font-size:13px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
+            style="display:flex;align-items:center;gap:6px;color:#ecf0f1;padding:14px 8px 14px 16px;font-size:13px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
       <span id="bgmBtnIcon">🎵</span> BGM
       <span id="bgmNowPlaying" style="display:none;font-size:11px;padding:1px 8px;border-radius:8px;background:#27ae60;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis"></span>
     </button>
     <button type="button" id="bgmAutoBtn"
             onclick="toggleBgmAuto()"
             title="シーン（予選・決勝など）に合わせてBGMを自動再生（この端末のみ）"
-            style="display:flex;align-items:center;gap:6px;color:#bdc3c7;padding:14px 12px;font-size:12px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
+            style="display:flex;align-items:center;gap:5px;color:#bdc3c7;padding:14px 12px 14px 6px;font-size:12px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
       <span id="bgmAutoTrack" style="position:relative;display:inline-block;width:32px;height:18px;border-radius:9px;background:#4a5568;transition:background .3s;flex-shrink:0">
         <span id="bgmAutoKnob" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .3s;display:block"></span>
       </span>
@@ -257,6 +257,8 @@ select{background:#fff}
     </a>
   </div>
 
+  {# 料金区分は設定（pricing_enabled）がONのときだけ出す #}
+  {% if nav_pricing_enabled(request) %}
   <div class="nav-group" style="padding:0 8px;display:flex;align-items:center;gap:6px">
     <span style="font-size:11px;color:#bdc3c7;white-space:nowrap">料金区分</span>
     <select id="dayTypeSelect"
@@ -269,6 +271,7 @@ select{background:#fff}
       <option value="special">特別</option>
     </select>
   </div>
+  {% endif %}
 
 </nav>
 <div class="container">

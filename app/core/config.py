@@ -58,6 +58,28 @@ def inject_globals(templates):
     参照して UI を出し分けるために使用する。
     """
     templates.env.globals.update(DEPLOY_MODE=DEPLOY_MODE, IS_CLOUD=IS_CLOUD)
+
+    # ナビの「料金区分」を出すかどうか。設定（pricing_enabled）が ON のときだけ表示する。
+    # DB を1件だけ読む軽量関数。循環 import を避けるため遅延 import。
+    def _nav_pricing_enabled(request=None) -> bool:
+        try:
+            import os, sqlite3
+            from app.pwa import _db_path_for
+            db_path = _db_path_for(request) if request is not None else None
+            if not db_path or not os.path.exists(db_path):
+                return False
+            con = sqlite3.connect(db_path)
+            try:
+                cur = con.execute(
+                    "SELECT value FROM app_settings WHERE key='pricing_enabled'")
+                row = cur.fetchone()
+            finally:
+                con.close()
+            return bool(row) and row[0] == "1"
+        except Exception:
+            return False
+    templates.env.globals.update(nav_pricing_enabled=_nav_pricing_enabled)
+
     # ホーム画面アイコン（Webアプリ）用の <head> 生成関数をテンプレートから呼べるように。
     # 循環 import を避けるためここで遅延 import する。
     try:

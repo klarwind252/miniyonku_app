@@ -877,18 +877,6 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             for row in await cur.fetchall():
                 inline_results[(row["heat_id"], row["entry_id"])] = dict(row)
 
-        # FINISHタイムの順位（ヒート内＝同一計測レース内での1・2・3位）を付与する。
-        # ヒートは1つの計測レースに対応するので、そのヒートの完走タイムを
-        # 小さい順に並べれば「同じレースID内の順位」になる。ハイライトに使う。
-        by_heat: dict = {}
-        for (hid, eid), r in inline_results.items():
-            if r.get("total_time") is not None:
-                by_heat.setdefault(hid, []).append((r["total_time"], hid, eid))
-        for hid, lst in by_heat.items():
-            for rank, (_t, h, e) in enumerate(sorted(lst), start=1):
-                # 4位以降は色を付けないので3位までだけ記録する
-                inline_results[(h, e)]["finish_rank"] = rank if rank <= 3 else 0
-
     # heat_lanes_map に lane_id も追加（保存ボタン用）
     for hid, lanes in heat_lanes_map.items():
         for lane in lanes:
@@ -1076,7 +1064,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     # レーサー別ベスト（予選順位表に表示）。反映済みヒートのみ対象・1パス集計。
     from app.application import timing_racer_best_service as rbest_svc
     try:
-        racer_bests = await rbest_svc.racer_bests_for_tournament(tid, db) \
+        racer_bests = await rbest_svc.racer_bests_for_tournament(db, tid) \
             if IS_CLOUD and getattr(request.state, "m4laps_licensed", False) else {}
     except Exception:
         racer_bests = {}
