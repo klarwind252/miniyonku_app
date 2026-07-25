@@ -39,7 +39,7 @@ TARGET_TOTAL_S = 35.0        # FINISHタイムの目安（秒）
 TOTAL_JITTER_S = 5.0         # 上のブレ幅（±）。1台ずつ独立に引く
 SECTOR_MAX_S = 2.0           # 1区間の上限（秒）。収まらない構成のときは総合タイムを優先する
 DEFAULT_BEAM_GAP_MM = 20.0   # ビーム間隔の仮定値（mm）。t_us_b の打刻に使う
-SPEED_RANGE_MS = (5.0, 9.0)  # 通過速度の生成レンジ（m/s）
+SPEED_RANGE_MS = (4.0, 9.0)  # 通過速度の生成レンジ（m/s）。ミニ四駆の実測に合わせる
 
 MAX_LAPS = 20
 MAX_RACES = 20

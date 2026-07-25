@@ -75,6 +75,9 @@
         <label title="コース全体（全周）の合計距離。1周の距離＝合計距離÷周回数として平均速度を算出します">合計距離</label>
         <div style="display:flex;align-items:center;gap:4px">
           <input type="number" id="lap-length" step="1" min="0" placeholder="未設定"
+                 inputmode="numeric"
+                 onkeydown="if(['.',',','e','E','+','-'].includes(event.key))event.preventDefault()"
+                 oninput="this.value=this.value.replace(/[^0-9]/g,'')"
                  value="{{ layout.lap_length_m if layout.lap_length_m else '' }}"
                  style="width:90px;text-align:right">
           <span style="font-size:12px;color:#7f8c8d">m</span>
@@ -336,8 +339,8 @@ async function save(force){
   const body = {
     name: document.getElementById('layout-name').value,
     target_laps: parseInt(document.getElementById('target-laps').value),
-    // 1周の距離（m）。空欄なら null＝未設定（ラップ平均速度は「—」表示になる）
-    lap_length_m: (_ll === '' ? null : parseFloat(_ll)),
+    // 合計距離（m）。整数のみ（小数不可）。空欄なら null＝未設定（平均速度は「—」）
+    lap_length_m: (_ll === '' ? null : parseInt(_ll, 10)),
     elements: els,
     force: force
   };

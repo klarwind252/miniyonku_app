@@ -69,8 +69,9 @@
                    placeholder="未登録" style="width:150px;font-family:monospace">
           </td>
           <td style="padding:8px">
-            {# センサー幅は速度計測するゲート（SG/SQ）のみ。GW/RCは対象外。 #}
-            {% if d.kind in ('SG', 'SQ') %}
+            {# センサー幅は速度計測するゲート＝GW本体(S/Gのダブルセンサー)とSQ。
+               SGはシグナル（信号灯）なので速度計測せず対象外。 #}
+            {% if d.kind in ('GW', 'SQ') %}
             <input type="number" name="sensor_width_mm" step="0.1" min="0"
                    value="{{ d.sensor_width_mm if d.sensor_width_mm else '' }}"
                    placeholder="未設定" style="width:70px;text-align:right">

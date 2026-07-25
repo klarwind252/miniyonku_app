@@ -173,9 +173,10 @@ async def layout_save(
     force = bool(data.get("force"))
 
     # 1周の距離(m)。ラップ平均速度の算出に使う。未設定(None)なら速度は「—」表示。
+    # 合計距離(m)。整数のみ（小数は切り捨て）。未設定(None)なら速度は「—」表示。
     lap_length_m = data.get("lap_length_m")
     try:
-        lap_length_m = float(lap_length_m) if lap_length_m not in (None, "") else None
+        lap_length_m = int(float(lap_length_m)) if lap_length_m not in (None, "") else None
         if lap_length_m is not None and lap_length_m <= 0:
             lap_length_m = None
     except (TypeError, ValueError):
