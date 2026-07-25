@@ -877,15 +877,29 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             for row in await cur.fetchall():
                 inline_results[(row["heat_id"], row["entry_id"])] = dict(row)
 
-        # 各レース（ヒート）内でFINISHタイムを速い順に並べ、1・2・3位を付ける。
-        # レーススケジュールで 1位=紫・2位=青・3位=緑 に色分けするのに使う。
-        _by_heat: dict = {}
-        for (hid, eid), r in inline_results.items():
-            if r.get("total_time") is not None:
-                _by_heat.setdefault(hid, []).append((r["total_time"], hid, eid))
-        for hid, lst in _by_heat.items():
-            for rank, (_t, h, e) in enumerate(sorted(lst), start=1):
-                inline_results[(h, e)]["finish_rank"] = rank if rank <= 3 else 0
+        # 予選・決勝を通じた全対戦のFINISHタイムで速い順に並べ、
+        # 1位=紫・2位=青・3位=緑（他画面と同配色）。対戦ごとの色付けはしない。
+        # 反映で順位が入れ替われば色も追従し、4位以下に落ちたセルは通常表示に戻る。
+        _all = [(r["total_time"], hid, eid)
+                for (hid, eid), r in inline_results.items()
+                if r.get("total_time") is not None]
+        # 決勝（ブラケット）の記録も母集団に入れる。決勝が速ければ予選セルの色は下がる／消える。
+        try:
+            async with db.execute(
+                """SELECT bsr.total_time
+                     FROM bracket_slot_ranks bsr
+                     JOIN bracket_groups bg ON bg.id = bsr.group_id
+                     JOIN bracket_rounds  br ON br.id = bg.round_id
+                    WHERE br.tournament_id = ? AND bsr.total_time IS NOT NULL""",
+                (tid,),
+            ) as cur:
+                for r in await cur.fetchall():
+                    _all.append((r["total_time"], None, None))   # 決勝はこの画面に表示しない
+        except Exception:
+            pass
+        for rank, (_t, h, e) in enumerate(sorted(_all)[:3], start=1):
+            if h is not None and e is not None:
+                inline_results[(h, e)]["finish_rank"] = rank
 
     # heat_lanes_map に lane_id も追加（保存ボタン用）
     for hid, lanes in heat_lanes_map.items():

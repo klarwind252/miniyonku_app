@@ -152,7 +152,7 @@
   /* 反映・取消は48×48固定のまま（枠と揃える） */
   .sched-tbl .m4-apply-btn,.sched-tbl .m4-undo-btn{font-size:12px !important}
 }
-/* レーススケジュールのFINISHタイム：そのレース内の順位で色分け（紫1位・青2位・緑3位） */
+/* レーススケジュールのFINISHタイム：予選全体の順位で色分け（紫1位・青2位・緑3位） */
 .rc-finish.fin-r1{color:#6b21a8 !important;background:#f3e8ff;border-radius:4px;padding:1px 6px}
 .rc-finish.fin-r2{color:#1e40af !important;background:#dbeafe;border-radius:4px;padding:1px 6px}
 .rc-finish.fin-r3{color:#166534 !important;background:#dcfce7;border-radius:4px;padding:1px 6px}
@@ -1001,7 +1001,7 @@ document.addEventListener('DOMContentLoaded', function(){
               {% if _finish_rr is not none %}
               {% set _frank_rr = _ir_rr.get('finish_rank') %}
               <span class="rc-finish{% if _frank_rr %} fin-r{{ _frank_rr }}{% endif %}"
-                    title="FINISHタイム（ラップタイマー反映）{% if _frank_rr %}・このレース{{ _frank_rr }}位{% endif %}"
+                    title="FINISHタイム（ラップタイマー反映）{% if _frank_rr %}・予選{{ _frank_rr }}位{% endif %}"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish_rr) }}</span>
               {% endif %}
@@ -1035,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', function(){
               {% if _finish is not none %}
               {% set _frank = _ir.get('finish_rank') %}
               <span class="rc-finish{% if _frank %} fin-r{{ _frank }}{% endif %}"
-                    title="FINISHタイム（ラップタイマー反映）{% if _frank %}・このレース{{ _frank }}位{% endif %}"
+                    title="FINISHタイム（ラップタイマー反映）{% if _frank %}・予選{{ _frank }}位{% endif %}"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish) }}</span>
               {% endif %}
