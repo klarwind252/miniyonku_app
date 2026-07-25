@@ -877,6 +877,16 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             for row in await cur.fetchall():
                 inline_results[(row["heat_id"], row["entry_id"])] = dict(row)
 
+        # 各レース（ヒート）内でFINISHタイムを速い順に並べ、1・2・3位を付ける。
+        # レーススケジュールで 1位=紫・2位=青・3位=緑 に色分けするのに使う。
+        _by_heat: dict = {}
+        for (hid, eid), r in inline_results.items():
+            if r.get("total_time") is not None:
+                _by_heat.setdefault(hid, []).append((r["total_time"], hid, eid))
+        for hid, lst in _by_heat.items():
+            for rank, (_t, h, e) in enumerate(sorted(lst), start=1):
+                inline_results[(h, e)]["finish_rank"] = rank if rank <= 3 else 0
+
     # heat_lanes_map に lane_id も追加（保存ボタン用）
     for hid, lanes in heat_lanes_map.items():
         for lane in lanes:
@@ -1080,6 +1090,28 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         _tv = _bm.get("total")
         if _tv is not None and (best_total_min is None or _tv < best_total_min):
             best_total_min = _tv
+
+    # 各項目について「予選全体で上位3人」を判定し、entry_id→順位(1..3) を作る。
+    # 値はそのレーサーのベスト。色は予選全体で見た順位を示す（計測結果と同じ配色）。
+    # タイム系は小さいほど上位、速度系は大きいほど上位。
+    _LOWER = {"total", "lap"}
+    for _i in range(1, 8):
+        _LOWER.add(f"sector{_i}")   # 区間タイムは小さいほど上位
+    def _rank_map(metric, lower):
+        vals = [(eid, bm[metric]) for eid, bm in racer_bests.items()
+                if bm.get(metric) is not None]
+        vals.sort(key=lambda x: x[1], reverse=not lower)
+        out = {}
+        for pos, (eid, _v) in enumerate(vals[:3], start=1):
+            out[eid] = pos
+        return out
+    best_ranks = {}
+    for _m in ["total", "total_avg", "max_ms", "lap", "lap_avg"]:
+        best_ranks[_m] = _rank_map(_m, _m in _LOWER)
+    for _i in range(1, 8):
+        best_ranks[f"sector{_i}"] = _rank_map(f"sector{_i}", True)
+        best_ranks[f"sector_ms{_i}"] = _rank_map(f"sector_ms{_i}", False)
+
     # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
     entries_by_yomi = sorted(
         entries, key=lambda e: (e["yomi"] or e["name"] or "", e["name"] or ""))
@@ -1090,6 +1122,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         "entries": entries,
         "entries_by_yomi": entries_by_yomi,
         "racer_bests": racer_bests,
+        "best_ranks": best_ranks,
         "best_total_min": best_total_min,
         "max_sector_no": max_sector_no,
         "heats": heats,

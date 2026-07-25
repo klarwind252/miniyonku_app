@@ -152,6 +152,10 @@
   /* 反映・取消は48×48固定のまま（枠と揃える） */
   .sched-tbl .m4-apply-btn,.sched-tbl .m4-undo-btn{font-size:12px !important}
 }
+/* レーススケジュールのFINISHタイム：そのレース内の順位で色分け（紫1位・青2位・緑3位） */
+.rc-finish.fin-r1{color:#6b21a8 !important;background:#f3e8ff;border-radius:4px;padding:1px 6px}
+.rc-finish.fin-r2{color:#1e40af !important;background:#dbeafe;border-radius:4px;padding:1px 6px}
+.rc-finish.fin-r3{color:#166534 !important;background:#dcfce7;border-radius:4px;padding:1px 6px}
 /* エントリー一覧：読み仮名順に横へ羅列して折り返す。1チップは名前＋よみの2段 */
 .entry-wrap{display:flex;flex-wrap:wrap;gap:6px}
 .entry-chip{display:inline-flex;flex-direction:column;align-items:flex-start;
@@ -159,16 +163,25 @@
 .entry-chip .ec-name{font-size:13px;font-weight:bold;color:#2c3e50;white-space:nowrap}
 .entry-chip .ec-yomi{font-size:9px;color:#95a5a6;white-space:nowrap}
 
-/* 予選順位表のベスト列（TOTAL/LAP/SECTOR BEST）。グループ境界に縦線。 */
+/* 予選順位表のベスト列（TOTAL/LAP/SECTOR BEST）。グループ境界に縦線。
+   基本の文字色は黒。予選全体で上位3人のセルだけ色を付ける（計測結果と同配色）。 */
 .std-tbl .std-grp th{font-size:11px;color:#7f8c8d;font-weight:bold;text-align:center;
   padding:4px 6px;border-bottom:1px solid #e9ecef}
 .std-tbl th.bsep,.std-tbl td.bsep{border-left:2px solid #dde3ea}
 .std-tbl td.bcell{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;
-  white-space:nowrap;padding:4px 6px}
-.std-tbl td.bgap{color:#8e44ad}
-.std-tbl td.bspd{color:#16897b}
-.std-tbl td.bmax{color:#c0392b}
-.std-tbl td.bsec{color:#556}
+  white-space:nowrap;padding:4px 6px;color:#2c3e50}
+/* 区間セル：上段=タイム／下段=通過速度 */
+.std-tbl td.bsec2{text-align:right;font-variant-numeric:tabular-nums;padding:3px 5px;
+  white-space:nowrap;color:#2c3e50}
+.std-tbl td.bsec2 .st{font-size:12px;display:block;line-height:1.15}
+.std-tbl td.bsec2 .sp{font-size:10px;display:block;line-height:1.1;color:#7f8c8d}
+/* 予選全体での上位3人の色（紫=1位・青=2位・緑=3位。計測結果と統一） */
+.std-tbl .b1{background:#f3e8ff;color:#6b21a8;font-weight:bold;border-radius:3px}
+.std-tbl .b2{background:#dbeafe;color:#1e40af;font-weight:bold;border-radius:3px}
+.std-tbl .b3{background:#dcfce7;color:#166534;font-weight:bold;border-radius:3px}
+.std-tbl td.bsec2 .st.b1,.std-tbl td.bsec2 .st.b2,.std-tbl td.bsec2 .st.b3,
+.std-tbl td.bsec2 .sp.b1,.std-tbl td.bsec2 .sp.b2,.std-tbl td.bsec2 .sp.b3{
+  padding:0 3px}
 </style>
 {% endblock %}
 {% block content %}
@@ -986,8 +999,9 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish_rr is not none %}
-              <span class="rc-finish"
-                    title="FINISHタイム（ラップタイマー反映）"
+              {% set _frank_rr = _ir_rr.get('finish_rank') %}
+              <span class="rc-finish{% if _frank_rr %} fin-r{{ _frank_rr }}{% endif %}"
+                    title="FINISHタイム（ラップタイマー反映）{% if _frank_rr %}・このレース{{ _frank_rr }}位{% endif %}"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish_rr) }}</span>
               {% endif %}
@@ -1019,8 +1033,9 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish is not none %}
-              <span class="rc-finish"
-                    title="FINISHタイム（ラップタイマー反映）"
+              {% set _frank = _ir.get('finish_rank') %}
+              <span class="rc-finish{% if _frank %} fin-r{{ _frank }}{% endif %}"
+                    title="FINISHタイム（ラップタイマー反映）{% if _frank %}・このレース{{ _frank }}位{% endif %}"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish) }}</span>
               {% endif %}
@@ -1492,15 +1507,15 @@ document.addEventListener('DOMContentLoaded', function(){
             <th colspan="8"></th>
             {% if show_best %}
             <th class="bsep" colspan="4">TOTAL BEST</th>
-            <th class="bsep">LAP BEST</th>
-            {% if max_sector_no > 0 %}<th class="bsep" colspan="{{ max_sector_no }}">SECTOR BEST</th>{% endif %}
+            <th class="bsep" colspan="2">LAP BEST</th>
+            {% if max_sector_no > 0 %}<th class="bsep" colspan="{{ max_sector_no }}">SECTOR BEST（上:秒／下:m/s）</th>{% endif %}
             {% endif %}
           </tr>
           <tr>
             <th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th>
             {% if show_best %}
             <th class="bsep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
-            <th class="bsep">TIME</th>
+            <th class="bsep">TIME</th><th>Av.</th>
             {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep"{% endif %}>{{ n }}</th>{% endfor %}
             {% endif %}
           </tr>
@@ -1541,16 +1556,25 @@ document.addEventListener('DOMContentLoaded', function(){
               </button>
             </td>
             {% endif %}
-            {# レーサー別ベスト（point型のみ・M4LAPS） #}
+            {# レーサー別ベスト（point型のみ・M4LAPS）。値=そのレーサーのベスト、
+               色=予選全体での上位3人（紫1位・青2位・緑3位）。基本文字色は黒。 #}
             {% if not is_none_roundrobin and not is_roundrobin and racer_bests and racer_bests|length > 0 %}
             {% set rb = racer_bests.get(s.entry_id, {}) %}
-            <td class="bsep bcell">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
-            <td class="bcell bgap">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
-            <td class="bcell bspd">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
-            <td class="bcell bmax">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
-            <td class="bsep bcell">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
+            <td class="bsep bcell{% if best_ranks.total.get(s.entry_id) %} b{{ best_ranks.total.get(s.entry_id) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
+            <td class="bcell">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
+            <td class="bcell{% if best_ranks.total_avg.get(s.entry_id) %} b{{ best_ranks.total_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
+            <td class="bcell{% if best_ranks.max_ms.get(s.entry_id) %} b{{ best_ranks.max_ms.get(s.entry_id) }}{% endif %}">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
+            <td class="bsep bcell{% if best_ranks.lap.get(s.entry_id) %} b{{ best_ranks.lap.get(s.entry_id) }}{% endif %}">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
+            <td class="bcell{% if best_ranks.lap_avg.get(s.entry_id) %} b{{ best_ranks.lap_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('lap_avg') is not none %}{{ '%.2f'|format(rb['lap_avg']) }}{% else %}—{% endif %}</td>
             {% for n in range(1, max_sector_no + 1) %}
-            <td class="bcell{% if n == 1 %} bsep{% endif %} bsec">{% if rb.get('sector' ~ n) is not none %}{{ '%.3f'|format(rb['sector' ~ n]) }}{% else %}—{% endif %}</td>
+            {% set _st = rb.get('sector' ~ n) %}
+            {% set _sp = rb.get('sector_ms' ~ n) %}
+            {% set _rt = best_ranks['sector' ~ n].get(s.entry_id) %}
+            {% set _rp = best_ranks['sector_ms' ~ n].get(s.entry_id) %}
+            <td class="bsec2{% if n == 1 %} bsep{% endif %}">
+              <span class="st{% if _rt %} b{{ _rt }}{% endif %}">{% if _st is not none %}{{ '%.3f'|format(_st) }}{% else %}—{% endif %}</span>
+              <span class="sp{% if _rp %} b{{ _rp }}{% endif %}">{% if _sp is not none %}{{ '%.2f'|format(_sp) }}{% else %}—{% endif %}</span>
+            </td>
             {% endfor %}
             {% endif %}
           </tr>
