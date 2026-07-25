@@ -125,14 +125,18 @@
      ⚠ 1fr/3fr のままだと右側が数十pxまで潰れ、文字が縦に折り返る。 */
   .qual-cols{grid-template-columns:1fr !important}
   .sched-tbl{font-size:13px}
-  .sched-tbl th,.sched-tbl td{padding:4px 5px !important}
-  .sched-tbl th.st{width:76px !important;font-size:11px}
-  .sched-tbl th.ed{width:36px !important}
+  /* 余白は半分に。狭い画面では隙間よりも中身の幅を優先する */
+  .sched-tbl th,.sched-tbl td{padding:2px 3px !important}
+  .sched-tbl th.st{width:62px !important;font-size:11px}
+  .sched-tbl th.no{width:18px !important;font-size:11px}
+  .sched-tbl th.ed{width:32px !important}
   .sched-tbl th.crs{font-size:11px}
+  /* 反映ボタンのアイコンは省く（文字だけで用は足りる） */
+  .sched-tbl .m4-apply-btn .ico{display:none}
   /* セル内：順位枠は小さく、名前ブロックは縦積み */
-  .sched-tbl .rc{gap:4px !important;align-items:flex-start !important}
-  .sched-tbl .rc-rank{min-width:34px !important;height:34px !important;
-    font-size:12px !important;margin-right:4px !important;padding:0 2px !important}
+  .sched-tbl .rc{gap:2px !important;align-items:flex-start !important}
+  .sched-tbl .rc-rank{min-width:30px !important;height:30px !important;
+    font-size:12px !important;margin-right:2px !important;padding:0 2px !important}
   .sched-tbl .rc-body{height:auto !important;flex-direction:column !important;
     align-items:flex-start !important;gap:0 !important;margin-left:0 !important}
   .sched-tbl .rc-gap{display:none !important}
@@ -140,7 +144,7 @@
   .sched-tbl .rc-yomi{font-size:9px !important}
   .sched-tbl .rc-finish{font-size:14px !important;padding-right:0 !important}
   /* 状態欄のボタンも詰める */
-  .sched-tbl .m4-apply-btn{font-size:11px !important;padding:4px 6px !important}
+  .sched-tbl .m4-apply-btn{font-size:11px !important;padding:3px 5px !important}
 }
 </style>
 {% endblock %}
@@ -927,8 +931,9 @@ document.addEventListener('DOMContentLoaded', function(){
                     style="font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">取消</button>
             {% endif %}
           {% elif IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
+            {# アイコンは span で包む。スマホでは幅を稼ぐために隠す #}
             <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
-                    title="ラップタイマーの最新の計測結果をこのヒートに反映します">⏱ 反映</button>
+                    title="ラップタイマーの最新の計測結果をこのヒートに反映します"><span class="ico">⏱</span> 反映</button>
           {% endif %}
         </div>
       </td>
@@ -1089,7 +1094,7 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <table class="sched-tbl" style="min-width:500px;width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1387,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
           <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
             <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat) }}
@@ -1399,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', function(){
       {% else %}
         <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
           <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
           </tbody>
@@ -1409,7 +1414,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {# 通常ヒート・総当たり #}
     <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
       {% for heat in heats %}
       {{ race_row(heat) }}
