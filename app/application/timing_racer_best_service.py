@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from app.application import timing_speed_service as spd
+from app.application import timing_race_speed_store as speed_store
 from app.application import timing_best_service as best_svc
 from app.application.timing_race_service import build_race_result
 from app.domain.rotation import LayoutElement
@@ -89,63 +90,31 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
         if race is None or result is None:
             continue
 
-        layout_id = race["layout_id"]
-        if layout_id not in cfg_cache:
-            cfg_cache[layout_id] = await spd.load_speed_config(db, layout_id)
-            elems = await lrepo.get_elements(layout_id)
-            layout_elems_cache[layout_id] = [
-                LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems
-            ]
-        cfg = cfg_cache[layout_id]
-        gap_by_node = cfg.get("beam_gap_by_node") or {}
-        lap_len_m = cfg.get("lap_length_m")
-
-        # 通過速度の引き当て表（設定があるときだけ）
-        pass_index = {}
-        if gap_by_node and layout_elems_cache[layout_id]:
-            async with db.execute(
-                "SELECT lane, src, t_us, t_us_b FROM timing_events "
-                "WHERE race_id = ? ORDER BY t_us",
-                (rid,),
-            ) as cur:
-                evs = [
-                    {"lane": e["lane"], "src": e["src"],
-                     "t_us": e["t_us"], "t_us_b": e["t_us_b"]}
-                    for e in await cur.fetchall()
-                ]
-            try:
-                pass_index = spd.build_pass_index(layout_elems_cache[layout_id], evs)
-            except Exception:
-                pass_index = {}
-
-        def _pass_speed(lane, lap, idx):
-            rec = pass_index.get((lane, lap, idx))
-            if not rec:
-                return None
-            return spd.pass_speed_ms(rec[0], rec[1], gap_by_node.get(rec[2]))
+        # 速度は反映時に保存済みの値を読む（都度計算しない・定義も統一）
+        st = await speed_store.load_speeds(db, rid)
 
         for m in result.ranking():
             entry_id = lane_to_entry.get((heat_id, m.start_lane))
             if entry_id is None:
                 continue
+            lane = m.start_lane
+            lane_sp = st["lane"].get(lane, {})
 
-            # TOTAL / TOTAL平均速度 / MAX
+            # TOTAL（タイム）は結果から、TOTAL Av./MAX は保存値から
             if m.total_time_us is not None:
                 _put(entry_id, "total", m.total_time_us / 1e6)
-                _put(entry_id, "total_avg",
-                     spd.total_avg_speed_ms(m.total_time_us, lap_len_m, len(m.laps)))
+            _put(entry_id, "total_avg", lane_sp.get("total_avg"))
+            _put(entry_id, "max_ms", lane_sp.get("max_ms"))
 
             for lap in m.laps:
                 _put(entry_id, "lap", lap.lap_time_us / 1e6)
-                _put(entry_id, "lap_avg",
-                     spd.lap_avg_speed_ms(lap.lap_time_us, lap_len_m))
+                _put(entry_id, "lap_avg", st["lap"].get((lane, lap.lap)))
                 for idx, sec in enumerate(lap.sectors):
                     sno = idx + 1
                     if sno > best_svc.MAX_SECTORS:
                         break
                     _put(entry_id, best_svc.sector_metric(sno), sec.dt_us / 1e6)
-                    sp = _pass_speed(m.start_lane, lap.lap, sno)
-                    _put(entry_id, best_svc.sector_speed_metric(sno), sp)
-                    _put(entry_id, "max_ms", sp)
+                    _put(entry_id, best_svc.sector_speed_metric(sno),
+                         st["sec"].get((lane, lap.lap, sno)))
 
     return bests

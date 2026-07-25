@@ -26,6 +26,7 @@ from app.application import timing_best_service as best_svc
 from app.application import timing_bridge_service as bridge_svc
 from app.application import timing_speed_service as spd_svc
 from app.application import timing_sample_service as sample_svc
+from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
 from app.presentation.templates import templates
 from app.presentation.routers.m4laps_guard import require_m4laps
@@ -108,7 +109,15 @@ async def post_events(
         else:
             duplicate += 1
 
-    # ベスト記録を更新（毎回の再計算をやめ、受信時に保持する）
+    # 速度・平均を計算して保存（都度計算をやめ、受信時に書き込む）。
+    # ⚠ ベスト更新より先に保存する（ベストは保存値を読むため）。
+    try:
+        await speed_store.compute_and_store_speeds(db, race_id)
+        await db.commit()
+    except Exception:
+        pass
+
+    # ベスト記録を更新（保存済みの速度を使う）。
     # 失敗しても受信自体は成功として扱う（記録の取りこぼしを防ぐため）
     bests = {}
     try:
@@ -218,21 +227,17 @@ async def results_page(
         if race is None or result is None:
             continue
 
-        # 速度算出の設定（ビーム間隔・コース全長）。未設定なら None＝「—」表示
-        cfg, ev_key = await _build_speed_context(db, race)
-        gap_by_node = cfg.get("beam_gap_by_node") or {}
-        lap_len_m = cfg.get("lap_length_m")
+        # 速度は反映時に計算・保存済み。ここでは読むだけ（都度計算しない）。
+        stored = await speed_store.load_speeds(db, rid)
         # 画面の注記用：どの指標が実測できる設定になっているか
+        cfg = await spd_svc.load_speed_config(db, race["layout_id"])
         _ok = spd_svc.is_configured(cfg)
         speed_ready["pass_speed"] = speed_ready["pass_speed"] or _ok["pass_speed"]
         speed_ready["lap_avg"] = speed_ready["lap_avg"] or _ok["lap_avg"]
 
         def _pass_speed(lane, lap_no, sector_idx):
-            rec = ev_key.get((lane, lap_no, sector_idx))
-            if not rec:
-                return None
-            t_us, t_us_b, node_id = rec
-            return spd_svc.pass_speed_ms(t_us, t_us_b, gap_by_node.get(node_id))
+            # sector_idx は 0=S/G通過, 1..7=各区間（保存キーと同じ）
+            return stored["sec"].get((lane, lap_no, sector_idx))
 
         # このレースの日のベスト（ハイライト判定に使う）
         bst = day_best.get((race["created_at"] or "")[:10], {})
@@ -260,18 +265,11 @@ async def results_page(
             if m.total_time_us is not None and top_us is not None:
                 gap = round((m.total_time_us - top_us) / 1e6, 3)
 
-            # MAX SPEED：S/G・各セクションゲートの通過速度のうち最速（全周を通じて）
-            all_ms = []
-            for lap in m.laps:
-                for idx in range(len(lap.sectors)):
-                    v = _pass_speed(m.start_lane, lap.lap, idx + 1)
-                    if v is not None:
-                        all_ms.append(v)
-            max_ms = max(all_ms, default=None)
+            # MAX SPEED：区間通過速度の最大（反映時に計算・保存済み）
+            max_ms = stored["lane"].get(m.start_lane, {}).get("max_ms")
 
-            # TOTAL平均速度：(1周の距離 × 周回数) ÷ TOTALタイム
-            total_avg = spd_svc.total_avg_speed_ms(
-                m.total_time_us, lap_len_m, len(m.laps))
+            # TOTAL Av. = LAP Av. の平均（反映時に計算・保存済み）
+            total_avg = stored["lane"].get(m.start_lane, {}).get("total_avg")
 
             lap_count = max(1, len(m.laps))
 
@@ -308,7 +306,7 @@ async def results_page(
                                 sp, bst.get(best_svc.sector_speed_metric(idx + 1))),
                         }
 
-                lap_avg = (spd_svc.lap_avg_speed_ms(lap.lap_time_us, lap_len_m)
+                lap_avg = (stored["lap"].get((m.start_lane, lap.lap))
                            if lap is not None else None)
                 rows.append({
                     # --- その日のベスト判定（ハイライト用） ---
@@ -511,6 +509,12 @@ async def create_sample_race(
         )
         for ev in events:
             await rrepo.insert_event(race_id, ev)
+
+        # 速度を先に保存（ベストは保存値を読むため）
+        try:
+            await speed_store.compute_and_store_speeds(db, race_id)
+        except Exception:
+            pass
 
         # 受信口と同じくベスト記録を更新する（失敗しても投入自体は成功扱い）
         try:
@@ -903,33 +907,24 @@ def _split_ts(ts) -> tuple[str, str]:
 async def _speed_fns_for_races(db, race_ids: list[int]):
     """複数レース分の速度をまとめて読み、(speed_fn, lap_avg_fn, total_avg_fn) を返す。
 
-    ベストの再計算（日単位）で使う。speed_fn は同期関数のためDBを引けないので、
-    先に全レース分を辞書に展開しておく。
+    ⚠ 反映時に保存済みの timing_race_speeds を読む（都度計算しない）。
+       これで明細行・当日ベスト・ベスト集計がすべて同じ保存値を使う。
+       speed_fn は同期関数のため、先に全レース分を辞書へ展開しておく。
     """
-    speed_map: dict = {}      # (race_id, lane, lap, sector_idx) -> m/s
+    speed_map: dict = {}      # (race_id, lane, lap, sector_idx0) -> m/s
     lapavg_map: dict = {}     # (race_id, lane, lap) -> m/s
-    totavg_map: dict = {}     # (race_id, lane) -> m/s（レース全体の平均速度）
+    totavg_map: dict = {}     # (race_id, lane) -> m/s（= LAP Av. の平均）
 
     for rid in race_ids:
-        sf, lf, tf = await _speed_fns_for_race(db, rid)
-        try:
-            _r, result = await build_race_result(db, rid)
-        except Exception:
-            continue
-        if result is None:
-            continue
-        for m in result.ranking():
-            tv = tf(rid, m.start_lane, m.total_time_us, len(m.laps))
-            if tv is not None:
-                totavg_map[(rid, m.start_lane)] = tv
-            for lap in m.laps:
-                v = lf(rid, m.start_lane, lap.lap)
-                if v is not None:
-                    lapavg_map[(rid, m.start_lane, lap.lap)] = v
-                for idx in range(len(lap.sectors)):
-                    sv = sf(rid, m.start_lane, idx, lap.lap)
-                    if sv is not None:
-                        speed_map[(rid, m.start_lane, lap.lap, idx)] = sv
+        st = await speed_store.load_speeds(db, rid)
+        for lane, mp in st["lane"].items():
+            if "total_avg" in mp:
+                totavg_map[(rid, lane)] = mp["total_avg"]
+        for (lane, lap), v in st["lap"].items():
+            lapavg_map[(rid, lane, lap)] = v
+        for (lane, lap, sno), v in st["sec"].items():
+            # 保存は sector_no=1..7（0=S/G）。collect 側は 0基点 idx で引くので -1 する。
+            speed_map[(rid, lane, lap, sno - 1)] = v
 
     def speed_fn(rid, lane, sector_idx, lap=1):
         return speed_map.get((rid, lane, lap, sector_idx))
@@ -944,10 +939,28 @@ async def _speed_fns_for_races(db, race_ids: list[int]):
 
 
 async def _speed_fns_for_race(db, race_id: int):
-    """レースIDから (speed_fn, lap_avg_fn) を作る。ベスト算出・集計で使う。
+    """レースIDから (speed_fn, lap_avg_fn, total_avg_fn) を作る。
 
-    設定（ビーム間隔・コース全長）が無ければ常に None を返す関数になる。
+    ⚠ 反映時に保存済みの timing_race_speeds を読む（都度計算しない）。
+       呼び出し前に compute_and_store_speeds が済んでいる前提。
     """
+    st = await speed_store.load_speeds(db, race_id)
+
+    def speed_fn(_rid, lane, sector_idx, lap=1):
+        # 保存は sector_no=1..7（0=S/G）。ここは 0基点 idx で来るので +1。
+        return st["sec"].get((lane, lap, sector_idx + 1))
+
+    def lap_avg_fn(_rid, lane, lap):
+        return st["lap"].get((lane, lap))
+
+    def total_avg_fn(_rid, lane, _total_us=None, _laps=None):
+        return st["lane"].get(lane, {}).get("total_avg")
+
+    return speed_fn, lap_avg_fn, total_avg_fn
+
+
+async def _speed_fns_for_race_OLD(db, race_id: int):
+    """（旧・未使用）設定から都度計算する版。参考のため残置。"""
     repo = TimingRaceRepository(db)
     race = await repo.get_race(race_id)
     if race is None:

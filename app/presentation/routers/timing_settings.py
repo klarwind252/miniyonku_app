@@ -203,6 +203,36 @@ async def layout_save(
     return JSONResponse({"ok": True})
 
 
+@router.get("/layouts/{layout_id}/speeds-exist")
+async def layout_speeds_exist(
+    layout_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """このレイアウトのレースに、計算済みの速度データがあるか（上書き確認用）。"""
+    async with db.execute(
+        "SELECT 1 FROM timing_race_speeds s "
+        "JOIN timing_races r ON r.id = s.race_id "
+        "WHERE r.layout_id = ? LIMIT 1",
+        (layout_id,),
+    ) as cur:
+        exists = await cur.fetchone() is not None
+    return JSONResponse({"exists": exists})
+
+
+@router.post("/layouts/{layout_id}/recalc-speeds")
+async def layout_recalc_speeds(
+    layout_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """このコースで走った全レースの Av.・速度を現在の設定で計算し直す。
+
+    距離を後から入れた／変えたときの反映に使う。既存値は上書きされる。
+    """
+    from app.application import timing_race_speed_store as speed_store
+    res = await speed_store.recalc_layout(db, layout_id)
+    return JSONResponse({"ok": True, **res})
+
+
 @router.post("/layouts/{layout_id}/delete")
 async def layout_delete(
     layout_id: int,

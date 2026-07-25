@@ -122,6 +122,27 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_timing_bests_scope
             ON timing_bests(scope, scope_key);
+
+        -- レースごとに計算した速度・平均を保存する（都度計算をやめ、反映時に書き込む）。
+        --   scope 'lane' : レーン単位の集計（total_avg, max_ms）→ lap/sector_no は NULL
+        --   scope 'lap'  : 周単位（lap_avg）             → sector_no は NULL
+        --   scope 'sec'  : 区間単位の通過速度（sector_ms）→ lap と sector_no を持つ
+        -- 値は m/s。距離が未設定などで出せない指標は「行を作らない」（＝表示は「—」）。
+        -- 距離を変えたら再計算（このレースぶんを消して入れ直す）。
+        -- ⚠ 未使用の lap / sector_no は NULL ではなく -1 を入れる
+        --    （SQLite は PRIMARY KEY 内の NULL を毎回別物として扱い重複を許すため）。
+        CREATE TABLE IF NOT EXISTS timing_race_speeds (
+            race_id     INTEGER NOT NULL,
+            start_lane  INTEGER NOT NULL,
+            metric      TEXT NOT NULL,     -- total_avg / max_ms / lap_avg / sector_ms
+            lap         INTEGER NOT NULL DEFAULT -1,   -- lap_avg / sector_ms のみ（無ければ -1）
+            sector_no   INTEGER NOT NULL DEFAULT -1,   -- sector_ms のみ（無ければ -1）
+            value       REAL NOT NULL,     -- m/s
+            PRIMARY KEY (race_id, start_lane, metric, lap, sector_no),
+            FOREIGN KEY (race_id) REFERENCES timing_races(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_timing_race_speeds_race
+            ON timing_race_speeds(race_id);
     """)
 
     # --- 速度算出用カラムのマイグレーション ---
