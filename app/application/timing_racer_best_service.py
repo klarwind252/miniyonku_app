@@ -44,27 +44,46 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
 
     # この大会のヒートに反映された計測レースを集める（heat_id で紐づく）
     async with db.execute(
-        """SELECT tr.id AS race_id, tr.heat_id
+        """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
              FROM timing_races tr
              JOIN heats h ON h.id = tr.heat_id
-            WHERE h.tournament_id = ?""",
-        (tournament_id,),
+            WHERE h.tournament_id = ?
+           UNION ALL
+           -- 決勝（ブラケット）へ反映された計測レースも含める（applied_group_id で紐づく）
+           SELECT tr.id AS race_id, NULL AS heat_id, tr.applied_group_id AS group_id
+             FROM timing_races tr
+             JOIN bracket_groups bg ON bg.id = tr.applied_group_id
+             JOIN bracket_rounds br ON br.id = bg.round_id
+            WHERE br.tournament_id = ?""",
+        (tournament_id, tournament_id),
     ) as cur:
         race_rows = await cur.fetchall()
     if not race_rows:
         return {}
 
-    heat_ids = sorted({r["heat_id"] for r in race_rows})
-    ph = ",".join("?" * len(heat_ids))
+    heat_ids = sorted({r["heat_id"] for r in race_rows if r["heat_id"] is not None})
+    group_ids = sorted({r["group_id"] for r in race_rows if r["group_id"] is not None})
 
-    # (heat_id, lane_no) -> entry_id （start_lane == lane_no で引く）
+    # ("H", heat_id, lane_no) / ("G", group_id, slot_no) -> entry_id
+    # M4LAPS の start_lane は heat_lanes.lane_no / bracket_slots.slot_no と一致する。
     lane_to_entry: dict = {}
-    async with db.execute(
-        f"SELECT heat_id, lane_no, entry_id FROM heat_lanes WHERE heat_id IN ({ph})",
-        heat_ids,
-    ) as cur:
-        for r in await cur.fetchall():
-            lane_to_entry[(r["heat_id"], r["lane_no"])] = r["entry_id"]
+    if heat_ids:
+        ph = ",".join("?" * len(heat_ids))
+        async with db.execute(
+            f"SELECT heat_id, lane_no, entry_id FROM heat_lanes WHERE heat_id IN ({ph})",
+            heat_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                lane_to_entry[("H", r["heat_id"], r["lane_no"])] = r["entry_id"]
+    if group_ids:
+        ph = ",".join("?" * len(group_ids))
+        async with db.execute(
+            f"SELECT group_id, slot_no, entry_id FROM bracket_slots "
+            f"WHERE group_id IN ({ph}) AND entry_id IS NOT NULL",
+            group_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                lane_to_entry[("G", r["group_id"], r["slot_no"])] = r["entry_id"]
 
     # レイアウトごとの速度設定はキャッシュ（同じコースを何度も読まない）
     cfg_cache: dict = {}
@@ -82,7 +101,11 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
 
     for rr in race_rows:
         rid = rr["race_id"]
-        heat_id = rr["heat_id"]
+        # 予選ヒート（H）か決勝グループ（G）かでレーン→エントリーの引き方が変わる
+        if rr["heat_id"] is not None:
+            _scope, _owner = "H", rr["heat_id"]
+        else:
+            _scope, _owner = "G", rr["group_id"]
         try:
             race, result = await build_race_result(db, rid)
         except Exception:
@@ -94,7 +117,7 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
         st = await speed_store.load_speeds(db, rid)
 
         for m in result.ranking():
-            entry_id = lane_to_entry.get((heat_id, m.start_lane))
+            entry_id = lane_to_entry.get((_scope, _owner, m.start_lane))
             if entry_id is None:
                 continue
             lane = m.start_lane
