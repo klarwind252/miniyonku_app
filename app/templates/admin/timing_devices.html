@@ -55,8 +55,8 @@
           <form method="post" action="/admin/timing/devices/{{ d.node_id }}">
           <td style="padding:8px;font-weight:bold">{{ d.node_id }}</td>
           <td style="padding:8px">
-            {% if d.kind == 'SQ' %}<span class="status" style="background:#e8f4fd;color:#2980b9">SQ セクション</span>
-            {% elif d.kind == 'GW' %}<span class="status" style="background:#fdeaea;color:#c0392b">GW 本体</span>
+            {% if d.kind == 'SQ' %}<span class="status" style="background:#e8f4fd;color:#2980b9">SE セクター</span>
+            {% elif d.kind == 'GW' %}<span class="status" style="background:#fdeaea;color:#c0392b">GW 本体（チェッカー）</span>
             {% elif d.kind == 'RC' %}<span class="status" style="background:#eafaf1;color:#27ae60">RC リモコン</span>
             {% elif d.kind == 'SG' %}<span class="status" style="background:#fef5e7;color:#e67e22">SG シグナル</span>
             {% endif %}
@@ -94,7 +94,7 @@
     </table>
     <p style="color:#7f8c8d;font-size:13px;margin-top:12px">
       ⚠ ノードID・種別は固定です。表示名・MAC・メモのみ編集できます。<br>
-      SQ0〜SQ5＝セクションゲート（最大6台）／ GW6・GW7＝本体（1台は予備・電源OFF）／
+      SQ0〜SQ5＝セクターゲート（最大6台）／ GW6・GW7＝本体・チェッカー（1台は予備・電源OFF）／
       RC8・RC9＝リモコン ／ SG10・SG11＝シグナル。
     </p>
   </div>

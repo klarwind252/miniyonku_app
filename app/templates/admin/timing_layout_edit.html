@@ -114,7 +114,7 @@
       <div class="card-header">部品を追加</div>
       <div class="card-body palette">
         <button class="btn btn-danger" onclick="addEl('SG')">＋ S/Gゲート（1個のみ）</button>
-        <button class="btn btn-primary" onclick="addEl('SQ')">＋ セクションゲート</button>
+        <button class="btn btn-primary" onclick="addEl('SQ')">＋ セクターゲート</button>
         <button class="btn" style="background:#8e44ad;color:#fff" onclick="addEl('LC')">＋ レーンチェンジ</button>
       </div>
     </div>
@@ -230,7 +230,7 @@ function render(){
       inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SG', el.node_id, idx)}</select>`;
       inner += gapInput(idx, el.beam_gap_mm);
     } else if(el.kind === 'SQ'){
-      inner += `<span class="kind-badge">SQ</span>`;
+      inner += `<span class="kind-badge">SE</span>`;
       inner += `<select onchange="setNode(${idx}, this.value)">${deviceOptions('SQ', el.node_id, idx)}</select>`;
       inner += gapInput(idx, el.beam_gap_mm);
     } else {
