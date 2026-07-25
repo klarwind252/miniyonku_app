@@ -44,6 +44,7 @@
           <th style="padding:8px">種別</th>
           <th style="padding:8px">表示名</th>
           <th style="padding:8px">MACアドレス</th>
+          <th style="padding:8px" title="ダブルセンサーの間隔。通過速度の算出に使います">センサー幅</th>
           <th style="padding:8px">メモ</th>
           <th style="padding:8px"></th>
         </tr>
@@ -66,6 +67,17 @@
           <td style="padding:8px">
             <input type="text" name="mac" value="{{ d.mac or '' }}"
                    placeholder="未登録" style="width:150px;font-family:monospace">
+          </td>
+          <td style="padding:8px">
+            {# センサー幅は速度計測するゲート（SG/SQ）のみ。GW/RCは対象外。 #}
+            {% if d.kind in ('SG', 'SQ') %}
+            <input type="number" name="sensor_width_mm" step="0.1" min="0"
+                   value="{{ d.sensor_width_mm if d.sensor_width_mm else '' }}"
+                   placeholder="未設定" style="width:70px;text-align:right">
+            <span style="font-size:12px;color:#7f8c8d">mm</span>
+            {% else %}
+            <span style="color:#bdc3c7">—</span>
+            {% endif %}
           </td>
           <td style="padding:8px">
             <input type="text" name="note" value="{{ d.note or '' }}"

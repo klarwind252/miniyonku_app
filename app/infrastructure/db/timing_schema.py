@@ -39,6 +39,7 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             label       TEXT NOT NULL,         -- 表示名（例 "SQ0"）
             mac         TEXT,                  -- 実機MAC（任意・後で登録）
             note        TEXT,
+            sensor_width_mm REAL,              -- ダブルセンサーの間隔(mm)。通過速度の算出に使う
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
@@ -159,6 +160,30 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
     if "beam_gap_mm" not in _cols:
         await db.execute("ALTER TABLE timing_layout_elements ADD COLUMN beam_gap_mm REAL")
         await db.commit()
+
+    # --- センサー幅（ダブルセンサーの間隔）は機器台帳で管理する ---
+    # ゲート（機器）の物理特性なので、レイアウトではなく timing_devices に持たせる。
+    # 旧仕様ではレイアウト要素(beam_gap_mm)に入れていたため、既存値を機器へ移行する。
+    async with db.execute("PRAGMA table_info(timing_devices)") as cur:
+        _dcols = {r[1] for r in await cur.fetchall()}
+    if "sensor_width_mm" not in _dcols:
+        await db.execute("ALTER TABLE timing_devices ADD COLUMN sensor_width_mm REAL")
+        await db.commit()
+        # 旧データ移行：レイアウト要素に入っていたビーム間隔を、その機器(node_id)へコピー。
+        # 同じ機器に複数値があれば最初の非NULLを採用（通常は同一値のはず）。
+        try:
+            await db.execute("""
+                UPDATE timing_devices
+                   SET sensor_width_mm = (
+                       SELECT e.beam_gap_mm FROM timing_layout_elements e
+                        WHERE e.node_id = timing_devices.node_id
+                          AND e.beam_gap_mm IS NOT NULL
+                        LIMIT 1)
+                 WHERE sensor_width_mm IS NULL
+            """)
+            await db.commit()
+        except Exception:
+            pass
 
     # --- 反映先の記録（重複反映の警告に使う）---
     # どの計測レースを決勝のどのグループへ反映したかを保持する。

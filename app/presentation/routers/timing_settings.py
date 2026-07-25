@@ -44,13 +44,21 @@ async def devices_update(
     label = (form.get("label") or "").strip()
     mac = (form.get("mac") or "").strip()
     note = (form.get("note") or "").strip()
+    # センサー幅(mm)。空欄や不正値は未設定(None)扱い。
+    _sw = (form.get("sensor_width_mm") or "").strip()
+    try:
+        sensor_width_mm = float(_sw) if _sw != "" else None
+        if sensor_width_mm is not None and sensor_width_mm <= 0:
+            sensor_width_mm = None
+    except ValueError:
+        sensor_width_mm = None
     repo = TimingDeviceRepository(db)
     dev = await repo.get(node_id)
     if dev is None:
         raise HTTPException(status_code=404, detail="device not found")
     if not label:
         label = dev["label"]
-    await repo.update_meta(node_id, label, mac, note)
+    await repo.update_meta(node_id, label, mac, note, sensor_width_mm=sensor_width_mm)
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/admin/timing/devices", status_code=303)
 

@@ -15,7 +15,7 @@ class TimingDeviceRepository:
 
     async def list_all(self):
         async with self.db.execute(
-            "SELECT node_id, kind, label, mac, note FROM timing_devices "
+            "SELECT node_id, kind, label, mac, note, sensor_width_mm FROM timing_devices "
             "ORDER BY node_id"
         ) as cur:
             return await cur.fetchall()
@@ -30,18 +30,22 @@ class TimingDeviceRepository:
 
     async def get(self, node_id: int):
         async with self.db.execute(
-            "SELECT node_id, kind, label, mac, note FROM timing_devices "
+            "SELECT node_id, kind, label, mac, note, sensor_width_mm FROM timing_devices "
             "WHERE node_id = ?",
             (node_id,),
         ) as cur:
             return await cur.fetchone()
 
-    async def update_meta(self, node_id: int, label: str, mac: str, note: str):
-        """表示名・MAC・メモの更新（node_id と kind は固定なので触らない）。"""
+    async def update_meta(self, node_id: int, label: str, mac: str, note: str,
+                          sensor_width_mm=None):
+        """表示名・MAC・メモ・センサー幅の更新（node_id と kind は固定）。
+
+        sensor_width_mm: ダブルセンサーの間隔(mm)。None なら未設定に戻す。
+        """
         await self.db.execute(
-            "UPDATE timing_devices SET label = ?, mac = ?, note = ? "
+            "UPDATE timing_devices SET label = ?, mac = ?, note = ?, sensor_width_mm = ? "
             "WHERE node_id = ?",
-            (label, mac, note, node_id),
+            (label, mac, note, sensor_width_mm, node_id),
         )
         await self.db.commit()
 

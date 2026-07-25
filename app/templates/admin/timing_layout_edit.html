@@ -193,14 +193,10 @@ function deviceOptions(kind, selected, idx){
   return html;
 }
 
-// ビーム間隔(mm)の入力欄。通過速度の算出に使う（未入力なら速度は「—」表示）
-function gapInput(idx, val){
-  const v = (val === null || val === undefined) ? '' : val;
-  return `<span class="gap-wrap" title="2本のビームの間隔(mm)。通過速度の算出に使います">`
-       + `<input type="number" class="gap-input" step="0.1" min="0" placeholder="間隔"`
-       + ` value="${v}" onchange="setGap(${idx}, this.value)">`
-       + `<span class="gap-unit">mm</span></span>`;
-}
+// センサー幅（ダブルセンサーの間隔）は機器台帳（計測端末台帳）で管理する。
+// レイアウト画面では入力しない（ゲートの物理特性であり、コースには依らないため）。
+// 互換のため関数は残すが、何も描画しない。
+function gapInput(idx, val){ return ''; }
 
 function setGap(idx, v){
   els[idx].beam_gap_mm = (v === '' ? null : parseFloat(v));

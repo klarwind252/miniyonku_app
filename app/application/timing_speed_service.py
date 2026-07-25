@@ -155,17 +155,27 @@ async def load_speed_config(db, layout_id: int | None) -> dict:
         out["lap_length_m"] = row["lap_length_m"] if "lap_length_m" in keys else None
 
     async with db.execute(
-        "SELECT position, node_id, beam_gap_mm FROM timing_layout_elements "
+        "SELECT node_id FROM timing_layout_elements "
         "WHERE layout_id = ? ORDER BY position",
         (layout_id,),
     ) as cur:
         rows = await cur.fetchall()
-    for r in rows:
-        gap = r["beam_gap_mm"]
-        if gap:
-            if r["node_id"] is not None:
-                out["beam_gap_by_node"][r["node_id"]] = gap
-            out["beam_gap_by_pos"][r["position"]] = gap
+    node_ids = [r["node_id"] for r in rows if r["node_id"] is not None]
+
+    # センサー幅（ダブルセンサーの間隔）は機器台帳（timing_devices）で管理する。
+    # ゲートの物理特性なので、レイアウトではなく機器に紐づく。
+    if node_ids:
+        ph = ",".join("?" * len(node_ids))
+        async with db.execute(
+            f"SELECT node_id, sensor_width_mm FROM timing_devices "
+            f"WHERE node_id IN ({ph})",
+            node_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                gap = r["sensor_width_mm"]
+                if gap:
+                    out["beam_gap_by_node"][r["node_id"]] = gap
+    # 位置引き（beam_gap_by_pos）は後方互換のため残すが、現状は node 引きのみ使う。
     return out
 
 
