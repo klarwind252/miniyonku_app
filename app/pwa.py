@@ -277,6 +277,20 @@ def generate_icons(src_bytes: bytes, public_dir: str) -> None:
             os.path.join(out_dir, f"apple-touch-icon-{screen}.png"), "PNG"
         )
 
+        # インストール用スクリーンショット（Chromeのリッチなインストールリボン用）。
+        # ⚠ form_factor="wide" は「横長」でないとChromeに無視される（正方形は不可）。
+        #    専用スクショが無いので、アイコンを背景色の上に中央配置した画像を作る。
+        shot_bg = _BG_COLOR.get(screen, "#ffffff")
+        rgb = tuple(int(shot_bg.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        for tag, (w, h) in (("wide", (1280, 720)), ("narrow", (720, 1280))):
+            canvas = Image.new("RGBA", (w, h), rgb + (255,))
+            edge = int(min(w, h) * 0.5)
+            logo = _compose_framed(src, edge, stops)
+            canvas.alpha_composite(logo, ((w - edge) // 2, (h - edge) // 2))
+            canvas.convert("RGB").save(
+                os.path.join(out_dir, f"screenshot-{screen}-{tag}.png"), "PNG"
+            )
+
 
 # ---------------------------------------------------------------------------
 # アイコン参照URL
@@ -484,15 +498,14 @@ def build_manifest_dict(screen: str, settings: dict, slug: str = "",
              "type": "image/png", "purpose": "any maskable"},
         ]
         # Chrome は「リッチなインストールUI（アプリで開く等）」を出すのに
-        # screenshots を要求する（wide＝横向き / narrow＝縦向きの両方）。
-        # 専用スクショが無いので、暫定として 512 アイコンを流用しておく。
-        # ⚠ maskable ではない別枠が必要なので purpose は付けない。
-        #    後で本物のスクリーンショットに差し替えれば見栄えが良くなる。
-        shot_512 = icon_url(pfx, f"icon-{screen}-512.png", ver)
+        # screenshots を要求する。⚠ wide は横長・narrow は縦長でないと無視される。
+        # アイコン生成時に作った専用画像を指す（正方形アイコンの流用は不可）。
         screenshots = [
-            {"src": shot_512, "sizes": "512x512", "type": "image/png",
+            {"src": icon_url(pfx, f"screenshot-{screen}-wide.png", ver),
+             "sizes": "1280x720", "type": "image/png",
              "form_factor": "wide", "label": _FULL_NAME.get(screen, short)},
-            {"src": shot_512, "sizes": "512x512", "type": "image/png",
+            {"src": icon_url(pfx, f"screenshot-{screen}-narrow.png", ver),
+             "sizes": "720x1280", "type": "image/png",
              "form_factor": "narrow", "label": _FULL_NAME.get(screen, short)},
         ]
 

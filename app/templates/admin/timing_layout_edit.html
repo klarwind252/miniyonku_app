@@ -90,10 +90,6 @@
           ● 未保存の変更があります
         </span>
         <button class="btn btn-primary" onclick="save(false)" style="min-width:120px">保存</button>
-        {# 距離を変えたあと、このコースの過去レースのAv.・速度を計算し直す #}
-        <button type="button" class="btn btn-secondary" onclick="recalcSpeeds()"
-                title="このコースで走った全レースの平均速度・通過速度を、現在の設定で計算し直します"
-                style="min-width:120px">🔄 Av.再計算</button>
       </div>
     </div>
   </div>
@@ -363,36 +359,6 @@ async function save(force){
   } else {
     const msg = data.issues.map(i => '✕ ' + i.message).join('\n\n');
     alert('保存できません：\n\n' + msg);
-  }
-}
-
-// このコースの過去レースの Av.・速度を再計算する。
-// 既に保存済みの速度がある場合は上書き確認を挟む。
-async function recalcSpeeds(){
-  // 先に既存値の有無を確認（あれば上書き確認）
-  let hasExisting = false;
-  try{
-    const chk = await fetch(`/admin/timing/layouts/${LAYOUT_ID}/speeds-exist`);
-    if(chk.ok){ const d = await chk.json(); hasExisting = !!d.exists; }
-  }catch(e){}
-  if(hasExisting){
-    if(!confirm('このコースには計算済みの速度データがあります。\n'
-        + '現在の設定で計算し直し、上書きします。よろしいですか？')) return;
-  }else{
-    if(!confirm('このコースで走った全レースの平均速度・通過速度を計算します。\n'
-        + 'よろしいですか？')) return;
-  }
-  try{
-    const res = await fetch(`/admin/timing/layouts/${LAYOUT_ID}/recalc-speeds`, {method:'POST'});
-    if(res.ok){
-      const d = await res.json();
-      alert(`再計算しました（対象 ${d.races} レース）。`);
-    }else{
-      let detail=''; try{ detail=(await res.json()).detail||''; }catch(_){}
-      alert('再計算できませんでした。' + (detail ? '\n' + detail : ''));
-    }
-  }catch(e){
-    alert('通信エラー: ' + e);
   }
 }
 

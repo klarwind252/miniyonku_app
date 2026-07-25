@@ -328,6 +328,10 @@
             {% if row.is_first_of_race %}
             {# この画面は全体の記録を確認する台帳。予選/決勝への反映は各画面のカードで行う #}
             <td class="c-act" rowspan="{{ row.race_row_count }}">
+              {# この計測結果だけ、現在のコース設定（合計距離・センサー幅）で速度を計算し直す #}
+              <button type="button" class="btn btn-secondary btn-sm act-btn"
+                      title="この計測結果の平均速度・通過速度を、現在の設定で計算し直します"
+                      onclick="recalcRaceSpeeds({{ row.race_id }})">🔄 Av.再計算</button>
               <button type="button" class="btn btn-danger btn-sm act-btn"
                       onclick="deleteRace({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">🗑 削除</button>
             </td>
@@ -355,6 +359,31 @@
   </div>
 </div>
 <script>
+// この計測結果だけ Av.・速度を再計算する。既存値があれば上書き確認を挟む。
+async function recalcRaceSpeeds(raceId){
+  let hasExisting = false;
+  try{
+    const chk = await fetch(`/admin/timing/races/${raceId}/speeds-exist`);
+    if(chk.ok){ const d = await chk.json(); hasExisting = !!d.exists; }
+  }catch(e){}
+  if(hasExisting){
+    if(!confirm('この計測結果には計算済みの速度データがあります。\n'
+        + '現在の設定で計算し直し、上書きします。よろしいですか？')) return;
+  }else{
+    if(!confirm('この計測結果の平均速度・通過速度を計算します。\nよろしいですか？')) return;
+  }
+  try{
+    const res = await fetch(`/admin/timing/races/${raceId}/recalc-speeds`, {method:'POST'});
+    if(res.ok){
+      const d = await res.json();
+      if(d.rows > 0){ location.reload(); }
+      else{ alert('速度を出せませんでした。\nコースの合計距離と、計測端末台帳のセンサー幅を確認してください。'); }
+    }else{
+      alert('再計算できませんでした。');
+    }
+  }catch(e){ alert('通信エラー: ' + e); }
+}
+
 // 計測レースの削除（復元不可のため二段階で確認する）
 async function deleteRace(raceId, ts){
   const msg =

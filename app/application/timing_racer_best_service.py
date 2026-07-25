@@ -42,20 +42,14 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
     rrepo = TimingRaceRepository(db)
     lrepo = TimingLayoutRepository(db)
 
-    # この大会のヒートに反映された計測レースを集める（heat_id で紐づく）
+    # この大会の予選ヒートに反映された計測レースを集める（heat_id で紐づく）
+    # ⚠ 決勝は含めない（予選は予選内だけで集計する）。決勝の集計は別途対応。
     async with db.execute(
         """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
              FROM timing_races tr
              JOIN heats h ON h.id = tr.heat_id
-            WHERE h.tournament_id = ?
-           UNION ALL
-           -- 決勝（ブラケット）へ反映された計測レースも含める（applied_group_id で紐づく）
-           SELECT tr.id AS race_id, NULL AS heat_id, tr.applied_group_id AS group_id
-             FROM timing_races tr
-             JOIN bracket_groups bg ON bg.id = tr.applied_group_id
-             JOIN bracket_rounds br ON br.id = bg.round_id
-            WHERE br.tournament_id = ?""",
-        (tournament_id, tournament_id),
+            WHERE h.tournament_id = ?""",
+        (tournament_id,),
     ) as cur:
         race_rows = await cur.fetchall()
     if not race_rows:
