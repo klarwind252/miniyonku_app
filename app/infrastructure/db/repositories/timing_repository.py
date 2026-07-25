@@ -61,7 +61,7 @@ class TimingLayoutRepository:
 
     async def get_layout(self, layout_id: int):
         async with self.db.execute(
-            "SELECT id, name, target_laps, created_at, updated_at "
+            "SELECT id, name, target_laps, lap_length_m, created_at, updated_at "
             "FROM timing_layouts WHERE id = ?",
             (layout_id,),
         ) as cur:
