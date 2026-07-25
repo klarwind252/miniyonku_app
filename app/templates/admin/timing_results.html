@@ -91,7 +91,7 @@
   .tb-row .c-ts .ts-d{color:#9b87b5;font-size:10px}
   .tb-row .tb-v{color:#6b21a8;font-weight:bold;line-height:1.15}
   .tb-row .c-total .tb-v{font-size:20px;letter-spacing:-.3px}
-  .tb-row .c-max .tb-v,.tb-row .c-lapt .tb-v,.tb-row .c-lapav .tb-v{font-size:16px}
+  .tb-row .c-max .tb-v,.tb-row .c-totav .tb-v,.tb-row .c-lapt .tb-v,.tb-row .c-lapav .tb-v{font-size:16px}
   .tb-row .sec-t{color:#6b21a8;font-weight:bold}
   .tb-row .sec-v{color:#8e44ad}
   .tb-m{font-size:10px;color:#95a5a6;white-space:nowrap;text-align:right;line-height:1.2}
@@ -147,6 +147,7 @@
   /* TOTAL：レーンごとに1回だけ（rowspanで結合） */
   .c-total{text-align:right;font-weight:bold;font-variant-numeric:tabular-nums;width:92px;vertical-align:middle;font-size:20px;color:#2c3e50;letter-spacing:-.3px}
   .c-max{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#c0392b;vertical-align:middle;font-size:16px}
+  .c-totav{text-align:right;font-variant-numeric:tabular-nums;width:76px;color:#16897b;vertical-align:middle;font-size:16px}
   .c-gap{text-align:right;color:#8e44ad;font-variant-numeric:tabular-nums;width:80px;vertical-align:middle;font-size:16px}
   .unit{color:#bdc3c7;font-size:10px;margin-left:1px}
 
@@ -209,7 +210,7 @@
         <thead>
           <tr class="g-row">
             <th colspan="3"></th>
-            <th colspan="3" class="gsep">TOTAL</th>
+            <th colspan="4" class="gsep">TOTAL</th>
             <th colspan="3" class="gsep">LAP</th>
             <th colspan="8" class="gsep">SECTOR</th>
             <th></th>
@@ -219,8 +220,9 @@
             <th>LANE</th>
             <th>POS</th>
             <th class="gsep">TIME</th>
-            <th>MAX</th>
             <th>GAP</th>
+            <th>Av.</th>
+            <th>MAX</th>
             <th class="gsep">#</th>
             <th>TIME</th>
             <th>Av.</th>
@@ -241,8 +243,9 @@
             <td class="c-lane tb-blank">—</td>
             <td class="c-pos tb-blank">—</td>
             <td class="c-total gsep">{{ bestcell(today_best_map.get('total')) }}</td>
-            <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
             <td class="c-gap tb-blank">—</td>
+            <td class="c-totav">{{ bestcell(today_best_map.get('total_avg')) }}</td>
+            <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
             <td class="c-lapno gsep tb-blank">—</td>
             <td class="c-lapt">{{ bestcell(today_best_map.get('lap')) }}</td>
             <td class="c-lapav">{{ bestcell(today_best_map.get('lap_avg')) }}</td>
@@ -290,12 +293,16 @@
                 {% if row.rank_total %}title="この日の{{ row.rank_total }}位（トータルタイム）"{% endif %}>
               {{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}
             </td>
+            <td class="c-gap" rowspan="{{ row.lane_row_count }}">
+              {% if row.gap is none %}—{% elif row.gap == 0 %}-{% else %}+{{ '%.3f'|format(row.gap|abs) }}{% endif %}
+            </td>
+            <td class="c-totav{% if row.rank_total_avg %} r{{ row.rank_total_avg }}{% endif %}" rowspan="{{ row.lane_row_count }}"
+                {% if row.rank_total_avg %}title="この日の{{ row.rank_total_avg }}位（TOTAL平均速度）"{% endif %}>
+              {% if row.total_avg_ms is not none %}{{ '%.2f'|format(row.total_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+            </td>
             <td class="c-max{% if row.rank_max %} r{{ row.rank_max }}{% endif %}" rowspan="{{ row.lane_row_count }}"
                 {% if row.rank_max %}title="この日の{{ row.rank_max }}位（最高速）"{% endif %}>
               {% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
-            </td>
-            <td class="c-gap" rowspan="{{ row.lane_row_count }}">
-              {% if row.gap is none %}—{% elif row.gap == 0 %}-{% else %}+{{ '%.3f'|format(row.gap|abs) }}{% endif %}
             </td>
             {% endif %}
             {# LAP：周ごと #}

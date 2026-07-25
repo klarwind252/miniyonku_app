@@ -23,12 +23,12 @@
 }
 .time-input:focus { outline:none; border-color:#2980b9; }
 .race-row td { vertical-align:middle; padding:4px 10px; }
-/* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
-.m4-apply-btn{padding:4px 10px;font-size:14px;background:#0a84ff;border:1px solid #0a6fd8;
-  color:#fff;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold;
-  box-shadow:0 1px 3px rgba(10,132,255,.35)}
-.m4-apply-btn:hover{background:#0060df;border-color:#0060df;box-shadow:0 2px 6px rgba(10,132,255,.5)}
-.m4-apply-btn:active{background:#004fb5}
+/* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示）
+   取消（赤）とデザインを揃え、色だけ青にした淡色ボタン。 */
+.m4-apply-btn{font-size:12px;padding:4px 8px;border:1px solid #aecbfa;border-radius:4px;
+  background:#eef4ff;color:#1a56db;cursor:pointer;white-space:nowrap;font-weight:bold}
+.m4-apply-btn:hover{background:#dde9ff;border-color:#89b0f7}
+.m4-apply-btn:active{background:#cddffb}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
 .save-btn {
   padding:4px 12px; border:none; border-radius:4px; cursor:pointer;
@@ -131,8 +131,6 @@
   .sched-tbl th.no{width:18px !important;font-size:11px}
   .sched-tbl th.ed{width:32px !important}
   .sched-tbl th.crs{font-size:11px}
-  /* 反映ボタンのアイコンは省く（文字だけで用は足りる） */
-  .sched-tbl .m4-apply-btn .ico{display:none}
   /* セル内：順位枠は小さく、名前ブロックは縦積み */
   .sched-tbl .rc{gap:2px !important;align-items:flex-start !important}
   .sched-tbl .rc-rank{min-width:30px !important;height:30px !important;
@@ -146,6 +144,28 @@
   /* 状態欄のボタンも詰める */
   .sched-tbl .m4-apply-btn{font-size:11px !important;padding:3px 5px !important}
 }
+/* FINISHタイムの順位ハイライト（同一レース内の1・2・3位）。金・銀・銅。 */
+.rc-finish.fin-r1{color:#9a7000 !important;background:#fff4cf;border-radius:4px;padding:1px 6px}
+.rc-finish.fin-r2{color:#566069 !important;background:#eceff2;border-radius:4px;padding:1px 6px}
+.rc-finish.fin-r3{color:#9c5324 !important;background:#f7e5d9;border-radius:4px;padding:1px 6px}
+
+/* エントリー一覧：読み仮名順に横へ羅列して折り返す */
+.entry-wrap{display:flex;flex-wrap:wrap;gap:6px}
+.entry-chip{display:inline-flex;align-items:baseline;gap:4px;background:#f4f6f8;
+  border:1px solid #e3e8ee;border-radius:14px;padding:3px 10px;line-height:1.2}
+.entry-chip .ec-name{font-size:13px;font-weight:bold;color:#2c3e50}
+.entry-chip .ec-yomi{font-size:9px;color:#95a5a6}
+
+/* 予選順位表のベスト列（TOTAL/LAP/SECTOR BEST）。グループ境界に縦線。 */
+.std-tbl .std-grp th{font-size:11px;color:#7f8c8d;font-weight:bold;text-align:center;
+  padding:4px 6px;border-bottom:1px solid #e9ecef}
+.std-tbl th.bsep,.std-tbl td.bsep{border-left:2px solid #dde3ea}
+.std-tbl td.bcell{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;
+  white-space:nowrap;padding:4px 6px}
+.std-tbl td.bgap{color:#8e44ad}
+.std-tbl td.bspd{color:#16897b}
+.std-tbl td.bmax{color:#c0392b}
+.std-tbl td.bsec{color:#556}
 </style>
 {% endblock %}
 {% block content %}
@@ -931,9 +951,8 @@ document.addEventListener('DOMContentLoaded', function(){
                     style="font-size:12px;padding:4px 8px;border:1px solid #f5b7b1;border-radius:4px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap">取消</button>
             {% endif %}
           {% elif IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
-            {# アイコンは span で包む。スマホでは幅を稼ぐために隠す #}
             <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
-                    title="ラップタイマーの最新の計測結果をこのヒートに反映します"><span class="ico">⏱</span> 反映</button>
+                    title="ラップタイマーの最新の計測結果をこのヒートに反映します">反映</button>
           {% endif %}
         </div>
       </td>
@@ -955,7 +974,9 @@ document.addEventListener('DOMContentLoaded', function(){
             <input type="hidden" id="winval-{{ heat.id }}-{{ lane.entry_id }}"
                    value="{{ '' if _win_val is none else _win_val }}">
             {# 名前とよみがなを2段に。右端にFINISHタイム（計測反映済みのみ）を右寄せで置く #}
-            {% set _finish_rr = inline_results.get((heat.id, lane.entry_id), {}).get('total_time') %}
+            {% set _ir_rr = inline_results.get((heat.id, lane.entry_id), {}) %}
+            {% set _finish_rr = _ir_rr.get('total_time') %}
+            {% set _frank_rr = _ir_rr.get('finish_rank') %}
             <div class="rc-body" style="display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;margin-left:10px">
               <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
                 <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
@@ -963,7 +984,8 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish_rr is not none %}
-              <span class="rc-finish" title="FINISHタイム（ラップタイマー反映）"
+              <span class="rc-finish{% if _frank_rr %} fin-r{{ _frank_rr }}{% endif %}"
+                    title="FINISHタイム（ラップタイマー反映）{% if _frank_rr %}・このレース{{ _frank_rr }}位{% endif %}"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish_rr) }}</span>
               {% endif %}
@@ -985,7 +1007,9 @@ document.addEventListener('DOMContentLoaded', function(){
               {% if cur_co %}CO{% elif cur_rank %}{{ cur_rank }}位{% else %}—{% endif %}
             </div>
             {# 名前とよみがなを2段に。右端にはFINISHタイム（計測反映済みのみ）を右寄せで置く #}
-            {% set _finish = inline_results.get((heat.id, lane.entry_id), {}).get('total_time') %}
+            {% set _ir = inline_results.get((heat.id, lane.entry_id), {}) %}
+            {% set _finish = _ir.get('total_time') %}
+            {% set _frank = _ir.get('finish_rank') %}
             <div class="rc-body" onclick="clickRacer({{ heat.id }}, {{ lane.entry_id }}, {{ lanes|length }}, {{ t.id }})"
                  style="display:flex;align-items:center;gap:8px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0">
               <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
@@ -994,7 +1018,8 @@ document.addEventListener('DOMContentLoaded', function(){
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish is not none %}
-              <span class="rc-finish" title="FINISHタイム（ラップタイマー反映）"
+              <span class="rc-finish{% if _frank %} fin-r{{ _frank }}{% endif %}"
+                    title="FINISHタイム（ラップタイマー反映）{% if _frank %}・このレース{{ _frank }}位{% endif %}"
                     style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;
                            letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(_finish) }}</span>
               {% endif %}
@@ -1431,11 +1456,11 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     {% endif %}
 {% if not is_heat_roundrobin %}
-{# none_roundrobin: 順位表 + 勝敗表を横並び #}
+{# none_roundrobin: 順位表 + 勝敗表を横並び。それ以外は順位表を全幅にする #}
 {% if is_none_roundrobin %}
 <div class="qual-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
 {% else %}
-<div class="qual-cols" style="display:grid;grid-template-columns:3fr 1fr;gap:16px">
+<div>
 {% endif %}
   <div class="card">
     <div class="card-header">
@@ -1451,16 +1476,33 @@ document.addEventListener('DOMContentLoaded', function(){
               onclick="autoAdvanced({{ t.id }})">⚡ 自動集計</button>
       {% endif %}
     </div>
-    <div class="card-body" style="padding:0">
+    <div class="card-body" style="padding:0;overflow-x:auto">
       {% if standings %}
-      <table>
+      <table class="std-tbl">
         <thead>
           {% if is_none_roundrobin %}
           <tr><th>#</th><th>順位</th><th>レーサー</th><th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th><th>出走</th></tr>
           {% elif is_roundrobin %}
           <tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th><th>タイム計</th><th style="text-align:center">決勝</th></tr>
           {% else %}
-          <tr><th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th></tr>
+          {# ベスト列（M4LAPS）：決勝の右に TOTAL / LAP / SECTOR ベストを足す #}
+          {% set show_best = racer_bests and racer_bests|length > 0 %}
+          <tr class="std-grp">
+            <th colspan="8"></th>
+            {% if show_best %}
+            <th class="bsep" colspan="4">TOTAL BEST</th>
+            <th class="bsep">LAP BEST</th>
+            {% if max_sector_no > 0 %}<th class="bsep" colspan="{{ max_sector_no }}">SECTOR BEST</th>{% endif %}
+            {% endif %}
+          </tr>
+          <tr>
+            <th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th>
+            {% if show_best %}
+            <th class="bsep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
+            <th class="bsep">TIME</th>
+            {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep"{% endif %}>{{ n }}</th>{% endfor %}
+            {% endif %}
+          </tr>
           {% endif %}
         </thead>
         <tbody id="standings-tbody">
@@ -1497,6 +1539,18 @@ document.addEventListener('DOMContentLoaded', function(){
                 {% if s.advanced is not none and s.advanced >= 1 %}○{% elif s.advanced == 0 %}×{% else %}－{% endif %}
               </button>
             </td>
+            {% endif %}
+            {# レーサー別ベスト（point型のみ・M4LAPS） #}
+            {% if not is_none_roundrobin and not is_roundrobin and racer_bests and racer_bests|length > 0 %}
+            {% set rb = racer_bests.get(s.entry_id, {}) %}
+            <td class="bsep bcell">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
+            <td class="bcell bgap">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
+            <td class="bcell bspd">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
+            <td class="bcell bmax">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
+            <td class="bsep bcell">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
+            {% for n in range(1, max_sector_no + 1) %}
+            <td class="bcell{% if n == 1 %} bsep{% endif %} bsec">{% if rb.get('sector' ~ n) is not none %}{{ '%.3f'|format(rb['sector' ~ n]) }}{% else %}—{% endif %}</td>
+            {% endfor %}
             {% endif %}
           </tr>
           {% endfor %}
@@ -1563,26 +1617,24 @@ document.addEventListener('DOMContentLoaded', function(){
       {% endif %}
     </div>
   </div>
-  {% else %}
-  {# 通常: エントリー一覧を右隣に #}
-  <div class="card">
-    <div class="card-header" style="font-size:13px">エントリー <span class="badge">{{ entries|length }}</span></div>
-    <div class="card-body" style="padding:0">
-      <table>
-        <thead><tr><th>#</th><th>名前</th></tr></thead>
-        <tbody>
-          {% for e in entries %}
-          <tr>
-            <td style="color:#636e72;font-size:12px">{{ e.entry_order }}</td>
-            <td style="font-size:13px"><strong>{{ e.name }}</strong></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
   {% endif %}
 </div>
+
+{# エントリー一覧：予選順位表の下に全幅で。読み仮名順に横へ羅列して折り返す（省スペース） #}
+{% if not is_none_roundrobin %}
+<div class="card" style="margin-top:16px">
+  <div class="card-header" style="font-size:13px">エントリー <span class="badge">{{ entries|length }}</span>
+    <span style="font-size:11px;color:#95a5a6;font-weight:normal;margin-left:8px">読み仮名順</span>
+  </div>
+  <div class="card-body">
+    <div class="entry-wrap">
+      {% for e in entries_by_yomi %}
+      <span class="entry-chip"><span class="ec-name">{{ e.name }}</span>{% if e.yomi %}<span class="ec-yomi">{{ e.yomi }}</span>{% endif %}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {# none_roundrobin: 決定戦（同率解消）を予選順位表の直下に #}
 {% if is_none_roundrobin %}
@@ -1913,7 +1965,7 @@ function showSchedRound(rno) {
 
 // 結果が入ったヒートの状態欄を「取消」ボタンに差し替える。
 // ⚠ 状態バッジを廃止したので、保存後にその場で書き換えないと
-//    「⏱ 反映」が残ったままになり、二重反映の元になる。
+//    「反映」が残ったままになり、二重反映の元になる。
 function markHeatDone(heatId, tid){
   const cell = document.getElementById(`status-${heatId}`);
   if (cell && cell.tagName === 'BUTTON') return;   // 既に取り消しボタン

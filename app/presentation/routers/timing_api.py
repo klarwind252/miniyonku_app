@@ -135,6 +135,7 @@ def _best_items(bests: dict) -> list[dict]:
     """
     metric_view = [
         ("total",     "トータルタイム",     "秒",  "最速"),
+        ("total_avg", "TOTAL平均SPEED",     "m/s", "最高"),
         ("max_ms",    "MAX SPEED",          "m/s", "最高"),
         ("lap",       "ラップタイム",       "秒",  "最速"),
         ("lap_avg",   "ラップ平均SPEED",    "m/s", "最高"),
@@ -268,6 +269,10 @@ async def results_page(
                         all_ms.append(v)
             max_ms = max(all_ms, default=None)
 
+            # TOTAL平均速度：(1周の距離 × 周回数) ÷ TOTALタイム
+            total_avg = spd_svc.total_avg_speed_ms(
+                m.total_time_us, lap_len_m, len(m.laps))
+
             lap_count = max(1, len(m.laps))
 
             for li, lap in enumerate(m.laps or [None]):
@@ -312,6 +317,7 @@ async def results_page(
                         m.total_time_us / 1e6 if m.total_time_us else None,
                         bst.get("total")),
                     "rank_max": _best_rank(max_ms, bst.get("max_ms")),
+                    "rank_total_avg": _best_rank(total_avg, bst.get("total_avg")),
                     "rank_lap": _best_rank(
                         lap.lap_time_us / 1e6 if lap is not None else None,
                         bst.get("lap")),
@@ -326,6 +332,7 @@ async def results_page(
                     "start_lane": m.start_lane,
                     "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
                     "max_ms": max_ms,
+                    "total_avg_ms": total_avg,
                     "gap": gap,
                     # LAP
                     "lap_no": lap.lap if lap is not None else None,
@@ -349,13 +356,13 @@ async def results_page(
     try:
         today_races = await repo.list_races_between_ts(ts_from, ts_to)
         if today_races:
-            t_sf, t_lf = await _speed_fns_for_races(db, [r["id"] for r in today_races])
+            t_sf, t_lf, t_tf = await _speed_fns_for_races(db, [r["id"] for r in today_races])
             agg = await best_svc.aggregate_range(
                 db,
                 date_from=ts_from, date_to=ts_to, mode=None,
                 list_fn=lambda a, b: repo.list_races_between_ts(a, b),
                 build_fn=build_race_result,
-                speed_fn=t_sf, lap_avg_fn=t_lf,
+                speed_fn=t_sf, lap_avg_fn=t_lf, total_avg_fn=t_tf,
             )
             today_race_count = agg["race_count"]
             today_bests = [x for x in _best_items(agg["bests"])
@@ -422,11 +429,11 @@ async def delete_race(
     if day:
         try:
             day_races = await repo.list_races_by_date(day, limit=500)
-            sf, lf = await _speed_fns_for_races(db, [r["id"] for r in day_races])
+            sf, lf, tf = await _speed_fns_for_races(db, [r["id"] for r in day_races])
             recalculated = await best_svc.recalc_day(
                 db, day,
                 lambda d: repo.list_races_by_date(d, limit=500),
-                build_race_result, sf, lf,
+                build_race_result, sf, lf, tf,
             )
         except Exception:
             pass
@@ -562,7 +569,7 @@ async def bests_page(
     if d_from and d_to:
         # 期間内の全レース分の速度を先に読み込む（speed_fn は同期関数のため）
         range_races = await repo.list_races_between(d_from, d_to)
-        agg_speed_fn, agg_lap_avg_fn = await _speed_fns_for_races(
+        agg_speed_fn, agg_lap_avg_fn, agg_total_avg_fn = await _speed_fns_for_races(
             db, [r["id"] for r in range_races]
         )
         result = await best_svc.aggregate_range(
@@ -572,6 +579,7 @@ async def bests_page(
             list_fn=lambda a, b: repo.list_races_between(a, b),
             build_fn=build_race_result,
             speed_fn=agg_speed_fn, lap_avg_fn=agg_lap_avg_fn,
+            total_avg_fn=agg_total_avg_fn,
         )
 
     # 表示用に整形（順番と単位・説明は _best_items に集約）
@@ -893,16 +901,17 @@ def _split_ts(ts) -> tuple[str, str]:
 
 
 async def _speed_fns_for_races(db, race_ids: list[int]):
-    """複数レース分の速度をまとめて読み、(speed_fn, lap_avg_fn) を返す。
+    """複数レース分の速度をまとめて読み、(speed_fn, lap_avg_fn, total_avg_fn) を返す。
 
     ベストの再計算（日単位）で使う。speed_fn は同期関数のためDBを引けないので、
     先に全レース分を辞書に展開しておく。
     """
-    speed_map: dict = {}     # (race_id, lane, lap, sector_idx) -> m/s
-    lapavg_map: dict = {}    # (race_id, lane, lap) -> m/s
+    speed_map: dict = {}      # (race_id, lane, lap, sector_idx) -> m/s
+    lapavg_map: dict = {}     # (race_id, lane, lap) -> m/s
+    totavg_map: dict = {}     # (race_id, lane) -> m/s（レース全体の平均速度）
 
     for rid in race_ids:
-        sf, lf = await _speed_fns_for_race(db, rid)
+        sf, lf, tf = await _speed_fns_for_race(db, rid)
         try:
             _r, result = await build_race_result(db, rid)
         except Exception:
@@ -910,6 +919,9 @@ async def _speed_fns_for_races(db, race_ids: list[int]):
         if result is None:
             continue
         for m in result.ranking():
+            tv = tf(rid, m.start_lane, m.total_time_us, len(m.laps))
+            if tv is not None:
+                totavg_map[(rid, m.start_lane)] = tv
             for lap in m.laps:
                 v = lf(rid, m.start_lane, lap.lap)
                 if v is not None:
@@ -925,7 +937,10 @@ async def _speed_fns_for_races(db, race_ids: list[int]):
     def lap_avg_fn(rid, lane, lap):
         return lapavg_map.get((rid, lane, lap))
 
-    return speed_fn, lap_avg_fn
+    def total_avg_fn(rid, lane, _total_us=None, _laps=None):
+        return totavg_map.get((rid, lane))
+
+    return speed_fn, lap_avg_fn, total_avg_fn
 
 
 async def _speed_fns_for_race(db, race_id: int):
@@ -963,7 +978,10 @@ async def _speed_fns_for_race(db, race_id: int):
     def lap_avg_fn(_rid, lane, lap):
         return spd_svc.lap_avg_speed_ms(lap_time_by_key.get((lane, lap)), lap_len_m)
 
-    return speed_fn, lap_avg_fn
+    def total_avg_fn(_rid, _lane, total_time_us, laps):
+        return spd_svc.total_avg_speed_ms(total_time_us, lap_len_m, laps)
+
+    return speed_fn, lap_avg_fn, total_avg_fn
 
 
 async def _build_speed_context(db, race_row):

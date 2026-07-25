@@ -18,7 +18,7 @@ from app.routers.tournaments import QUALIFYING_LABELS, calc_finalists
 
 router = APIRouter()
 from app.presentation.templates import templates
-from app.core.config import HEAT_TOURNAMENT_TYPES
+from app.core.config import HEAT_TOURNAMENT_TYPES, IS_CLOUD
 
 
 # ======================================================================
@@ -557,7 +557,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         return RedirectResponse(url="/admin/tournaments/")
 
     async with db.execute(
-        """SELECT e.id as entry_id, e.entry_order, r.id as racer_id, r.name
+        """SELECT e.id as entry_id, e.entry_order, r.id as racer_id, r.name,
+                  COALESCE(r.yomi,'') as yomi
            FROM entries e JOIN racers r ON r.id=e.racer_id
            WHERE e.tournament_id=? AND e.status='active'
            ORDER BY e.entry_order""",
@@ -876,6 +877,18 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             for row in await cur.fetchall():
                 inline_results[(row["heat_id"], row["entry_id"])] = dict(row)
 
+        # FINISHタイムの順位（ヒート内＝同一計測レース内での1・2・3位）を付与する。
+        # ヒートは1つの計測レースに対応するので、そのヒートの完走タイムを
+        # 小さい順に並べれば「同じレースID内の順位」になる。ハイライトに使う。
+        by_heat: dict = {}
+        for (hid, eid), r in inline_results.items():
+            if r.get("total_time") is not None:
+                by_heat.setdefault(hid, []).append((r["total_time"], hid, eid))
+        for hid, lst in by_heat.items():
+            for rank, (_t, h, e) in enumerate(sorted(lst), start=1):
+                # 4位以降は色を付けないので3位までだけ記録する
+                inline_results[(h, e)]["finish_rank"] = rank if rank <= 3 else 0
+
     # heat_lanes_map に lane_id も追加（保存ボタン用）
     for hid, lanes in heat_lanes_map.items():
         for lane in lanes:
@@ -1060,10 +1073,37 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             "ow_unscanned": ow_unscanned,
         }
 
+    # レーサー別ベスト（予選順位表に表示）。反映済みヒートのみ対象・1パス集計。
+    from app.application import timing_racer_best_service as rbest_svc
+    try:
+        racer_bests = await rbest_svc.racer_bests_for_tournament(tid, db) \
+            if IS_CLOUD and getattr(request.state, "m4laps_licensed", False) else {}
+    except Exception:
+        racer_bests = {}
+    # 実際に記録のある最大セクター番号（列を出す範囲を決める）
+    max_sector_no = 0
+    for _bm in racer_bests.values():
+        for _i in range(1, 8):
+            if _bm.get(f"sector{_i}") is not None or _bm.get(f"sector_ms{_i}") is not None:
+                max_sector_no = max(max_sector_no, _i)
+    # ベストのTOTAL最小値（GAP表示の基準）
+    best_total_min = None
+    for _bm in racer_bests.values():
+        _tv = _bm.get("total")
+        if _tv is not None and (best_total_min is None or _tv < best_total_min):
+            best_total_min = _tv
+    # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
+    entries_by_yomi = sorted(
+        entries, key=lambda e: (e["yomi"] or e["name"] or "", e["name"] or ""))
+
     return templates.TemplateResponse("admin/qualifying.html", {
         "request": request,
         "t": t,
         "entries": entries,
+        "entries_by_yomi": entries_by_yomi,
+        "racer_bests": racer_bests,
+        "best_total_min": best_total_min,
+        "max_sector_no": max_sector_no,
         "heats": heats,
         "heat_lanes_map": heat_lanes_map,
         "done_heat_ids": done_heat_ids,

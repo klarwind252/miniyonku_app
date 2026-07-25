@@ -59,6 +59,7 @@ LOWER_IS_BETTER = {
     "lap": True,
     "max_ms": False,
     "lap_avg": False,
+    "total_avg": False,   # レース全体の平均速度：大きいほど良い
 }
 for _i in range(1, MAX_SECTORS + 1):
     LOWER_IS_BETTER[f"sector{_i}"] = True       # 区間タイム：小さいほど良い
@@ -86,12 +87,14 @@ def is_better(metric: str, new_value: float, old_value: float | None) -> bool:
     return new_value > old_value
 
 
-def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn) -> dict[str, list[dict]]:
+def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn,
+                        total_avg_fn=None) -> dict[str, list[dict]]:
     """1レース分の結果から、各指標の上位候補を抜き出す（純粋関数）。
 
     speed_fn(race_id, start_lane, sector_idx, lap) -> m/s
     lap_avg_fn(race_id, start_lane, lap)           -> m/s
-        （実機のビーム間隔・コース全長が未設定のため、現状はダミー関数を渡す）
+    total_avg_fn(race_id, start_lane, total_time_us, laps) -> m/s（任意）
+        （実機のビーム間隔・コース全長が未設定のときは None を返す関数を渡す）
 
     戻り値: {metric: [{"value":.., "race_id":.., "start_lane":.., "lap":.., "sector_no":..}, ...]}
             各指標につき上位 TOP_N 件（良い順）。
@@ -112,6 +115,10 @@ def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn) -> dict[str,
         if m.total_time_us is not None:
             put("total", m.total_time_us / 1e6, start_lane=m.start_lane,
                 lap=None, sector_no=None)
+            if total_avg_fn is not None:
+                put("total_avg",
+                    total_avg_fn(race_id, m.start_lane, m.total_time_us, len(m.laps)),
+                    start_lane=m.start_lane, lap=None, sector_no=None)
 
         for lap in m.laps:
             put("lap", lap.lap_time_us / 1e6, start_lane=m.start_lane,
@@ -213,7 +220,8 @@ async def merge_bests(db, scope: str, scope_key: str, candidates: dict[str, dict
     return updated
 
 
-async def update_for_race(db, race_id: int, build_fn, speed_fn, lap_avg_fn) -> dict:
+async def update_for_race(db, race_id: int, build_fn, speed_fn, lap_avg_fn,
+                          total_avg_fn=None) -> dict:
     """1レース受信後に、そのレースと当日のベストを更新する。
 
     build_fn(db, race_id) -> (race_row, RaceResult)
@@ -222,7 +230,7 @@ async def update_for_race(db, race_id: int, build_fn, speed_fn, lap_avg_fn) -> d
     if race is None or result is None:
         return {"race": 0, "day": 0}
 
-    cands = collect_from_result(result, race_id, speed_fn, lap_avg_fn)
+    cands = collect_from_result(result, race_id, speed_fn, lap_avg_fn, total_avg_fn)
     n_race = await merge_bests(db, "race", str(race_id), cands)
 
     day = (race["created_at"] or "")[:10]
@@ -231,12 +239,14 @@ async def update_for_race(db, race_id: int, build_fn, speed_fn, lap_avg_fn) -> d
 
 
 async def aggregate_range(db, *, date_from: str, date_to: str, mode: str | None,
-                          list_fn, build_fn, speed_fn, lap_avg_fn) -> dict:
+                          list_fn, build_fn, speed_fn, lap_avg_fn,
+                          total_avg_fn=None) -> dict:
     """期間・タイプを指定してベストを集計する（保持しない・都度計算）。
 
     date_from / date_to : 'YYYY-MM-DD'（両端を含む）
     mode                : 'f1'（レース）/ 'run'（フリー）/ None（すべて）
     list_fn(date_from, date_to) -> レース行の列挙
+    total_avg_fn        : レース全体の平均速度を出す関数（任意）
 
     リアルタイム性が不要なため timing_bests には保存せず、その場で計算して返す。
     戻り値: {"bests": {metric: {..., created_at, mode}}, "race_count": n}
@@ -257,7 +267,7 @@ async def aggregate_range(db, *, date_from: str, date_to: str, mode: str | None,
             continue
         n_races += 1
 
-        cands = collect_from_result(result, rid, speed_fn, lap_avg_fn)
+        cands = collect_from_result(result, rid, speed_fn, lap_avg_fn, total_avg_fn)
         for metric, lst in cands.items():
             # 「いつ・どのタイプの計測か」を各候補に添える
             enriched = []
@@ -273,7 +283,8 @@ async def aggregate_range(db, *, date_from: str, date_to: str, mode: str | None,
     return {"bests": bests, "race_count": n_races}
 
 
-async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_fn) -> int:
+async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_fn,
+                     total_avg_fn=None) -> int:
     """指定日のベストを一から計算し直す（レース削除後に呼ぶ）。
 
     保持値を消してから、その日の全レースを走査して入れ直す。
@@ -290,7 +301,7 @@ async def recalc_day(db, date: str, list_races_fn, build_fn, speed_fn, lap_avg_f
             _race, result = await build_fn(db, rid)
         except Exception:
             continue
-        cands = collect_from_result(result, rid, speed_fn, lap_avg_fn)
+        cands = collect_from_result(result, rid, speed_fn, lap_avg_fn, total_avg_fn)
         for metric, lst in cands.items():
             merged[metric] = _merge_top(metric, merged.get(metric, []), lst)
 

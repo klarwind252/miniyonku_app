@@ -57,6 +57,23 @@ def lap_avg_speed_ms(lap_time_us: int | None,
     return round(v, 2)
 
 
+def total_avg_speed_ms(total_time_us: int | None,
+                       lap_length_m: float | None,
+                       laps: int | None) -> float | None:
+    """レース全体の平均速度[m/s]を算出する（純粋関数）。
+
+    式: (1周の距離 × 周回数) ÷ TOTALタイム
+    lap_avg が1周ぶんなのに対し、これは全周を通した平均。
+    コース全長・周回数・タイムのどれかが無ければ None。
+    """
+    if not total_time_us or not lap_length_m or not laps:
+        return None
+    v = (lap_length_m * laps) / (total_time_us / 1e6)
+    if not (MIN_SPEED_MS <= v <= MAX_SPEED_MS):
+        return None
+    return round(v, 2)
+
+
 def build_pass_index(layout_elems, events) -> dict:
     """通過イベントを「どのマシンの・何周目の・どの区間か」で引ける形にする。
 
