@@ -474,6 +474,7 @@ def build_manifest_dict(screen: str, settings: dict, slug: str = "",
         start = f"{start}?key={key}"
 
     icons = []
+    screenshots = []
     if ver:
         # アイコンは店舗別・画面別（{prefix}/pwa/icon-{screen}-...）。nginx 直接配信。
         icons = [
@@ -482,8 +483,20 @@ def build_manifest_dict(screen: str, settings: dict, slug: str = "",
             {"src": icon_url(pfx, f"icon-{screen}-512.png", ver), "sizes": "512x512",
              "type": "image/png", "purpose": "any maskable"},
         ]
+        # Chrome は「リッチなインストールUI（アプリで開く等）」を出すのに
+        # screenshots を要求する（wide＝横向き / narrow＝縦向きの両方）。
+        # 専用スクショが無いので、暫定として 512 アイコンを流用しておく。
+        # ⚠ maskable ではない別枠が必要なので purpose は付けない。
+        #    後で本物のスクリーンショットに差し替えれば見栄えが良くなる。
+        shot_512 = icon_url(pfx, f"icon-{screen}-512.png", ver)
+        screenshots = [
+            {"src": shot_512, "sizes": "512x512", "type": "image/png",
+             "form_factor": "wide", "label": _FULL_NAME.get(screen, short)},
+            {"src": shot_512, "sizes": "512x512", "type": "image/png",
+             "form_factor": "narrow", "label": _FULL_NAME.get(screen, short)},
+        ]
 
-    return {
+    manifest = {
         "id": scope,
         "name": _FULL_NAME.get(screen, short),
         "short_name": short,
@@ -497,6 +510,9 @@ def build_manifest_dict(screen: str, settings: dict, slug: str = "",
         "dir": "ltr",
         "icons": icons,
     }
+    if screenshots:
+        manifest["screenshots"] = screenshots
+    return manifest
 
 
 # ---------------------------------------------------------------------------
