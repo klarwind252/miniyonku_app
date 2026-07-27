@@ -175,6 +175,21 @@ class TimingRaceRepository:
         await self.db.commit()
         return cur.lastrowid
 
+    async def set_green_t_us(self, race_id: int, green_t_us: int) -> int:
+        """既存レースに緑時刻を後付けする（F1式へ切り替える）。
+
+        GWは赤ボタン時点ではまだ緑時刻を持たないため、走行式として create_race し、
+        緑を出した瞬間にこのメソッドで green_t_us を書き込む。これにより
+        「緑の瞬間にレースを作り直す」割り切り（docs/19 残課題7）を解消する。
+        戻り値: 更新した行数（0=該当レースなし）。
+        """
+        cur = await self.db.execute(
+            "UPDATE timing_races SET green_t_us = ? WHERE id = ?",
+            (green_t_us, race_id),
+        )
+        await self.db.commit()
+        return cur.rowcount
+
     async def get_race(self, race_id: int):
         async with self.db.execute(
             "SELECT id, heat_tag, layout_id, target_laps, green_t_us, heat_id, applied_group_id, created_at "

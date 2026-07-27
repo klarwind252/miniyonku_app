@@ -73,6 +73,37 @@ async def create_race(
     return JSONResponse({"race_id": race_id})
 
 
+@router.post("/api/timing/races/{race_id}/green")
+async def set_race_green(
+    race_id: int,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+    x_timing_token: str | None = Header(default=None),
+    _guard: bool = Depends(require_m4laps),
+):
+    """既存レースに緑時刻を後付けする（走行式→F1式へ切り替え）。
+
+    GWは赤ボタン時点では緑時刻を持たないため走行式で create_race し、
+    緑を出した瞬間にこのAPIで green_t_us を書き込む。これにより
+    「緑の瞬間にレースを作り直す」割り切り（docs/19 残課題7）を解消する。
+
+    ⚠ M4LAPSはクラウド版限定。オンプレ版・ライセンス未登録では 404（require_m4laps）。
+
+    body(JSON): {"green_t_us": int}
+    戻り値: {"updated": 1} / レースが無ければ 404
+    """
+    _check_token(x_timing_token)
+    data = await request.json()
+    green = data.get("green_t_us")
+    if green is None:
+        raise HTTPException(status_code=400, detail="green_t_us required")
+    repo = TimingRaceRepository(db)
+    if await repo.get_race(race_id) is None:
+        raise HTTPException(status_code=404, detail="race not found")
+    updated = await repo.set_green_t_us(race_id, int(green))
+    return JSONResponse({"updated": updated})
+
+
 @router.post("/api/timing/races/{race_id}/events")
 async def post_events(
     race_id: int,
