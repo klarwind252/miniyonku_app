@@ -14,6 +14,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 #include "protocol.h"
 #include "espnow_link.h"
 #include "timesync.h"
@@ -71,25 +72,22 @@ static bool wifi_up() {
 //  green あり → F1式 / green なし → 走行式（docs/14 DA4）。
 static uint32_t create_race(bool with_green, uint64_t green_us) {
   if (!wifi_up()) return 0;
-  char body[160];
-  if (with_green) {
-    snprintf(body, sizeof(body),
-      "{\"target_laps\":%d,\"layout_id\":%d,\"green_t_us\":%llu}",
-      TARGET_LAPS, LAYOUT_ID, (unsigned long long)green_us);
-  } else {
-    snprintf(body, sizeof(body),
-      "{\"target_laps\":%d,\"layout_id\":%d}", TARGET_LAPS, LAYOUT_ID);
-  }
+  JsonDocument doc;
+  doc["target_laps"] = TARGET_LAPS;
+  doc["layout_id"]   = LAYOUT_ID;
+  if (with_green) doc["green_t_us"] = green_us;
+  String body; serializeJson(doc, body);
+
   HTTPClient http;
   http.begin(String(SERVER_BASE) + "/api/timing/races");
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   uint32_t rid = 0;
-  int code = http.POST((uint8_t*)body, strlen(body));
+  int code = http.POST(body);
   if (code == 200) {
-    String r = http.getString();
-    int p = r.indexOf("\"race_id\"");
-    if (p >= 0) { int c = r.indexOf(':', p); rid = r.substring(c+1).toInt(); }
+    JsonDocument res;
+    if (deserializeJson(res, http.getString()) == DeserializationError::Ok)
+      rid = res["race_id"] | 0;
   }
   http.end();
   return rid;
@@ -99,13 +97,14 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
 //  race_id を変えずに green_t_us だけPATCHする。POST .../{id}/green。
 static bool set_race_green(uint32_t rid, uint64_t green_us) {
   if (!rid || !wifi_up()) return false;
-  char body[80];
-  snprintf(body, sizeof(body), "{\"green_t_us\":%llu}", (unsigned long long)green_us);
+  JsonDocument doc;
+  doc["green_t_us"] = green_us;
+  String body; serializeJson(doc, body);
   HTTPClient http;
   http.begin(String(SERVER_BASE) + "/api/timing/races/" + rid + "/green");
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
-  int code = http.POST((uint8_t*)body, strlen(body));
+  int code = http.POST(body);
   http.end();
   return code == 200;
 }
@@ -158,26 +157,31 @@ static void forward_join(const proto::JoinBody& jb) {
   char mac[18];
   snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
            jb.mac[0],jb.mac[1],jb.mac[2],jb.mac[3],jb.mac[4],jb.mac[5]);
-  char body[192];
-  snprintf(body, sizeof(body),
-    "{\"mac\":\"%s\",\"kind\":%u,\"fw_major\":%u,\"fw_minor\":%u,\"nvs_node_id\":%u}",
-    mac, jb.kind, jb.fw_major, jb.fw_minor, jb.nvs_node_id);
+  JsonDocument doc;
+  doc["mac"]         = mac;
+  doc["kind"]        = jb.kind;
+  doc["fw_major"]    = jb.fw_major;
+  doc["fw_minor"]    = jb.fw_minor;
+  doc["nvs_node_id"] = jb.nvs_node_id;
+  String body; serializeJson(doc, body);
+
   HTTPClient http;
   http.begin(String(SERVER_BASE) + "/api/timing/join");
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
-  int code = http.POST((uint8_t*)body, strlen(body));
+  int code = http.POST(body);
   if (code == 200) {
-    String resp = http.getString();
-    int p = resp.indexOf("\"node_id\"");
-    if (resp.indexOf("assigned") >= 0 && p >= 0) {
-      int c = resp.indexOf(':', p);
-      int nid = resp.substring(c+1).toInt();
-      proto::JoinAckBody ack = {};
-      memcpy(ack.mac, jb.mac, 6);
-      ack.node_id = (uint8_t)nid;
-      ack.channel = ESPNOW_CHANNEL;
-      mesh::send(proto::PT_JOIN_ACK, (uint8_t)nid, &ack, sizeof(ack));
+    JsonDocument res;
+    if (deserializeJson(res, http.getString()) == DeserializationError::Ok) {
+      const char* status = res["status"] | "";
+      if (strcmp(status, "assigned") == 0 && res["node_id"].is<int>()) {
+        int nid = res["node_id"].as<int>();
+        proto::JoinAckBody ack = {};
+        memcpy(ack.mac, jb.mac, 6);
+        ack.node_id = (uint8_t)nid;
+        ack.channel = ESPNOW_CHANNEL;
+        mesh::send(proto::PT_JOIN_ACK, (uint8_t)nid, &ack, sizeof(ack));
+      }
     }
   }
   http.end();
@@ -187,21 +191,17 @@ static void forward_join(const proto::JoinBody& jb) {
 static void spool_append(const RawEvent& e) {
   File f = LittleFS.open(SPOOL, FILE_APPEND);
   if (!f) return;
-  char line[224];
-  if (e.t_us_b) {
-    snprintf(line, sizeof(line),
-      "{\"device_id\":%u,\"src\":%u,\"src_boot_id\":%u,\"seq\":%u,"
-      "\"lane\":%u,\"t_us\":%llu,\"t_us_b\":%llu,\"quality\":%u}\n",
-      e.src, e.src, e.src_boot, e.seq, e.lane,
-      (unsigned long long)e.t_us, (unsigned long long)e.t_us_b, e.quality);
-  } else {
-    snprintf(line, sizeof(line),
-      "{\"device_id\":%u,\"src\":%u,\"src_boot_id\":%u,\"seq\":%u,"
-      "\"lane\":%u,\"t_us\":%llu,\"quality\":%u}\n",
-      e.src, e.src, e.src_boot, e.seq, e.lane,
-      (unsigned long long)e.t_us, e.quality);
-  }
-  f.print(line);
+  JsonDocument doc;
+  doc["device_id"]   = e.src;      // device_id と src は同じ（送信元node_id）
+  doc["src"]         = e.src;
+  doc["src_boot_id"] = e.src_boot;
+  doc["seq"]         = e.seq;
+  doc["lane"]        = e.lane;
+  doc["t_us"]        = e.t_us;
+  if (e.t_us_b) doc["t_us_b"] = e.t_us_b;
+  doc["quality"]     = e.quality;
+  serializeJson(doc, f);           // 1行1JSON
+  f.print('\n');
   f.close();
 }
 
@@ -264,22 +264,28 @@ static void flush_spool() {
   if (!ensure_race()) return;
   File f = LittleFS.open(SPOOL, FILE_READ);
   if (!f) return;
-  String events = "["; bool first = true; int n = 0;
+  // 各行(1JSON)を events 配列へ積み直す。手連結せず ArduinoJson で組む。
+  JsonDocument out;
+  JsonArray arr = out["events"].to<JsonArray>();
+  int n = 0;
   while (f.available()) {
     String line = f.readStringUntil('\n'); line.trim();
     if (line.length() == 0) continue;
-    if (!first) events += ",";
-    events += line; first = false; n++;
+    JsonDocument ev;
+    if (deserializeJson(ev, line) != DeserializationError::Ok) continue; // 壊れた行は捨てる
+    arr.add(ev);
+    n++;
   }
   f.close();
-  events += "]";
   if (n == 0) return;
+  String payload; serializeJson(out, payload);
+
   String url = String(SERVER_BASE) + "/api/timing/races/" + s_race_id + "/events";
   HTTPClient http;
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
-  int code = http.POST(String("{\"events\":") + events + "}");
+  int code = http.POST(payload);
   if (code == 200) { LittleFS.remove(SPOOL); Serial.printf("[POST] %d件 送信\n", n); }
   else             { Serial.printf("[POST] 失敗 code=%d\n", code); }
   http.end();
