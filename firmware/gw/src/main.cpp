@@ -12,6 +12,7 @@
 // ============================================================================
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -36,6 +37,19 @@
 #ifndef TARGET_LAPS
 #define TARGET_LAPS 3
 #endif
+
+// ---- サーバ接続（K5：DNS回避＝IP直＋Hostヘッダ）----------------------------
+//  ⚠ESP32の hostByName() が失敗するため、URLはIP直・CN検証はsetInsecureで回避。
+//    SNIが無くてもHostヘッダでバーチャルホストに届く。
+//    ⚠IPが変わったらここ1箇所を直す（残課題#9・会場WiFiで要再確認）。
+static const char* SERVER_IP   = "133.117.77.69";
+static const char* SERVER_HOST = "v133-117-77-69.sefs.static.cnode.jp";
+#define SERVER_URL_BASE  (String("https://") + SERVER_IP)
+
+// ---- fetch_layout の再取得間隔（残課題#14：成功=60s / 失敗=5s のバックオフ）--
+static constexpr uint32_t LAYOUT_OK_MS   = 60000;   // 取得成功後は60秒あける
+static constexpr uint32_t LAYOUT_NG_MS   =  5000;   // 失敗中は5秒で再試行
+static bool s_layout_ok = false;                    // 直近取得の成否
 
 // ---- 本体ボタン（docs/07.4）-----------------------------------------------
 static constexpr int PIN_BTN_RED  = 26;   // 赤 SIGNAL（押下LOW・内部プルアップ）
@@ -78,8 +92,10 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
   if (with_green) doc["green_t_us"] = green_us;
   String body; serializeJson(doc, body);
 
+  WiFiClientSecure _c; _c.setInsecure();            // K4：ローカル生成＋CN検証なし
   HTTPClient http;
-  http.begin(String(SERVER_BASE) + "/api/timing/races");
+  http.begin(_c, SERVER_URL_BASE + "/api/timing/races");   // K5：IP直
+  http.addHeader("Host", SERVER_HOST);              // K5：Hostで振り分け
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   uint32_t rid = 0;
@@ -100,8 +116,10 @@ static bool set_race_green(uint32_t rid, uint64_t green_us) {
   JsonDocument doc;
   doc["green_t_us"] = green_us;
   String body; serializeJson(doc, body);
+  WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(String(SERVER_BASE) + "/api/timing/races/" + rid + "/green");
+  http.begin(_c, SERVER_URL_BASE + "/api/timing/races/" + rid + "/green");
+  http.addHeader("Host", SERVER_HOST);
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.POST(body);
@@ -165,8 +183,10 @@ static void forward_join(const proto::JoinBody& jb) {
   doc["nvs_node_id"] = jb.nvs_node_id;
   String body; serializeJson(doc, body);
 
+  WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(String(SERVER_BASE) + "/api/timing/join");
+  http.begin(_c, SERVER_URL_BASE + "/api/timing/join");
+  http.addHeader("Host", SERVER_HOST);
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.POST(body);
@@ -258,6 +278,28 @@ static bool ensure_race() {
   return s_race_id != 0;
 }
 
+// ---- スプール先頭 drop 行を捨て、残りを書き戻す（100件上限で持ち越すとき）---
+//  有効行(空行/壊れ行を除く)を drop 行スキップして、残りを一時ファイルへ写し置換。
+static void rewrite_spool_drop_first(int drop) {
+  File in = LittleFS.open(SPOOL, FILE_READ);
+  if (!in) return;
+  const char* TMP = "/spool.tmp";
+  File out = LittleFS.open(TMP, FILE_WRITE);
+  if (!out) { in.close(); return; }
+  int skipped = 0;
+  while (in.available()) {
+    String line = in.readStringUntil('\n');
+    String t = line; t.trim();
+    if (t.length() == 0) continue;               // 空行は捨てる
+    if (skipped < drop) { skipped++; continue; } // 送信済みの先頭drop行を捨てる
+    out.print(t); out.print('\n');               // 残りを持ち越し
+  }
+  in.close();
+  out.close();
+  LittleFS.remove(SPOOL);
+  LittleFS.rename(TMP, SPOOL);
+}
+
 // ---- スプールPOST（200まで消さない・S8）-----------------------------------
 static void flush_spool() {
   if (!LittleFS.exists(SPOOL)) return;
@@ -268,6 +310,7 @@ static void flush_spool() {
   JsonDocument out;
   JsonArray arr = out["events"].to<JsonArray>();
   int n = 0;
+  bool capped = false;                            // 100件で打ち切ったか
   while (f.available()) {
     String line = f.readStringUntil('\n'); line.trim();
     if (line.length() == 0) continue;
@@ -275,20 +318,69 @@ static void flush_spool() {
     if (deserializeJson(ev, line) != DeserializationError::Ok) continue; // 壊れた行は捨てる
     arr.add(ev);
     n++;
+    if (n >= 100) { capped = true; break; }       // 1回のPOSTは100件まで（RAM枯渇・長時間ブロック防止）
   }
   f.close();
   if (n == 0) return;
   String payload; serializeJson(out, payload);
 
-  String url = String(SERVER_BASE) + "/api/timing/races/" + s_race_id + "/events";
+  String url = SERVER_URL_BASE + "/api/timing/races/" + s_race_id + "/events";
+  WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(url);
+  http.begin(_c, url);
+  http.addHeader("Host", SERVER_HOST);
   http.addHeader("Content-Type", "application/json");
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.POST(payload);
-  if (code == 200) { LittleFS.remove(SPOOL); Serial.printf("[POST] %d件 送信\n", n); }
-  else             { Serial.printf("[POST] 失敗 code=%d\n", code); }
   http.end();
+
+  if (code != 200) { Serial.printf("[POST] 失敗 code=%d\n", code); return; }
+
+  if (!capped) {
+    LittleFS.remove(SPOOL);                       // 全件送れた→スプール消去
+  } else {
+    rewrite_spool_drop_first(n);                  // 送った先頭n件を消し、残りは次回へ持ち越す
+  }
+  Serial.printf("[POST] %d件 送信%s\n", n, capped ? "（続きあり）" : "");
+}
+
+// ---- レイアウト取得（GW向け軽量版 /for_gw・docs/19.16）--------------------
+//  サーバーから target_laps / lap_length_m / nodes 等を取得してログ表示する。
+//  戻り値：取得成功=true。呼び出し間隔は tick_fetch_layout がバックオフ管理（#14）。
+static bool fetch_layout() {
+  if (!wifi_up()) return false;
+  WiFiClientSecure _c; _c.setInsecure();
+  HTTPClient http;
+  http.begin(_c, SERVER_URL_BASE + "/api/timing/layouts/" + String((int)LAYOUT_ID) + "/for_gw");
+  http.addHeader("Host", SERVER_HOST);
+  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
+  int code = http.GET();
+  bool ok = false;
+  if (code == 200) {
+    JsonDocument res;
+    if (deserializeJson(res, http.getString()) == DeserializationError::Ok) {
+      int laps  = res["target_laps"] | 0;
+      int nodes = res["node_count"]  | 0;
+      int lc    = res["lc_count"]    | 0;
+      float len = res["lap_length_m"] | 0.0f;
+      Serial.printf("[LAYOUT] laps=%d nodes=%d lc=%d len=%.1fm\n", laps, nodes, lc, len);
+      ok = true;
+    }
+  }
+  if (!ok) Serial.printf("[LAYOUT] fetch NG code=%d\n", code);
+  http.end();
+  return ok;
+}
+
+// ---- fetch_layout の呼び出し間隔管理（#14：成功60s / 失敗5s）---------------
+static void tick_fetch_layout() {
+  static uint32_t last = 0;
+  static bool first = true;
+  uint32_t interval = s_layout_ok ? LAYOUT_OK_MS : LAYOUT_NG_MS;
+  if (!first && (millis() - last) < interval) return;
+  first = false;
+  last  = millis();
+  s_layout_ok = fetch_layout();
 }
 
 // ---- 本体ボタン読み取り ----------------------------------------------------
@@ -318,7 +410,7 @@ void setup() {
   pinMode(PIN_BTN_RED,  INPUT_PULLUP);
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
   if (!LittleFS.begin(true)) Serial.println("LittleFS mount 失敗");
-  Serial.printf("PSRAM=%u（8388608ならOK）\n", (unsigned)ESP.getPsramSize());
+  Serial.printf("PSRAM=%u (VE normal: approx 4MB mapped of 8MB)\n", (unsigned)ESP.getPsramSize());
   if (!mesh::begin(NODE_ID, ESPNOW_CHANNEL, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
   }
@@ -332,7 +424,8 @@ void loop() {
   tick_sequence();
 
   beam::Hit hit;
-  while (beam::poll(hit)) {
+  int drain = 0;
+  while (drain++ < 8 && beam::poll(hit)) {   // 1周8件まで（浮きGPIO洪水でloopを占有させない）
     static uint32_t self_seq = 0;
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };
@@ -342,4 +435,6 @@ void loop() {
 
   static uint32_t last = 0;
   if (millis() - last > 3000) { last = millis(); flush_spool(); }
+
+  tick_fetch_layout();   // #14：成功60s/失敗5sのバックオフで /for_gw を取得
 }
