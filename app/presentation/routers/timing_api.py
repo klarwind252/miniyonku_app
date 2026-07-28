@@ -1043,3 +1043,33 @@ async def result_detail_page(
             "has_result": result is not None,
         },
     )
+
+@router.get("/api/timing/layouts/{layout_id}/for_gw")
+async def layout_for_gw(
+    layout_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    x_timing_token: str | None = Header(default=None),
+    _guard: bool = Depends(require_m4laps),
+):
+    """GW向けレイアウト軽量版（docs/19.16）。周回数・使用ノード・LC数を返す。"""
+    _check_token(x_timing_token)
+    repo = TimingLayoutRepository(db)
+    lay = await repo.get_layout(layout_id)
+    if not lay:
+        return JSONResponse({"detail": "layout not found"}, status_code=404)
+    elems = await repo.get_elements(layout_id)
+    nodes = [
+        {"node_id": e[3], "kind": e[2]}
+        for e in elems if e[2] != "LC" and e[3] is not None
+    ]
+    lc_count = sum(1 for e in elems if e[2] == "LC")
+    return JSONResponse({
+        "layout_id": lay[0],
+        "name": lay[1],
+        "target_laps": lay[2],
+        "lap_length_m": lay[3],
+        "lc_count": lc_count,
+        "nodes": nodes,
+        "node_count": len(nodes),
+        "updated_at": lay[5],
+    })
