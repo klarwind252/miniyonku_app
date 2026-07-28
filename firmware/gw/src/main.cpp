@@ -30,14 +30,17 @@
 #define ESPNOW_CHANNEL 1
 #endif
 
-// ⚠ 当面はレイアウトIDをファームに固定で持つ（(A)最小案・docs/19.10.6 #1）。
-//   将来アプリ→GWでヒートID/レイアウトを動的送信する（DA5・(B)フル案）。
-#ifndef LAYOUT_ID
-#define LAYOUT_ID 1
+// ⚠ #8-a（docs/21.4）：レイアウトID/周回数を実行時変数化。
+//   #define は「起動時の既定値」として残し、以後は s_layout_id / s_target_laps を使う。
+//   fetch_layout() 成功時に取得値で s_target_laps を更新（サーバー主導・案P土台）。
+#ifndef DEFAULT_LAYOUT_ID
+#define DEFAULT_LAYOUT_ID 1
 #endif
-#ifndef TARGET_LAPS
-#define TARGET_LAPS 3
+#ifndef DEFAULT_TARGET_LAPS
+#define DEFAULT_TARGET_LAPS 3
 #endif
+static uint32_t s_layout_id   = DEFAULT_LAYOUT_ID;    // 現在のレイアウトID（起動既定→将来アプリ追従）
+static int      s_target_laps = DEFAULT_TARGET_LAPS;  // 現在の周回数（fetch_layoutで更新）
 
 // ---- サーバ接続（K5：DNS回避＝IP直＋Hostヘッダ）----------------------------
 //  ⚠ESP32の hostByName() が失敗するため、URLはIP直・CN検証はsetInsecureで回避。
@@ -88,8 +91,8 @@ static bool wifi_up() {
 static uint32_t create_race(bool with_green, uint64_t green_us) {
   if (!wifi_up()) return 0;
   JsonDocument doc;
-  doc["target_laps"] = TARGET_LAPS;
-  doc["layout_id"]   = LAYOUT_ID;
+  doc["target_laps"] = s_target_laps;
+  doc["layout_id"]   = s_layout_id;
   if (with_green) doc["green_t_us"] = green_us;
   String body; serializeJson(doc, body);
 
@@ -352,7 +355,7 @@ static bool fetch_layout() {
   if (!wifi_up()) return false;
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(_c, SERVER_URL_BASE + "/api/timing/layouts/" + String((int)LAYOUT_ID) + "/for_gw");
+  http.begin(_c, SERVER_URL_BASE + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
   http.addHeader("Host", SERVER_HOST);
   if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.GET();
@@ -364,7 +367,10 @@ static bool fetch_layout() {
       int nodes = res["node_count"]  | 0;
       int lc    = res["lc_count"]    | 0;
       float len = res["lap_length_m"] | 0.0f;
-      Serial.printf("[LAYOUT] laps=%d nodes=%d lc=%d len=%.1fm\n", laps, nodes, lc, len);
+      // #8-a：取得できた周回数を実行時変数へ反映（0や異常値は無視して既定を維持）
+      if (laps >= 1 && laps <= 99) s_target_laps = laps;
+      Serial.printf("[LAYOUT] id=%u laps=%d nodes=%d lc=%d len=%.1fm\n",
+                    s_layout_id, laps, nodes, lc, len);
       ok = true;
     }
   }
@@ -448,7 +454,7 @@ static void tick_display() {
     case ST_GREEN:
     case ST_RACE: {
       uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
-      disp::draw_ontrack(elapsed, blink, TARGET_LAPS);
+      disp::draw_ontrack(elapsed, blink, s_target_laps);
       break;
     }
   }
