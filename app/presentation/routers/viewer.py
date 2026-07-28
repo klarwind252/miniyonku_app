@@ -67,7 +67,8 @@ async def _load_race_assets_v(tid, db) -> dict:
     except Exception:
         pass
     return out
-from app.core.config import HEAT_TOURNAMENT_TYPES
+from app.core.config import HEAT_TOURNAMENT_TYPES, IS_CLOUD
+from app.domain import m4laps_license
 
 # ホストの現在画面を保持（メモリ）。複数店舗化のため店舗IDごとに分離。
 _host_states: dict = {}
@@ -226,7 +227,8 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         async with db.execute(
             f"""SELECT hl.heat_id, hl.lane_no, COALESCE(r.name,'') as name,
                        COALESCE(r.yomi,'') as yomi,
-                       hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win
+                       hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win,
+                       hr.total_time as total_time
                 FROM heat_lanes hl
                 LEFT JOIN entries e ON e.id=hl.entry_id
                 LEFT JOIN racers r ON r.id=e.racer_id
@@ -838,6 +840,9 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
         "t": t,
+        # ラップタイマー(M4LAPS)由来の表示（タイム・速度）はクラウド版＋ライセンス登録時のみ。
+        # オンプレ版・未登録では False → テンプレート側で根本非表示。
+        "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),
         "race_assets": await _load_race_assets_v(tid, db),
         "show_info_bar": True,
         "tid": tid,
