@@ -4,14 +4,19 @@
   (A) GW向け（デバイストークン認証）:
       POST /api/timing/join        … GWが拾った未割当ノードを報告
       GET  /api/timing/assignments … MAC->node_id 表を取得（GWがキャッシュしJOIN_ACKに使う）
-  (B) admin向け（既存のadmin認証で保護する）:
+  (B) admin向け（/admin/* は FixedTokenAuthMiddleware が admin 認証を強制する）:
       GET  /admin/timing/unassigned      … 未割当ノード一覧（割当UIが叩く）
       POST /admin/timing/devices/bind    … MAC を node_id に確定
       POST /admin/timing/devices/unbind  … 割当を外す
 
-⚠ 認証は既存実装に合わせること。ここでは:
-   - GW系は X-Timing-Token（既存 timing_api と同じ環境変数 TIMING_TOKEN）を流用
-   - admin系は既存の admin 依存（get_current_admin 等）に置き換える TODO を明示
+認証（確認済み・2026-07-28）:
+   - GW系（/api/timing/*）: X-Timing-Token（環境変数 TIMING_TOKEN）で認証。
+       ⚠ TIMING_TOKEN 未設定だと素通し。クラウド公開時は必ず設定すること
+       （未設定のまま公開すると join/assignments を誰でも叩けてゴミ登録され得る）。
+   - admin系（/admin/timing/*）: app/presentation/auth.py の
+       FixedTokenAuthMiddleware が /admin/* 全体に admin Cookie を要求する。
+       ミドルウェアが外側で強制するため、各エンドポイントに個別のadmin依存は不要。
+       （旧TODO「既存admin認証へ載せ替え」は、この二重掛けが不要と判明したため解消）
 """
 from __future__ import annotations
 
@@ -77,7 +82,9 @@ def get_assignments(x_timing_token: str | None = Header(None)) -> dict:
 
 
 # ============================================================================
-#  (B) admin向け（⚠ 既存のadmin認証に載せ替えること）
+#  (B) admin向け
+#      /admin/* は FixedTokenAuthMiddleware（auth.py）が admin Cookie を要求する。
+#      ここに個別の admin 依存は付けない（ミドルウェアで保護済み・二重掛け不要）。
 # ============================================================================
 class BindIn(BaseModel):
     node_id: int = Field(..., ge=0, le=11)
