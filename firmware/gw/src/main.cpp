@@ -20,6 +20,7 @@
 #include "espnow_link.h"
 #include "timesync.h"
 #include "beam.h"
+#include "display.h"
 #include "secrets.h"
 
 #ifndef NODE_ID
@@ -415,8 +416,43 @@ void setup() {
     Serial.println("ESP-NOW init 失敗"); return;
   }
   beam::begin();
+  disp::begin();                       // TFT初期化（PSRAMスプライト確保）
+  disp::g_status.gw_id = NODE_ID;
+  disp::g_status.ch    = ESPNOW_CHANNEL;
   wifi_up();
   Serial.println("稼働開始。赤=スタート / 灰長押し=RESET。");
+}
+
+// ---- TFT描画：状態機械に同期して画面を切り替える（docs/20・12.3）----------
+//  ステータスバーの○×はここで g_status に反映してから各画面を描く。
+static void tick_display() {
+  static uint32_t last = 0;
+  static bool blink = false;
+  if (millis() - last < 250) return;     // 約4fps（●点滅もこの周期）
+  last = millis();
+  blink = !blink;
+
+  // ステータス更新（NODE充足は残課題#8で実数へ。今はJOIN実数の反映口のみ用意）
+  disp::g_status.wifi_ok = (WiFi.status() == WL_CONNECTED);
+  disp::g_status.ch      = ESPNOW_CHANNEL;
+  // beam_ok / node_have / node_need / unsent / gw_dup は各機能側から順次代入予定。
+
+  switch (s_state) {
+    case ST_IDLE:
+      disp::draw_idle();
+      break;
+    case ST_ARMED:
+      // ARMED画面はTFTでは持たない（docs/20.6・シグナル機が担当）。待機表示を維持。
+      disp::draw_idle();
+      break;
+    case ST_GREEN:
+    case ST_RACE: {
+      uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
+      disp::draw_ontrack(elapsed, blink, TARGET_LAPS);
+      break;
+    }
+  }
+  disp::commit();                        // ステータスバーを重ねて一括転送
 }
 
 void loop() {
@@ -437,4 +473,5 @@ void loop() {
   if (millis() - last > 3000) { last = millis(); flush_spool(); }
 
   tick_fetch_layout();   // #14：成功60s/失敗5sのバックオフで /for_gw を取得
+  tick_display();        // TFT描画（状態機械に同期・約4fps）
 }
