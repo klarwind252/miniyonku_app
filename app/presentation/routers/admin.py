@@ -1222,6 +1222,7 @@ async def clear_slideshow(request: Request, db: aiosqlite.Connection = Depends(g
     return RedirectResponse(url="/admin/settings#pwa", status_code=303)
 
 
+@router.post("/settings/pwa/icon/store")
 async def upload_pwa_icon_for_store(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """店舗1（既定店舗）の設定画面から、指定したスラッグ店舗の共通アイコンを登録する。
     対象店舗の公開ディレクトリへ枠なし＋画面別の一式を生成し、対象店舗のDBへ
