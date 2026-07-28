@@ -23,6 +23,12 @@
 .heat-no{color:#7f8c8d;font-weight:bold;font-size:13px}
 .lane-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
 .racer-cell{display:flex;align-items:center;font-size:15px;font-weight:bold;min-width:0}
+/* FINISHタイム上位3のセル着色（1紫/2青/3緑）。インライン背景だとマイレーサー・
+   ハイライトのリセット（racer-cell の inline background を removeProperty）で消えるため、
+   クラスで着色する。選択時のハイライトは inline !important なのでこちらが優先される。 */
+.rc-fin1{background:#6b21a8}
+.rc-fin2{background:#1e40af}
+.rc-fin3{background:#166534}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:bold;line-height:1;margin-left:6px;flex-shrink:0}
 .rr-name{flex:1;min-width:0;line-height:1.25;overflow-wrap:anywhere}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
@@ -613,7 +619,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% if ld %}{% set lane = ld[0] %}
             {% set _frank = finish_rank_map.get(heat.id ~ ':' ~ col) if m4laps_active else none %}
             <td>
-              <div class="racer-cell"{% if _frank %} style="background:{% if _frank == 1 %}#6b21a8{% elif _frank == 2 %}#1e40af{% else %}#166534{% endif %};border-radius:6px;padding:{% if is_public_html %}3px 6px{% else %}5px 10px{% endif %}"{% endif %}>
+              <div class="racer-cell{% if _frank %} rc-fin{{ _frank }}{% endif %}"{% if _frank %} style="border-radius:6px;padding:{% if is_public_html %}3px 6px{% else %}5px 10px{% endif %}"{% endif %}>
                 {# 総当たり系の○×は名前の左に配置。viewのみ18px bold、htmlは従来サイズ #}
                 {% if lane.win == 1 and is_rr_type %}
                 <span class="rank-badge" style="background:#27ae60;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">○</span>
