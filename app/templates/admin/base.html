@@ -1280,7 +1280,7 @@ function _showPubToast(msg) {
     }
     var html='';
     races.forEach(function(r, idx){
-      var linked = (r.heat_id!=null);
+      var linked = !!r.applied_label;
       // 受信時刻（"2026-07-23 04:07:10" → "04:07:10"）。取れなければ空。
       var ts='';
       if(r.created_at){
@@ -1295,7 +1295,7 @@ function _showPubToast(msg) {
         + '<span class="pip-pick">\u25c9</span>'
         + (idx===0 ? '<span class="pip-latest-tag">\u6700\u65b0</span>' : '')
         + (linked
-            ? ('<span class="pip-badge linked">\u30d2\u30fc\u30c8'+esc(r.heat_id)+'\u306b\u53cd\u6620\u6e08</span>')
+            ? ('<span class="pip-badge linked">'+esc(r.applied_label)+' \u53cd\u6620\u6e08</span>')
             : '')
         + (ts ? ('<span class="pip-time">'+esc(ts)+'</span>') : '')
         + '</div>';

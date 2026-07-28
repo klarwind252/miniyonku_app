@@ -893,9 +893,35 @@ async def pip_latest(
             continue
 
         keys = race.keys() if hasattr(race, "keys") else []
+        heat_id = race["heat_id"] if "heat_id" in keys else None
+        group_id = race["applied_group_id"] if "applied_group_id" in keys else None
+
+        # 反映先を人間向けラベルにする（内部IDを画面に出さない）。
+        # 予選＝heat_id、決勝＝applied_group_id。どちらも無ければ未反映（None）。
+        applied_label = None
+        if heat_id is not None:
+            async with db.execute(
+                "SELECT heat_no, round_no FROM heats WHERE id = ?", (heat_id,)
+            ) as cur:
+                h = await cur.fetchone()
+            if h and h["round_no"]:
+                applied_label = f"予選{h['round_no']}回目 レース{h['heat_no']}"
+            elif h:
+                applied_label = f"レース{h['heat_no']}"
+            else:
+                applied_label = f"ヒート{heat_id}"   # 保険：ヒートが消えている等
+        elif group_id is not None:
+            async with db.execute(
+                "SELECT group_no FROM bracket_groups WHERE id = ?", (group_id,)
+            ) as cur:
+                g = await cur.fetchone()
+            applied_label = f"決勝 グループ{g['group_no']}" if g else f"グループ{group_id}"
+
         out.append({
             "race_id": rid,
-            "heat_id": (race["heat_id"] if "heat_id" in keys else None),
+            "heat_id": heat_id,
+            "applied_group_id": group_id,
+            "applied_label": applied_label,
             "target_laps": (race["target_laps"] if "target_laps" in keys else None),
             "created_at": (race["created_at"] if "created_at" in keys else None),
             "ranking": rows,
