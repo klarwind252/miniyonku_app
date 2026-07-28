@@ -837,12 +837,25 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         # 決勝進出予定数（最終段階の advance_count）
         _finalists_planned = (_ow_stages[-1]["advance_count"] if _ow_stages else 0)
 
+    # admin と同一ロジック：予選の全FINISHタイムを速い順に並べ、上位3つを
+    # 1位=紫 / 2位=青 / 3位=緑 に色分けする（決勝は含めない）。
+    # キーは "heat_id:lane_no"（テンプレートで該当レーンを特定するのに使う）。
+    _finish_all = []
+    for _hid, _lns in heat_lanes.items():
+        for _ln in _lns:
+            if _ln.get("total_time") is not None:
+                _finish_all.append((_ln["total_time"], _hid, _ln["lane_no"]))
+    finish_rank_map = {}
+    for _rk, (_t, _hid, _lno) in enumerate(sorted(_finish_all)[:3], start=1):
+        finish_rank_map[f"{_hid}:{_lno}"] = _rk
+
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
         "t": t,
         # ラップタイマー(M4LAPS)由来の表示（タイム・速度）はクラウド版＋ライセンス登録時のみ。
         # オンプレ版・未登録では False → テンプレート側で根本非表示。
         "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),
+        "finish_rank_map": finish_rank_map,
         "race_assets": await _load_race_assets_v(tid, db),
         "show_info_bar": True,
         "tid": tid,
