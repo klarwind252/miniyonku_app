@@ -42,13 +42,30 @@
 static uint32_t s_layout_id   = DEFAULT_LAYOUT_ID;    // 現在のレイアウトID（起動既定→将来アプリ追従）
 static int      s_target_laps = DEFAULT_TARGET_LAPS;  // 現在の周回数（fetch_layoutで更新）
 
-// ---- サーバ接続（K5：DNS回避＝IP直＋Hostヘッダ）----------------------------
-//  ⚠ESP32の hostByName() が失敗するため、URLはIP直・CN検証はsetInsecureで回避。
-//    SNIが無くてもHostヘッダでバーチャルホストに届く。
+// ---- サーバ接続（K5：DNS回避＝IP直＋Hostヘッダ／#9保険＝DNS二段構え）--------
+//  ⚠ESP32の hostByName() が失敗するため、暫定でIP直＋Hostヘッダを使ってきた。
+//    #9保険（docs/21・残#9）：起動時にDNS解決を試し、通ればホスト名運用へ。
+//    ダメなら従来のIP直＋Hostへフォールバック。会場でDNSが直っても再書込み不要。
 //    ⚠IPが変わったらここ1箇所を直す（残課題#9・会場WiFiで要再確認）。
 static const char* SERVER_IP   = "133.117.77.69";
 static const char* SERVER_HOST = "v133-117-77-69.sefs.static.cnode.jp";
-#define SERVER_URL_BASE  (String("https://") + SERVER_IP)
+
+// DNS解決可否。true＝ホスト名でつなぐ / false＝IP直＋Hostヘッダ（暫定）。
+static bool s_dns_ok = false;
+
+// つなぎ先ベースURL。DNS可ならホスト名、不可ならIP直。
+static inline String server_base() {
+  return s_dns_ok ? (String("https://") + SERVER_HOST)
+                  : (String("https://") + SERVER_IP);
+}
+// Hostヘッダを付けるべきか（IP直のときだけ必要。ホスト名運用時は不要）。
+static inline bool need_host_header() { return !s_dns_ok; }
+
+// http.begin後に共通ヘッダを付ける（Host＋任意トークン）。IP直時のみHost付与。
+static void add_common_headers(HTTPClient& http) {
+  if (need_host_header()) http.addHeader("Host", SERVER_HOST);
+  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
+}
 
 // ---- fetch_layout の再取得間隔（残課題#14：成功=60s / 失敗=5s のバックオフ）--
 static constexpr uint32_t LAYOUT_OK_MS   = 60000;   // 取得成功後は60秒あける
@@ -78,12 +95,34 @@ static const char* SPOOL = "/spool.jsonl";
 static uint32_t s_race_id = 0;
 
 // ---- WiFi ------------------------------------------------------------------
+//  #9保険：接続確立後に一度だけDNS解決を試し、s_dns_ok を決める。
+//  DNS明示（8.8.8.8/1.1.1.1）は、ルーターがESP32へDNSを配らない会場対策。
+static void probe_dns() {
+  // 既にDNS運用中なら再判定しない（毎回のhostByNameは無駄＆遅延源）。
+  if (s_dns_ok) return;
+  IPAddress ip;
+  if (WiFi.hostByName(SERVER_HOST, ip) == 1 && ip != IPAddress(0,0,0,0)) {
+    s_dns_ok = true;
+    Serial.printf("[DNS] OK %s -> %s（ホスト名運用へ）\n",
+                  SERVER_HOST, ip.toString().c_str());
+  } else {
+    s_dns_ok = false;
+    Serial.println("[DNS] NG（IP直＋Hostヘッダにフォールバック）");
+  }
+}
+
 static bool wifi_up() {
   if (WiFi.status() == WL_CONNECTED) return true;
+  // DNSを明示（ルーターがDNS未配布でも解決を試せるように）。SSID接続前に設定。
+  //  IP等は0で自動（DHCP）、DNSだけ固定にする。
+  WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0),
+              IPAddress(8,8,8,8), IPAddress(1,1,1,1));
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) delay(100);
-  return WiFi.status() == WL_CONNECTED;
+  bool up = (WiFi.status() == WL_CONNECTED);
+  if (up) probe_dns();   // 接続できたらDNS解決を試す（s_dns_ok確定）
+  return up;
 }
 
 // ---- 新レース作成（layout_id・任意でgreen_t_usを付ける）--------------------
@@ -98,10 +137,9 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
 
   WiFiClientSecure _c; _c.setInsecure();            // K4：ローカル生成＋CN検証なし
   HTTPClient http;
-  http.begin(_c, SERVER_URL_BASE + "/api/timing/races");   // K5：IP直
-  http.addHeader("Host", SERVER_HOST);              // K5：Hostで振り分け
+  http.begin(_c, server_base() + "/api/timing/races");   // #9：DNS可ならホスト名/不可ならIP直
+  add_common_headers(http);                         // Host(IP直時のみ)＋トークン
   http.addHeader("Content-Type", "application/json");
-  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   uint32_t rid = 0;
   int code = http.POST(body);
   if (code == 200) {
@@ -122,10 +160,9 @@ static bool set_race_green(uint32_t rid, uint64_t green_us) {
   String body; serializeJson(doc, body);
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(_c, SERVER_URL_BASE + "/api/timing/races/" + rid + "/green");
-  http.addHeader("Host", SERVER_HOST);
+  http.begin(_c, server_base() + "/api/timing/races/" + rid + "/green");
+  add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
-  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.POST(body);
   http.end();
   return code == 200;
@@ -189,10 +226,9 @@ static void forward_join(const proto::JoinBody& jb) {
 
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(_c, SERVER_URL_BASE + "/api/timing/join");
-  http.addHeader("Host", SERVER_HOST);
+  http.begin(_c, server_base() + "/api/timing/join");
+  add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
-  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.POST(body);
   if (code == 200) {
     JsonDocument res;
@@ -328,13 +364,12 @@ static void flush_spool() {
   if (n == 0) return;
   String payload; serializeJson(out, payload);
 
-  String url = SERVER_URL_BASE + "/api/timing/races/" + s_race_id + "/events";
+  String url = server_base() + "/api/timing/races/" + s_race_id + "/events";
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, url);
-  http.addHeader("Host", SERVER_HOST);
+  add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
-  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
   int code = http.POST(payload);
   http.end();
 
@@ -355,9 +390,8 @@ static bool fetch_layout() {
   if (!wifi_up()) return false;
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(_c, SERVER_URL_BASE + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
-  http.addHeader("Host", SERVER_HOST);
-  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
+  http.begin(_c, server_base() + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
+  add_common_headers(http);
   int code = http.GET();
   bool ok = false;
   if (code == 200) {
