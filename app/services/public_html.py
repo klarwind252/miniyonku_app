@@ -120,8 +120,9 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 .entry-grid{grid-template-columns:1fr!important}
 /* bracket: 横スクロールをスマホでも確実に・スムーズに */
 .bracket-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
-/* entry-card: 横並び・幅いっぱい */
-.entry-card{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;width:100%;padding:8px 12px;box-sizing:border-box}
+/* entry-card: 横並び・幅いっぱい。背景をページ背景(#0f1923)と差別化してカードとして見せる
+   （!important を付けない＝bracketの進出ハイライト等のインライン背景は上書きしない） */
+.entry-card{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;width:100%;padding:8px 12px;box-sizing:border-box;background:#152232;border:1px solid #2c3e50;border-radius:8px}
 /* レーサー名: 14px bold・左揃え・省略なし */
 .entry-name{font-size:14px!important;font-weight:bold!important;white-space:nowrap;overflow:visible!important;text-overflow:clip!important;flex:1;text-align:left}
 /* よみがな: 10px normal */
@@ -216,21 +217,34 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   //  - 各ラウンド・各グループの「スロット数」の並び
   // をつないだ文字列とする。結果入力だけでは変わらず、
   // 生成・再生成・削除でのみ変わる（=フルリロードすべき瞬間）。
+  //
+  // ⚠ 決勝ブラケット(.br-round)だけでなく、予選スケジュール(.schedule-table)の
+  //    生成・再生成・削除も世代印に含める。ポイント制/先着順の予選は .br-round を
+  //    持たないため、これを見ないと「0レース→Nレース生成」が同一世代と誤判定され、
+  //    フルリロードされず部分差し替えになってレイアウトが崩れる（F5で直る症状）。
+  //    表数・行数は結果入力では変わらないので、軽い部分更新は従来どおり維持される。
   function structSig(root){
     try {
+      // --- 決勝ブラケットの骨組み ---
       var rounds = root.querySelectorAll('.br-round');
+      var bracketSig;
       if(!rounds || rounds.length === 0){
-        return 'no-bracket';   // トーナメント表がまだ無い状態も1世代として区別
-      }
-      var parts = [];
-      rounds.forEach(function(r){
-        var g = [];
-        r.querySelectorAll('.br-group').forEach(function(grp){
-          g.push(grp.querySelectorAll('.br-slot').length);
+        bracketSig = 'no-bracket';   // トーナメント表がまだ無い状態も1世代として区別
+      } else {
+        var parts = [];
+        rounds.forEach(function(r){
+          var g = [];
+          r.querySelectorAll('.br-group').forEach(function(grp){
+            g.push(grp.querySelectorAll('.br-slot').length);
+          });
+          parts.push(g.join('-'));
         });
-        parts.push(g.join('-'));
-      });
-      return parts.join('|');
+        bracketSig = parts.join('|');
+      }
+      // --- 予選スケジュールの骨組み（生成・再生成・削除で変化） ---
+      var schedTables = root.querySelectorAll('.schedule-table').length;
+      var schedRows   = root.querySelectorAll('.schedule-table tr.race-row').length;
+      return bracketSig + '#sch:' + schedTables + ',' + schedRows;
     } catch(e){
       return 'err';
     }
