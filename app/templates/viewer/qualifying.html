@@ -167,6 +167,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {# 表示コース列。総当たり系（roundrobin/heat_roundrobin/none_roundrobin）は
    1vs1 のため 1コース・2コースの2列。ポイント制・ヒートトーナメント等は3列。 #}
 {% set course_cols = [1, 2] if (is_none_roundrobin or qualifying_type in ['roundrobin', 'heat_roundrobin']) else [1, 2, 3] %}
+{# 全体ベスト（予選内で最速のFINISHタイム）。スケジュールのタイムをパープル表示する基準。 #}
+{% set _all_finish = [] %}
+{% for _lns in heat_lanes.values() %}{% for _l in _lns %}{% if _l.total_time %}{% set _ = _all_finish.append(_l.total_time) %}{% endif %}{% endfor %}{% endfor %}
+{% set best_time = (_all_finish | min) if _all_finish else none %}
 {% if t %}
 <div style="background:#1a2535;border-bottom:1px solid #2c3e50;padding:12px 20px;font-size:18px;font-weight:bold;color:#ecf0f1">
   {{ t.name }}
@@ -624,7 +628,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% elif lane.rank %}
                 {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
-                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
+                <div style="display:flex;flex-direction:column;min-width:0;flex:1">
+                  <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
+                  {% if lane.total_time %}{% set _is_best = (best_time is not none and lane.total_time <= best_time + 0.0005) %}<span style="font-size:{% if is_public_html %}11px{% else %}15px{% endif %};color:{% if _is_best %}#8e44ad{% else %}#8aa0b6{% endif %};font-weight:{% if _is_best %}bold{% else %}normal{% endif %};font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px">{{ '%.3f'|format(lane.total_time) }}</span>{% endif %}
+                </div>
               </div>
             </td>
             {% else %}<td style="color:#3d5166">—</td>{% endif %}
