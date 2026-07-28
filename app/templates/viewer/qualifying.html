@@ -131,6 +131,17 @@
 {% endif %}
 {% endmacro %}
 
+{# 順位アイコン：1〜3位はメダル🥇🥈🥉、4位以下は素の数字（丸バッジは使わない）。
+   ポイント制でのみ使用（呼び出し側で qualifying_type=='point' を判定）。
+   big=true は view(FHD) 用に少し大きめ。 #}
+{% macro rank_icon(rank, big=false) %}
+{%- if rank in (1, 2, 3) -%}
+<span style="font-size:{% if big %}24px{% else %}17px{% endif %};line-height:1;margin-right:4px;flex-shrink:0">{{ {1:'🥇',2:'🥈',3:'🥉'}[rank] }}</span>
+{%- else -%}
+<span style="display:inline-flex;align-items:center;justify-content:center;min-width:{% if big %}24px{% else %}18px{% endif %};font-size:{% if big %}18px{% else %}13px{% endif %};font-weight:bold;color:#7f8c8d;margin-right:4px;flex-shrink:0">{{ rank }}</span>
+{%- endif -%}
+{% endmacro %}
+
 {% block content %}
 {% if not is_public_html %}
 {% raw %}
@@ -611,7 +622,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% if lane.is_co %}
                 <span class="rank-badge" style="background:#333333;color:#FFFFFF;box-sizing:border-box;font-size:9px;margin-left:0;margin-right:2px">CO</span>
                 {% elif lane.rank %}
-                <span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>
+                {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
                 {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
               </div>
@@ -838,7 +849,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <tr style="{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}">
           <td style="color:#555;font-size:11px">{{ loop.index }}</td>
           <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">
-            {{ s.rank }}
+            {% if qualifying_type == 'point' and s.rank in (1, 2, 3) %}{{ {1:'🥇',2:'🥈',3:'🥉'}[s.rank] }}{% else %}{{ s.rank }}{% endif %}
           </td>
           <td style="font-weight:bold;font-size:13px">{{ s.name }}</td>
           <td>
