@@ -861,17 +861,17 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <th>順位</th><th>レーサー</th>
             {% if is_none_roundrobin %}<th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th>
             {% elif qualifying_type in ('heat_roundrobin','roundrobin') %}<th>勝</th>
-            {% else %}<th>Pt</th>{% if qualifying_type in ('point','order') %}<th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>{% endif %}{% endif %}
+            {% else %}<th>Pt</th>{% if qualifying_type in ('point','order') %}<th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>{% if m4laps_active and qualifying_type == 'point' %}<th style="color:#7f8c8d;text-align:center">ベスト</th>{% endif %}{% endif %}{% endif %}
           </tr>
         </thead>
         <tbody>
         {% for s in standings %}
-        <tr style="{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}">
+        <tr {% if m4laps_active and s.entry_id %}onclick="openRacerStats({{ t.id }},{{ s.entry_id }})" style="cursor:pointer;{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}"{% else %}style="{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}"{% endif %}>
           <td style="color:#555;font-size:11px">{{ loop.index }}</td>
           <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">
             {{ s.rank }}
           </td>
-          <td style="font-weight:bold;font-size:13px">{% if m4laps_active and s.entry_id %}<span class="rs-name" onclick="openRacerStats({{ t.id }},{{ s.entry_id }})">{{ s.name }}</span>{% else %}{{ s.name }}{% endif %}</td>
+          <td style="font-weight:bold;font-size:13px">{{ s.name }}</td>
           <td>
             {% if is_none_roundrobin %}
             {{ s.wins }}
@@ -885,6 +885,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.race_count or 0 }}</td>
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.finish_count or 0 }}</td>
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
+          {% if m4laps_active and qualifying_type == 'point' %}
+          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
+          {% endif %}
           {% endif %}
         </tr>
         {% endfor %}
@@ -990,8 +993,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         h+='</tr></thead><tbody>';
         d.races.forEach(function(rc){
           var label=(rc.round_no?'予選'+rc.round_no+'回目 ':'')+'レース'+rc.heat_no;
+          var tstyle=rc.total_rank===1?'color:#fff;background:#6b21a8':rc.total_rank===2?'color:#fff;background:#1e40af':rc.total_rank===3?'color:#fff;background:#166534':'';
           h+='<tr><td class="rs-race">'+esc(label)+'</td>'
-            +'<td class="rs-num rs-total">'+fmt(rc.total_time,3)+'</td>'
+            +'<td class="rs-num rs-total" style="'+tstyle+'">'+fmt(rc.total_time,3)+'</td>'
             +'<td class="rs-num">'+fmt(rc.total_avg,2)+'</td>'
             +'<td class="rs-num">'+fmt(rc.max_ms,2)+'</td>'
             +'<td class="rs-num">'+fmt(rc.best_lap_time,3)+'</td>'

@@ -117,4 +117,13 @@ async def build_racer_qualifying_stats(db, tournament_id: int, entry_id: int) ->
             "sectors": sectors,
         })
 
+    # そのレーサー自身のレースを合計タイムで速い順に並べ、上位3つへ 1/2/3 の色ランク。
+    # モーダルの TOTAL 列を、レーススケジュールと同じ紫/青/緑で色分けするため。
+    _ranked = sorted(
+        [rc for rc in races if rc["total_time"] is not None],
+        key=lambda rc: rc["total_time"],
+    )
+    for _i, _rc in enumerate(_ranked[:3], start=1):
+        _rc["total_rank"] = _i
+
     return {"entry_id": entry_id, "name": name, "races": races}

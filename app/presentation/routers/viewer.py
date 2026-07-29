@@ -297,7 +297,8 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             """SELECT e.id AS entry_id, r.name, e.advanced,
                       COALESCE(SUM(hr.points),0) as total_points,
                       COUNT(hr.id) as race_count,
-                      COALESCE(SUM(CASE WHEN COALESCE(hr.is_co,0)=0 AND hr.rank>0 THEN 1 ELSE 0 END),0) as finish_count
+                      COALESCE(SUM(CASE WHEN COALESCE(hr.is_co,0)=0 AND hr.rank>0 THEN 1 ELSE 0 END),0) as finish_count,
+                      MIN(hr.total_time) as best_total
                FROM entries e JOIN racers r ON r.id=e.racer_id
                LEFT JOIN heat_lanes hl ON hl.entry_id=e.id
                  AND hl.heat_id IN (SELECT id FROM heats WHERE tournament_id=?)
@@ -317,6 +318,16 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                     else:
                         rank = i + 1
                 standings.append({**row, "rank": rank})
+
+        # ベスト合計タイム（best_total）で速い順に上位3名へ色付けランク(1/2/3)を付与。
+        # レーススケジュールと同じ「レースを通しての1/2/3ベスト」を順位表にも出す。
+        _bt = sorted(
+            [(s["best_total"], s["entry_id"]) for s in standings
+             if s.get("best_total") is not None],
+        )
+        _best_rank = {eid: i for i, (_v, eid) in enumerate(_bt[:3], start=1)}
+        for s in standings:
+            s["best_rank"] = _best_rank.get(s.get("entry_id"))
 
     # ポイント制／並び順（ポイント制）: ボーダーライン同率グループに is_tied_cutoff フラグ付与
     if qt in ("point", "order") and standings:
