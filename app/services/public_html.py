@@ -151,11 +151,15 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 """
     patched = patched.replace('</head>', inject + '</head>', 1)
 
-    # no-bracketを常に表示（JSが除去されているため）
-    patched = patched.replace(
-        '<div id="no-bracket" style="display:none;',
-        '<div id="no-bracket" style="display:block;',
-    )
+    # no-bracketを常に表示（JSが除去されているため）。ただしトーナメント表が
+    # 既に注入済み（bracket-html-container が空でない）ときは placeholder を出さない。
+    # ※ _inject_bracket_html が先に走ってツリーを注入するため、空コンテナが残って
+    #   いる＝トーナメント未作成、と判定できる。
+    if '<div id="bracket-html-container"></div>' in patched:
+        patched = patched.replace(
+            '<div id="no-bracket" style="display:none;',
+            '<div id="no-bracket" style="display:block;',
+        )
 
     # /logo をBase64埋め込みに変換
     logo_b64 = _get_logo_base64()
