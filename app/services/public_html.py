@@ -108,6 +108,12 @@ def _patch_html_for_static(html: str, slug: str = "") -> str:
 /* 最大幅・中央寄せ */
 html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin:0 auto!important}
 
+/* 公開HTMLは常に幅480pxの1カラム設計。2カラム化(.v-cols)や左右分割(.hr-grp-cols)の
+   解除はビューポート幅900px判定なので、タブレット(幅>900)だと狭い箱に2カラムが
+   押し込まれてスケジュール列が潰れる。公開では常時1カラムに固定して全幅で崩さない。 */
+.v-cols{grid-template-columns:1fr!important}
+.hr-grp-cols{grid-template-columns:1fr!important}
+
 /* info-grid: 左=項目名・右=値 の2列行レイアウト */
 .info-grid{display:block!important;border:1px solid #2c3e50;border-radius:6px;overflow:hidden}
 .info-cell{display:flex!important;align-items:baseline;padding:6px 12px;border-bottom:1px solid #2c3e50}
