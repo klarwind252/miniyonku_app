@@ -4513,7 +4513,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
 
     css = """
     <style>
-    .br-wrap { background:#ffffff; color:#212529; padding:20px 16px; border-radius:8px; overflow-x:auto; overflow-y:visible; }
+    .br-wrap { background:#ffffff; color:#212529; padding:2px; border-radius:8px; overflow-x:auto; overflow-y:visible; }
     /* ポジウム */
     .br-podium { display:flex; gap:%(gap)s; flex-wrap:wrap; margin-bottom:%(mb)s; }
     .br-champion { background:linear-gradient(135deg,#fff8d6,#ffe066); border:2px solid #d4a017; border-radius:10px; padding:%(ch_pad)s; flex:1; min-width:160px; text-align:center; box-shadow:0 4px 16px rgba(212,160,23,0.35); }
@@ -4528,8 +4528,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     /* レイアウト */
     .bracket-outer { position:relative; overflow:visible; width:100%; }
     .bracket-html { display:flex; gap:0; padding:6px 2px; align-items:flex-start; position:relative; width:max-content; min-width:100%; }
-    .br-round { display:flex; flex-direction:column; min-width:250px; max-width:300px; gap:0; flex:0 0 auto; position:relative; padding:0 24px; }
-    @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:172px!important; max-width:210px!important; padding:0 10px!important; } .br-round-label { font-size:14px!important; padding:4px 0 16px!important; } .br-group { padding:5px 3px 3px 10px!important; } .br-slot { padding:5px 9px!important; gap:6px!important; min-height:32px!important; } .br-slot-name { font-size:14px!important; min-width:0!important; overflow:hidden!important; text-overflow:ellipsis!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } }
+    .br-round { display:flex; flex-direction:column; min-width:250px; max-width:330px; gap:0; flex:0 0 auto; position:relative; padding:0 24px; }
+    @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:186px!important; max-width:240px!important; padding:0 10px!important; } .br-round-label { font-size:14px!important; padding:4px 0 16px!important; } .br-group { padding:5px 3px 3px 10px!important; } .br-slot { padding:5px 9px!important; gap:6px!important; min-height:32px!important; } .br-slot-name { font-size:14px!important; min-width:0!important; overflow:hidden!important; text-overflow:ellipsis!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } .br-slot-time { font-size:13px!important; margin-left:6px!important; } }
     /* スマホ：表彰台（1・2・3位）を折り返さず横一列に収める */
     @media(max-width:480px){
       .br-podium { flex-wrap:nowrap!important; gap:6px!important; }
@@ -4549,6 +4549,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-slot { display:flex; align-items:center; gap:9px; padding:6px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:39px; border:1px solid #dee2e6; }
     .br-slot-no { display:none; }
     .br-slot-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:18px; color:#212529 !important; font-weight:500; }
+    .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
+    .br-slot.winner .br-slot-time { color:#ffffff; }
     .br-slot-mark { font-size:20px; }
     /* 1位：濃い緑・白文字・強調 */
     /* シード（winnerより前に宣言してwinnerが上書きできるようにする） */
@@ -4612,7 +4614,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         is_seed_attr = ' data-is-seed="true"' if s.get("is_seed_slot") else ""
         name = esc(s.get("name")) if s.get("name") else "未確定"
         if is_winner:
-            mark = '<span class="br-slot-mark">🏆</span>' if is_final else '<span class="br-slot-mark">✓</span>'
+            mark = '<span class="br-slot-mark">🏆</span>' if is_final else ''
         elif rank == 2 and is_final:
             mark = '<span class="br-slot-mark">🥈</span>'
         elif rank == 3 and is_final:
@@ -4625,10 +4627,14 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         if group_id and tid and slot_id_val and s.get("name") and not is_final:
             extra = ("," + winner_js_extra_args) if winner_js_extra_args else ""
             onclick_attr = ' onclick="%s(%d,%d,%d%s)" style="cursor:pointer"' % (winner_js_func, group_id, slot_id_val, tid, extra)
+        # タイム（M4LAPS反映時のみ total_time が入る。名前の右に右揃えで表示）
+        _tt = s.get("total_time")
+        time_html = ('<span class="br-slot-time">' + ('%.3f' % _tt) + '</span>') if _tt is not None else ''
         return (
             '<div class="' + cls + '"' + onclick_attr + is_seed_attr + '>'
             + '<span class="br-slot-no">' + str(s.get("slot_no","")) + '</span>'
             + '<span class="br-slot-name">' + name + '</span>'
+            + time_html
             + mark + '</div>'
         )
 
