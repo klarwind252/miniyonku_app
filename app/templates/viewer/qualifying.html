@@ -46,9 +46,10 @@
 .rank-col{font-size:20px;font-weight:bold;width:40px}
 /* 名前タップ→タイム詳細モーダル */
 .rs-name{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.rs-sec-h{font-size:13px;font-weight:bold;color:#7f8c8d;margin:0 0 6px;letter-spacing:1px}
 .rs-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
 .rs-table th,.rs-table td{border:1px solid #2c3e50;padding:4px 8px;text-align:center}
-.rs-table th{background:#1e3a5f;color:#cdd6df;font-weight:normal;position:sticky;top:0}
+.rs-table th{background:#1e3a5f;color:#cdd6df;font-weight:normal}
 .rs-table .rs-race{text-align:left;color:#cdd6df}
 .rs-num{font-variant-numeric:tabular-nums;color:#ecf0f1}
 .rs-total{font-weight:bold}
@@ -857,7 +858,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <th>順位</th><th>レーサー</th>
             {% if is_none_roundrobin %}<th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th>
             {% elif qualifying_type in ('heat_roundrobin','roundrobin') %}<th>勝</th>
-            {% else %}<th>Pt</th>{% if qualifying_type in ('point','order') %}<th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>{% if m4laps_active and qualifying_type == 'point' %}<th style="color:#7f8c8d;text-align:center">ベスト</th>{% endif %}{% endif %}{% endif %}
+            {% else %}<th>Pt</th>{% if qualifying_type in ('point','order') %}<th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>{% if m4laps_active and qualifying_type == 'point' %}<th style="color:#7f8c8d;text-align:center">ベスト</th><th style="color:#7f8c8d;text-align:center">Av</th>{% endif %}{% endif %}{% endif %}
           </tr>
         </thead>
         <tbody>
@@ -883,6 +884,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
           {% if m4laps_active and qualifying_type == 'point' %}
           <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
+          <td class="rs-num" style="text-align:center;font-size:12px;color:#8aa0b6">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
           {% endif %}
           {% endif %}
         </tr>
@@ -971,6 +973,34 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 <script>(function(){
   function fmt(v,d){ return (v==null)?'—':Number(v).toFixed(d); }
   function esc(s){ var e=document.createElement('div'); e.textContent=(s==null?'':s); return e.innerHTML; }
+  function statTable(list, withGap){
+    if(!list||!list.length) return '';
+    var maxSec=0; list.forEach(function(rc){ if(rc.sectors&&rc.sectors.length>maxSec) maxSec=rc.sectors.length; });
+    var h='<div style="overflow-x:auto"><table class="rs-table"><thead>'
+      +'<tr><th rowspan="2">レース</th><th colspan="'+(withGap?4:3)+'">TOTAL BEST</th><th colspan="2">LAP BEST</th>'
+      +'<th colspan="'+Math.max(maxSec,1)+'">SECTOR BEST（上:秒／下:m/s）</th></tr>'
+      +'<tr><th>TIME</th>'+(withGap?'<th>GAP</th>':'')+'<th>Av</th><th>MAX</th><th>TIME</th><th>Av</th>';
+    for(var s=1;s<=maxSec;s++) h+='<th>'+s+'</th>';
+    h+='</tr></thead><tbody>';
+    list.forEach(function(rc){
+      var tstyle=rc.total_rank===1?'color:#fff;background:#6b21a8':rc.total_rank===2?'color:#fff;background:#1e40af':rc.total_rank===3?'color:#fff;background:#166534':'';
+      h+='<tr><td class="rs-race">'+esc(rc.label)+'</td>'
+        +'<td class="rs-num rs-total" style="'+tstyle+'">'+fmt(rc.total_time,3)+'</td>';
+      if(withGap){ var gap=(rc.gap==null)?'—':(rc.gap<=0?'-':'+'+fmt(rc.gap,3)); h+='<td class="rs-num">'+gap+'</td>'; }
+      h+='<td class="rs-num">'+fmt(rc.total_avg,2)+'</td>'
+        +'<td class="rs-num">'+fmt(rc.max_ms,2)+'</td>'
+        +'<td class="rs-num">'+fmt(rc.best_lap_time,3)+'</td>'
+        +'<td class="rs-num">'+fmt(rc.best_lap_avg,2)+'</td>';
+      for(var s=1;s<=maxSec;s++){
+        var sec=null,arr=rc.sectors||[];
+        for(var i=0;i<arr.length;i++){ if(arr[i].no===s){ sec=arr[i]; break; } }
+        h+='<td class="rs-num">'+(sec?fmt(sec.time,3):'—')+((sec&&sec.speed!=null)?'<span class="rs-sp">'+fmt(sec.speed,2)+'</span>':'')+'</td>';
+      }
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+    return h;
+  }
   function closeRs(){ var ov=document.getElementById('rs-overlay'); if(ov) ov.style.display='none'; }
   window.openRacerStats=function(tid,eid){
     var ov=document.getElementById('rs-overlay'),bd=document.getElementById('rs-body'),tt=document.getElementById('rs-title');
@@ -982,30 +1012,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     fetch(base+'/view/tournament/'+tid+'/racer/'+eid+'/stats',{cache:'no-store'})
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){
-        tt.textContent=d.name+' の予選タイム';
-        if(!d.races||!d.races.length){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">計測データがありません</div>'; return; }
-        var maxSec=0; d.races.forEach(function(rc){ if(rc.sectors&&rc.sectors.length>maxSec) maxSec=rc.sectors.length; });
-        var h='<div style="overflow-x:auto"><table class="rs-table"><thead><tr><th>レース</th><th>TOTAL</th><th>Av</th><th>MAX</th><th>LAP</th><th>LAP Av</th>';
-        for(var s=1;s<=maxSec;s++) h+='<th>S'+s+'</th>';
-        h+='</tr></thead><tbody>';
-        d.races.forEach(function(rc){
-          var label=(rc.round_no?'予選'+rc.round_no+'回目 ':'')+'レース'+rc.heat_no;
-          var tstyle=rc.total_rank===1?'color:#fff;background:#6b21a8':rc.total_rank===2?'color:#fff;background:#1e40af':rc.total_rank===3?'color:#fff;background:#166534':'';
-          h+='<tr><td class="rs-race">'+esc(label)+'</td>'
-            +'<td class="rs-num rs-total" style="'+tstyle+'">'+fmt(rc.total_time,3)+'</td>'
-            +'<td class="rs-num">'+fmt(rc.total_avg,2)+'</td>'
-            +'<td class="rs-num">'+fmt(rc.max_ms,2)+'</td>'
-            +'<td class="rs-num">'+fmt(rc.best_lap_time,3)+'</td>'
-            +'<td class="rs-num">'+fmt(rc.best_lap_avg,2)+'</td>';
-          for(var s=1;s<=maxSec;s++){
-            var sec=null,arr=rc.sectors||[];
-            for(var i=0;i<arr.length;i++){ if(arr[i].no===s){ sec=arr[i]; break; } }
-            h+='<td class="rs-num">'+(sec?fmt(sec.time,3):'—')+((sec&&sec.speed!=null)?'<span class="rs-sp">'+fmt(sec.speed,2)+'</span>':'')+'</td>';
-          }
-          h+='</tr>';
-        });
-        h+='</tbody></table></div>';
-        bd.innerHTML=h;
+        tt.textContent=d.name+' のタイム詳細';
+        var q=statTable(d.races,true), f=statTable(d.final_races,false);
+        if(!q && !f){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">計測データがありません</div>'; return; }
+        var html='';
+        if(q) html+='<div class="rs-sec-h">予選</div>'+q;
+        if(f) html+='<div class="rs-sec-h" style="margin-top:14px">決勝</div>'+f;
+        bd.innerHTML=html;
       })
       .catch(function(){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#e74c3c">取得に失敗しました</div>'; });
   };

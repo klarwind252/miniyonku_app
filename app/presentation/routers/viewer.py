@@ -811,7 +811,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                 for r2 in await cur2.fetchall():
                     adv_eids.add(r2["id"])
             finalists_list = [
-                {"name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
+                {"entry_id": st["entry_id"], "name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
                  "total_points": st["wins"], "qual_rank": st["rank"]}
                 for st in rr_st if st["entry_id"] in adv_eids
             ]
@@ -826,7 +826,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                 for r2 in await cur2.fetchall():
                     adv_eids2.add(r2["id"])
             finalists_list = [
-                {"name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
+                {"entry_id": st["entry_id"], "name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
                  "total_points": st["total_points"], "qual_rank": st["rank"]}
                 for st in pt_st if st["entry_id"] in adv_eids2
             ]
@@ -1037,7 +1037,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
                 for r2 in await cur2.fetchall():
                     adv_eids.add(r2["id"])
             finalists_list = [
-                {"name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
+                {"entry_id": st["entry_id"], "name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
                  "total_points": st["wins"], "qual_rank": st["rank"]}
                 for st in rr_st if st["entry_id"] in adv_eids
             ]
@@ -1051,7 +1051,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
                 for r2 in await cur2.fetchall():
                     adv_eids3.add(r2["id"])
             finalists_list = [
-                {"name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
+                {"entry_id": st["entry_id"], "name": st["name"], "yomi": st["yomi"] if "yomi" in st.keys() else "", "entry_order": 0, "seeded": 0,
                  "total_points": st["total_points"], "qual_rank": st["rank"]}
                 for st in pt_st2 if st["entry_id"] in adv_eids3
             ]
@@ -1181,6 +1181,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         "request": request,
         "is_public_html": (request.query_params.get("_public") == "1"),
         "t": t,
+        "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),
         "race_assets": await _load_race_assets_v(tid, db),
         "show_info_bar": True,
         "tid": tid,

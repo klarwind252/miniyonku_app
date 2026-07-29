@@ -4622,7 +4622,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .bracket-outer { position:relative; overflow:visible; width:100%; }
     .bracket-html { display:flex; gap:0; padding:6px 2px; align-items:flex-start; position:relative; width:max-content; min-width:100%; }
     .br-round { display:flex; flex-direction:column; min-width:250px; max-width:360px; gap:0; flex:0 0 auto; position:relative; padding:0 24px; }
-    @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:186px!important; max-width:240px!important; padding:0 10px!important; } .br-round-label { font-size:14px!important; padding:4px 0 16px!important; } .br-group { padding:5px 3px 3px 10px!important; } .br-slot { padding:5px 9px!important; gap:6px!important; min-height:32px!important; } .br-slot-name { font-size:14px!important; min-width:0!important; overflow:hidden!important; text-overflow:ellipsis!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } .br-slot-time { font-size:13px!important; margin-left:6px!important; } }
+    @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:200px!important; max-width:300px!important; padding:0 10px!important; } .br-round-label { font-size:14px!important; padding:2px 0 8px!important; } .br-group { padding:3px 3px 2px 10px!important; } .br-slot { padding:3px 9px!important; gap:6px!important; min-height:28px!important; } .br-slot-name { font-size:14px!important; min-width:max-content!important; overflow:visible!important; text-overflow:clip!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } .br-slot-time { font-size:13px!important; margin-left:6px!important; } }
     /* スマホ：表彰台（1・2・3位）を折り返さず横一列に収める */
     @media(max-width:480px){
       .br-podium { flex-wrap:nowrap!important; gap:6px!important; }
@@ -4631,15 +4631,15 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
       .br-champion-name, .br-runner-up-name, .br-third-pod-name { font-size:15px!important; }
       .br-champion-label, .br-runner-up-label, .br-third-pod-label { font-size:10px!important; letter-spacing:1px!important; }
     }
-    .br-round-label { font-size:18px; font-weight:bold; color:#2980b9 !important; text-align:center; padding:6px 0 22px; letter-spacing:0; line-height:1.3; position:relative; z-index:2; background:transparent; }
+    .br-round-label { font-size:18px; font-weight:bold; color:#2980b9 !important; text-align:center; padding:4px 0 10px; letter-spacing:0; line-height:1.3; position:relative; z-index:2; background:transparent; }
     .br-round-label.final { color:#d4a017 !important; font-size:20px; }
-    .br-round-groups { display:flex; flex-direction:column; flex:1; justify-content:flex-start; gap:0; position:relative; min-height:90px; padding-top:10px; overflow:visible; }
+    .br-round-groups { display:flex; flex-direction:column; flex:1; justify-content:flex-start; gap:0; position:relative; min-height:90px; padding-top:4px; overflow:visible; }
     /* グループ枠 */
-    .br-group { background:#fff; border:1px solid #ced4da; border-radius:9px; padding:6px 3px 3px 13px; display:flex; flex-direction:column; gap:3px; box-shadow:0 1px 3px rgba(0,0,0,0.07); position:absolute; left:0; right:0; overflow:visible; }
+    .br-group { background:#fff; border:1px solid #ced4da; border-radius:9px; padding:3px 3px 3px 13px; display:flex; flex-direction:column; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.07); position:absolute; left:0; right:0; overflow:visible; }
     .br-group.has-winner { border-color:#27ae60; border-width:2px; box-shadow:0 0 0 2px rgba(39,174,96,0.15); }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
     /* スロット共通 */
-    .br-slot { display:flex; align-items:center; gap:9px; padding:6px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:39px; border:1px solid #dee2e6; }
+    .br-slot { display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
     .br-slot-no { display:none; }
     .br-slot-name { flex:1; white-space:nowrap; min-width:max-content; font-size:18px; color:#212529 !important; font-weight:500; }
     .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
@@ -4866,7 +4866,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
 
             function _layoutRoundGroup(rounds) {
 
-        var GAP = 8; // グループ間の隙間px
+        var GAP = 4; // グループ間の隙間px
 
         // 各ラウンドのグループ取得
         var allGroups = rounds.map(function(r) {
