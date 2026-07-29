@@ -329,6 +329,44 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         for s in standings:
             s["best_rank"] = _best_rank.get(s.get("entry_id"))
 
+        # ベスト合計タイムのレースの平均速度(Av)を各レーサーに付与（M4LAPS時のみ）。
+        # 速度は speed_store 由来なので、各レーサーのベストレースを特定して load_speeds で取る。
+        if IS_CLOUD and await m4laps_license.is_licensed(db):
+            from app.application import timing_race_speed_store as _speed_store
+            async with db.execute(
+                "SELECT hl.entry_id, hl.heat_id, hl.lane_no, hr.total_time "
+                "FROM heat_lanes hl JOIN heats h ON h.id=hl.heat_id "
+                "LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id "
+                "WHERE h.tournament_id=? AND hr.total_time IS NOT NULL",
+                (tid,),
+            ) as cur:
+                _fr = await cur.fetchall()
+            _best = {}  # entry_id -> (total, heat_id, lane_no)
+            for r in _fr:
+                eid = r["entry_id"]
+                if eid not in _best or r["total_time"] < _best[eid][0]:
+                    _best[eid] = (r["total_time"], r["heat_id"], r["lane_no"])
+            _race_of = {}   # heat_id -> race_id
+            for (_t, hid, lno) in _best.values():
+                if hid not in _race_of:
+                    async with db.execute(
+                        "SELECT id FROM timing_races WHERE heat_id=? ORDER BY id DESC LIMIT 1",
+                        (hid,),
+                    ) as c2:
+                        _rr = await c2.fetchone()
+                    _race_of[hid] = _rr["id"] if _rr else None
+            _sp_cache = {}
+            _avg = {}
+            for eid, (_t, hid, lno) in _best.items():
+                rid = _race_of.get(hid)
+                if rid is None:
+                    continue
+                if rid not in _sp_cache:
+                    _sp_cache[rid] = await _speed_store.load_speeds(db, rid)
+                _avg[eid] = _sp_cache[rid]["lane"].get(lno, {}).get("total_avg")
+            for s in standings:
+                s["best_avg"] = _avg.get(s.get("entry_id"))
+
     # ポイント制／並び順（ポイント制）: ボーダーライン同率グループに is_tied_cutoff フラグ付与
     if qt in ("point", "order") and standings:
         from app.routers.tournaments import calc_finalists
@@ -1101,8 +1139,8 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
            JOIN racers r ON r.id=e.racer_id
            JOIN bracket_groups bg ON bg.id=bsr.group_id
            JOIN bracket_rounds br ON br.id=bg.round_id
-           WHERE br.tournament_id=? AND bsr.rank IN (1,2,3)
-           ORDER BY CASE br.round_type WHEN 'final' THEN 1 WHEN 'third' THEN 2 WHEN 'revival' THEN 3 ELSE 4 END, bsr.rank""",
+           WHERE br.tournament_id=? AND br.round_type='final' AND bsr.rank IN (1,2,3)
+           ORDER BY bsr.rank""",
         (tid,),
     ) as cur:
         seen_ranks = set()
@@ -1133,6 +1171,11 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
                 final_results.append({"rank": 3, "name": row["name"], "round_type": row["round_type"]})
 
     final_results.sort(key=lambda x: x["rank"])
+
+    # 優勝(1位)が確定していなければ最終結果は出さない（決勝が未確定のうちは
+    # 準決勝や3位決定戦の結果だけでポディウムを出さないようにする）。
+    if not any(fr["rank"] == 1 for fr in final_results):
+        final_results = []
 
     return templates.TemplateResponse("viewer/bracket.html", {
         "request": request,

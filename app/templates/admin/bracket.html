@@ -63,17 +63,20 @@
   .detail-actionbar .btn[data-short]::before{content:attr(data-short); font-size:12px; line-height:1}
 }
 .bracket-group { background:#fff; border:2px solid #dee2e6; border-radius:10px; padding:8px 16px; margin-bottom:6px; }
-/* ラップタイマーからの反映ボタン（M4LAPS有効時のみ表示） */
-.m4-apply-btn{padding:4px 12px;font-size:14px;background:#0a84ff;border:1px solid #0a6fd8;
-  color:#fff;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold;
-  box-shadow:0 1px 3px rgba(10,132,255,.35)}
-.m4-apply-btn:hover{background:#0060df;border-color:#0060df;box-shadow:0 2px 6px rgba(10,132,255,.5)}
-.m4-apply-btn:active{background:#004fb5}
+/* ラップタイマーからの反映ボタン（予選管理と同じデザイン：48×48の青） */
+.m4-apply-btn{width:48px;height:48px;font-size:13px;border:none;border-radius:5px;
+  background:#1a56db;color:#fff;cursor:pointer;white-space:nowrap;font-weight:bold;
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.m4-apply-btn:hover{background:#1546b0}
+.m4-apply-btn:active{background:#113a92}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
-/* 結果取消ボタン。反映ボタンのすぐ左に並べるため文字サイズ・余白を揃える */
-.m4-reset-btn{padding:4px 12px;font-size:14px;background:#fff;border:1px solid #e74c3c;
-  color:#e74c3c;border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:bold}
-.m4-reset-btn:hover{background:#e74c3c;color:#fff}
+/* 取消ボタン：反映と同じ48×48・淡い赤（予選管理と同じデザイン） */
+.m4-reset-btn{width:48px;height:48px;font-size:13px;border:1px solid #f5b7b1;border-radius:5px;
+  background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap;font-weight:bold;
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.m4-reset-btn:hover{background:#fbe3e0;border-color:#e9967f}
+.m4-reset-btn:active{background:#f7d3ce}
+.m4-reset-btn:disabled{opacity:.5;cursor:wait}
 .bracket-group.done { border-color:#27ae60; }
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
@@ -1175,11 +1178,12 @@ window.initBracketConnectors = initBracketConnectors;
       {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if IS_CLOUD and request.state.m4laps_licensed %}
       <span style="flex:1"></span>
-      {# 取消は反映のすぐ左隣に置く（文字サイズも反映ボタンと同じ） #}
+      {# 予選管理と同じ：結果ありなら「反映」を隠して「取消」だけ（誤って上書きしないため）。 #}
       {% if result %}<button type="button" class="m4-reset-btn"
-              onclick="resetGroupResult({{ g.id }},{{ t.id }})">取消</button>{% endif %}
-      <button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
-              title="ラップタイマーの最新の計測結果をこの組に反映します">⏱ 反映</button>
+              onclick="resetGroupResult({{ g.id }},{{ t.id }})"
+              title="この組の結果を取り消して未確定に戻します">取消</button>
+      {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
+              title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
       {% elif result %}
       {# M4LAPS無効時は従来どおり「✓完了」の右に小さく置く #}
       <button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})"
