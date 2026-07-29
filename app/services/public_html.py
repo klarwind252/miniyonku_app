@@ -902,6 +902,9 @@ window.addEventListener('load', function(){
   /* ---------- entry-card タップで選択トグル ---------- */
   function bindEntryCards(){
     document.querySelectorAll('.entry-card').forEach(function(card){
+      // タイム詳細モーダルを開くカード（決勝進出レーサー）は、カードタップで
+      // マイレーサー選択（ハイライト）しない。ハイライトは上部のレーサー選択のみ。
+      if(card.classList.contains('rs-clickable')) return;
       card.style.cursor = 'pointer';
       card.addEventListener('click', function(){
         var n = card.querySelector('.entry-name');

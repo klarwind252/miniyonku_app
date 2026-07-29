@@ -84,6 +84,9 @@ static GwState s_state = ST_IDLE;
 static uint32_t s_armed_ms = 0;         // ARMEDに入った時刻
 static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（3秒＋ランダム）
 static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）
+// #20: サーバー登録はloop文脈で非同期実行（ESP-NOWコールバックからHTTPSしない）
+static bool s_need_race        = false;  // レース作成が未了
+static bool s_need_green_patch = false;  // green後付けが未了
 
 // ---- 受信EVENTレコード -----------------------------------------------------
 struct RawEvent {
@@ -179,19 +182,24 @@ static void signal_cmd(uint8_t code) {
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
   if (s_state != ST_IDLE) return;             // 二度押し無視
-  // レースをここで切る（layout_id付き・まだ緑は無いのでgreenなしで作成）
-  s_race_id = create_race(/*with_green=*/false, 0);
-  // 赤点灯 → 最低3秒＋ランダム（ランダムはGWが決める・DA11）
+  // #19+#20: 演出のみ即実行。HTTPS（レース作成）はここでは一切しない。
+  //  本関数はESP-NOW受信コールバック文脈からも呼ばれるため、ブロッキングI/O禁止。
+  //  レース作成は tick_race_registration()（loop文脈）が拾う。
   s_red_dur_ms = 3000 + (esp_random() % 2000);   // 3.0〜5.0秒
   s_armed_ms   = millis();
   s_state      = ST_ARMED;
   signal_cmd(proto::CMD_RED);
-  Serial.printf("[SEQ] ARMED race=%u red=%ums\n", s_race_id, s_red_dur_ms);
+  Serial.printf("[SEQ] ARMED red=%ums\n", s_red_dur_ms);
+  s_race_id          = 0;
+  s_need_race        = true;
+  s_need_green_patch = false;
 }
 
 static void on_reset_pressed() {
   s_state = ST_IDLE;
   s_green_t_us = 0;
+  s_need_race        = false;   // #20: 保留中のサーバー登録も破棄
+  s_need_green_patch = false;
   signal_cmd(proto::CMD_RESET);
   Serial.println("[SEQ] RESET -> IDLE");
 }
@@ -202,16 +210,56 @@ static void tick_sequence() {
     s_green_t_us = tsync::now_gw_us();          // 緑を出した瞬間＝green_t_us
     s_state = ST_GREEN;
     signal_cmd(proto::CMD_GREEN);
-    // F1式へ：race_id を変えずに緑時刻だけ後付けする（残課題7を解消）。
-    bool ok = set_race_green(s_race_id, s_green_t_us);
-    Serial.printf("[SEQ] GREEN t=%llu race=%u green_patch=%s\n",
-                  (unsigned long long)s_green_t_us, s_race_id, ok ? "OK" : "NG");
+    Serial.printf("[SEQ] GREEN t=%llu\n", (unsigned long long)s_green_t_us);
+    // #20: green後付けはレース確定後に tick_race_registration() が実行する。
+    s_need_green_patch = true;
     s_state = ST_RACE;
   }
 }
 
+// ---- #20: サーバー登録の非同期実行（loop文脈・失敗は3秒おきに再試行）------
+static void tick_race_registration() {
+  static uint32_t last_try = 0;
+  uint32_t nowm = millis();
+  if (nowm - last_try < 3000) return;           // 試行は3秒に1回まで
+  if (s_need_race && s_race_id == 0) {
+    last_try = nowm;
+    s_race_id = create_race(/*with_green=*/false, 0);
+    Serial.printf("[SEQ] race=%u%s\n", s_race_id, s_race_id ? "" : " (retry in 3s)");
+    if (s_race_id) s_need_race = false;
+    return;                                     // 1周1リクエストに抑える
+  }
+  if (s_need_green_patch && s_race_id) {
+    last_try = nowm;
+    bool ok = set_race_green(s_race_id, s_green_t_us);
+    Serial.printf("[SEQ] green_patch=%s race=%u%s\n",
+                  ok ? "OK" : "NG", s_race_id, ok ? "" : " (retry in 3s)");
+    if (ok) s_need_green_patch = false;
+  }
+}
+
+// ---- JOIN転送のレート制限（#18：同一MACは30秒に1回だけサーバーへ転送）------
+//  未アサインのノードは1秒ごとにJOINを送ってくる（tick_presence）。その都度
+//  HTTPSを張るとTLS失敗の嵐＋ヒープ圧迫になるため、転送だけを間引く。
+static bool join_rate_ok(const uint8_t* mac) {
+  static uint8_t  macs[8][6];
+  static uint32_t last_ms[8];
+  static int      n = 0;
+  uint32_t nowm = millis();
+  for (int i = 0; i < n; i++) {
+    if (memcmp(macs[i], mac, 6) == 0) {
+      if (nowm - last_ms[i] < 30000) return false;   // 30秒以内は捨てる
+      last_ms[i] = nowm;
+      return true;
+    }
+  }
+  if (n < 8) { memcpy(macs[n], mac, 6); last_ms[n] = nowm; n++; }
+  return true;                                        // 初見MACは通す
+}
+
 // ---- JOIN転送 --------------------------------------------------------------
 static void forward_join(const proto::JoinBody& jb) {
+  if (!join_rate_ok(jb.mac)) return;                  // #18：HTTPS連打を抑止
   if (!wifi_up()) return;
   char mac[18];
   snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -450,7 +498,7 @@ void setup() {
   Serial.printf("\n=== M4LAPS Gateway GW%d (VE) ===\n", NODE_ID);
   pinMode(PIN_BTN_RED,  INPUT_PULLUP);
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
-  if (!LittleFS.begin(true)) Serial.println("LittleFS mount 失敗");
+  if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
   Serial.printf("PSRAM=%u (VE normal: approx 4MB mapped of 8MB)\n", (unsigned)ESP.getPsramSize());
   if (!mesh::begin(NODE_ID, ESPNOW_CHANNEL, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
@@ -498,6 +546,7 @@ static void tick_display() {
 void loop() {
   tick_buttons();
   tick_sequence();
+  tick_race_registration();   // #20: レース作成/green後付けをloop文脈で非同期実行
 
   beam::Hit hit;
   int drain = 0;

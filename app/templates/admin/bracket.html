@@ -1255,8 +1255,20 @@ window.initBracketConnectors = initBracketConnectors;
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group third-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
-    <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px">
-      グループ{{ g.group_no }}{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span><button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>{% endif %}
+    <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span>グループ{{ g.group_no }}</span>
+      {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
+      {% if IS_CLOUD and request.state.m4laps_licensed %}
+      <span style="flex:1"></span>
+      {# 予選管理と同じ：結果ありなら「反映」を隠して「取消」だけ #}
+      {% if result %}<button type="button" class="m4-reset-btn"
+              onclick="resetGroupResult({{ g.id }},{{ t.id }})"
+              title="この組の結果を取り消して未確定に戻します">取消</button>
+      {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
+              title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
+      {% elif result %}
+      <button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>
+      {% endif %}
     </div>
     {% for slot in slots %}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
@@ -1276,6 +1288,67 @@ window.initBracketConnectors = initBracketConnectors;
       {% if slot.name %}
       <div class="slot-name" style="cursor:pointer;user-select:none;"
            onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">{{ slot.name }}</div>
+      <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
+              id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
+              onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">○</button>
+      {% else %}
+      <div class="slot-name" style="color:#bdc3c7">-</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+
+{# 裏トーナメント（敗者復活 / ルーザーズブラケット）：3位決定戦と同じ入力カード＋反映/取消 #}
+{% if losers_groups_data %}
+{% set losers_round_nos = losers_groups_data | map(attribute='round.round_no') | unique | list %}
+{% for rno in losers_round_nos | sort %}
+{% set rg = losers_groups_data | selectattr('round.round_no', 'equalto', rno) | list %}
+<div style="margin-bottom:3px">
+  <span class="round-header rh-third">🔄 {{ (rg | first).round.label if (rg | first).round.label else '敗者復活 R' ~ rno }}</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:6px;margin-bottom:10px">
+  {% for gd in rg %}
+  {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
+  <div class="bracket-group third-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
+    <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span>グループ{{ g.group_no }}</span>
+      {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
+      {% if IS_CLOUD and request.state.m4laps_licensed %}
+      <span style="flex:1"></span>
+      {% if result %}<button type="button" class="m4-reset-btn"
+              onclick="resetGroupResult({{ g.id }},{{ t.id }})"
+              title="この組の結果を取り消して未確定に戻します">取消</button>
+      {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
+              title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
+      {% elif result %}
+      <button type="button" onclick="resetGroupResult({{ g.id }},{{ t.id }})" style="margin-left:8px;padding:1px 7px;font-size:11px;background:#fff;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;cursor:pointer">取消</button>
+      {% endif %}
+    </div>
+    {% for slot in slots %}
+    {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
+    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
+    <div class="slot-row">
+      <div class="slot-no" style="background:#7f8c8d">{{ slot.slot_no }}</div>
+      {% if m4_on %}
+      {% if cur_rank %}
+      <span class="rank-badge {% if cur_rank == 1 %}r1{% elif cur_rank == 2 %}r2{% elif cur_rank == 3 %}r3{% else %}rn{% endif %}"
+            title="{{ cur_rank }}位">{{ cur_rank }}</span>
+      {% elif is_co %}
+      <span class="rank-badge co" title="コースアウト・記録なし">CO</span>
+      {% else %}
+      <span class="rank-badge ph">-</span>
+      {% endif %}
+      {% endif %}
+      {% if slot.name %}
+      <div class="slot-name" style="cursor:pointer;user-select:none;"
+           onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">{{ slot.name }}</div>
+      {% if m4_on and slot.total_time is not none %}
+      <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
+      {% endif %}
       <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
               id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
               onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">○</button>

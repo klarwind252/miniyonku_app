@@ -61,9 +61,9 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
       if (body_len >= (int)sizeof(proto::CommandBody)) {
         proto::CommandBody c; memcpy(&c, body, sizeof(c));
         switch (c.code) {                    // GWの指示通りに光る（DA11）
-          case proto::CMD_RED:   set_red(true);  set_green(false); break;
-          case proto::CMD_GREEN: set_red(false); set_green(true);  break;
-          case proto::CMD_RESET: all_off();                        break;
+          case proto::CMD_RED:   set_red(true);  set_green(false); Serial.println("[CMD] RED");   break;
+          case proto::CMD_GREEN: set_red(false); set_green(true);  Serial.println("[CMD] GREEN"); break;
+          case proto::CMD_RESET: all_off();                        Serial.println("[CMD] RESET"); break;
           default: break;
         }
       }
