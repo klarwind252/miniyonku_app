@@ -7,7 +7,7 @@
 - /view/host-state           → ホスト現在画面の取得(JSON)
 - /view/host-sync            → ホストが画面変更を通知(POST)
 """
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 import os
@@ -69,6 +69,7 @@ async def _load_race_assets_v(tid, db) -> dict:
     return out
 from app.core.config import HEAT_TOURNAMENT_TYPES, IS_CLOUD
 from app.domain import m4laps_license
+from app.application import racer_stats_service
 
 # ホストの現在画面を保持（メモリ）。複数店舗化のため店舗IDごとに分離。
 _host_states: dict = {}
@@ -203,6 +204,23 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
     })
 
 
+@router.get("/tournament/{tid}/racer/{entry_id}/stats")
+async def viewer_racer_stats(tid: int, entry_id: int, request: Request,
+                             db: aiosqlite.Connection = Depends(get_db)):
+    """観覧用：1レーサーの予選タイム詳細（名前タップ時に都度取得）。
+
+    ラップタイマー(M4LAPS)由来の表示なので、クラウド版＋ライセンス登録時のみ。
+    それ以外は 404（存在しないかのように隠す＝require_m4laps と同じ方針）。
+    観覧の期限・店舗解決は viewer 共通のミドルウェアで既にガードされる。
+    """
+    if not (IS_CLOUD and await m4laps_license.is_licensed(db)):
+        raise HTTPException(status_code=404)
+    data = await racer_stats_service.build_racer_qualifying_stats(db, tid, entry_id)
+    if data is None:
+        raise HTTPException(status_code=404)
+    return JSONResponse(data)
+
+
 @router.get("/tournament/{tid}/qualifying", response_class=HTMLResponse)
 async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """予選画面：スケジュール＋順位表"""
@@ -276,7 +294,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         standings = [dict(s) for s in await _cs_order(tid, db)]
     elif qt == "point":
         async with db.execute(
-            """SELECT r.name, e.advanced,
+            """SELECT e.id AS entry_id, r.name, e.advanced,
                       COALESCE(SUM(hr.points),0) as total_points,
                       COUNT(hr.id) as race_count,
                       COALESCE(SUM(CASE WHEN COALESCE(hr.is_co,0)=0 AND hr.rank>0 THEN 1 ELSE 0 END),0) as finish_count

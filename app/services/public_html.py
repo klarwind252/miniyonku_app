@@ -84,6 +84,16 @@ def _patch_html_for_static(html: str, slug: str = "") -> str:
     if _blm:
         bracket_layout_js = _blm.group(0)
 
+    # 名前タップ→予選タイム詳細モーダルのJS（window.openRacerStats を定義）も、
+    # 全script除去の前に抽出して保持し、後で再注入する。
+    racer_stats_js = ""
+    _rsm = _re.search(
+        r'<script>\s*\(function\(\)\s*\{.*?window\.openRacerStats.*?\}\)\(\);\s*</script>',
+        html, flags=_re.DOTALL
+    )
+    if _rsm:
+        racer_stats_js = _rsm.group(0)
+
     # 全<script>タグを除去
     patched = _re.sub(r'<script[^>]*>.*?</script>', '', html, flags=_re.DOTALL)
 
@@ -1105,7 +1115,7 @@ window.addEventListener('load', function(){
 })();
 </script>"""
 
-    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + '</body>', 1)
+    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + racer_stats_js + '</body>', 1)
 
     return patched
 

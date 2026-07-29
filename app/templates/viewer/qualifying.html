@@ -49,6 +49,15 @@
 .standings-table td{padding:5px 0px;border-bottom:1px solid #2c3e50;font-size:15px}
 .standings-table tr:first-child td{background:#1a2a10}
 .rank-col{font-size:20px;font-weight:bold;width:40px}
+/* 名前タップ→タイム詳細モーダル */
+.rs-name{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.rs-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
+.rs-table th,.rs-table td{border:1px solid #2c3e50;padding:4px 8px;text-align:center}
+.rs-table th{background:#1e3a5f;color:#cdd6df;font-weight:normal;position:sticky;top:0}
+.rs-table .rs-race{text-align:left;color:#cdd6df}
+.rs-num{font-variant-numeric:tabular-nums;color:#ecf0f1}
+.rs-total{font-weight:bold}
+.rs-sp{display:block;font-size:10px;color:#8aa0b6}
 .adv-yes{color:#27ae60;font-weight:bold}
 .adv-no{color:#e74c3c}
 
@@ -862,7 +871,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">
             {{ s.rank }}
           </td>
-          <td style="font-weight:bold;font-size:13px">{{ s.name }}</td>
+          <td style="font-weight:bold;font-size:13px">{% if m4laps_active and s.entry_id %}<span class="rs-name" onclick="openRacerStats({{ t.id }},{{ s.entry_id }})">{{ s.name }}</span>{% else %}{{ s.name }}{% endif %}</td>
           <td>
             {% if is_none_roundrobin %}
             {{ s.wins }}
@@ -946,6 +955,63 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   {% endif %}{# /heat_roundrobin右カラム #}
 </div>
 {% if qualifying_type not in ('heat_tournament','heat_tournament_garappa') and not is_none_roundrobin %}{{ finalist_block() }}{% endif %}
+
+{# 名前タップ→予選タイム詳細モーダル。JSは公開HTMLでは <script> が全除去されるため、
+   public_html.py 側で window.openRacerStats を持つこのスクリプトを保持→再注入している。 #}
+{% if m4laps_active %}
+<div id="rs-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#0f1923;border:1px solid #2c3e50;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #2c3e50">
+      <div id="rs-title" style="font-weight:bold;font-size:15px;color:#ecf0f1">レーサー詳細</div>
+      <button id="rs-close" type="button" style="background:none;border:none;color:#7f8c8d;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
+    </div>
+    <div id="rs-body" style="overflow:auto;padding:10px 12px"></div>
+  </div>
+</div>
+<script>(function(){
+  function fmt(v,d){ return (v==null)?'—':Number(v).toFixed(d); }
+  function esc(s){ var e=document.createElement('div'); e.textContent=(s==null?'':s); return e.innerHTML; }
+  function closeRs(){ var ov=document.getElementById('rs-overlay'); if(ov) ov.style.display='none'; }
+  window.openRacerStats=function(tid,eid){
+    var ov=document.getElementById('rs-overlay'),bd=document.getElementById('rs-body'),tt=document.getElementById('rs-title');
+    if(!ov) return;
+    tt.textContent='読み込み中…';
+    bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">読み込み中…</div>';
+    ov.style.display='flex';
+    var base=location.pathname.replace(/\/view\/.*$/,'').replace(/\/$/,'');
+    fetch(base+'/view/tournament/'+tid+'/racer/'+eid+'/stats',{cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        tt.textContent=d.name+' の予選タイム';
+        if(!d.races||!d.races.length){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">計測データがありません</div>'; return; }
+        var maxSec=0; d.races.forEach(function(rc){ if(rc.sectors&&rc.sectors.length>maxSec) maxSec=rc.sectors.length; });
+        var h='<div style="overflow-x:auto"><table class="rs-table"><thead><tr><th>レース</th><th>TOTAL</th><th>Av</th><th>MAX</th><th>LAP</th><th>LAP Av</th>';
+        for(var s=1;s<=maxSec;s++) h+='<th>S'+s+'</th>';
+        h+='</tr></thead><tbody>';
+        d.races.forEach(function(rc){
+          var label=(rc.round_no?'予選'+rc.round_no+'回目 ':'')+'レース'+rc.heat_no;
+          h+='<tr><td class="rs-race">'+esc(label)+'</td>'
+            +'<td class="rs-num rs-total">'+fmt(rc.total_time,3)+'</td>'
+            +'<td class="rs-num">'+fmt(rc.total_avg,2)+'</td>'
+            +'<td class="rs-num">'+fmt(rc.max_ms,2)+'</td>'
+            +'<td class="rs-num">'+fmt(rc.best_lap_time,3)+'</td>'
+            +'<td class="rs-num">'+fmt(rc.best_lap_avg,2)+'</td>';
+          for(var s=1;s<=maxSec;s++){
+            var sec=null,arr=rc.sectors||[];
+            for(var i=0;i<arr.length;i++){ if(arr[i].no===s){ sec=arr[i]; break; } }
+            h+='<td class="rs-num">'+(sec?fmt(sec.time,3):'—')+((sec&&sec.speed!=null)?'<span class="rs-sp">'+fmt(sec.speed,2)+'</span>':'')+'</td>';
+          }
+          h+='</tr>';
+        });
+        h+='</tbody></table></div>';
+        bd.innerHTML=h;
+      })
+      .catch(function(){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#e74c3c">取得に失敗しました</div>'; });
+  };
+  document.addEventListener('click',function(e){ if(e.target&&(e.target.id==='rs-overlay'||e.target.id==='rs-close')) closeRs(); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeRs(); });
+})();</script>
+{% endif %}
 {% endblock %}
 
 {% if qualifying_type == 'heat_roundrobin' %}
