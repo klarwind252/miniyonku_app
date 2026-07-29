@@ -788,6 +788,8 @@ async def apply_latest_to_bracket(
             )
             # 全グループ完了なら次ラウンドを生成
             advanced = await bracket_mod._try_advance_round(tid, rnd["round_id"], db)
+            # 準決勝の勝者が変わったら 3位決定戦・敗者復活戦の参加者を作り直す
+            await bracket_mod._sync_third_revival(tid, db)
             # 裏トーナメント（有効時のみ）
             await bracket_mod._sync_losers_bracket(tid, db)
             await bracket_mod._try_insert_reviver(tid, db)

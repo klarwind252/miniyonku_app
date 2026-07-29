@@ -181,6 +181,97 @@ async def _collect_round_losers(round_id: int, db: aiosqlite.Connection):
     return losers
 
 
+async def _sync_third_revival(tid: int, db: aiosqlite.Connection):
+    """準決勝（決勝の直前 normal ラウンド）の勝者が変わったとき、その敗者で構成される
+    3位決定戦(third)・敗者復活戦(revival) の参加者を作り直す。
+
+    - 準決勝が全グループ確定していなければ何もしない（敗者が確定しないため）。
+    - 参加者が変わったら、その third/revival に入っていた結果（勝者・順位）は無効なので破棄する。
+    - revival の場合、旧参加者が決勝に差し込まれていたらそのスロットも空へ戻す
+      （準決勝勝者として残る者はそのまま）。
+    手動保存・ラップタイマー反映の両方から呼ぶ。
+    """
+    async with db.execute(
+        "SELECT id, round_type FROM bracket_rounds "
+        "WHERE tournament_id=? AND round_type IN ('third','revival')", (tid,)
+    ) as cur:
+        tr_rounds = [dict(r) for r in await cur.fetchall()]
+    if not tr_rounds:
+        return
+
+    # 準決勝＝決勝の直前 normal ラウンド（round_no 最大の normal）
+    async with db.execute(
+        "SELECT id FROM bracket_rounds WHERE tournament_id=? AND round_type='normal' "
+        "ORDER BY round_no DESC LIMIT 1", (tid,)
+    ) as cur:
+        semi = await cur.fetchone()
+    if not semi:
+        return
+    semi_id = semi["id"]
+
+    # 準決勝の全グループが確定しているか確認し、勝者 entry を集める
+    async with db.execute(
+        "SELECT id FROM bracket_groups WHERE round_id=?", (semi_id,)
+    ) as cur:
+        semi_gids = [r["id"] for r in await cur.fetchall()]
+    winner_entry_ids = set()
+    for gid in semi_gids:
+        async with db.execute(
+            "SELECT bs.entry_id FROM bracket_results br "
+            "JOIN bracket_slots bs ON bs.id=br.winner_slot_id WHERE br.group_id=?", (gid,)
+        ) as cur:
+            w = await cur.fetchone()
+        if not w or w["entry_id"] is None:
+            return   # 準決勝未確定 → 触らない
+        winner_entry_ids.add(w["entry_id"])
+
+    losers = await _collect_round_losers(semi_id, db)
+    loser_ids = [x["entry_id"] for x in losers]
+
+    # 決勝ラウンド（revival の差し込み掃除用）
+    async with db.execute(
+        "SELECT id FROM bracket_rounds WHERE tournament_id=? AND round_type='final'", (tid,)
+    ) as cur:
+        fr = await cur.fetchone()
+    final_rid = fr["id"] if fr else None
+
+    changed = False
+    for tr in tr_rounds:
+        async with db.execute(
+            "SELECT bs.id, bs.group_id, bs.entry_id "
+            "FROM bracket_slots bs JOIN bracket_groups bg ON bg.id=bs.group_id "
+            "WHERE bg.round_id=? ORDER BY bg.group_no, bs.slot_no", (tr["id"],)
+        ) as cur:
+            slot_rows = [dict(r) for r in await cur.fetchall()]
+        current_ids = [r["entry_id"] for r in slot_rows if r["entry_id"] is not None]
+        if set(current_ids) == set(loser_ids):
+            continue   # 参加者に変化なし
+        old_ids = set(current_ids)
+
+        # 敗者を順にスロットへ再割り当て
+        for i, r in enumerate(slot_rows):
+            new_eid = loser_ids[i] if i < len(loser_ids) else None
+            await db.execute(
+                "UPDATE bracket_slots SET entry_id=? WHERE id=?", (new_eid, r["id"])
+            )
+        # 参加者が変わったので既存結果（勝者・順位）を破棄
+        for gid in {r["group_id"] for r in slot_rows}:
+            await db.execute("DELETE FROM bracket_results WHERE group_id=?", (gid,))
+            await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id=?", (gid,))
+
+        # revival：旧参加者が決勝に差し込まれていたら空へ戻す（準決勝勝者は残す）
+        if tr["round_type"] == "revival" and final_rid is not None:
+            for oid in (old_ids - winner_entry_ids):
+                await db.execute(
+                    "UPDATE bracket_slots SET entry_id=NULL WHERE entry_id=? "
+                    "AND group_id IN (SELECT id FROM bracket_groups WHERE round_id=?)",
+                    (oid, final_rid),
+                )
+        changed = True
+
+    if changed:
+        await db.commit()
+
 async def _group_winners(round_id: int, db: aiosqlite.Connection):
     """round_id の各グループの勝者 entry_id を返す（全グループ確定済み前提）。"""
     winners = []
@@ -2593,6 +2684,8 @@ async def bracket_save(
 
     # 全グループが完了したら次ラウンド生成チェック
     advanced = await _try_advance_round(tid, rnd["round_id"] if rnd else None, db)
+    # 準決勝の勝者が変わったら 3位決定戦・敗者復活戦の参加者（敗者）を作り直す
+    await _sync_third_revival(tid, db)
     # 裏トーナメント（有効時のみ）：敗者ドロップイン同期＋復活差し込み
     await _sync_losers_bracket(tid, db)
     reviver_inserted = await _try_insert_reviver(tid, db)
