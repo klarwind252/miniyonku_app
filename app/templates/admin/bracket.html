@@ -94,7 +94,9 @@
 .rank-badge.ph{ visibility:hidden; }
 .slot-row:last-child { border-bottom:none; }
 .slot-no { display:none; }
-.slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; }
+.slot-name { font-weight:bold; font-size:18px; flex:1; min-width:80px; white-space:nowrap; }
+/* 予選順位バッジは名前の下（別行）に落とし、名前が折り返さないようにする */
+.slot-name .seed-badge { display:block; margin-left:0; margin-top:1px; width:fit-content; }
 /* ラップタイマーから反映した合計タイム。名前と○の間に右寄せで出す */
 .slot-time { font-size:16px; font-weight:bold; color:#2c3e50;
   font-variant-numeric:tabular-nums; text-align:right; margin-right:8px; white-space:nowrap; }
@@ -1169,7 +1171,7 @@ window.initBracketConnectors = initBracketConnectors;
     {{ rnd_label }}
   </span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-bottom:10px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
@@ -1249,7 +1251,7 @@ window.initBracketConnectors = initBracketConnectors;
     {% endif %}
   </span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-bottom:10px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group third-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
