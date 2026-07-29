@@ -4528,7 +4528,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     /* レイアウト */
     .bracket-outer { position:relative; overflow:visible; width:100%; }
     .bracket-html { display:flex; gap:0; padding:6px 2px; align-items:flex-start; position:relative; width:max-content; min-width:100%; }
-    .br-round { display:flex; flex-direction:column; min-width:250px; max-width:330px; gap:0; flex:0 0 auto; position:relative; padding:0 24px; }
+    .br-round { display:flex; flex-direction:column; min-width:250px; max-width:360px; gap:0; flex:0 0 auto; position:relative; padding:0 24px; }
     @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:186px!important; max-width:240px!important; padding:0 10px!important; } .br-round-label { font-size:14px!important; padding:4px 0 16px!important; } .br-group { padding:5px 3px 3px 10px!important; } .br-slot { padding:5px 9px!important; gap:6px!important; min-height:32px!important; } .br-slot-name { font-size:14px!important; min-width:0!important; overflow:hidden!important; text-overflow:ellipsis!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } .br-slot-time { font-size:13px!important; margin-left:6px!important; } }
     /* スマホ：表彰台（1・2・3位）を折り返さず横一列に収める */
     @media(max-width:480px){
@@ -4548,7 +4548,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     /* スロット共通 */
     .br-slot { display:flex; align-items:center; gap:9px; padding:6px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:39px; border:1px solid #dee2e6; }
     .br-slot-no { display:none; }
-    .br-slot-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:18px; color:#212529 !important; font-weight:500; }
+    .br-slot-name { flex:1; white-space:nowrap; min-width:max-content; font-size:18px; color:#212529 !important; font-weight:500; }
     .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
     .br-slot.winner .br-slot-time { color:#ffffff; }
     .br-slot-mark { font-size:20px; }
