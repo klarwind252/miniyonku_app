@@ -48,6 +48,19 @@ async def build_racer_qualifying_stats(db, tournament_id: int, entry_id: int) ->
     ) as cur:
         heat_rows = await cur.fetchall()
 
+    # 全体（この大会の予選全レース）で速い順の上位3 FINISH タイム。
+    # レーススケジュールと同じ「レースを通しての1/2/3ベスト」基準でモーダルを色分けする。
+    async with db.execute(
+        "SELECT hl.heat_id, hl.lane_no, hr.total_time "
+        "FROM heat_lanes hl JOIN heats h ON h.id=hl.heat_id "
+        "LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id "
+        "WHERE h.tournament_id=? AND hr.total_time IS NOT NULL",
+        (tournament_id,),
+    ) as cur:
+        _all = [(r["total_time"], r["heat_id"], r["lane_no"]) for r in await cur.fetchall()]
+    _all.sort()
+    global_rank = {(hid, lno): i for i, (_t, hid, lno) in enumerate(_all[:3], start=1)}
+
     races: list[dict] = []
     for hr in heat_rows:
         heat_id = hr["heat_id"]
@@ -115,15 +128,8 @@ async def build_racer_qualifying_stats(db, tournament_id: int, entry_id: int) ->
             "best_lap_time": (round(best_lap_time, 3) if best_lap_time is not None else None),
             "best_lap_avg": best_lap_avg,
             "sectors": sectors,
+            # 全体（大会の予選全レース）での上位3タイムなら 1/2/3、そうでなければ None
+            "total_rank": global_rank.get((heat_id, lane_no)),
         })
-
-    # そのレーサー自身のレースを合計タイムで速い順に並べ、上位3つへ 1/2/3 の色ランク。
-    # モーダルの TOTAL 列を、レーススケジュールと同じ紫/青/緑で色分けするため。
-    _ranked = sorted(
-        [rc for rc in races if rc["total_time"] is not None],
-        key=lambda rc: rc["total_time"],
-    )
-    for _i, _rc in enumerate(_ranked[:3], start=1):
-        _rc["total_rank"] = _i
 
     return {"entry_id": entry_id, "name": name, "races": races}
