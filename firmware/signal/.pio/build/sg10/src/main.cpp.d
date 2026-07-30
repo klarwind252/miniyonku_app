@@ -181,8 +181,8 @@
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
- C:/Users/hajim/Desktop/firmware/common/protocol.h \
- C:/Users/hajim/Desktop/firmware/common/espnow_link.h \
+ C:/Users/hajim/Desktop/GitHub/miniyonku_app/firmware/common/protocol.h \
+ C:/Users/hajim/Desktop/GitHub/miniyonku_app/firmware/common/espnow_link.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32c3/include/esp_wifi/include/esp_now.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32c3/include/esp_wifi/include/esp_wifi_types.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32c3/include/esp_wifi/include/esp_wifi.h \
