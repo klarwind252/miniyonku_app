@@ -2922,20 +2922,41 @@ async def _try_advance_round(tid: int, round_id: int, db: aiosqlite.Connection):
                 # 復活戦完了：勝者を決勝の空きスロットに追加
                 winner_eid = winners[0] if winners else None
                 if winner_eid:
+                    # 準決勝（決勝直前の normal ラウンド）の勝者＝決勝に正規で入るべき枠。
+                    # 復活枠は「決勝スロットのうち準決勝勝者以外（空き or 旧復活者）」。
                     async with db.execute(
-                        """SELECT bs.id FROM bracket_slots bs
+                        """SELECT bs.entry_id FROM bracket_results br
+                           JOIN bracket_slots bs ON bs.id=br.winner_slot_id
+                           JOIN bracket_groups bg ON bg.id=br.group_id
+                           JOIN bracket_rounds brd ON brd.id=bg.round_id
+                           WHERE brd.tournament_id=? AND brd.round_type='normal'
+                             AND brd.round_no=(
+                                 SELECT MAX(round_no) FROM bracket_rounds
+                                 WHERE tournament_id=? AND round_type='normal')""",
+                        (tid, tid),
+                    ) as cur:
+                        semi_win_ids = {r["entry_id"] for r in await cur.fetchall()
+                                        if r["entry_id"] is not None}
+                    async with db.execute(
+                        """SELECT bs.id, bs.entry_id FROM bracket_slots bs
                            JOIN bracket_groups bg ON bg.id=bs.group_id
                            JOIN bracket_rounds br ON br.id=bg.round_id
                            WHERE br.tournament_id=? AND br.round_type='final'
-                             AND bs.entry_id IS NULL
-                           ORDER BY bg.group_no, bs.slot_no LIMIT 1""",
+                           ORDER BY bg.group_no, bs.slot_no""",
                         (tid,),
                     ) as cur:
-                        empty_final_slot = await cur.fetchone()
-                    if empty_final_slot:
+                        final_slots = await cur.fetchall()
+                    # まず空き枠、無ければ「準決勝勝者でない＝旧復活者」の枠を上書き対象にする。
+                    target_slot = next(
+                        (s for s in final_slots if s["entry_id"] is None), None)
+                    if target_slot is None:
+                        target_slot = next(
+                            (s for s in final_slots if s["entry_id"] not in semi_win_ids),
+                            None)
+                    if target_slot is not None:
                         await db.execute(
                             "UPDATE bracket_slots SET entry_id=? WHERE id=?",
-                            (winner_eid, empty_final_slot["id"]),
+                            (winner_eid, target_slot["id"]),
                         )
                 await db.commit()
                 return True
@@ -4622,7 +4643,9 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .bracket-outer { position:relative; overflow:visible; width:100%; }
     .bracket-html { display:flex; gap:0; padding:6px 2px; align-items:flex-start; position:relative; width:max-content; min-width:100%; }
     .br-round { display:flex; flex-direction:column; min-width:250px; max-width:360px; gap:0; flex:0 0 auto; position:relative; padding:0 24px; }
-    @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:200px!important; max-width:300px!important; padding:0 10px!important; } .br-round-label { font-size:14px!important; padding:2px 0 8px!important; } .br-group { padding:3px 3px 2px 10px!important; } .br-slot { padding:3px 9px!important; gap:6px!important; min-height:28px!important; } .br-slot-name { font-size:14px!important; min-width:max-content!important; overflow:visible!important; text-overflow:clip!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } .br-slot-time { font-size:13px!important; margin-left:6px!important; } }
+    /* 決勝ラウンドは順位メダル（🏆🥈🥉）が付くぶん広めにして、はみ出しを防ぐ */
+    .br-round.br-round-final { min-width:310px; max-width:430px; }
+    @media(max-width:480px){ .bracket-html { padding:4px 0!important; } .br-round { min-width:200px!important; max-width:300px!important; padding:0 10px!important; } .br-round.br-round-final { min-width:250px!important; max-width:340px!important; } .br-round-label { font-size:14px!important; padding:2px 0 8px!important; } .br-group { padding:3px 3px 2px 10px!important; } .br-slot { padding:3px 9px!important; gap:6px!important; min-height:28px!important; } .br-slot-name { font-size:14px!important; min-width:max-content!important; overflow:visible!important; text-overflow:clip!important; white-space:nowrap!important; } .br-slot-no { font-size:12px!important; } .br-slot-time { font-size:13px!important; margin-left:6px!important; } }
     /* スマホ：表彰台（1・2・3位）を折り返さず横一列に収める */
     @media(max-width:480px){
       .br-podium { flex-wrap:nowrap!important; gap:6px!important; }
@@ -4768,7 +4791,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 f'<div class="{grp_cls}" data-group-idx="{gi}"{data_winner}{gid_attr}{adv_attr}>{grp_no}{slots_html}</div>'
             )
         return (
-            f'<div class="br-round" data-round-label="{esc(rnd.get("label",""))}">'
+            f'<div class="br-round{" br-round-final" if is_final else ""}" data-round-label="{esc(rnd.get("label",""))}">'
             f'<div class="br-round-label {label_class}">{esc(rnd.get("label",""))}</div>'
             f'<div class="br-round-groups">{"".join(groups_html)}</div>'
             f'</div>'

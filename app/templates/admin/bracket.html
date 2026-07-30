@@ -94,16 +94,16 @@
 .rank-badge.ph{ visibility:hidden; }
 .slot-row:last-child { border-bottom:none; }
 .slot-no { display:none; }
-/* flex:1 を外し、名前は文字数ぶんの幅に。タイムは名前の直後に置く（間延び防止）。
-   名前は最長8文字想定なので max-width で上限を設け、あふれても崩れないようにする。 */
-.slot-name { font-weight:bold; font-size:18px; min-width:0; max-width:9em; white-space:nowrap;
+/* 名前で余白を埋め、タイム・○を右へ寄せる（タイムを右揃えで縦に揃えて見やすく）。
+   名前は最長8文字想定。長すぎる場合は省略記号にして崩れを防ぐ。 */
+.slot-name { font-weight:bold; font-size:18px; flex:1; min-width:0; white-space:nowrap;
   overflow:hidden; text-overflow:ellipsis; }
 /* 予選順位バッジは名前の下（別行）に落とし、名前が折り返さないようにする */
 .slot-name .seed-badge { display:block; margin-left:0; margin-top:1px; width:fit-content; }
-/* ラップタイマーから反映した合計タイム。名前と○の間に右寄せで出す */
+/* ラップタイマーから反映した合計タイム。名前で押し出して右揃えで出す */
 .slot-time { font-size:16px; font-weight:bold; color:#2c3e50;
   font-variant-numeric:tabular-nums; text-align:right; margin-right:8px; white-space:nowrap; }
-.win-btn { width:40px; height:40px; margin-left:auto; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+.win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
 .round-header { font-size:15px; font-weight:bold; color:#fff; padding:6px 16px; display:block; margin-bottom:7px; border-radius:6px; }
@@ -1403,6 +1403,9 @@ window.initBracketConnectors = initBracketConnectors;
       <div class="slot-name" style="cursor:pointer;user-select:none;color:inherit;">{{ slot.name }}</div>
       {% else %}
       <div class="slot-name" style="color:#bdc3c7">-</div>
+      {% endif %}
+      {% if m4_on and slot.total_time is not none %}
+      <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
       {% endif %}
       {% if slot.name %}
       <select class="rank-select" id="rank-{{ g.id }}-{{ slot.slot_id }}">

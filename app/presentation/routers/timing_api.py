@@ -942,11 +942,33 @@ async def pip_latest(
             else:
                 applied_label = f"ヒート{heat_id}"   # 保険：ヒートが消えている等
         elif group_id is not None:
+            # ラウンド種別（決勝／準決勝／3位決定戦／敗者復活戦／裏R…）を反映してラベル化する。
             async with db.execute(
-                "SELECT group_no FROM bracket_groups WHERE id = ?", (group_id,)
+                """SELECT bg.group_no, br.round_no, br.round_type, br.tournament_id,
+                          (SELECT COUNT(*) FROM bracket_groups bg2 WHERE bg2.round_id = br.id) AS grp_count
+                     FROM bracket_groups bg
+                     JOIN bracket_rounds br ON br.id = bg.round_id
+                    WHERE bg.id = ?""",
+                (group_id,),
             ) as cur:
                 g = await cur.fetchone()
-            applied_label = f"決勝 グループ{g['group_no']}" if g else f"グループ{group_id}"
+            if g:
+                # normal ラウンドの「準決勝/準々決勝」判定は決勝までの距離で決まるため、
+                # 表ラウンド（normal/final）の最大 round_no を総ラウンド数として渡す。
+                async with db.execute(
+                    "SELECT MAX(round_no) AS mx FROM bracket_rounds "
+                    "WHERE tournament_id = ? AND round_type IN ('normal','final')",
+                    (g["tournament_id"],),
+                ) as cur2:
+                    _mx = await cur2.fetchone()
+                total_rounds = (_mx["mx"] or 0) if _mx else 0
+                from app.presentation.routers.bracket import round_label
+                _rl = round_label(g["round_no"], total_rounds, g["round_type"])
+                # 複数グループあるラウンドだけ「グループN」を付ける（決勝など1組は付けない）。
+                applied_label = (f"{_rl} グループ{g['group_no']}"
+                                 if (g["grp_count"] or 1) > 1 else _rl)
+            else:
+                applied_label = f"グループ{group_id}"
 
         out.append({
             "race_id": rid,

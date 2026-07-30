@@ -290,6 +290,10 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       var sx = window.scrollX, sy = window.scrollY;
       // 更新箇所だけ差し替え
       live.innerHTML = fresh.innerHTML;
+      // 決勝ツリーの二重表示ガード（差し替えで重複が入っても最初の1つだけ残す）
+      if(typeof window._m4DedupBracket === 'function'){
+        try { window._m4DedupBracket(); } catch(e){}
+      }
       // ブラケット線を再描画（決勝・ヒート予選の全 .bracket-outer が対象）
       if(typeof window._bracketDrawConnectors === 'function'){
         try { window._bracketDrawConnectors(); } catch(e){}
@@ -391,8 +395,25 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     # 全 .bracket-outer（決勝・予選ヒート）のグループ絶対配置とコネクタ線描画を行う。
     if bracket_layout_js:
         redraw_script = bracket_layout_js + """<script>
+/* 決勝トーナメントの二重表示ガード。
+   決勝ページ（#bracket-html-container あり）でだけ働き、
+   万一ツリー(.br-wrap)が複数出ても「上＝最初の1つ」だけを残して他は除去する。
+   ヒート予選の複数ブラケットは別コンテナ(#viewer-ht/hr-bracket-*)なので影響しない。 */
+window._m4DedupBracket = function(){
+  try {
+    var cs = document.querySelectorAll('#bracket-html-container');
+    if (!cs.length) return;                       // 決勝ページ以外は何もしない
+    for (var j = cs.length - 1; j >= 1; j--){ if (cs[j] && cs[j].remove) cs[j].remove(); }
+    var c = cs[0];
+    // 決勝ページの正しいツリーは c 内の最初の1つだけ。外にある/2つ目以降は除去。
+    document.querySelectorAll('.br-wrap').forEach(function(w){ if (!c.contains(w) && w.remove) w.remove(); });
+    var ws = c.querySelectorAll('.br-wrap');
+    for (var i = ws.length - 1; i >= 1; i--){ if (ws[i] && ws[i].remove) ws[i].remove(); }
+  } catch(e){}
+};
 window.addEventListener('load', function(){
   setTimeout(function(){
+    if (typeof window._m4DedupBracket === 'function') { window._m4DedupBracket(); }
     if (typeof window._bracketDrawConnectors === 'function') { window._bracketDrawConnectors(); }
   }, 250);
 });
@@ -1274,10 +1295,48 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
                             '<div id="no-bracket" style="display:none;',
                         )
 
+    # 決勝トーナメント表(.br-wrap)が万一二重に出た場合は、先頭＝上の1つだけ残す。
+    # JS ガード(_m4DedupBracket)は公開HTMLのJS除去や部分更新のタイミングで効かない
+    # ことがあるため、サーバー側でも「上だけ」を保証する。
+    html = _keep_first_br_wrap(html)
+
     return html
 
 
-async def _upload_to_gcs(html: str, bucket: str) -> bool:
+def _keep_first_br_wrap(html: str) -> str:
+    """<div class="br-wrap"> が複数あれば、先頭(=文書順で最初=画面の上)だけ残して除去する。
+    ネストした <div> を数えてブロック単位で正しく取り除く（正規表現では閉じタグを誤認するため）。
+    """
+    marker = '<div class="br-wrap">'
+    first = html.find(marker)
+    if first == -1:
+        return html
+    while True:
+        second = html.find(marker, first + len(marker))
+        if second == -1:
+            break
+        # second から始まる div ブロックの終端を <div>/</div> の対応で探す
+        pos = second
+        depth = 0
+        end = None
+        while pos < len(html):
+            nd = html.find('<div', pos)
+            nc = html.find('</div>', pos)
+            if nc == -1:
+                break
+            if nd != -1 and nd < nc:
+                depth += 1
+                pos = nd + 4
+            else:
+                depth -= 1
+                pos = nc + 6
+                if depth == 0:
+                    end = pos
+                    break
+        if end is None:
+            break
+        html = html[:second] + html[end:]
+    return html
     """GCS の index.html に上書きアップロード"""
     try:
         from google.cloud import storage  # type: ignore
