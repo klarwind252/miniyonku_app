@@ -107,6 +107,23 @@
 .slot-time.t1{background:#6b21a8;color:#fff;border-radius:4px;padding:1px 7px}
 .slot-time.t2{background:#1e40af;color:#fff;border-radius:4px;padding:1px 7px}
 .slot-time.t3{background:#166534;color:#fff;border-radius:4px;padding:1px 7px}
+/* 予選ベスト表（TOTAL/LAP/SECTOR BEST）。予選管理と同配色（紫1位・青2位・緑3位）。 */
+.qb-tbl{border-collapse:collapse;width:100%;font-size:13px;background:#fff}
+.qb-tbl th,.qb-tbl td{padding:5px 8px;border-bottom:1px solid #eef1f4}
+.qb-tbl thead th{background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;white-space:nowrap}
+.qb-tbl .qb-grp th{font-size:11px;color:#7f8c8d;border-bottom:1px solid #e9ecef}
+.qb-tbl th.bsep,.qb-tbl td.bsep{border-left:2px solid #dde3ea}
+.qb-tbl td.qb-rank{text-align:center;font-weight:bold;font-size:15px}
+.qb-tbl td.qb-name{font-weight:bold;color:#2c3e50;white-space:nowrap}
+.qb-tbl td.bcell{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;color:#2c3e50}
+.qb-tbl td.bsec2{text-align:right;font-variant-numeric:tabular-nums;padding:3px 5px;white-space:nowrap;color:#2c3e50}
+.qb-tbl td.bsec2 .st{font-size:12px;display:block;line-height:1.15}
+.qb-tbl td.bsec2 .sp{font-size:10px;display:block;line-height:1.1;color:#7f8c8d}
+.qb-tbl .b1{background:#f3e8ff;color:#6b21a8;font-weight:bold;border-radius:3px}
+.qb-tbl .b2{background:#dbeafe;color:#1e40af;font-weight:bold;border-radius:3px}
+.qb-tbl .b3{background:#dcfce7;color:#166534;font-weight:bold;border-radius:3px}
+.qb-tbl td.bsec2 .st.b1,.qb-tbl td.bsec2 .st.b2,.qb-tbl td.bsec2 .st.b3,
+.qb-tbl td.bsec2 .sp.b1,.qb-tbl td.bsec2 .sp.b2,.qb-tbl td.bsec2 .sp.b3{padding:0 3px}
 .win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
@@ -1460,6 +1477,56 @@ window.initBracketConnectors = initBracketConnectors;
     </form>
   </div>
 </div>
+
+{# 予選ベスト表（予選管理の予選順位表と同じ TOTAL/LAP/SECTOR BEST）。順位＝ベストタイム順。 #}
+{% if qbest_rows %}
+<div class="card" style="margin-top:10px">
+  <div class="card-header">📊 予選ベスト（ベストタイム順）</div>
+  <div class="card-body" style="padding:0;overflow-x:auto">
+    <table class="qb-tbl">
+      <thead>
+        <tr class="qb-grp">
+          <th colspan="2"></th>
+          <th class="bsep" colspan="4">TOTAL BEST</th>
+          <th class="bsep" colspan="2">LAP BEST</th>
+          {% if max_sector_no > 0 %}<th class="bsep" colspan="{{ max_sector_no }}">SECTOR BEST（上:秒／下:m/s）</th>{% endif %}
+        </tr>
+        <tr>
+          <th>順位</th><th style="text-align:left">レーサー</th>
+          <th class="bsep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
+          <th class="bsep">TIME</th><th>Av.</th>
+          {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep"{% endif %}>{{ n }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in qbest_rows %}
+      {% set rb = row.bm %}{% set eid = row.entry_id %}
+      <tr>
+        <td class="qb-rank" style="color:{% if row.rank==1 %}#d4a017{% elif row.rank==2 %}#888{% elif row.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ row.rank }}</td>
+        <td class="qb-name">{{ row.name }}</td>
+        <td class="bsep bcell{% if best_ranks.total.get(eid) %} b{{ best_ranks.total.get(eid) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
+        <td class="bcell">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
+        <td class="bcell{% if best_ranks.total_avg.get(eid) %} b{{ best_ranks.total_avg.get(eid) }}{% endif %}">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
+        <td class="bcell{% if best_ranks.max_ms.get(eid) %} b{{ best_ranks.max_ms.get(eid) }}{% endif %}">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
+        <td class="bsep bcell{% if best_ranks.lap.get(eid) %} b{{ best_ranks.lap.get(eid) }}{% endif %}">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
+        <td class="bcell{% if best_ranks.lap_avg.get(eid) %} b{{ best_ranks.lap_avg.get(eid) }}{% endif %}">{% if rb.get('lap_avg') is not none %}{{ '%.2f'|format(rb['lap_avg']) }}{% else %}—{% endif %}</td>
+        {% for n in range(1, max_sector_no + 1) %}
+        {% set _st = rb.get('sector' ~ n) %}
+        {% set _sp = rb.get('sector_ms' ~ n) %}
+        {% set _rt = best_ranks['sector' ~ n].get(eid) %}
+        {% set _rp = best_ranks['sector_ms' ~ n].get(eid) %}
+        <td class="bsec2{% if n == 1 %} bsep{% endif %}">
+          <span class="st{% if _rt %} b{{ _rt }}{% endif %}">{% if _st is not none %}{{ '%.3f'|format(_st) }}{% else %}—{% endif %}</span>
+          <span class="sp{% if _rp %} b{{ _rp }}{% endif %}">{% if _sp is not none %}{{ '%.2f'|format(_sp) }}{% else %}—{% endif %}</span>
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 </div>
 {% endif %}{# 進行フェーズ（if lottery の else）を閉じる #}
 {% endif %}{# if not rounds を閉じる → 以降のスクリプトは常にグローバル #}

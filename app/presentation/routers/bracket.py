@@ -1347,6 +1347,75 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
             _s["time_rank"] = (_time_rank_of.get(round(float(_tt), 3))
                                if _tt is not None else None)
 
+    # 予選順位表と同じ「レーサー別ベスト」（TOTAL/LAP/SECTOR BEST）を、ベストタイム順で表示。
+    from app.core.config import IS_CLOUD as _IS_CLOUD_B
+    from app.application import timing_racer_best_service as _rbest_svc
+    _m4_lic = bool(_IS_CLOUD_B and getattr(request.state, "m4laps_licensed", False))
+    try:
+        racer_bests = await _rbest_svc.racer_bests_for_tournament(db, tid) if _m4_lic else {}
+    except Exception:
+        racer_bests = {}
+    # 記録のある最大セクター番号（列を出す範囲）
+    max_sector_no = 0
+    for _bm in racer_bests.values():
+        for _i in range(1, 8):
+            if _bm.get(f"sector{_i}") is not None or _bm.get(f"sector_ms{_i}") is not None:
+                max_sector_no = max(max_sector_no, _i)
+    # TOTAL 最小（GAP 基準）
+    best_total_min = None
+    for _bm in racer_bests.values():
+        _tv = _bm.get("total")
+        if _tv is not None and (best_total_min is None or _tv < best_total_min):
+            best_total_min = _tv
+    # 各指標の上位3人（色分け）。タイム系・区間タイムは小さいほど上位、速度系は大きいほど上位。
+    _LOWER_B = {"total", "lap"}
+    for _i in range(1, 8):
+        _LOWER_B.add(f"sector{_i}")
+
+    def _rank_map_b(metric, lower):
+        vals = [(eid, bm[metric]) for eid, bm in racer_bests.items() if bm.get(metric) is not None]
+        vals.sort(key=lambda x: x[1], reverse=not lower)
+        out = {}
+        pos = 0
+        prev = None
+        for _i, (eid, v) in enumerate(vals, start=1):
+            if prev is None or v != prev:
+                pos = _i
+                prev = v
+            if pos > 3:
+                break
+            out[eid] = pos
+        return out
+
+    best_ranks = {}
+    for _m in ["total", "total_avg", "max_ms", "lap", "lap_avg"]:
+        best_ranks[_m] = _rank_map_b(_m, _m in _LOWER_B)
+    for _i in range(1, 8):
+        best_ranks[f"sector{_i}"] = _rank_map_b(f"sector{_i}", True)
+        best_ranks[f"sector_ms{_i}"] = _rank_map_b(f"sector_ms{_i}", False)
+    # レーサー名（entry_id→name）
+    _name_by_eid_b = {}
+    async with db.execute(
+        "SELECT e.id AS entry_id, r.name FROM entries e "
+        "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?",
+        (tid,),
+    ) as cur:
+        for _r in await cur.fetchall():
+            _name_by_eid_b[_r["entry_id"]] = _r["name"]
+    # ベストタイム順（TOTAL 昇順、記録なしは末尾）で 1..N
+    qbest_rows = []
+    _ordered_b = sorted(
+        racer_bests.items(),
+        key=lambda kv: (kv[1].get("total") is None, kv[1].get("total") or 0.0),
+    )
+    for _i, (eid, bm) in enumerate(_ordered_b, start=1):
+        qbest_rows.append({
+            "rank": _i,
+            "entry_id": eid,
+            "name": _name_by_eid_b.get(eid, ""),
+            "bm": bm,
+        })
+
     return templates.TemplateResponse("admin/bracket.html", {
         "request": request,
         "t": t,
@@ -1361,6 +1430,12 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
         "rounds": rounds,
         "groups_data": groups_data,
         "losers_groups_data": losers_groups_data,
+        # 予選順位表と同じベスト表（TOTAL/LAP/SECTOR BEST）をベストタイム順で表示するためのデータ
+        "qbest_rows": qbest_rows,
+        "racer_bests": racer_bests,
+        "best_ranks": best_ranks,
+        "best_total_min": best_total_min,
+        "max_sector_no": max_sector_no,
         "patterns": patterns,
         "total_rounds": total_rounds,
         "svg_data": svg_data,
