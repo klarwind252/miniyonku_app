@@ -235,7 +235,7 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 <!-- 過去成績ページへの常時表示ボタン（.v-container の外＝部分更新で消えない）。
      href は参加者html生成時に店舗別URL（/api/history または /{slug}/api/history）へ置換する。 -->
 <a id="m4-history-btn" href="__HISTORYURL__">🏆 過去成績</a>
-<!-- ページ上部（決勝進出レーサー）へ移動するボタン。公開HTMLは <script> 除去のため
+<!-- ページ上部（決勝進出レーサー）へ移動するボタン。公開HTMLはスクリプトが全除去されるため
      JSを使わずアンカーリンク（#pagetop）で実装。.v-container の外＝部分更新で消えない。 -->
 <a id="m4-top-btn" href="#pagetop" aria-label="ページ上部へ移動">↑ 上へ</a>
 {% endif %}
