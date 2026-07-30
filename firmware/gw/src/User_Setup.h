@@ -39,5 +39,5 @@
 
 // ---- SPI速度 ----
 //  ILI9341は40MHz常用可。読み出しは使わないのでREADは低め。
-#define SPI_FREQUENCY       40000000
+#define SPI_FREQUENCY       10000000
 #define SPI_READ_FREQUENCY  20000000

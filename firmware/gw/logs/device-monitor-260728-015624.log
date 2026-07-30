@@ -1,0 +1,13 @@
+E (433) esp_core_dump_flash: No core d�f^�partition found!
+E (433) esp_core_dump_flash: No core dump partition found!
+
+=== M4LAPS Gateway GW6 (VE) ===
+PSRAM=4192123 (VE normal: approx 4MB mapped of 8MB)
+[RX] len=30 type=1
+[RX] len=44 type=4
+[RX] len=44 type=4
+[RX] len=44 type=4
+[LAYOUT] laps=3 nodes=3 lc=1 len=180.0m
+[ 11283][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[RX] len=30 type=1
+[ 14283][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation

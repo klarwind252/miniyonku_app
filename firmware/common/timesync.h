@@ -30,13 +30,8 @@ static uint64_t s_last_reset = 0;
 static inline bool is_synced() { return s_samples > 0; }
 
 // 自分時刻 → GW時刻へ換算（docs/12 S3）。EVENTのt_usはこれを通す。
-// ⚠未同期時は換算せず生時刻を返す（quality=3で送出。EVENT組立側で判定）。
-//   さらに符号なしアンダーフロー（t=18446744…）を防ぐため飽和させる。
 static inline uint64_t to_gw_us(uint64_t self_us) {
-  if (!is_synced()) return self_us;                 // 未同期は生時刻（S4）
-  int64_t t = (int64_t)self_us + s_offset_us;       // GW時刻へ換算（S3）
-  if (t < 0) t = 0;                                 // 念のため負を0に飽和
-  return (uint64_t)t;
+  return (uint64_t)((int64_t)self_us + s_offset_us);
 }
 static inline uint64_t now_gw_us() { return to_gw_us(now_us()); }
 

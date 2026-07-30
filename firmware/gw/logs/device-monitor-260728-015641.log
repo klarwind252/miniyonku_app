@@ -1,0 +1,23 @@
+E (433) esp_core_dump_flash: No core d3f^�partition found!
+E (433) esp_core_dump_flash: No core dump partition found!
+
+=== M4LAPS Gateway GW6 (VE) ===
+PSRAM=4192123 (VE normal: approx 4MB mapped of 8MB)
+[RX] len=30 type=1
+[RX] len=44 type=4
+E (18533) wifi:sta is connecting, return error
+[  9127][E][WiFiSTA.cpp:278] begin(): connect failed!
+[RX] len=44 type=4
+[LAYOUT] laps=3 nodes=3 lc=1 len=180.0m
+[ 11217][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[RX] len=30 type=1
+[ 14217][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 18010][E][WiFiClientSecure.cpp:144] connect(): start_ssl_client: -1
+[RX] len=44 type=4
+[RX] len=44 type=4
+[RX] len=30 type=1
+[ 24010][E][WiFiClientSecure.cpp:144] connect(): start_ssl_client: -1
+[RX] len=44 type=4
+[ 24124][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 27124][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 30895][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation

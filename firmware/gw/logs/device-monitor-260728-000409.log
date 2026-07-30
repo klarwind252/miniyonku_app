@@ -1,0 +1,744 @@
+E (433) esp_core_dump_flash: No core d��� partition found!
+E (433) esp_core_dump_flash: No core dump partition found!
+
+=== M4LAPS Gateway GW6 (VE) ===
+PSRAM=4192123（8388608ならOK）
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=44 type=4
+[TX-ERR] err=12391
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+E (12367) task_wdt: Task watchdog got triggered. The following tasks did not reset the watchdog in time:
+E (12367) task_wdt:  - IDLE0 (CPU 0)
+E (12367) task_wdt: Tasks currently running:
+E (12367) task_wdt: CPU 0: wifi
+E (12367) task_wdt: CPU 1: ipc1
+E (12367) task_wdt: Aborting.
+
+abort() was called at PC 0x400e9be1 on core 0
+
+
+Backtrace: 0x40083ab5:0x3ffbec4c |<-CORRUPTED
+
+
+
+
+ELF file SHA256: 6615e3b57eb2042f
+
+E (6354) esp_core_dump_flash: Core dump flash config is corrupted! CRC=0x7bd5c66f instead of 0x0
+Rebooting...
+ets Jul 29 2019 12:21:46
+
+rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+E (432) esp_core_dump_flash: No core d��� partition found!
+E (432) esp_core_dump_flash: No core dump partition found!
+
+=== M4LAPS Gateway GW6 (VE) ===
+PSRAM=4192123（8388608ならOK）
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=44 type=4
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=30 type=1
+[  4742][E][WiFiGeneric.cpp:113] set_esp_interface_ip(): Netif Set IP Failed! 0x5007
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=44 type=4
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=30 type=1
+*** DEBUG BUILD v2: WiFi OFF / ESP-NOW isolation test ***
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=44 type=4
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[TX-ERR] err=12391
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=44 type=4
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1
+[EV] src=SQ0 lane=3 q=1 t=18446744070073014865
+[RX] len=40 type=6
+[SG] lane=1 q=1

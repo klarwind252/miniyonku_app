@@ -409,6 +409,12 @@ window._m4DedupBracket = function(){
     document.querySelectorAll('.br-wrap').forEach(function(w){ if (!c.contains(w) && w.remove) w.remove(); });
     var ws = c.querySelectorAll('.br-wrap');
     for (var i = ws.length - 1; i >= 1; i--){ if (ws[i] && ws[i].remove) ws[i].remove(); }
+    // ⚡ M4LAPS 節・🏆 決勝進出レーサー 節も、決勝表(.br-wrap)と同様に
+    // 部分更新のタイミングで二重化することがあるため、先頭の1つだけ残す。
+    ['m4-laps-sec','m4-finalists-sec'].forEach(function(id){
+      var es = document.querySelectorAll('#' + id);
+      for (var k = es.length - 1; k >= 1; k--){ if (es[k] && es[k].remove) es[k].remove(); }
+    });
   } catch(e){}
 };
 window.addEventListener('load', function(){
@@ -1300,19 +1306,29 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     # ことがあるため、サーバー側でも「上だけ」を保証する。
     html = _keep_first_br_wrap(html)
 
+    # ⚡ M4LAPS ベスト表・🏆 決勝進出レーサー節も、決勝表(.br-wrap)と同様に
+    # 部分更新(applyPartial)のタイミングで二重化することがあるため、先頭の1つだけ残す。
+    # bracket.html 側で付与した安定 id をマーカーにブロック単位で除去する。
+    html = _keep_first_div_block(html, '<div id="m4-laps-sec"')
+    html = _keep_first_div_block(html, '<div id="m4-finalists-sec"')
+
     return html
 
 
-def _keep_first_br_wrap(html: str) -> str:
-    """<div class="br-wrap"> が複数あれば、先頭(=文書順で最初=画面の上)だけ残して除去する。
-    ネストした <div> を数えてブロック単位で正しく取り除く（正規表現では閉じタグを誤認するため）。
+def _keep_first_div_block(html: str, open_marker: str) -> str:
+    """open_marker で始まる <div> ブロックが複数あれば、先頭(=文書順で最初=画面の上)
+    だけ残して以降を除去する。ネストした <div> を数えてブロック単位で正しく取り除く
+    （正規表現では閉じタグを誤認するため）。
+
+    open_marker は開始タグの先頭一致文字列。
+      例: '<div class="br-wrap">' / '<div id="m4-laps-sec"' / '<div id="m4-finalists-sec"'
+    id マーカーは属性（class/style 等）が続くため、'>' を含めない前方一致で指定する。
     """
-    marker = '<div class="br-wrap">'
-    first = html.find(marker)
+    first = html.find(open_marker)
     if first == -1:
         return html
     while True:
-        second = html.find(marker, first + len(marker))
+        second = html.find(open_marker, first + len(open_marker))
         if second == -1:
             break
         # second から始まる div ブロックの終端を <div>/</div> の対応で探す
@@ -1337,6 +1353,11 @@ def _keep_first_br_wrap(html: str) -> str:
             break
         html = html[:second] + html[end:]
     return html
+
+
+def _keep_first_br_wrap(html: str) -> str:
+    """後方互換ラッパー：決勝トーナメント表(.br-wrap)が複数あれば先頭だけ残す。"""
+    return _keep_first_div_block(html, '<div class="br-wrap">')
     """GCS の index.html に上書きアップロード"""
     try:
         from google.cloud import storage  # type: ignore

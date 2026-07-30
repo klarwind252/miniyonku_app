@@ -84,8 +84,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 
   {# ⚡ M4LAPS ベスト表（予選ページ viewer/qualifying と同一・決勝トーナメント表の下に表示） #}
+  {# id="m4-laps-sec"：決勝表(.br-wrap)と同様、部分更新の二重化に備えたdedup対象マーカー #}
   {% if m4laps_active and m4laps_rows %}
-  <div class="v-section" style="margin-top:12px">
+  <div id="m4-laps-sec" class="v-section" style="margin-top:12px">
     <div class="v-section-title">⚡ M4LAPS</div>
     <div style="overflow-x:auto">
       <table class="m4l-table">
@@ -121,7 +122,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   {% endif %}
 
   {# 🏆 決勝進出レーサー（M4LAPSの下・トーナメント表の有無に関わらず常時表示） #}
-  <div class="v-section" style="margin-top:12px;padding:4px 8px">
+  {# id="m4-finalists-sec"：決勝表(.br-wrap)と同様、部分更新の二重化に備えたdedup対象マーカー #}
+  <div id="m4-finalists-sec" class="v-section" style="margin-top:12px;padding:4px 8px">
       {% if hr_heats_data %}
       {# ヒート制総当たり：ヒート×グループ別列表示 #}
       <div style="font-size:14px;font-weight:bold;color:#27ae60;margin-bottom:12px">🏆 決勝進出レーサー</div>

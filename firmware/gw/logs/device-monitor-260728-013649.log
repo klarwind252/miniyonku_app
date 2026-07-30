@@ -1,0 +1,23 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+E (433) esp_core_dump_flash: No core d�f�p partition found!
+E (433) esp_core_dump_flash: No core dump partition found!
+
+=== M4LAPS Gateway GW6 (VE) ===
+PSRAM=4192123（8388608ならOK）
+[RX] len=30 type=1
+[  8977][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[RX] len=44 type=4
+[ 11977][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 14978][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 17979][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 20980][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
+[ 23981][E][vfs_api.cpp:105] open(): /littlefs/spool.jsonl does not exist, no permits for creation
