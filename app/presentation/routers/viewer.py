@@ -243,7 +243,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         hids = [h["id"] for h in heats]
         ph = ",".join("?" * len(hids))
         async with db.execute(
-            f"""SELECT hl.heat_id, hl.lane_no, COALESCE(r.name,'') as name,
+            f"""SELECT hl.heat_id, hl.lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') as name,
                        COALESCE(r.yomi,'') as yomi,
                        hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win,
                        hr.total_time as total_time
@@ -483,7 +483,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                 if g_heat_ids:
                     ph2 = ",".join("?" * len(g_heat_ids))
                     async with db.execute(
-                        f"""SELECT hl.heat_id, hl.lane_no, COALESCE(r.name,'') as name,
+                        f"""SELECT hl.heat_id, hl.lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') as name,
                                    COALESCE(r.yomi,'') as yomi,
                                    hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win
                             FROM heat_lanes hl
