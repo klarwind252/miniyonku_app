@@ -177,16 +177,25 @@
   <div class="card-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <span>計測結果の一覧</span>
     <span style="flex:1"></span>
+    {# 計測日で絞り込み（営業日ルール：開始日09:00〜終了日の翌朝08:59）。
+       初期値は当日の営業日（例 07-30 09:00〜07-31 08:59）。 #}
+    <form method="get" action="/admin/timing/results"
+          style="display:flex;align-items:center;gap:6px;font-weight:normal;font-size:13px;flex-wrap:wrap">
+      <input type="date" name="from_date" value="{{ range_from_date }}"
+             style="font-size:13px;padding:4px 6px;width:auto">
+      <span style="color:#7f8c8d">〜</span>
+      <input type="date" name="to_date" value="{{ range_to_date }}"
+             style="font-size:13px;padding:4px 6px;width:auto">
+      <button type="submit" class="btn btn-primary btn-sm">表示</button>
+    </form>
+    {# 表示件数（最新N件）：10 / 30 / 50 #}
     <form method="get" action="/admin/timing/results"
           style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px">
-      <label for="dsel" style="margin:0;font-size:12px;color:#7f8c8d">表示</label>
-      <select id="dsel" name="date" onchange="this.form.submit()"
+      <label for="lsel" style="margin:0;font-size:12px;color:#7f8c8d">表示</label>
+      <select id="lsel" name="limit" onchange="this.form.submit()"
               style="font-size:13px;padding:4px 8px;width:auto">
-        <option value="">最新{{ current_limit }}件</option>
-        {% for d in date_options %}
-        <option value="{{ d.date }}" {% if current_date == d.date %}selected{% endif %}>
-          {{ d.date }}（{{ d.n }}レース）
-        </option>
+        {% for n in [10, 30, 50] %}
+        <option value="{{ n }}" {% if current_limit == n %}selected{% endif %}>最新{{ n }}件</option>
         {% endfor %}
       </select>
     </form>

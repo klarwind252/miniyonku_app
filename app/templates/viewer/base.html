@@ -132,8 +132,18 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   box-shadow:0 2px 8px rgba(0,0,0,.45);
 }
 #m4-history-btn:active{ transform:translateY(1px); }
+/* ページ上部へ移動ボタン（公開HTML用）。過去成績ボタン（左下）と被らないよう右下に配置。 */
+#m4-top-btn{
+  position:fixed; right:12px; bottom:12px; z-index:97;
+  background:rgba(15,25,35,.86); color:#9fd0ff; text-decoration:none;
+  border:1px solid #35506e; border-radius:22px;
+  padding:9px 17px; font-size:14px; font-weight:bold;
+  box-shadow:0 2px 8px rgba(0,0,0,.45);
+}
+#m4-top-btn:active{ transform:translateY(1px); }
 @media(max-width:600px){
   #m4-history-btn{ left:8px; bottom:8px; padding:8px 14px; font-size:13px }
+  #m4-top-btn{ right:8px; bottom:8px; padding:8px 14px; font-size:13px }
 }
 
 
@@ -175,6 +185,7 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 {% if not is_public_html %}{{ render_pwa_head('view', request)|safe }}{% endif %}
 </head>
 <body>
+<a id="pagetop"></a>
 <nav class="v-nav"{% if is_public_html %} style="position:fixed;top:0;left:0;width:100vw;box-sizing:border-box;z-index:9000;transform:translateZ(0);-webkit-transform:translateZ(0)"{% endif %}>
   <div class="brand" style="display:flex;align-items:center;gap:12px">
     {% if not is_public_html %}<img src="{{ app_icon_src(request) }}" onerror="this.onerror=null;this.src='/logo'" style="height:36px;width:auto;display:block;">{% endif %}
@@ -224,6 +235,9 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 <!-- 過去成績ページへの常時表示ボタン（.v-container の外＝部分更新で消えない）。
      href は参加者html生成時に店舗別URL（/api/history または /{slug}/api/history）へ置換する。 -->
 <a id="m4-history-btn" href="__HISTORYURL__">🏆 過去成績</a>
+<!-- ページ上部（決勝進出レーサー）へ移動するボタン。公開HTMLは <script> 除去のため
+     JSを使わずアンカーリンク（#pagetop）で実装。.v-container の外＝部分更新で消えない。 -->
+<a id="m4-top-btn" href="#pagetop" aria-label="ページ上部へ移動">↑ 上へ</a>
 {% endif %}
 
 <!-- 追従継続確認バナー（30分経過時に表示） -->

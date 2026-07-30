@@ -208,14 +208,18 @@ def _best_items(bests: dict) -> list[dict]:
 async def results_page(
     request: Request,
     date: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     limit: int = 10,
     db: aiosqlite.Connection = Depends(get_db),
     _guard: bool = Depends(require_m4laps),
 ):
     """計測結果の一覧（レーン×周回の明細）。
 
-    既定は最新10レース。date=YYYY-MM-DD を指定するとその日の全レースを表示する。
-    件数を絞らないと日が経つほど重くなるため、既定で制限をかけている。
+    既定は最新10レース。表示件数は 10/30/50 から選ぶ。
+    from_date〜to_date（YYYY-MM-DD）を指定すると、営業日ルール
+    （from_date 09:00 〜 to_date 08:59:59）で計測日を絞り込む。
+    date=YYYY-MM-DD は旧リンク互換（その日のカレンダー日で表示）。
 
     1行 = 1レーンの1周。TS/CASE/POS/LANE/TOTAL はレーンごとに rowspan で結合し、
     LAP（周回番号・ラップタイム・平均速度）と SECTOR 0〜7 を周ごとに並べる。
@@ -225,11 +229,33 @@ async def results_page(
     """
     repo = TimingRaceRepository(db)
 
-    # 絞り込み用の日付一覧（プルダウン）
-    date_options = await repo.list_race_dates(limit=60)
+    # 表示件数は 10/30/50 のみ許可（それ以外は既定10）
+    if limit not in (10, 30, 50):
+        limit = 10
+
+    # 期間絞り込みの既定値（営業日 09:00〜翌08:59）。
+    # 例) 現在が 07-30 なら from_date=07-30・to_date=07-31。
+    _bw_from, _bw_to, _bw_label = best_svc.business_day_window()
+    default_from_date = _bw_from[:10]
+    default_to_date = _bw_to[:10]
+
+    current_range = None
+    range_from_date = default_from_date
+    range_to_date = default_to_date
 
     if date:
+        # 旧リンク互換：その日のカレンダー日で表示
         races = await repo.list_races_by_date(date, limit=500)
+    elif from_date or to_date:
+        # 期間絞り込み（営業日ルール：開始日09:00〜終了日の翌朝08:59:59）
+        fd = from_date or default_from_date
+        td = to_date or default_to_date
+        ts_from = f"{fd} 09:00:00"
+        ts_to = f"{td} 08:59:59"
+        # list_races_between_ts は古い順で返るため、表示用に新しい順へ反転
+        races = list(reversed(await repo.list_races_between_ts(ts_from, ts_to, limit=2000)))
+        current_range = {"from": fd, "to": td}
+        range_from_date, range_to_date = fd, td
     else:
         races = await repo.list_races(limit=max(1, min(limit, 100)))
 
@@ -412,9 +438,12 @@ async def results_page(
             # レイアウトによらず常に S1〜S7 の枠を出し、無い区間は「—」を表示する。
             "sector_nos": list(range(1, 8)),
             "races": races,
-            "date_options": date_options,   # 絞り込みプルダウン用
-            "current_date": date,           # 選択中の日付（Noneなら最新n件）
+            "current_date": date,           # 旧リンク互換（?date=）で選択中の日付
             "current_limit": limit,
+            # 期間絞り込み（計測日）：営業日ルール 09:00〜翌08:59
+            "current_range": current_range,     # {"from","to"} 絞り込み中のみ
+            "range_from_date": range_from_date, # 日付入力の値（既定=営業日）
+            "range_to_date": range_to_date,
             # 当日のベスト（09:00区切り）
             "today_bests": today_bests,
             "today_best_map": today_best_map,

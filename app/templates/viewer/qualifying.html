@@ -635,7 +635,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% for heat in heats if heat.round_no == rno %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
           <tr id="heat-{{ heat.heat_no }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
-            <td class="heat-no">{{ heat.heat_no }}</td>
+            {# 「#」は各予選回（round_no）内での連番（123 / 123 / 123）。
+               行の id は全体通し番号 heat_no のまま（スクロール・追従用）。 #}
+            <td class="heat-no">{{ loop.index }}</td>
             {% for col in [1,2,3] %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
             {% if ld %}{% set lane = ld[0] %}
@@ -1011,7 +1013,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   {% endif %}{# /heat_roundrobin右カラム #}
 </div>
-{% if qualifying_type not in ('heat_tournament','heat_tournament_garappa') and not is_none_roundrobin %}{{ finalist_block() }}{% endif %}
+{# 決勝進出レーサーはページ上部にのみ表示する（重複していた最下部表示は削除）。 #}
 
 {# 名前タップ→予選タイム詳細モーダル。JSは公開HTMLでは <script> が全除去されるため、
    public_html.py 側で window.openRacerStats を持つこのスクリプトを保持→再注入している。 #}

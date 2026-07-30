@@ -124,6 +124,10 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 .v-cols{grid-template-columns:1fr!important}
 .hr-grp-cols{grid-template-columns:1fr!important}
 
+/* レーススケジュールのセル内容を上下中央に。
+   既定(baseline)だと行高が変わったときにレーサー名が上寄せになるため。 */
+.schedule-table td{vertical-align:middle!important}
+
 /* info-grid: 左=項目名・右=値 の2列行レイアウト */
 .info-grid{display:block!important;border:1px solid #2c3e50;border-radius:6px;overflow:hidden}
 .info-cell{display:flex!important;align-items:baseline;padding:6px 12px;border-bottom:1px solid #2c3e50}
