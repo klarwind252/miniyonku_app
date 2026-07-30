@@ -656,7 +656,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
                 <div style="display:flex;flex-direction:column;min-width:0;flex:1">
-                  <div style="display:flex;align-items:baseline;min-width:0{% if m4laps_active and lane.entry_id %};cursor:pointer{% endif %}"{% if m4laps_active and lane.entry_id %} onclick="openRacerStats({{ t.id }},{{ lane.entry_id }})"{% endif %}>{% if is_public_html %}<span class="rr-name"{% if _frank %} style="color:#fff"{% endif %}>{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle{% if _frank %};color:#fff{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
+                  <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name"{% if _frank %} style="color:#fff"{% endif %}>{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle{% if _frank %};color:#fff{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
                   {% if m4laps_active and lane.total_time %}<span style="font-size:{% if is_public_html %}13px{% else %}19px{% endif %};font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px;font-weight:{% if _frank %}bold{% else %}normal{% endif %};color:{% if _frank %}#fff{% else %}#8aa0b6{% endif %}">{{ '%.3f'|format(lane.total_time) }}</span>{% endif %}
                 </div>
               </div>
@@ -710,7 +710,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                       {# 総当たり系の○×は名前の左に配置。viewは正方形18px＋右10px、htmlは正方形12px＋右5px #}
                       {% if lane.win == 1 %}<span style="background:#27ae60;color:#fff;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;{% if is_public_html %}font-size:12px;width:22px;height:22px;margin-right:5px;vertical-align:middle{% else %}font-size:18px;width:28px;height:28px;margin-right:10px;vertical-align:middle{% endif %}">○</span>
                       {% elif lane.win == 0 %}<span style="background:#e74c3c;color:#fff;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;{% if is_public_html %}font-size:12px;width:22px;height:22px;margin-right:5px;vertical-align:middle{% else %}font-size:18px;width:28px;height:28px;margin-right:10px;vertical-align:middle{% endif %}">×</span>{% endif %}
-                      <span {% if m4laps_active and lane.entry_id %}onclick="openRacerStats({{ t.id }},{{ lane.entry_id }})" style="cursor:pointer"{% endif %}>{% if is_public_html %}<span class="rr-name" style="color:#ecf0f1;font-size:18px;font-weight:bold">{{ lane.name }}</span>{% else %}<span style="color:#ecf0f1;font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</span>
+                      {% if is_public_html %}<span class="rr-name" style="color:#ecf0f1;font-size:18px;font-weight:bold">{{ lane.name }}</span>{% else %}<span style="color:#ecf0f1;font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
                     </td>
                     {% else %}<td style="padding:4px;color:#3d5166">—</td>{% endif %}
                     {% endfor %}
@@ -827,7 +827,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% elif lane.win == 0 and is_rr_type %}
                 <span class="rank-badge" style="background:#e74c3c;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">×</span>
                 {% endif %}
-                <span {% if m4laps_active and lane.entry_id %}onclick="openRacerStats({{ t.id }},{{ lane.entry_id }})" style="cursor:pointer"{% endif %}>{% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</span>
+                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
                 {% if lane.is_co %}
                 <span class="rank-badge" style="background:#e67e22;color:#fff">CO</span>
                 {% elif lane.rank %}
@@ -881,10 +881,6 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         </thead>
         <tbody>
         {% for s in standings %}
-        {# 決勝進出ボーダー：同率境界のグループの直前に破線（管理画面と同じ）。 #}
-        {% if s.get('is_tied_cutoff') and (loop.first or not standings[loop.index0 - 1].get('is_tied_cutoff')) %}
-        <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:2px dashed #f39c12;margin:1px 0"></div></td></tr>
-        {% endif %}
         <tr {% if m4laps_active and s.entry_id %}onclick="openRacerStats({{ t.id }},{{ s.entry_id }})" style="cursor:pointer;{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}"{% else %}style="{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}"{% endif %}>
           <td style="color:#555;font-size:11px">{{ loop.index }}</td>
           <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">
@@ -910,10 +906,6 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% endif %}
           {% endif %}
         </tr>
-        {# 決勝進出ボーダー：同率でない場合は最後の進出者の直後に実線。 #}
-        {% if s.get('is_cutoff_last') %}
-        <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:2px solid #f39c12;margin:1px 0"></div></td></tr>
-        {% endif %}
         {% endfor %}
         </tbody>
       </table>

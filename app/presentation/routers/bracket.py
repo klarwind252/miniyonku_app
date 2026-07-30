@@ -1328,7 +1328,8 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     _all_times = []
     async with db.execute(
         "SELECT hr.total_time AS tt FROM heat_results hr "
-        "JOIN heats h ON h.id=hr.heat_id "
+        "JOIN heat_lanes hl ON hl.id=hr.heat_lane_id "
+        "JOIN heats h ON h.id=hl.heat_id "
         "WHERE h.tournament_id=? AND hr.total_time IS NOT NULL",
         (tid,),
     ) as cur:
