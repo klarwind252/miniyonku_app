@@ -103,6 +103,10 @@
 /* ラップタイマーから反映した合計タイム。名前で押し出して右揃えで出す */
 .slot-time { font-size:16px; font-weight:bold; color:#2c3e50;
   font-variant-numeric:tabular-nums; text-align:right; margin-right:8px; white-space:nowrap; }
+/* 予選＋決勝を通した最速1/2/3のタイム色分け（紫/青/緑）。 */
+.slot-time.t1{background:#6b21a8;color:#fff;border-radius:4px;padding:1px 7px}
+.slot-time.t2{background:#1e40af;color:#fff;border-radius:4px;padding:1px 7px}
+.slot-time.t3{background:#166534;color:#fff;border-radius:4px;padding:1px 7px}
 .win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
@@ -1222,7 +1226,7 @@ window.initBracketConnectors = initBracketConnectors;
         {% endif %}
       </div>
       {% if m4_on and slot.total_time is not none %}
-      <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
+      <span class="slot-time{% if slot.time_rank == 1 %} t1{% elif slot.time_rank == 2 %} t2{% elif slot.time_rank == 3 %} t3{% endif %}" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
       {% endif %}
       <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
               id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
@@ -1350,7 +1354,7 @@ window.initBracketConnectors = initBracketConnectors;
       <div class="slot-name" style="cursor:pointer;user-select:none;"
            onclick="setWinner({{ g.id }}, {{ slot.slot_id }}, {{ t.id }})">{{ slot.name }}</div>
       {% if m4_on and slot.total_time is not none %}
-      <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
+      <span class="slot-time{% if slot.time_rank == 1 %} t1{% elif slot.time_rank == 2 %} t2{% elif slot.time_rank == 3 %} t3{% endif %}" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
       {% endif %}
       <button type="button" class="win-btn {% if result and result.winner_slot_id == slot.slot_id %}sel{% endif %}"
               id="wbtn-{{ g.id }}-{{ slot.slot_id }}"
@@ -1405,7 +1409,7 @@ window.initBracketConnectors = initBracketConnectors;
       <div class="slot-name" style="color:#bdc3c7">-</div>
       {% endif %}
       {% if m4_on and slot.total_time is not none %}
-      <span class="slot-time" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
+      <span class="slot-time{% if slot.time_rank == 1 %} t1{% elif slot.time_rank == 2 %} t2{% elif slot.time_rank == 3 %} t3{% endif %}" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
       {% endif %}
       {% if slot.name %}
       <select class="rank-select" id="rank-{{ g.id }}-{{ slot.slot_id }}">

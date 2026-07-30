@@ -1323,6 +1323,30 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     async with db.execute("SELECT id, name, body FROM post_templates ORDER BY id") as cur:
         post_templates = [dict(r) for r in await cur.fetchall()]
 
+    # 予選(heat_results)＋決勝(ブラケット各スロット)の全 total_time から最速3値を求め、
+    # 各ブラケットスロットに time_rank(1=紫/2=青/3=緑) を付ける。同値は同順位。
+    _all_times = []
+    async with db.execute(
+        "SELECT hr.total_time AS tt FROM heat_results hr "
+        "JOIN heats h ON h.id=hr.heat_id "
+        "WHERE h.tournament_id=? AND hr.total_time IS NOT NULL",
+        (tid,),
+    ) as cur:
+        for _r in await cur.fetchall():
+            if _r["tt"] is not None:
+                _all_times.append(round(float(_r["tt"]), 3))
+    for _gd in list(groups_data) + list(losers_groups_data):
+        for _s in _gd.get("slots", []):
+            _tt = _s.get("total_time")
+            if _tt is not None:
+                _all_times.append(round(float(_tt), 3))
+    _time_rank_of = {v: i for i, v in enumerate(sorted(set(_all_times))[:3], start=1)}
+    for _gd in list(groups_data) + list(losers_groups_data):
+        for _s in _gd.get("slots", []):
+            _tt = _s.get("total_time")
+            _s["time_rank"] = (_time_rank_of.get(round(float(_tt), 3))
+                               if _tt is not None else None)
+
     return templates.TemplateResponse("admin/bracket.html", {
         "request": request,
         "t": t,
