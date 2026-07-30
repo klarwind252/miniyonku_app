@@ -378,6 +378,10 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             is_border = count_above < finalist_n < count_above + len(cutoff_group)
             for st in standings:
                 st["is_tied_cutoff"] = is_border and st["rank"] == cutoff_rank
+            # 同率でない（きれいに切れる）場合は finalist_n 番目の直後に実線ボーダーを引く。
+            # 同率境界(is_border)のときは is_tied_cutoff のハイライト＋破線で示す（adminと同じ）。
+            if not is_border:
+                standings[finalist_n - 1]["is_cutoff_last"] = True
 
     # 勝敗表マトリクス（heat_roundrobin のみ）
     win_matrix = []   # [{"name": str, "row": [{"vs": str, "result": "W"/"L"/"CO"/"—"/"-"}]}]

@@ -881,6 +881,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         </thead>
         <tbody>
         {% for s in standings %}
+        {# 決勝進出ボーダー：同率境界のグループの直前に破線（管理画面と同じ）。 #}
+        {% if s.get('is_tied_cutoff') and (loop.first or not standings[loop.index0 - 1].get('is_tied_cutoff')) %}
+        <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:2px dashed #f39c12;margin:1px 0"></div></td></tr>
+        {% endif %}
         <tr {% if m4laps_active and s.entry_id %}onclick="openRacerStats({{ t.id }},{{ s.entry_id }})" style="cursor:pointer;{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}"{% else %}style="{% if s.get('is_tied_cutoff') %}background:#2a2500;border-left:3px solid #f39c12{% endif %}"{% endif %}>
           <td style="color:#555;font-size:11px">{{ loop.index }}</td>
           <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">
@@ -906,6 +910,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% endif %}
           {% endif %}
         </tr>
+        {# 決勝進出ボーダー：同率でない場合は最後の進出者の直後に実線。 #}
+        {% if s.get('is_cutoff_last') %}
+        <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:2px solid #f39c12;margin:1px 0"></div></td></tr>
+        {% endif %}
         {% endfor %}
         </tbody>
       </table>
