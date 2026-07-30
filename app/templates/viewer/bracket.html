@@ -24,6 +24,18 @@
 .rs-num{font-variant-numeric:tabular-nums;color:#ecf0f1}
 .rs-total{font-weight:bold}
 .rs-sp{display:block;font-size:10px;color:#8aa0b6}
+/* M4LAPS ベスト表（決勝トーナメント表の下）。予選(viewer/qualifying)と同一配色。 */
+.m4l-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap;font-size:13px}
+.m4l-table th{background:#1e3a5f;color:#7f8c8d;font-weight:normal;font-size:11px;padding:4px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
+.m4l-table td{padding:4px 8px;border-bottom:1px solid #2c3e50;text-align:center}
+.m4l-table tr.m4l-grp th{background:#16324f;color:#9fb3c8;font-size:11px;letter-spacing:1px}
+.m4l-sep{border-left:2px solid #33475f}
+.m4l-rank{font-weight:bold;font-size:15px}
+.m4l-table td.m4l-name{text-align:left;font-weight:bold;font-size:14px;color:#ecf0f1}
+.m4l-num{font-variant-numeric:tabular-nums;color:#cdd6df}
+.m4l-num.b1{background:#6b21a8;color:#fff;font-weight:bold}
+.m4l-num.b2{background:#1e40af;color:#fff;font-weight:bold}
+.m4l-num.b3{background:#166534;color:#fff;font-weight:bold}
 {% endblock %}
 
 {% block nav_subtitle %}：決勝トーナメント表 🏆{% endblock %}
@@ -67,7 +79,49 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   <div class="bracket-wrap">
     <div id="bracket-html-container"></div>
     <div id="no-bracket" style="display:none;padding:24px 16px">
-      <div style="color:#7f8c8d;font-size:13px;margin-bottom:16px">トーナメント表はまだ作成されていません</div>
+      <div style="color:#7f8c8d;font-size:13px">トーナメント表はまだ作成されていません</div>
+    </div>
+  </div>
+
+  {# ⚡ M4LAPS ベスト表（予選ページ viewer/qualifying と同一・決勝トーナメント表の下に表示） #}
+  {% if m4laps_active and m4laps_rows %}
+  <div class="v-section" style="margin-top:12px">
+    <div class="v-section-title">⚡ M4LAPS</div>
+    <div style="overflow-x:auto">
+      <table class="m4l-table">
+        <thead>
+          <tr class="m4l-grp">
+            <th colspan="2"></th>
+            <th class="m4l-sep" colspan="4">TOTAL BEST</th>
+            <th class="m4l-sep" colspan="2">LAP BEST</th>
+          </tr>
+          <tr>
+            <th>順位</th><th style="text-align:left">レーサー</th>
+            <th class="m4l-sep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
+            <th class="m4l-sep">TIME</th><th>Av.</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in m4laps_rows %}
+          <tr {% if r.entry_id %}onclick="openRacerStats({{ t.id }},{{ r.entry_id }})" style="cursor:pointer"{% endif %}>
+            <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
+            <td class="m4l-name">{{ r.name }}</td>
+            <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
+            <td class="m4l-num">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
+            <td class="m4l-num{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}{% endif %}">{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</td>
+            <td class="m4l-num{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}{% endif %}">{% if r.max_ms is not none %}{{ '%.2f'|format(r.max_ms) }}{% else %}—{% endif %}</td>
+            <td class="m4l-sep m4l-num{% if m4laps_best_ranks.lap.get(r.entry_id) %} b{{ m4laps_best_ranks.lap.get(r.entry_id) }}{% endif %}">{% if r.lap is not none %}{{ '%.3f'|format(r.lap) }}{% else %}—{% endif %}</td>
+            <td class="m4l-num{% if m4laps_best_ranks.lap_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.lap_avg.get(r.entry_id) }}{% endif %}">{% if r.lap_avg is not none %}{{ '%.2f'|format(r.lap_avg) }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# 🏆 決勝進出レーサー（M4LAPSの下・トーナメント表の有無に関わらず常時表示） #}
+  <div class="v-section" style="margin-top:12px;padding:4px 8px">
       {% if hr_heats_data %}
       {# ヒート制総当たり：ヒート×グループ別列表示 #}
       <div style="font-size:14px;font-weight:bold;color:#27ae60;margin-bottom:12px">🏆 決勝進出レーサー</div>
@@ -151,7 +205,6 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% endfor %}
       </div>
       {% endif %}
-    </div>
   </div>
 </div>
 
