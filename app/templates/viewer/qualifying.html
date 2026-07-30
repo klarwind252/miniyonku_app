@@ -51,7 +51,7 @@
 .m4l-table tr.m4l-grp th{background:#16324f;color:#9fb3c8;font-size:11px;letter-spacing:1px}
 .m4l-sep{border-left:2px solid #33475f}
 .m4l-rank{font-weight:bold;font-size:15px}
-.m4l-name{text-align:left;font-weight:bold;font-size:14px;color:#ecf0f1}
+.m4l-table td.m4l-name{text-align:left;font-weight:bold;font-size:14px;color:#ecf0f1}
 .m4l-num{font-variant-numeric:tabular-nums;color:#cdd6df}
 .m4l-num.b1{background:#6b21a8;color:#fff;font-weight:bold}
 .m4l-num.b2{background:#1e40af;color:#fff;font-weight:bold}
@@ -656,7 +656,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
                 <div style="display:flex;flex-direction:column;min-width:0;flex:1">
-                  <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name"{% if _frank %} style="color:#fff"{% endif %}>{{ lane.name }}</span>{% else %}<span style="display:inline-flex;flex-direction:column;vertical-align:middle;line-height:1.15;min-width:0"><span style="font-size:24px;font-weight:bold{% if _frank %};color:#fff{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-top:1px">{{ lane.yomi }}</span>{% endif %}</span>{% endif %}</div>
+                  <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name"{% if _frank %} style="color:#fff"{% endif %}>{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle{% if _frank %};color:#fff{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
                   {% if m4laps_active and lane.total_time %}<span style="font-size:{% if is_public_html %}13px{% else %}19px{% endif %};font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px;font-weight:{% if _frank %}bold{% else %}normal{% endif %};color:{% if _frank %}#fff{% else %}#8aa0b6{% endif %}">{{ '%.3f'|format(lane.total_time) }}</span>{% endif %}
                 </div>
               </div>
@@ -710,7 +710,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                       {# 総当たり系の○×は名前の左に配置。viewは正方形18px＋右10px、htmlは正方形12px＋右5px #}
                       {% if lane.win == 1 %}<span style="background:#27ae60;color:#fff;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;{% if is_public_html %}font-size:12px;width:22px;height:22px;margin-right:5px;vertical-align:middle{% else %}font-size:18px;width:28px;height:28px;margin-right:10px;vertical-align:middle{% endif %}">○</span>
                       {% elif lane.win == 0 %}<span style="background:#e74c3c;color:#fff;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;{% if is_public_html %}font-size:12px;width:22px;height:22px;margin-right:5px;vertical-align:middle{% else %}font-size:18px;width:28px;height:28px;margin-right:10px;vertical-align:middle{% endif %}">×</span>{% endif %}
-                      {% if is_public_html %}<span class="rr-name" style="color:#ecf0f1;font-size:18px;font-weight:bold">{{ lane.name }}</span>{% else %}<span style="display:inline-flex;flex-direction:column;vertical-align:middle;line-height:1.15;min-width:0"><span style="color:#ecf0f1;font-size:24px;font-weight:bold">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-top:1px">{{ lane.yomi }}</span>{% endif %}</span>{% endif %}
+                      {% if is_public_html %}<span class="rr-name" style="color:#ecf0f1;font-size:18px;font-weight:bold">{{ lane.name }}</span>{% else %}<span style="color:#ecf0f1;font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
                     </td>
                     {% else %}<td style="padding:4px;color:#3d5166">—</td>{% endif %}
                     {% endfor %}
@@ -827,7 +827,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% elif lane.win == 0 and is_rr_type %}
                 <span class="rank-badge" style="background:#e74c3c;color:#fff{% if not is_public_html %};font-size:18px;font-weight:bold;width:28px;height:28px;margin-left:0;margin-right:10px{% else %};font-size:12px;width:22px;height:22px;margin-left:0;margin-right:5px{% endif %}">×</span>
                 {% endif %}
-                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="display:inline-flex;flex-direction:column;vertical-align:middle;line-height:1.15;min-width:0"><span style="font-size:24px;font-weight:bold">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-top:1px">{{ lane.yomi }}</span>{% endif %}</span>{% endif %}
+                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
                 {% if lane.is_co %}
                 <span class="rank-badge" style="background:#e67e22;color:#fff">CO</span>
                 {% elif lane.rank %}
