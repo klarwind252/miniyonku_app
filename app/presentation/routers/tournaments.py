@@ -769,14 +769,15 @@ def _resize_image(data: bytes, max_edge: int = 667):
 
 
 async def _is_result_finalized(tid: int, db) -> bool:
-    """1位が決まっているか（結果確定済み）"""
-    # bracket_slot_ranksに1位がある
+    """優勝が決まっているか（結果確定済み）"""
+    # bracket_slot_ranks に「決勝（round_type='final'）の1位」がある＝優勝確定。
+    # ※ 準決勝など normal ラウンドの勝ち上がり（グループ内1位）で確定扱いにしない。
     async with db.execute(
         """SELECT 1 FROM bracket_slot_ranks bsr
            JOIN bracket_slots bs ON bs.id=bsr.slot_id
            JOIN bracket_groups bg ON bg.id=bsr.group_id
            JOIN bracket_rounds br ON br.id=bg.round_id
-           WHERE br.tournament_id=? AND bsr.rank=1 LIMIT 1""",
+           WHERE br.tournament_id=? AND br.round_type='final' AND bsr.rank=1 LIMIT 1""",
         (tid,),
     ) as cur:
         if await cur.fetchone():

@@ -13,13 +13,13 @@ class ResultRepository:
         self.db = db
 
     async def is_result_finalized(self, tid: int) -> bool:
-        """1位が決まっているか（結果確定済み）"""
+        """優勝が決まっているか（結果確定済み）。決勝(round_type='final')の1位で判定。"""
         async with self.db.execute(
             """SELECT 1 FROM bracket_slot_ranks bsr
                JOIN bracket_slots bs ON bs.id=bsr.slot_id
                JOIN bracket_groups bg ON bg.id=bsr.group_id
                JOIN bracket_rounds br ON br.id=bg.round_id
-               WHERE br.tournament_id=? AND bsr.rank=1 LIMIT 1""",
+               WHERE br.tournament_id=? AND br.round_type='final' AND bsr.rank=1 LIMIT 1""",
             (tid,),
         ) as cur:
             if await cur.fetchone():

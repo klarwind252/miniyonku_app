@@ -916,12 +916,82 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     for _rk, (_t, _hid, _lno) in enumerate(sorted(_finish_all)[:3], start=1):
         finish_rank_map[f"{_hid}:{_lno}"] = _rk
 
+    # ── M4LAPS ベスト表（観覧：予選順位とエントリーの間に表示）────────────────
+    # admin（予選管理）の予選順位表と同じ TOTAL BEST(TIME/GAP/Av./MAX)・LAP BEST(TIME/Av.)
+    # を、TOTAL BEST TIME が速い順（昇順）に 1..N で並べて出す。
+    m4laps_rows = []
+    m4laps_best_ranks = {}
+    if IS_CLOUD and await m4laps_license.is_licensed(db):
+        from app.application import timing_racer_best_service as _rbest
+        try:
+            _rbests = await _rbest.racer_bests_for_tournament(db, tid)
+        except Exception:
+            _rbests = {}
+        if _rbests:
+            # entry_id -> レーサー名
+            _name_by_eid = {}
+            async with db.execute(
+                """SELECT e.id AS entry_id, r.name FROM entries e
+                   JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?""",
+                (tid,),
+            ) as cur:
+                for _r in await cur.fetchall():
+                    _name_by_eid[_r["entry_id"]] = _r["name"]
+            # GAP 基準（TOTAL 最小）
+            _best_total_min = None
+            for _bm in _rbests.values():
+                _tv = _bm.get("total")
+                if _tv is not None and (_best_total_min is None or _tv < _best_total_min):
+                    _best_total_min = _tv
+            # 各指標の上位3人（色分け用）。タイム系は小さいほど上位。
+            _LOWER = {"total", "lap"}
+
+            def _rank_map_v(metric, lower):
+                vals = [(eid, bm[metric]) for eid, bm in _rbests.items()
+                        if bm.get(metric) is not None]
+                vals.sort(key=lambda x: x[1], reverse=not lower)
+                out = {}
+                pos = 0
+                prev = None
+                for _i, (eid, v) in enumerate(vals, start=1):
+                    if prev is None or v != prev:
+                        pos = _i
+                        prev = v
+                    if pos > 3:
+                        break
+                    out[eid] = pos
+                return out
+
+            for _m in ("total", "total_avg", "max_ms", "lap", "lap_avg"):
+                m4laps_best_ranks[_m] = _rank_map_v(_m, _m in _LOWER)
+            # TOTAL BEST TIME 昇順（記録なしは末尾）。順位は 1..N の連番。
+            _ordered = sorted(
+                _rbests.items(),
+                key=lambda kv: (kv[1].get("total") is None, kv[1].get("total") or 0.0),
+            )
+            for _i, (eid, bm) in enumerate(_ordered, start=1):
+                _tot = bm.get("total")
+                m4laps_rows.append({
+                    "rank": _i,
+                    "entry_id": eid,
+                    "name": _name_by_eid.get(eid, ""),
+                    "total": _tot,
+                    "gap": ((_tot - _best_total_min)
+                            if (_tot is not None and _best_total_min is not None) else None),
+                    "total_avg": bm.get("total_avg"),
+                    "max_ms": bm.get("max_ms"),
+                    "lap": bm.get("lap"),
+                    "lap_avg": bm.get("lap_avg"),
+                })
+
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
         "t": t,
         # ラップタイマー(M4LAPS)由来の表示（タイム・速度）はクラウド版＋ライセンス登録時のみ。
         # オンプレ版・未登録では False → テンプレート側で根本非表示。
         "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),
+        "m4laps_rows": m4laps_rows,
+        "m4laps_best_ranks": m4laps_best_ranks,
         "finish_rank_map": finish_rank_map,
         "race_assets": await _load_race_assets_v(tid, db),
         "show_info_bar": True,

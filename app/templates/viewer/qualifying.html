@@ -43,6 +43,19 @@
 .standings-table th{background:#1e3a5f;padding:5px 8px;text-align:left;font-size:12px;color:#7f8c8d;font-weight:normal;white-space:nowrap;line-height:1.2;vertical-align:bottom}
 .standings-table td{padding:5px 8px;border-bottom:1px solid #2c3e50;font-size:15px}
 .standings-table tr:first-child td{background:#1a2a10}
+/* M4LAPS ベスト表（予選順位とエントリーの間）。TOTAL/LAP のベストを列表示。
+   上位3人の配色は観覧の他ベスト表示と同じ 紫1位/青2位/緑3位。 */
+.m4l-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap;font-size:13px}
+.m4l-table th{background:#1e3a5f;color:#7f8c8d;font-weight:normal;font-size:11px;padding:4px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
+.m4l-table td{padding:4px 8px;border-bottom:1px solid #2c3e50;text-align:center}
+.m4l-table tr.m4l-grp th{background:#16324f;color:#9fb3c8;font-size:11px;letter-spacing:1px}
+.m4l-sep{border-left:2px solid #33475f}
+.m4l-rank{font-weight:bold;font-size:15px}
+.m4l-name{text-align:left;font-weight:bold;font-size:14px;color:#ecf0f1}
+.m4l-num{font-variant-numeric:tabular-nums;color:#cdd6df}
+.m4l-num.b1{background:#6b21a8;color:#fff;font-weight:bold}
+.m4l-num.b2{background:#1e40af;color:#fff;font-weight:bold}
+.m4l-num.b3{background:#166534;color:#fff;font-weight:bold}
 .rank-col{font-size:20px;font-weight:bold;width:40px}
 /* 名前タップ→タイム詳細モーダル */
 .rs-name{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
@@ -68,9 +81,12 @@
 .wl-td-l{background:#2a0d0d;color:#e74c3c}
 .wl-td-none{background:#0f1923;color:#3d5166}
 .v-cols{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}.v-cols.single{grid-template-columns:minmax(0,1fr)}
+/* 観覧画面のみ右カラム（予選順位）を広げて Av 列まで表示。左のレーススケジュールはその分だけ縮む。
+   配信HTML(is_public_html)は表示サイズが異なるため 360px のまま変更しない（v-view を付けない）。 */
+.v-cols.v-view{grid-template-columns:minmax(0,1fr) 500px}
 .v-cols>div{min-width:0}
 .v-cols>div>.v-section{overflow-x:auto}
-@media(max-width:900px){.v-cols{grid-template-columns:1fr}}
+@media(max-width:900px){.v-cols,.v-cols.v-view{grid-template-columns:1fr}}
 /* ヒート制総当たり：グループ内「レーススケジュール｜星取表」。スマホ(<=900px)では縦積み（スケジュールの下に星取表） */
 .hr-grp-cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:0}
 .hr-grp-cols>.hr-sched{border-right:1px solid #1e3a5f}
@@ -310,7 +326,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 {% endif %}
 
-<div class="v-cols{% if qualifying_type == 'heat_roundrobin' %} single{% endif %}">
+<div class="v-cols{% if qualifying_type == 'heat_roundrobin' %} single{% elif not is_public_html %} v-view{% endif %}">
   <!-- 左：スケジュール -->
   <div>
     <div class="v-section">
@@ -937,6 +953,45 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       </div>
       <div style="font-size:11px;color:#7f8c8d;padding:6px 4px">
         <span style="color:#27ae60">○</span>=勝　<span style="color:#e74c3c">×</span>=負　縦軸が対象レーサー
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── M4LAPS ベスト（予選順位とエントリーの間）。TOTAL BEST TIME が速い順に 1..N ──
+       表示内容は admin（予選管理）の予選順位表と同じ：順位・レーサー名・
+       TOTAL BEST(TIME/GAP/Av./MAX)・LAP BEST(TIME/Av.)。 #}
+    {% if m4laps_active and m4laps_rows %}
+    <div class="v-section" style="margin-top:12px">
+      <div class="v-section-title">⚡ M4LAPS</div>
+      <div class="std-scroll">
+        <table class="m4l-table">
+          <thead>
+            <tr class="m4l-grp">
+              <th colspan="2"></th>
+              <th class="m4l-sep" colspan="4">TOTAL BEST</th>
+              <th class="m4l-sep" colspan="2">LAP BEST</th>
+            </tr>
+            <tr>
+              <th>順位</th><th style="text-align:left">レーサー</th>
+              <th class="m4l-sep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
+              <th class="m4l-sep">TIME</th><th>Av.</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in m4laps_rows %}
+            <tr>
+              <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
+              <td class="m4l-name">{{ r.name }}</td>
+              <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
+              <td class="m4l-num">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
+              <td class="m4l-num{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}{% endif %}">{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</td>
+              <td class="m4l-num{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}{% endif %}">{% if r.max_ms is not none %}{{ '%.2f'|format(r.max_ms) }}{% else %}—{% endif %}</td>
+              <td class="m4l-sep m4l-num{% if m4laps_best_ranks.lap.get(r.entry_id) %} b{{ m4laps_best_ranks.lap.get(r.entry_id) }}{% endif %}">{% if r.lap is not none %}{{ '%.3f'|format(r.lap) }}{% else %}—{% endif %}</td>
+              <td class="m4l-num{% if m4laps_best_ranks.lap_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.lap_avg.get(r.entry_id) }}{% endif %}">{% if r.lap_avg is not none %}{{ '%.2f'|format(r.lap_avg) }}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
     {% endif %}
