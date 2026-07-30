@@ -1372,8 +1372,17 @@ window.initBracketConnectors = initBracketConnectors;
   {% for gd in final_groups %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group final-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
-    <div style="font-size:12px;color:#d4a017;margin-bottom:4px;font-weight:bold">
-      決勝{% if result %}<span style="color:#27ae60;margin-left:6px">✓完了</span>{% endif %}
+    <div style="font-size:12px;color:#d4a017;margin-bottom:4px;font-weight:bold;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span>決勝</span>{% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
+      {% if m4_on %}
+      <span style="flex:1"></span>
+      {# 他ラウンドと同じ：結果ありなら「反映」を隠して「取消」だけ（誤って上書きしないため）。 #}
+      {% if ranks %}<button type="button" class="m4-reset-btn"
+              onclick="resetFinal({{ g.id }},{{ t.id }})"
+              title="決勝の結果を取り消して未確定に戻します">取消</button>
+      {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToBracket({{ g.id }}, this)"
+              title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
+      {% endif %}
     </div>
     {% for slot in slots %}
     {% set cur_rank = ranks.get(slot.slot_id) %}
