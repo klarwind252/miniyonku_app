@@ -114,6 +114,8 @@ def _patch_html_for_static(html: str, slug: str = "") -> str:
 /* ナビボタン非表示 */
 .v-nav .v-nav-btn{display:none}
 #sync-btn{display:none}
+/* #5 トーナメント表のレーサー名タップ可（公開HTMLのみ） */
+.br-slot[data-entry-id]{cursor:pointer}
 
 /* 最大幅・中央寄せ */
 html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin:0 auto!important}
@@ -182,6 +184,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _tid = _mtid.group(1) if _mtid else "0"
     expiry_script = """<script>
 (function(){
+  window.__M4_PUBLIC__ = true;   // #5 公開HTML判定（トーナメント表のレーサー名タップ→成績モーダル）
   var KEY = "m4_pub_issued___SLUGKEY__";
   var TTL = 24*60*60*1000;          // 24時間
   var CHECK_MS = 30000;             // 30秒ごとに「更新の有無」だけ確認する

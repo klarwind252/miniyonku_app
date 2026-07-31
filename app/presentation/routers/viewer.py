@@ -1348,6 +1348,60 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         except Exception:
             grand_slam_champion = None
 
+    # ── ⚡ M4LAPS RECORD HOLDERS パネル（決勝：トーナメント表と ⚡M4LAPS の間に表示）──
+    #    予選ページと同一内容（OVERALL/FASTEST LAP/TOP SPEED/POINT LEADER/称号）。
+    #    チップの「予選N回目 レースM」ラベルは決勝画面では省略（heat_labels は空）。
+    record_holders = None
+    point_leader = None
+    achievements = None
+    if IS_CLOUD and await m4laps_license.is_licensed(db):
+        try:
+            from app.application import timing_racer_best_service as _rbsvc2
+            from app.application import qualifying_records as _qr2
+            _rh2 = await _rbsvc2.record_holders_for_tournament(db, tid)
+            _nm2 = {}
+            async with db.execute(
+                "SELECT e.id AS entry_id, r.name FROM entries e "
+                "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?",
+                (tid,),
+            ) as cur:
+                for _r in await cur.fetchall():
+                    _nm2[_r["entry_id"]] = _r["name"]
+            record_holders = _qr2.format_records_display(_rh2, _nm2, {})
+            _qt2 = dict(t).get("qualifying_type")
+            _pl_eid2 = None
+            _best_total_by2 = {eid: bm.get("total") for eid, bm
+                               in (await _rbsvc2.racer_bests_for_tournament(db, tid)).items()}
+            if _qt2 == "point":
+                from app.routers.qualifying import _calc_standings as _cs2
+                _qst2 = [dict(s) for s in await _cs2(tid, db)]
+                _lead2 = [s for s in _qst2 if s.get("rank") == 1]
+                _pts2 = _lead2[0].get("total_points") if _lead2 else None
+                if _lead2 and _pts2:
+                    _w2 = await _qr2.resolve_point_leader(db, tid, _lead2, _best_total_by2)
+                    point_leader = {"points": _pts2, "holders": [{"name": _w2.get("name")}]}
+                    _pl_eid2 = _w2.get("entry_id")
+            # GRAND SLAM/称号用「予選1位」：point=POINT LEADER / order=予選順位1位
+            _qlead2 = _pl_eid2
+            if _qlead2 is None and _qt2 == "order":
+                from app.routers.qualifying import _calc_standings as _cs3
+                _qst3 = [dict(s) for s in await _cs3(tid, db)]
+                _r1b = [s for s in _qst3 if s.get("rank") == 1]
+                if _r1b:
+                    _wb = await _qr2.resolve_point_leader(db, tid, _r1b, _best_total_by2)
+                    _qlead2 = _wb.get("entry_id") if _wb else None
+            try:
+                _sw2 = await _qr2.sweep_entries_for_tournament(db, tid)
+            except Exception:
+                _sw2 = set()
+            if point_leader is not None:
+                point_leader["full_score"] = (_pl_eid2 in _sw2)
+            achievements = _qr2.compute_achievements(_rh2, _qlead2, _sw2, _nm2)
+        except Exception:
+            record_holders = None
+            point_leader = None
+            achievements = None
+
     # ── M4LAPS ベスト表（観覧：決勝トーナメント表の下に表示）────────────────
     # 予選ページ（viewer/qualifying）と同一ロジック。TOTAL BEST(TIME/GAP/Av./MAX)・
     # LAP BEST(TIME/Av.) を TOTAL BEST TIME 昇順で 1..N に並べる。
@@ -1368,6 +1422,17 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             ) as cur:
                 for _r in await cur.fetchall():
                     _name_by_eid[_r["entry_id"]] = _r["name"]
+            # 完走率（予選）：point/order は _calc_standings の race_count/finish_count から。
+            _fr_by = {}
+            try:
+                if dict(t).get("qualifying_type") in ("point", "order"):
+                    from app.routers.qualifying import _calc_standings as _csr
+                    for _s in [dict(x) for x in await _csr(tid, db)]:
+                        _rc = _s.get("race_count") or 0
+                        _fc = _s.get("finish_count") or 0
+                        _fr_by[_s.get("entry_id")] = (int(_fc / _rc * 100) if _rc > 0 else None)
+            except Exception:
+                _fr_by = {}
             # GAP 基準（TOTAL 最小）
             _best_total_min = None
             for _bm in _rbests.values():
@@ -1406,6 +1471,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
                     "rank": _i,
                     "entry_id": eid,
                     "name": _name_by_eid.get(eid, ""),
+                    "finish_rate": _fr_by.get(eid),
                     "total": _tot,
                     "gap": ((_tot - _best_total_min)
                             if (_tot is not None and _best_total_min is not None) else None),
@@ -1431,4 +1497,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         "hr_heats_data": hr_heats_data_bv,
         "final_results": final_results,
         "grand_slam_champion": grand_slam_champion,
+        "record_holders": record_holders,
+        "point_leader": point_leader,
+        "achievements": achievements,
     })

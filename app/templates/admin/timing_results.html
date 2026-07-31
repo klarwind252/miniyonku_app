@@ -100,8 +100,8 @@
   .tb-lane{display:inline-block;min-width:14px;padding:0 4px;border-radius:3px;
     font-size:10px;font-weight:bold;color:#fff;text-align:center;margin-right:2px}
   /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
-  .tb-lane.lane-1{background:#2980b9} .tb-lane.lane-2{background:#e74c3c}
-  .tb-lane.lane-3{background:#f1c40f;color:#4a3b00}
+  .tb-lane.lane-1{background:#e8f0fb;color:#1f2d3d} .tb-lane.lane-2{background:#fdecea;color:#1f2d3d}
+  .tb-lane.lane-3{background:#e8f7ee;color:#1f2d3d}
   .tb-lane.lane-4{background:#27ae60} .tb-lane.lane-5{background:#95a5a6}
 
   .tr-table{width:auto;border-collapse:collapse;font-size:15px;table-layout:fixed}
@@ -137,9 +137,10 @@
   /* レーン色（コース定義）：1=青 2=赤 3=黄 4=緑 5=グレー */
   /* ⚠ 行ホバー(.tr-table tr:hover td)は詳細度(0,2,2)で、単純な td.lane-N (0,2,1)より
      強い。ホバー時にレーン色が白飛びしないよう、hover込みの指定も併記する。 */
-  .tr-table td.lane-1, .tr-table tr:hover td.lane-1{background:#2980b9}
-  .tr-table td.lane-2, .tr-table tr:hover td.lane-2{background:#e74c3c}
-  .tr-table td.lane-3, .tr-table tr:hover td.lane-3{background:#f1c40f;color:#4a3b00}  /* 黄は白文字だと読めないので濃色に */
+  /* #1 LANE 1/2/3 は予選管理のコース色（薄いレーン色）＋黒文字に統一。4/5は従来色。 */
+  .tr-table td.lane-1, .tr-table tr:hover td.lane-1{background:#e8f0fb;color:#1f2d3d}
+  .tr-table td.lane-2, .tr-table tr:hover td.lane-2{background:#fdecea;color:#1f2d3d}
+  .tr-table td.lane-3, .tr-table tr:hover td.lane-3{background:#e8f7ee;color:#1f2d3d}
   .tr-table td.lane-4, .tr-table tr:hover td.lane-4{background:#27ae60}
   .tr-table td.lane-5, .tr-table tr:hover td.lane-5{background:#95a5a6}
   /* レーン色は td.lane-N（詳細度が高く後に定義）が hover より優先される */

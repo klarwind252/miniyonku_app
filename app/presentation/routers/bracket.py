@@ -1417,9 +1417,56 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
             "bm": bm,
         })
 
+    # ── ⚡ M4LAPS RECORD HOLDERS パネル（admin決勝：📊M4LAPS ベストタイム順 の上に表示）──
+    #    予選管理と同一内容。M4LAPSデータ（qbest_rows）があるときのみ算出・表示。
+    record_holders = None
+    point_leader = None
+    achievements = None
+    if qbest_rows:
+        try:
+            from app.application import qualifying_records as _qrb
+            from app.application import timing_racer_best_service as _rbb
+            _rhb = await _rbb.record_holders_for_tournament(db, tid)
+            record_holders = _qrb.format_records_display(_rhb, _name_by_eid_b, {})
+            _qtb = dict(t).get("qualifying_type")
+            _plb_eid = None
+            _btb = {eid: bm.get("total") for eid, bm
+                    in (await _rbb.racer_bests_for_tournament(db, tid)).items()}
+            if _qtb == "point":
+                from app.routers.qualifying import _calc_standings as _csb
+                _qstb = [dict(s) for s in await _csb(tid, db)]
+                _leadb = [s for s in _qstb if s.get("rank") == 1]
+                _ptsb = _leadb[0].get("total_points") if _leadb else None
+                if _leadb and _ptsb:
+                    _wb = await _qrb.resolve_point_leader(db, tid, _leadb, _btb)
+                    point_leader = {"points": _ptsb, "holders": [{"name": _wb.get("name")}]}
+                    _plb_eid = _wb.get("entry_id")
+            _qleadb = _plb_eid
+            if _qleadb is None and _qtb == "order":
+                from app.routers.qualifying import _calc_standings as _csb2
+                _qstb2 = [dict(s) for s in await _csb2(tid, db)]
+                _r1b2 = [s for s in _qstb2 if s.get("rank") == 1]
+                if _r1b2:
+                    _wb2 = await _qrb.resolve_point_leader(db, tid, _r1b2, _btb)
+                    _qleadb = _wb2.get("entry_id") if _wb2 else None
+            try:
+                _swb = await _qrb.sweep_entries_for_tournament(db, tid)
+            except Exception:
+                _swb = set()
+            if point_leader is not None:
+                point_leader["full_score"] = (_plb_eid in _swb)
+            achievements = _qrb.compute_achievements(_rhb, _qleadb, _swb, _name_by_eid_b)
+        except Exception:
+            record_holders = None
+            point_leader = None
+            achievements = None
+
     return templates.TemplateResponse("admin/bracket.html", {
         "request": request,
         "t": t,
+        "record_holders": record_holders,
+        "point_leader": point_leader,
+        "achievements": achievements,
         "finalists": finalists,
         "finalist_n": finalist_n,
         "target_n": target_n,
@@ -4761,7 +4808,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-round-groups { display:flex; flex-direction:column; flex:1; justify-content:flex-start; gap:0; position:relative; min-height:90px; padding-top:4px; overflow:visible; }
     /* グループ枠 */
     .br-group { background:#fff; border:1px solid #ced4da; border-radius:9px; padding:3px 3px 3px 13px; display:flex; flex-direction:column; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.07); position:absolute; left:0; right:0; overflow:visible; }
-    .br-group.has-winner { border-color:#27ae60; border-width:2px; box-shadow:0 0 0 2px rgba(39,174,96,0.15); }
+    .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:0 1px 3px rgba(0,0,0,0.07); }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
     /* スロット共通 */
     .br-slot { display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
@@ -4848,8 +4895,10 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         # タイム（M4LAPS反映時のみ total_time が入る。名前の右に右揃えで表示）
         _tt = s.get("total_time")
         time_html = ('<span class="br-slot-time">' + ('%.3f' % _tt) + '</span>') if _tt is not None else ''
+        # 公開HTMLでレーサー名タップ→成績モーダル用に entry_id を持たせる（view/adminでは未使用）。
+        _eid_attr = (' data-entry-id="%d"' % s["entry_id"]) if s.get("entry_id") else ''
         return (
-            '<div class="' + cls + '"' + onclick_attr + is_seed_attr + '>'
+            '<div class="' + cls + '"' + onclick_attr + is_seed_attr + _eid_attr + '>'
             + '<span class="br-slot-no">' + str(s.get("slot_no","")) + '</span>'
             + '<span class="br-slot-name">' + name + '</span>'
             + time_html
