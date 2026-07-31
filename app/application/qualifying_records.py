@@ -163,14 +163,15 @@ def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) ->
     # SPEED STAR：3記録すべて保持（いずれか未計測なら該当なし）
     speed_star = (ov & lp & ts) if (ov and lp and ts) else set()
 
-    # SPRINTER：全区間で1位（全セクションの保持者の積集合）
+    # SPRINTER：最も多くの区間で1位（区間ごとの最速保持者を数え、最多の人。同数は複数）
     secs = rh_raw.get("sectors") or {}
-    if secs:
-        sprinter = None
-        for _sno, rec in secs.items():
-            s = {eid for (eid, _h) in rec.get("holders", [])}
-            sprinter = s if sprinter is None else (sprinter & s)
-        sprinter = sprinter or set()
+    sec_wins: dict = {}
+    for _sno, rec in secs.items():
+        for (eid, _h) in rec.get("holders", []):
+            sec_wins[eid] = sec_wins.get(eid, 0) + 1
+    if sec_wins:
+        _mx = max(sec_wins.values())
+        sprinter = {eid for eid, c in sec_wins.items() if c == _mx}
     else:
         sprinter = set()
 
