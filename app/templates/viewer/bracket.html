@@ -1,48 +1,5 @@
 {% extends "viewer/base.html" %}
-{% block title %}決勝 - {{ t.name }}/* ⚡ M4LAPS RECORD HOLDERS パネル（決勝画面でも予選と同じ見た目にするためCSSを読み込む） */
-/* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
-.v-m4rec{margin:0 0 12px;padding:12px 16px;border:2px solid #f0ad4e;
-  border-radius:8px;background:#1c1509}
-.v-m4rec-title{font-weight:bold;font-size:18px;color:#fff;margin-bottom:10px}
-/* ラベル｜値｜差｜保持者 の4カラム。保持者は末列に固定され、はみ出しても
-   値の右のカラム内で折り返す（左端に落ちない）。 */
-.v-m4rec-row{display:grid;grid-template-columns:180px 118px 78px 1fr;gap:2px 14px;
-  align-items:baseline;padding:5px;border-top:1px solid #a87937}
-.v-m4rec-row:first-of-type{border-top:none}
-.v-m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:7px;
-  align-items:baseline;font-weight:bold;font-size:14px;color:#fff;white-space:nowrap}
-.v-m4rec-ic{text-align:center;min-width:0}
-.v-m4rec-tx{min-width:0}
-.v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-.v-m4rec-gap{font-size:12px;color:#8a94a0;font-variant-numeric:tabular-nums;white-space:nowrap}
-.v-m4rec-who{display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0}
-/* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
-.v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
-  padding:2px 4px;font-size:14px;line-height:1.6}
-.v-m4rec-holder .nm{font-weight:bold;color:#fff}
-.v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
-.v-m4rec-none{color:#7a828c;font-size:13px}
-.v-m4rec-rt{color:#f0ad4e;font-weight:bold;font-size:13px;margin-left:2px}
-.v-m4rec-full{color:#f0ad4e;font-weight:bold;font-size:12px;letter-spacing:.6px;margin-left:8px}
-.v-m4rec-cond{grid-column:2 / 4;color:#7a828c;font-size:11px;align-self:baseline;min-width:0;line-height:1.3}
-@media(max-width:760px){
-  .v-m4rec{padding:10px 12px}
-  /* 項目名を1行目（全幅・やや濃いめ背景のヘッダー）、
-     2行目に 値＋差＋レーサー名（記録）／注釈＋名前（称号） を配置。 */
-  .v-m4rec-row{grid-template-columns:auto auto 1fr;gap:3px 6px;padding:0 0 7px}
-  .v-m4rec-label{grid-row:1;grid-column:1 / -1;font-size:12px;
-    background:#120d06;margin:0 -12px;padding:3px 12px}
-  .v-m4rec-val{grid-row:2;grid-column:1;font-size:16px}
-  .v-m4rec-gap{grid-row:2;grid-column:2;font-size:11px}
-  .v-m4rec-who{grid-row:2;grid-column:3}
-  .v-m4rec-holder{font-size:13px;padding:1px 3px}
-  .v-m4rec-holder .rc{font-size:10px}
-  .v-m4rec-cond{font-size:11px}
-  .v-m4rec-full{font-size:11px;margin-left:4px}
-  .v-m4rec-rt{font-size:12px}
-}
-{% endblock %}
+{% block title %}決勝 - {{ t.name }}{% endblock %}
 
 {% block extra_style %}
 .bracket-wrap{width:100%;overflow-x:auto;padding:8px 0}
@@ -68,17 +25,59 @@
 .rs-total{font-weight:bold}
 .rs-sp{display:block;font-size:10px;color:#8aa0b6}
 /* M4LAPS ベスト表（決勝トーナメント表の下）。予選(viewer/qualifying)と同一配色。 */
-.m4l-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap;font-size:13px}
-.m4l-table th{background:#1e3a5f;color:#7f8c8d;font-weight:normal;font-size:11px;padding:4px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
-.m4l-table td{padding:4px 8px;border-bottom:1px solid #2c3e50;text-align:center}
-.m4l-table tr.m4l-grp th{background:#16324f;color:#9fb3c8;font-size:11px;letter-spacing:1px}
+.m4l-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap;font-size:15px}
+.m4l-table th{background:#1e3a5f;color:#cfd8e3;font-weight:bold;font-size:13px;padding:6px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
+.m4l-table td{padding:6px 8px;border-bottom:1px solid #2c3e50;text-align:center}
+.m4l-table tr.m4l-grp th{background:#16324f;color:#b8c6d6;font-size:12px;letter-spacing:1px}
 .m4l-sep{border-left:2px solid #33475f}
 .m4l-rank{font-weight:bold;font-size:15px}
-.m4l-table td.m4l-name{text-align:left;font-weight:bold;font-size:14px;color:#ecf0f1}
+.m4l-table td.m4l-name{text-align:left;font-weight:bold;font-size:16px;color:#ecf0f1}
 .m4l-num{font-variant-numeric:tabular-nums;color:#cdd6df}
 .m4l-num.b1{background:#6b21a8;color:#fff;font-weight:bold}
 .m4l-num.b2{background:#1e40af;color:#fff;font-weight:bold}
 .m4l-num.b3{background:#166534;color:#fff;font-weight:bold}
+/* ⚡ M4LAPS RECORD HOLDERS パネル（決勝画面でも予選と同じ見た目にするためCSSを読み込む） */
+/* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
+.v-m4rec{margin:0 0 12px;padding:12px 16px;border:2px solid #f0ad4e;
+  border-radius:8px;background:#1c1509;overflow:hidden}
+.v-m4rec-title{font-weight:bold;font-size:18px;color:#fff;margin-bottom:10px}
+/* ラベル｜値｜差｜保持者 の4カラム。保持者は末列に固定され、はみ出しても
+   値の右のカラム内で折り返す（左端に落ちない）。 */
+.v-m4rec-row{display:grid;grid-template-columns:180px 118px 78px 1fr;gap:2px 14px;
+  align-items:baseline;padding:5px;border-top:1px solid #a87937}
+.v-m4rec-row:first-of-type{border-top:none}
+.v-m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:7px;
+  align-items:baseline;font-weight:bold;font-size:14px;color:#fff;white-space:nowrap}
+.v-m4rec-ic{text-align:center;min-width:0}
+.v-m4rec-tx{min-width:0}
+.v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.v-m4rec-gap{font-size:12px;color:#8a94a0;font-variant-numeric:tabular-nums;white-space:nowrap}
+.v-m4rec-who{display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0}
+/* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
+.v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
+  padding:2px 4px;font-size:14px;line-height:1.6}
+.v-m4rec-holder .nm{font-weight:bold;color:#fff}
+.v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
+.v-m4rec-none{color:#7a828c;font-size:13px}
+.v-m4rec-rt{color:#f0ad4e;font-weight:bold;font-size:13px;margin-left:2px}
+.v-m4rec-full{color:#f0ad4e;font-weight:bold;font-size:12px;letter-spacing:.6px;margin-left:8px}
+.v-m4rec-cond{grid-column:2 / 4;color:#7a828c;font-size:11px;align-self:baseline;min-width:0;line-height:1.3}
+@media(max-width:760px){
+  .v-m4rec{padding:10px 12px}
+  /* 項目名は全幅ヘッダー（左端）。2行目以降は左詰めで流し、値・差・名前・注釈すべて左端を揃える。 */
+  .v-m4rec-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;padding:0 0 7px}
+  .v-m4rec-label{flex:0 0 100%;font-size:12px;background:#120d06;margin:0 -12px 3px;padding:3px 12px}
+  .v-m4rec-val{font-size:16px}
+  .v-m4rec-gap{font-size:11px}
+  .v-m4rec-val:empty,.v-m4rec-gap:empty{display:none}
+  .v-m4rec-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1 1 100%;min-width:0}
+  .v-m4rec-cond{flex:0 0 100%;font-size:11px;margin-top:1px}
+  .v-m4rec-holder{font-size:13px;padding:1px 3px}
+  .v-m4rec-holder .rc{font-size:10px}
+  .v-m4rec-full{font-size:11px;margin-left:4px}
+  .v-m4rec-rt{font-size:12px}
+}
 {% endblock %}
 
 {% block nav_subtitle %}：決勝トーナメント表 🏆{% endblock %}
@@ -118,8 +117,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     </div>
   </div>
 
-  {# ⚡ M4LAPS RECORD HOLDERS（トーナメント表と ⚡M4LAPS の間）。予選ページと同一内容。 #}
-  <div class="v-section" style="margin-top:12px">
+  {# ⚡ M4LAPS RECORD HOLDERS（トーナメント表と ⚡M4LAPS の間）。予選ページと同一内容。
+     id="m4-records-sec"：部分更新で二重化するため dedup 対象にする（先頭のみ残す）。 #}
+  <div id="m4-records-sec" class="v-section" style="margin-top:12px">
 {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
 <div class="v-m4rec">
   <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
@@ -174,8 +174,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⚡</span><span class="v-m4rec-tx">SPRINTER</span></span>
-    <span class="v-m4rec-cond">最も多くの区間で1位</span>
-    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
+    <span class="v-m4rec-cond">各セクターの1位</span>
+    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="v-m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>
   {% endif %}
 </div>
@@ -191,12 +191,12 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <table class="m4l-table">
         <thead>
           <tr class="m4l-grp">
-            <th colspan="2"></th>
+            <th colspan="3"></th>
             <th class="m4l-sep" colspan="4">TOTAL BEST</th>
             <th class="m4l-sep" colspan="2">LAP BEST</th>
           </tr>
           <tr>
-            <th>順位</th><th style="text-align:left">レーサー</th>
+            <th>順位</th><th style="text-align:left">レーサー</th><th>完走率</th>
             <th class="m4l-sep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
             <th class="m4l-sep">TIME</th><th>Av.</th>
           </tr>
@@ -205,7 +205,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% for r in m4laps_rows %}
           <tr {% if r.entry_id %}onclick="openRacerStats({{ t.id }},{{ r.entry_id }})" style="cursor:pointer"{% endif %}>
             <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
-            <td class="m4l-name">{{ r.name }}{% if r.finish_rate is not none %} <span style="font-size:11px;color:#7f8c8d;font-weight:normal">{{ r.finish_rate }}%</span>{% endif %}</td>
+            <td class="m4l-name">{{ r.name }}</td>
+            <td class="m4l-num">{% if r.finish_rate is not none %}{{ r.finish_rate }}%{% else %}—{% endif %}</td>
             <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
             <td class="m4l-num">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
             <td class="m4l-num{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}{% endif %}">{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</td>

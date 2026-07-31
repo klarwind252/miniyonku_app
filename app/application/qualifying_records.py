@@ -167,17 +167,15 @@ def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) ->
     # SPEED STAR：3記録すべて保持（いずれか未計測なら該当なし）
     speed_star = (ov & lp & ts) if (ov and lp and ts) else set()
 
-    # SPRINTER：最も多くの区間で1位（区間ごとの最速保持者を数え、最多の人。同数は複数）
+    # SPRINTER：各セクション（区間）ごとの1位レーサーを表示する。
+    #   [{"sector": 区間番号, "names": [1位レーサー名, ...]}, ...]（区間番号昇順）。
     secs = rh_raw.get("sectors") or {}
-    sec_wins: dict = {}
-    for _sno, rec in secs.items():
-        for (eid, _h) in rec.get("holders", []):
-            sec_wins[eid] = sec_wins.get(eid, 0) + 1
-    if sec_wins:
-        _mx = max(sec_wins.values())
-        sprinter = {eid for eid, c in sec_wins.items() if c == _mx}
-    else:
-        sprinter = set()
+    sprinter_sectors = []
+    for _sno in sorted(secs.keys()):
+        rec = secs[_sno] or {}
+        _nm = sorted({name_by_entry.get(eid, "?") for (eid, _h) in rec.get("holders", [])})
+        if _nm:
+            sprinter_sectors.append({"sector": _sno, "names": _nm})
 
     # GRAND SLAM（予選）：OVERALL1位 かつ POINT LEADER
     grand = ({point_leader_eid}
@@ -191,5 +189,5 @@ def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) ->
         "sweep":      _names(set(sweep_eids or set())),
         "grand_slam": _names(grand),
         "speed_star": _names(speed_star),
-        "sprinter":   _names(sprinter),
+        "sprinter":   sprinter_sectors,
     }

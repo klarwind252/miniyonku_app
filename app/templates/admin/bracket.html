@@ -1564,8 +1564,8 @@ window.initBracketConnectors = initBracketConnectors;
         </div>
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">SPRINTER</span></span>
-          <span class="m4rec-cond">最も多くの区間で1位</span>
-          <span class="m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+          <span class="m4rec-cond">各セクターの1位</span>
+          <span class="m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
         </div>
         {% endif %}
         </div>

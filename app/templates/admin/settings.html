@@ -1304,6 +1304,60 @@
           {% endif %}
         </div>
       </div>
+
+      {% if m4laps_licensed %}
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">⚡ M4LAPS RECORD HOLDERS の設定</div>
+        <div class="card-body">
+          <p style="color:#636e72;font-size:13px;margin-bottom:12px">
+            表示する項目を選びます。<b>予選/決勝</b>＝予選管理・決勝管理の「⚡ M4LAPS RECORD HOLDERS」パネルに表示／
+            <b>トーナメント表</b>＝結果確定後のトーナメント表上部（1〜3位の並び）に追加表示（表示方法は今後）／
+            <b>賞状</b>＝賞状への記載（今後）。
+          </p>
+          <form method="post" action="/admin/settings/m4laps/achievements">
+          {% set ach_items = [
+            {'id':'overall','ic':'🏁','name':'OVERALL','detail':'合計タイム最速'},
+            {'id':'fastest_lap','ic':'⏱','name':'FASTEST LAP','detail':'１周タイム最速'},
+            {'id':'top_speed','ic':'🚀','name':'TOP SPEED','detail':'最高速度'},
+            {'id':'point_leader','ic':'🎯','name':'POINT LEADER','detail':'最高得点'},
+            {'id':'sweep','ic':'💯','name':'SWEEP','detail':'予選全て１位'},
+            {'id':'grand_slam','ic':'👑','name':'GRAND SLAM','detail':'🏁🎯全て１位＋決勝優勝'},
+            {'id':'speed_star','ic':'⭐','name':'SPEED STAR','detail':'🏁⏱🚀 全て１位'},
+            {'id':'sprinter','ic':'⚡','name':'SPRINTER','detail':'セクタータイム最速'}
+          ] %}
+          <table class="ach-tbl" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#f8f9fa;border-bottom:2px solid #dee2e6">
+                <th style="text-align:left;padding:8px 10px">項目名</th>
+                <th style="text-align:left;padding:8px 10px">詳細</th>
+                <th style="text-align:center;padding:8px 10px;white-space:nowrap">予選/決勝</th>
+                <th style="text-align:center;padding:8px 10px;white-space:nowrap">トーナメント表</th>
+                <th style="text-align:center;padding:8px 10px;white-space:nowrap">賞状</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in ach_items %}
+              <tr style="border-bottom:1px solid #edf0f2">
+                <td style="padding:8px 10px;font-weight:bold;color:#2c3e50;white-space:nowrap">{{ it.ic }} {{ it.name }}</td>
+                <td style="padding:8px 10px;color:#636e72">{{ it.detail }}</td>
+                <td style="text-align:center;padding:8px 10px"><input type="checkbox" name="{{ it.id }}_panel" style="width:18px;height:18px;accent-color:#2980b9;cursor:pointer" {% if m4laps_ach[it.id].panel %}checked{% endif %}></td>
+                <td style="text-align:center;padding:8px 10px"><input type="checkbox" name="{{ it.id }}_bracket" style="width:18px;height:18px;accent-color:#2980b9;cursor:pointer" {% if m4laps_ach[it.id].bracket %}checked{% endif %}></td>
+                <td style="text-align:center;padding:8px 10px"><input type="checkbox" name="{{ it.id }}_cert" style="width:18px;height:18px;accent-color:#2980b9;cursor:pointer" {% if m4laps_ach[it.id].cert %}checked{% endif %}></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div style="margin-top:14px">
+            <button type="submit" class="btn btn-primary">💾 保存</button>
+            {% if request.query_params.get('ach') == 'ok' %}<span style="color:#27ae60;font-size:13px;margin-left:10px">✓ 保存しました</span>{% endif %}
+          </div>
+          <p style="color:#95a5a6;font-size:12px;margin-top:10px">
+            ※「トーナメント表」「賞状」は項目の保存のみで、実際の表示は今後の対応です。
+          </p>
+          </form>
+        </div>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 

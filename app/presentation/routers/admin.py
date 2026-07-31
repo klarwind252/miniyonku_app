@@ -344,6 +344,28 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     from app.domain import m4laps_license
     _m4laps_licensed = await m4laps_license.is_licensed(db)
 
+    # ⚡ M4LAPS RECORD HOLDERS 表示設定（app_settings に JSON 保存）。
+    #   各項目の panel(予選/決勝) / bracket(トーナメント表) / cert(賞状) のON/OFF。
+    import json as _json_ach
+    _ach_keys = ("overall", "fastest_lap", "top_speed", "point_leader",
+                 "sweep", "grand_slam", "speed_star", "sprinter")
+    m4laps_ach = {k: {"panel": True, "bracket": False, "cert": False} for k in _ach_keys}
+    async with db.execute(
+        "SELECT value FROM app_settings WHERE key='m4laps_ach_config'") as cur:
+        _ach_row = await cur.fetchone()
+    if _ach_row and _ach_row[0]:
+        try:
+            _ach_saved = _json_ach.loads(_ach_row[0])
+            for k in _ach_keys:
+                if isinstance(_ach_saved.get(k), dict):
+                    m4laps_ach[k] = {
+                        "panel": bool(_ach_saved[k].get("panel", True)),
+                        "bracket": bool(_ach_saved[k].get("bracket", False)),
+                        "cert": bool(_ach_saved[k].get("cert", False)),
+                    }
+        except Exception:
+            pass
+
     return templates.TemplateResponse("admin/settings.html", {
         "request": request,
         "cert_templates": cert_templates,
@@ -363,6 +385,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
         "participant_url": participant_url,
         "stores_info": stores_info,
         "m4laps_licensed": _m4laps_licensed,
+        "m4laps_ach": m4laps_ach,
         "is_default_store": is_default_store,
         "max_stores": max_stores,
         "pwa": pwa_settings,
@@ -419,6 +442,29 @@ async def m4laps_deactivate(request: Request, db: aiosqlite.Connection = Depends
     from app.domain import m4laps_license
     await m4laps_license.deactivate(db)
     return RedirectResponse(url="/admin/settings#m4laps", status_code=303)
+
+
+@router.post("/settings/m4laps/achievements", response_class=HTMLResponse)
+async def m4laps_achievements_save(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """⚡ M4LAPS RECORD HOLDERS の表示設定（項目ごとの 予選/決勝・トーナメント表・賞状 ON/OFF）を保存。"""
+    from fastapi.responses import RedirectResponse
+    import json as _json_ach
+    form = await request.form()
+    _keys = ("overall", "fastest_lap", "top_speed", "point_leader",
+             "sweep", "grand_slam", "speed_star", "sprinter")
+    cfg = {}
+    for k in _keys:
+        cfg[k] = {
+            "panel":   form.get(k + "_panel") is not None,
+            "bracket": form.get(k + "_bracket") is not None,
+            "cert":    form.get(k + "_cert") is not None,
+        }
+    await db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('m4laps_ach_config', ?)",
+        (_json_ach.dumps(cfg, ensure_ascii=False),),
+    )
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?ach=ok#m4laps", status_code=303)
 
 @router.get("/update/check")
 async def update_check(request: Request):

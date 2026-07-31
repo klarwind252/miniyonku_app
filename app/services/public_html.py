@@ -414,7 +414,7 @@ window._m4DedupBracket = function(){
     for (var i = ws.length - 1; i >= 1; i--){ if (ws[i] && ws[i].remove) ws[i].remove(); }
     // ⚡ M4LAPS 節・🏆 決勝進出レーサー 節も、決勝表(.br-wrap)と同様に
     // 部分更新のタイミングで二重化することがあるため、先頭の1つだけ残す。
-    ['m4-laps-sec','m4-finalists-sec'].forEach(function(id){
+    ['m4-records-sec','m4-laps-sec','m4-finalists-sec'].forEach(function(id){
       var es = document.querySelectorAll('#' + id);
       for (var k = es.length - 1; k >= 1; k--){ if (es[k] && es[k].remove) es[k].remove(); }
     });
@@ -779,12 +779,18 @@ window.addEventListener('load', function(){
     }
 
     /* 予選（並び順など）の racer-cell テーブル */
+    /* セル内には順位アイコン＋名前＋タイムが入るため、名前だけ（.rr-name span）で照合する。
+       .rr-name が無い簡易セルはセル全体テキストにフォールバック。 */
+    function rcName(cell){
+      var n = cell.querySelector('.rr-name');
+      return (n ? n.textContent : cell.textContent).trim();
+    }
     var racerCells = document.querySelectorAll('.racer-cell');
     if(racerCells.length > 0){
       var myTr = null, myTbody = null;
       racerCells.forEach(function(cell){
         if(myTr) return;
-        if(cell.textContent.trim() === name){
+        if(rcName(cell) === name){
           var tr = cell.closest('tr');
           if(tr && !tr.classList.contains('done')){ myTr = tr; myTbody = tr.closest('tbody'); }
         }
@@ -797,7 +803,7 @@ window.addEventListener('load', function(){
           if(!rows[ri].classList.contains('done')) before++;
         }
         myTr.querySelectorAll('.racer-cell').forEach(function(cell){
-          if(cell.textContent.trim() === name){
+          if(rcName(cell) === name){
             cell.style.setProperty('background', 'rgb(230,126,34)', 'important');
             cell.style.setProperty('color', '#ffffff', 'important');
             cell.style.fontWeight = 'bold';

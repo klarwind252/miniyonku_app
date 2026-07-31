@@ -36,7 +36,7 @@
    ・justify-content:center … 名前グループ全体をセル内で中央へ（総当たりの○×・順位バッジ込み／名前カラムが flex:1 で伸びない場合に効く）
    ・racer-cell > div は名前カラム（ポイント制／ヒートトーナメント）。縦積みの名前＋タイムを align-items:center で中央へ
    ・rr-name は公開HTML表示の名前span（flex:1 でセル幅いっぱい）。text-align:center で文字を中央に */
-.schedule-table .racer-cell{justify-content:center}
+.schedule-table .racer-cell{justify-content:flex-start}
 .schedule-table .racer-cell > div{align-items:center}
 .schedule-table .rr-name{text-align:left}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
@@ -129,7 +129,7 @@
 .entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 /* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
 .v-m4rec{margin:0 0 12px;padding:12px 16px;border:2px solid #f0ad4e;
-  border-radius:8px;background:#1c1509}
+  border-radius:8px;background:#1c1509;overflow:hidden}
 .v-m4rec-title{font-weight:bold;font-size:18px;color:#fff;margin-bottom:10px}
 /* ラベル｜値｜差｜保持者 の4カラム。保持者は末列に固定され、はみ出しても
    値の右のカラム内で折り返す（左端に落ちない）。 */
@@ -155,17 +155,17 @@
 .v-m4rec-cond{grid-column:2 / 4;color:#7a828c;font-size:11px;align-self:baseline;min-width:0;line-height:1.3}
 @media(max-width:760px){
   .v-m4rec{padding:10px 12px}
-  /* 項目名を1行目（全幅・やや濃いめ背景のヘッダー）、
-     2行目に 値＋差＋レーサー名（記録）／注釈＋名前（称号） を配置。 */
-  .v-m4rec-row{grid-template-columns:auto auto 1fr;gap:3px 6px;padding:0 0 7px}
-  .v-m4rec-label{grid-row:1;grid-column:1 / -1;font-size:12px;
-    background:#120d06;margin:0 -12px;padding:3px 12px}
-  .v-m4rec-val{grid-row:2;grid-column:1;font-size:16px}
-  .v-m4rec-gap{grid-row:2;grid-column:2;font-size:11px}
-  .v-m4rec-who{grid-row:2;grid-column:3}
+  /* 項目名は全幅ヘッダー（左端）。2行目以降は左詰めで流し、値・差・名前・注釈すべて左端を揃える。 */
+  .v-m4rec-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;padding:0 0 7px}
+  .v-m4rec-label{flex:0 0 100%;font-size:12px;background:#120d06;margin:0 -12px 3px;padding:3px 12px}
+  .v-m4rec-val{font-size:16px}
+  .v-m4rec-gap{font-size:11px}
+  /* 空の値・差セルは詰める（称号行で名前を左端から始めるため） */
+  .v-m4rec-val:empty,.v-m4rec-gap:empty{display:none}
+  .v-m4rec-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1 1 100%;min-width:0}
+  .v-m4rec-cond{flex:0 0 100%;font-size:11px;margin-top:1px}
   .v-m4rec-holder{font-size:13px;padding:1px 3px}
   .v-m4rec-holder .rc{font-size:10px}
-  .v-m4rec-cond{font-size:11px}
   .v-m4rec-full{font-size:11px;margin-left:4px}
   .v-m4rec-rt{font-size:12px}
 }
@@ -286,8 +286,8 @@
   </div>
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⚡</span><span class="v-m4rec-tx">SPRINTER</span></span>
-    <span class="v-m4rec-cond">最も多くの区間で1位</span>
-    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
+    <span class="v-m4rec-cond">各セクターの1位</span>
+    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="v-m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>
   {% endif %}
 </div>
@@ -396,7 +396,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 </div>
 {% elif not is_none_roundrobin and qualifying_type != "heat_roundrobin" %}{{ finalist_block() }}{% endif %}
-{{ record_holders_block() }}
+{% if not is_public_html %}{{ record_holders_block() }}{% endif %}
 
 {% if qualifying_type == "heat_roundrobin" and all_heats_complete %}
 {% set completed_heats = hr_heats_data | selectattr("is_complete") | list %}
@@ -1098,6 +1098,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       </div>
     </div>
     {% endif %}
+
+    {# 公開HTMLのみ：⚡M4LAPS RECORD HOLDERS を「予選順位」と「⚡M4LAPS」の間に表示（viewは上部のまま） #}
+    {% if is_public_html %}{{ record_holders_block() }}{% endif %}
 
     {# ── M4LAPS ベスト（予選順位とエントリーの間）。TOTAL BEST TIME が速い順に 1..N ──
        表示内容は admin（予選管理）の予選順位表と同じ：順位・レーサー名・
