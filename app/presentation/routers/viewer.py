@@ -1275,7 +1275,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
     # 決勝結果（1〜3位）を取得
     final_results = []  # [{rank, name, round_type}]
     async with db.execute(
-        """SELECT bsr.rank, br.round_type, r.name
+        """SELECT bsr.rank, br.round_type, r.name, bs.entry_id AS entry_id
            FROM bracket_slot_ranks bsr
            JOIN bracket_slots bs ON bs.id=bsr.slot_id
            JOIN entries e ON e.id=bs.entry_id
@@ -1319,6 +1319,34 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
     # 準決勝や3位決定戦の結果だけでポディウムを出さないようにする）。
     if not any(fr["rank"] == 1 for fr in final_results):
         final_results = []
+
+    # ── 👑 GRAND SLAM 正式版：優勝者が「OVERALL記録保持」かつ「予選1位」なら達成 ──
+    #   予選パネルでは決勝優勝が未確定のため "Right there!!"。決勝で優勝が確定し、
+    #   その優勝者が OVERALL 記録保持者かつ予選順位1位なら、ここで正式に GRAND SLAM。
+    grand_slam_champion = None
+    _champ_eid = next((fr.get("entry_id") for fr in final_results if fr.get("rank") == 1), None)
+    _champ_name = next((fr.get("name") for fr in final_results if fr.get("rank") == 1), None)
+    if _champ_eid is not None:
+        try:
+            from app.application import timing_racer_best_service as _rbsvc
+            from app.application import qualifying_records as _qr
+            _rh = await _rbsvc.record_holders_for_tournament(db, tid)
+            _ov = {eid for (eid, _h) in (_rh.get("overall") or {}).get("holders", [])}
+            _qlead = None
+            _qt = dict(t).get("qualifying_type")
+            if _qt in ("point", "order"):
+                from app.routers.qualifying import _calc_standings as _cs
+                _qst = [dict(s) for s in await _cs(tid, db)]
+                _r1 = [s for s in _qst if s.get("rank") == 1]
+                if _r1:
+                    _bt = {eid: bm.get("total") for eid, bm
+                           in (await _rbsvc.racer_bests_for_tournament(db, tid)).items()}
+                    _w = await _qr.resolve_point_leader(db, tid, _r1, _bt)
+                    _qlead = _w.get("entry_id") if _w else None
+            if (_champ_eid in _ov) and (_qlead is not None) and (_champ_eid == _qlead):
+                grand_slam_champion = _champ_name
+        except Exception:
+            grand_slam_champion = None
 
     # ── M4LAPS ベスト表（観覧：決勝トーナメント表の下に表示）────────────────
     # 予選ページ（viewer/qualifying）と同一ロジック。TOTAL BEST(TIME/GAP/Av./MAX)・
@@ -1402,4 +1430,5 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         "ht_advanced_by_heat": ht_advanced_by_heat,
         "hr_heats_data": hr_heats_data_bv,
         "final_results": final_results,
+        "grand_slam_champion": grand_slam_champion,
     })
