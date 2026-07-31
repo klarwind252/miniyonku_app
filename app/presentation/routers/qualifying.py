@@ -1151,12 +1151,21 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             point_leader_eid = _winner.get("entry_id")
 
     # 称号：SWEEP / GRAND SLAM(予選=Right there!!) / SPEED STAR / SPRINTER
+    # GRAND SLAM の「予選1位」＝ ポイント制:POINT LEADER / order:予選順位1位。
+    #   order は rank==1 を tiebreak で1名に絞る（POINT LEADER 行自体はポイント制のみ）。
+    _qual_leader_eid = point_leader_eid
+    if _qual_leader_eid is None and t["qualifying_type"] == "order" and standings:
+        _olead = [s for s in standings if s.get("rank") == 1]
+        if _olead:
+            _obt = {eid: bm.get("total") for eid, bm in racer_bests.items()}
+            _ow = await qrec.resolve_point_leader(db, tid, _olead, _obt)
+            _qual_leader_eid = _ow.get("entry_id") if _ow else None
     try:
         _sweep = await qrec.sweep_entries_for_tournament(db, tid)
     except Exception:
         _sweep = set()
     achievements = qrec.compute_achievements(
-        _rh_raw, point_leader_eid, _sweep, _name_by_entry)
+        _rh_raw, _qual_leader_eid, _sweep, _name_by_entry)
 
     # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
     entries_by_yomi = sorted(
