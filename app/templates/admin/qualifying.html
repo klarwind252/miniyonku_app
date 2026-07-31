@@ -156,6 +156,11 @@
 .rc-finish.fin-r1{color:#6b21a8 !important;background:#f3e8ff;border-radius:4px;padding:1px 6px}
 .rc-finish.fin-r2{color:#1e40af !important;background:#dbeafe;border-radius:4px;padding:1px 6px}
 .rc-finish.fin-r3{color:#166534 !important;background:#dcfce7;border-radius:4px;padding:1px 6px}
+/* レーススケジュール見出し：1/2/3コースを薄いレーン色で色分け（1青 2赤 3緑）。
+   見出し行は 状態(1)・#(2) の後にコース列が並ぶので 3/4/5番目が 1/2/3コース。 */
+.sched-tbl thead th.crs:nth-child(3){background:#e8f0fb}
+.sched-tbl thead th.crs:nth-child(4){background:#fdecea}
+.sched-tbl thead th.crs:nth-child(5){background:#e8f7ee}
 /* エントリー一覧：読み仮名順に横へ羅列して折り返す。1チップは名前＋よみの2段 */
 .entry-wrap{display:flex;flex-wrap:wrap;gap:6px}
 .entry-chip{display:inline-flex;flex-direction:column;align-items:flex-start;
