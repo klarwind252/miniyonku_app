@@ -190,17 +190,17 @@
 /* ⚡ M4LAPS RECORD HOLDERS（予選順位表の上に出す3記録＋POINT LEADER） */
 .m4rec{margin:10px 12px;padding:12px 16px;border:1px solid #e5dcc4;
   border-left:5px solid #f0ad4e;border-radius:10px;background:#fffdf5}
-.m4rec-title{font-weight:bold;font-size:13px;color:#8a6d3b;letter-spacing:.6px;
-  margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #efe3c8}
+.m4rec-title{font-weight:bold;font-size:16px;color:#fff;background-color:#8a6d3b;
+  letter-spacing:.6px;padding:5px 8px;margin-bottom:8px;border-radius:6px}
 /* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
    値の右のカラム内で折り返す（左端に落ちない）。 */
 .m4rec-row{display:grid;grid-template-columns:168px 120px 1fr;gap:2px 14px;
   align-items:baseline;padding:8px 2px;border-top:1px solid #f0e8d4}
 .m4rec-row:first-of-type{border-top:none}
-.m4rec-label{display:flex;align-items:baseline;gap:6px;font-weight:bold;font-size:14px;
-  color:#4a4a4a;white-space:nowrap}
-.m4rec-ic{flex:0 0 1.4em;text-align:center}
-.m4rec-tx{flex:0 0 auto}
+.m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:6px;
+  align-items:baseline;font-weight:bold;font-size:14px;color:#4a4a4a;white-space:nowrap}
+.m4rec-ic{text-align:center;min-width:0}
+.m4rec-tx{min-width:0}
 .m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .m4rec-who{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
