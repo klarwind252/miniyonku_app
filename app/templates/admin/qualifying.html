@@ -182,17 +182,35 @@
 .std-tbl td.bsec2 .st.b1,.std-tbl td.bsec2 .st.b2,.std-tbl td.bsec2 .st.b3,
 .std-tbl td.bsec2 .sp.b1,.std-tbl td.bsec2 .sp.b2,.std-tbl td.bsec2 .sp.b3{
   padding:0 3px}
-/* ⚡ M4LAPS RECORD HOLDERS（予選順位表の上に出す3記録） */
-.m4rec{margin:10px 12px;padding:9px 14px;border:1px solid #e5dcc4;
-  border-left:4px solid #f0ad4e;border-radius:8px;background:#fffdf5}
-.m4rec-title{font-weight:bold;font-size:13px;color:#8a6d3b;letter-spacing:.5px;margin-bottom:7px}
-.m4rec-row{display:flex;align-items:baseline;gap:10px;padding:3px 0;flex-wrap:wrap}
-.m4rec-label{flex:0 0 138px;font-weight:bold;font-size:13px;color:#555}
-.m4rec-val{font-weight:bold;font-size:15px;color:#2c3e50;font-variant-numeric:tabular-nums;
-  min-width:96px}
-.m4rec-who{font-size:13px;color:#333}
-.m4rec-who .nm{font-weight:bold}
-.m4rec-race{color:#8a94a0;font-size:12px}
+/* ⚡ M4LAPS RECORD HOLDERS（予選順位表の上に出す3記録＋POINT LEADER） */
+.m4rec{margin:10px 12px;padding:12px 16px;border:1px solid #e5dcc4;
+  border-left:5px solid #f0ad4e;border-radius:10px;background:#fffdf5}
+.m4rec-title{font-weight:bold;font-size:13px;color:#8a6d3b;letter-spacing:.6px;
+  margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #efe3c8}
+/* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
+   値の右のカラム内で折り返す（左端に落ちない）。 */
+.m4rec-row{display:grid;grid-template-columns:168px 120px 1fr;gap:2px 14px;
+  align-items:baseline;padding:8px 2px;border-top:1px solid #f0e8d4}
+.m4rec-row:first-of-type{border-top:none}
+.m4rec-label{font-weight:bold;font-size:14px;color:#4a4a4a;white-space:nowrap}
+.m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.m4rec-who{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+/* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
+.m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;background:#fff;
+  border:1px solid #e6dcc2;border-radius:999px;padding:2px 10px;
+  font-size:13px;line-height:1.6}
+.m4rec-holder .nm{font-weight:bold;color:#2c3e50}
+.m4rec-holder .rc{color:#9a8f76;font-size:11px}
+@media(max-width:760px){
+  .m4rec-row{grid-template-columns:1fr;gap:4px}
+  .m4rec-val{font-size:16px}
+}
+/* 予選順位表：行の区切りをはっきり（ゼブラ＋濃いめの罫線・ホバー強調）。
+   1位/ボーダー同率のインライン背景色は優先されるので維持される。 */
+.std-tbl tbody td{border-bottom:1px solid #cfd6e0}
+.std-tbl tbody tr:nth-child(even){background:#eef2f7}
+.std-tbl tbody tr:hover td{background:#e1ecfa}
 </style>
 {% endblock %}
 {% block content %}
@@ -1505,7 +1523,7 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="card-body" style="padding:0;overflow-x:auto">
       {% if standings %}
-      {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は改行せず「/」で羅列 #}
+      {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は値の右にチップで羅列（左端に落とさない） #}
       {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
       <div class="m4rec">
         <div class="m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
@@ -1513,28 +1531,28 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="m4rec-row">
           <span class="m4rec-label">🏁 OVERALL</span>
           <span class="m4rec-val">{{ record_holders.overall.value_str }}</span>
-          <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="nm">{{ h.name }}</span> <span class="m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+          <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
         {% if record_holders and record_holders.fastest_lap %}
         <div class="m4rec-row">
           <span class="m4rec-label">⏱ FASTEST LAP</span>
           <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
-          <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="nm">{{ h.name }}</span> <span class="m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+          <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
         {% if record_holders and record_holders.top_speed %}
         <div class="m4rec-row">
           <span class="m4rec-label">🚀 TOP SPEED</span>
           <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span>
-          <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="nm">{{ h.name }}</span> <span class="m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+          <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
         {% if point_leader %}
         <div class="m4rec-row">
           <span class="m4rec-label">🎯 POINT LEADER</span>
           <span class="m4rec-val">{{ point_leader.points }} points</span>
-          <span class="m4rec-who">{% for h in point_leader.holders %}<span class="nm">{{ h.name }}</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+          <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
         </div>
         {% endif %}
       </div>
