@@ -747,7 +747,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <table class="schedule-table">
           {# コース見出しを各レーン色で着色（1=青 / 2=赤 / 3=緑。総当たり・ヒートのコースドットと同じ配色）。
              白太字で背景色に対して視認性を確保。 #}
-          {% set _sc_lc = {1:'#163f5e', 2:'#732519', 3:'#13592f'} %}
+          {% set _sc_lc = {1:'#0e2a41', 2:'#4d160f', 3:'#0c3b1f'} %}
           <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
@@ -1200,6 +1200,23 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   document.addEventListener('click',function(e){ if(e.target&&(e.target.id==='rs-overlay'||e.target.id==='rs-close')) closeRs(); });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeRs(); });
 })();</script>
+{% endif %}
+
+{# 全レース終了時：一度だけページ最上部へ自動スクロール（view・公開HTML共通）。
+   自動リロード（view=10秒/公開HTML=30秒毎）で毎回上へ飛ばないよう、
+   sessionStorage で「この予選の終了スクロールは1回だけ」に限定する。 #}
+{% if all_heats_complete %}
+<script>
+(function(){
+  try{
+    var k = 'm4_qual_top_{{ tid }}';
+    if(!sessionStorage.getItem(k)){
+      sessionStorage.setItem(k,'1');
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+  }catch(e){ try{ window.scrollTo(0,0); }catch(_){} }
+})();
+</script>
 {% endif %}
 {% endblock %}
 

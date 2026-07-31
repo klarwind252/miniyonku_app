@@ -171,7 +171,9 @@
 /* 予選順位表のベスト列（TOTAL/LAP/SECTOR BEST）。グループ境界に縦線。
    基本の文字色は黒。予選全体で上位3人のセルだけ色を付ける（計測結果と同配色）。 */
 .std-tbl .std-grp th{font-size:11px;color:#7f8c8d;font-weight:bold;text-align:center;
-  padding:4px 6px;border-bottom:1px solid #e9ecef}
+  padding:2px 6px;border-bottom:1px solid #e9ecef}
+/* 予選順位表：ヘッダ（予選順位表）と「#順位…」行の間隔を半分に詰める */
+.std-tbl thead tr:last-child th{padding-top:5px}
 .std-tbl th.bsep,.std-tbl td.bsep{border-left:2px solid #dde3ea}
 .std-tbl td.bcell{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;
   white-space:nowrap;padding:4px 6px;color:#2c3e50}
@@ -194,7 +196,7 @@
 .zap{color:#f0ad4e}
 /* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
    値の右のカラム内で折り返す（左端に落ちない）。 */
-.m4rec-row{display:grid;grid-template-columns:168px 120px 1fr;gap:2px 14px;
+.m4rec-row{display:grid;grid-template-columns:168px 104px 74px 1fr;gap:2px 12px;
   align-items:baseline;padding:8px 2px;border-top:1px solid #f0e8d4}
 .m4rec-row:first-of-type{border-top:none}
 .m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:6px;
@@ -203,6 +205,7 @@
 .m4rec-tx{min-width:0}
 .m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;
   font-variant-numeric:tabular-nums;white-space:nowrap}
+.m4rec-gap{font-size:12px;color:#95a5a6;font-variant-numeric:tabular-nums;white-space:nowrap}
 .m4rec-who{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 /* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
 .m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;background:#fff;
@@ -1516,11 +1519,12 @@ document.addEventListener('DOMContentLoaded', function(){
       {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
       <div class="card" style="margin-top:32px">
         <div class="card-header"><span><span class="zap">⚡</span> M4LAPS RECORD HOLDERS</span></div>
-        <div class="card-body">
+        <div class="card-body" style="padding-top:8px">
         {% if record_holders and record_holders.overall %}
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">OVERALL</span></span>
           <span class="m4rec-val">{{ record_holders.overall.value_str }}</span>
+          <span class="m4rec-gap">{{ record_holders.overall.gap_str or "" }}</span>
           <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
@@ -1528,6 +1532,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">FASTEST LAP</span></span>
           <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
+          <span class="m4rec-gap">{{ record_holders.fastest_lap.gap_str or "" }}</span>
           <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
@@ -1535,6 +1540,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">TOP SPEED</span></span>
           <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span>
+          <span class="m4rec-gap">{{ record_holders.top_speed.gap_str or "" }}</span>
           <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
@@ -1542,6 +1548,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">POINT LEADER</span></span>
           <span class="m4rec-val">{{ point_leader.points }} points</span>
+          <span class="m4rec-gap"></span>
           <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
         </div>
         {% endif %}
@@ -1550,21 +1557,25 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">💯</span><span class="m4rec-tx">SWEEP</span></span>
           <span class="m4rec-val"></span>
+          <span class="m4rec-gap"></span>
           <span class="m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}<span class="m4rec-cond">予選 全レース1位（○のみ）</span></span>
         </div>
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">👑</span><span class="m4rec-tx">GRAND SLAM</span></span>
           <span class="m4rec-val"></span>
+          <span class="m4rec-gap"></span>
           <span class="m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}<span class="m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span></span>
         </div>
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">⭐</span><span class="m4rec-tx">SPEED STAR</span></span>
           <span class="m4rec-val"></span>
+          <span class="m4rec-gap"></span>
           <span class="m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}<span class="m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span></span>
         </div>
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">SPRINTER</span></span>
           <span class="m4rec-val"></span>
+          <span class="m4rec-gap"></span>
           <span class="m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}<span class="m4rec-cond">最も多くの区間で1位</span></span>
         </div>
         {% endif %}
