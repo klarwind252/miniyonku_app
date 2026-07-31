@@ -3663,7 +3663,9 @@ async def _get_all_standings(tid: int, db: aiosqlite.Connection) -> list[dict]:
                LEFT JOIN heats h ON h.id=hl.heat_id AND h.tournament_id=?
                WHERE e.tournament_id=? AND e.status='active'
                GROUP BY e.id
-               ORDER BY score1 DESC""",
+               ORDER BY score1 DESC,
+                        COALESCE(MIN(CASE WHEN hr.total_time>0 THEN hr.total_time END),
+                                 MIN(CASE WHEN hr.best_time >0 THEN hr.best_time  END)) ASC NULLS LAST""",
             (tid, tid),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]

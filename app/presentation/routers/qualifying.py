@@ -1119,6 +1119,35 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         best_ranks[f"sector{_i}"] = _rank_map(f"sector{_i}", True)
         best_ranks[f"sector_ms{_i}"] = _rank_map(f"sector_ms{_i}", False)
 
+    # ⚡ M4LAPS RECORD HOLDERS（予選順位表の上に出す3記録）。
+    #   OVERALL=総合最速TOTAL / FASTEST LAP=最速ラップ / TOP SPEED=最高速MAX。
+    #   同率は holders に複数入るのでテンプレートで羅列する。共通ロジックは qualifying_records。
+    from app.application import qualifying_records as qrec
+    _name_by_entry = {}
+    for _s in standings:
+        _name_by_entry[_s["entry_id"]] = _s["name"]
+    for _e in entries:
+        _name_by_entry.setdefault(_e["entry_id"], _e["name"])
+    _heat_labels = qrec.build_heat_labels(heats)
+    try:
+        _rh_raw = await rbest_svc.record_holders_for_tournament(db, tid) \
+            if IS_CLOUD and getattr(request.state, "m4laps_licensed", False) else None
+    except Exception:
+        _rh_raw = None
+    record_holders = qrec.format_records_display(_rh_raw, _name_by_entry, _heat_labels)
+
+    # 🎯 POINT LEADER：予選順位1位（＝最多ポイント）。同率でも1名に絞る（共通ロジック）。
+    #   ポイント制のみ・0点時は出さない。M4LAPSあり→ベストTOTAL最速／なし→直接対決＞1着＞CO。
+    point_leader = None
+    if t["qualifying_type"] == "point" and standings:
+        _lead = [s for s in standings if s.get("rank") == 1]
+        _pts = _lead[0].get("total_points") if _lead else None
+        if _lead and _pts:
+            _best_total_by = {eid: bm.get("total") for eid, bm in racer_bests.items()}
+            _winner = await qrec.resolve_point_leader(db, tid, _lead, _best_total_by)
+            point_leader = {"points": _pts,
+                            "holders": [{"name": _winner.get("name")}]}
+
     # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
     entries_by_yomi = sorted(
         entries, key=lambda e: (e["yomi"] or e["name"] or "", e["name"] or ""))
@@ -1131,6 +1160,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         "racer_bests": racer_bests,
         "best_ranks": best_ranks,
         "best_total_min": best_total_min,
+        "record_holders": record_holders,
+        "point_leader": point_leader,
         "max_sector_no": max_sector_no,
         "heats": heats,
         "heat_lanes_map": heat_lanes_map,
@@ -2198,7 +2229,9 @@ async def _calc_standings(tid: int, db: aiosqlite.Connection):
            LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id
            WHERE e.tournament_id=? AND e.status='active'
            GROUP BY e.id
-           ORDER BY total_points DESC, best_time ASC NULLS LAST""",
+           ORDER BY total_points DESC,
+                    COALESCE(MIN(CASE WHEN hr.total_time>0 THEN hr.total_time END),
+                             MIN(CASE WHEN hr.best_time >0 THEN hr.best_time  END)) ASC NULLS LAST""",
         (tid, tid),
     ) as cur:
         rows = await cur.fetchall()

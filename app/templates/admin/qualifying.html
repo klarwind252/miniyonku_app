@@ -156,6 +156,11 @@
 .rc-finish.fin-r1{color:#6b21a8 !important;background:#f3e8ff;border-radius:4px;padding:1px 6px}
 .rc-finish.fin-r2{color:#1e40af !important;background:#dbeafe;border-radius:4px;padding:1px 6px}
 .rc-finish.fin-r3{color:#166534 !important;background:#dcfce7;border-radius:4px;padding:1px 6px}
+/* レーススケジュール見出し：1/2/3コースを薄いレーン色で色分け（1青 2赤 3緑）。
+   見出し行は 状態(1)・#(2) の後にコース列が並ぶので 3/4/5番目が 1/2/3コース。 */
+.sched-tbl thead th.crs:nth-child(3){background:#e8f0fb}
+.sched-tbl thead th.crs:nth-child(4){background:#fdecea}
+.sched-tbl thead th.crs:nth-child(5){background:#e8f7ee}
 /* エントリー一覧：読み仮名順に横へ羅列して折り返す。1チップは名前＋よみの2段 */
 .entry-wrap{display:flex;flex-wrap:wrap;gap:6px}
 .entry-chip{display:inline-flex;flex-direction:column;align-items:flex-start;
@@ -182,6 +187,38 @@
 .std-tbl td.bsec2 .st.b1,.std-tbl td.bsec2 .st.b2,.std-tbl td.bsec2 .st.b3,
 .std-tbl td.bsec2 .sp.b1,.std-tbl td.bsec2 .sp.b2,.std-tbl td.bsec2 .sp.b3{
   padding:0 3px}
+/* ⚡ M4LAPS RECORD HOLDERS（予選順位表の上に出す3記録＋POINT LEADER） */
+.m4rec{margin:10px 12px;padding:12px 16px;border:1px solid #e5dcc4;
+  border-left:5px solid #f0ad4e;border-radius:10px;background:#fffdf5}
+.m4rec-title{font-weight:bold;font-size:16px;color:#fff;background-color:#8a6d3b;
+  letter-spacing:.6px;padding:5px 8px;margin-bottom:8px;border-radius:6px}
+/* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
+   値の右のカラム内で折り返す（左端に落ちない）。 */
+.m4rec-row{display:grid;grid-template-columns:168px 120px 1fr;gap:2px 14px;
+  align-items:baseline;padding:8px 2px;border-top:1px solid #f0e8d4}
+.m4rec-row:first-of-type{border-top:none}
+.m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:6px;
+  align-items:baseline;font-weight:bold;font-size:14px;color:#4a4a4a;white-space:nowrap}
+.m4rec-ic{text-align:center;min-width:0}
+.m4rec-tx{min-width:0}
+.m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.m4rec-who{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+/* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
+.m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;background:#fff;
+  border:1px solid #e6dcc2;border-radius:999px;padding:2px 10px;
+  font-size:13px;line-height:1.6}
+.m4rec-holder .nm{font-weight:bold;color:#2c3e50}
+.m4rec-holder .rc{color:#9a8f76;font-size:11px}
+@media(max-width:760px){
+  .m4rec-row{grid-template-columns:1fr;gap:4px}
+  .m4rec-val{font-size:16px}
+}
+/* 予選順位表：行の区切りをはっきり（ゼブラ＋濃いめの罫線・ホバー強調）。
+   1位/ボーダー同率のインライン背景色は優先されるので維持される。 */
+.std-tbl tbody td{border-bottom:1px solid #cfd6e0}
+.std-tbl tbody tr:nth-child(even){background:#eef2f7}
+.std-tbl tbody tr:hover td{background:#e1ecfa}
 </style>
 {% endblock %}
 {% block content %}
@@ -268,7 +305,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {% if top3_nr[1] %}<div style="font-size:12px;color:#636e72">{{ top3_nr[1].wins }}勝 {{ top3_nr[1].losses }}負</div>{% endif %}
     </div>
     <div style="text-align:center;padding:12px 20px;background:#fff3cd;border-radius:10px;border:2px solid #f0ad4e">
-      <div style="font-size:36px">🥇</div>
+      <div style="font-size:36px">🏆</div>
       <div style="font-size:13px;color:#856404;margin-top:4px">1位</div>
       <div style="font-size:20px;font-weight:bold;margin-top:4px;color:#856404">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
       {% if top3_nr[0] %}<div style="font-size:12px;color:#856404">{{ top3_nr[0].wins }}勝 {{ top3_nr[0].losses }}負</div>{% endif %}
@@ -950,7 +987,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {% if heats %}
 
 
-    {% macro race_row(heat) %}
+    {% macro race_row(heat, no=None) %}
     {% set lanes = heat_lanes_map.get(heat.id, []) %}
     <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
       {# 状態（取消／反映）は左端。結果の有無は順位枠とFINISHで分かるので状態バッジは置かない。
@@ -972,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', function(){
           {% endif %}
         </div>
       </td>
-      <td style="color:#636e72;font-weight:bold">{{ heat.heat_no }}</td>
+      <td style="color:#636e72;font-weight:bold">{{ no if no is not none else heat.heat_no }}</td>
       {% for col in course_cols %}
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
         {% if ld %}{% set lane = ld[0] %}{% set lc = ["#2980b9","#e74c3c","#27ae60"] %}
@@ -1436,7 +1473,7 @@ document.addEventListener('DOMContentLoaded', function(){
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
-            {{ race_row(heat) }}
+            {{ race_row(heat, loop.index) }}
             {% endfor %}
             </tbody>
           </table>
@@ -1447,7 +1484,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
-          {% for heat in heats %}{{ race_row(heat) }}{% endfor %}
+          {% for heat in heats %}{{ race_row(heat, loop.index) }}{% endfor %}
           </tbody>
         </table>
       {% endif %}
@@ -1494,6 +1531,40 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="card-body" style="padding:0;overflow-x:auto">
       {% if standings %}
+      {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は値の右にチップで羅列（左端に落とさない） #}
+      {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
+      <div class="m4rec">
+        <div class="m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
+        {% if record_holders and record_holders.overall %}
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">OVERALL</span></span>
+          <span class="m4rec-val">{{ record_holders.overall.value_str }}</span>
+          <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+        </div>
+        {% endif %}
+        {% if record_holders and record_holders.fastest_lap %}
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">FASTEST LAP</span></span>
+          <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
+          <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+        </div>
+        {% endif %}
+        {% if record_holders and record_holders.top_speed %}
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">TOP SPEED</span></span>
+          <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span>
+          <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+        </div>
+        {% endif %}
+        {% if point_leader %}
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">POINT LEADER</span></span>
+          <span class="m4rec-val">{{ point_leader.points }} points</span>
+          <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
       <table class="std-tbl">
         <thead>
           {% if is_none_roundrobin %}
@@ -2294,7 +2365,7 @@ async function toggleAdvanced(entryId, tid, current) {
       {% if top3_nr[1] %}<div style="font-size:11px;color:#636e72">{{ top3_nr[1].wins }}勝 {{ top3_nr[1].losses }}負</div>{% endif %}
     </div>
     <div style="text-align:center;padding:10px 18px;background:#d4edda;border-radius:10px;border:2px solid #28a745">
-      <div style="font-size:30px">🥇</div>
+      <div style="font-size:30px">🏆</div>
       <div style="font-size:12px;color:#155724;margin-top:4px">1位</div>
       <div style="font-size:18px;font-weight:bold;margin-top:4px;color:#155724">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
       {% if top3_nr[0] %}<div style="font-size:11px;color:#155724">{{ top3_nr[0].wins }}勝 {{ top3_nr[0].losses }}負</div>{% endif %}

@@ -135,3 +135,92 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
                          st["sec"].get((lane, lap.lap, sno)))
 
     return bests
+
+
+async def record_holders_for_tournament(db, tournament_id: int) -> dict:
+    """大会全体の「記録保持者」を返す（予選のみ・反映済みヒート対象）。
+
+    次の3記録について、最良値と、それを出した (entry_id, heat_id) の一覧を集める。
+    同率（許容誤差内で同値）の場合は holders に複数入れる（表示側で羅列する）。
+
+      overall     … TOTAL タイムの最小（総合最速タイム）
+      fastest_lap … ラップタイムの最小（最速ラップ）
+      top_speed   … MAX 速度の最大（最高速）
+
+    戻り値:
+      {
+        "overall":     {"value": float|None, "holders": [(entry_id, heat_id), ...]},
+        "fastest_lap": {"value": float|None, "holders": [...]},
+        "top_speed":   {"value": float|None, "holders": [...]},
+      }
+    """
+    records = {
+        "overall":     {"value": None, "holders": []},
+        "fastest_lap": {"value": None, "holders": []},
+        "top_speed":   {"value": None, "holders": []},
+    }
+
+    # 反映済み（heat_id 付き）の予選計測レースだけを対象にする。決勝は含めない。
+    async with db.execute(
+        """SELECT tr.id AS race_id, tr.heat_id
+             FROM timing_races tr
+             JOIN heats h ON h.id = tr.heat_id
+            WHERE h.tournament_id = ?""",
+        (tournament_id,),
+    ) as cur:
+        race_rows = await cur.fetchall()
+    if not race_rows:
+        return records
+
+    heat_ids = sorted({r["heat_id"] for r in race_rows if r["heat_id"] is not None})
+    lane_to_entry: dict = {}
+    if heat_ids:
+        ph = ",".join("?" * len(heat_ids))
+        async with db.execute(
+            f"SELECT heat_id, lane_no, entry_id FROM heat_lanes WHERE heat_id IN ({ph})",
+            heat_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                lane_to_entry[(r["heat_id"], r["lane_no"])] = r["entry_id"]
+
+    _TOL = 1e-6
+
+    def _consider(key: str, value, entry_id: int, heat_id: int,
+                  *, higher_is_better: bool):
+        if value is None:
+            return
+        rec = records[key]
+        cur_v = rec["value"]
+        if cur_v is None or (value > cur_v + _TOL if higher_is_better
+                             else value < cur_v - _TOL):
+            rec["value"] = value
+            rec["holders"] = [(entry_id, heat_id)]
+        elif abs(value - cur_v) <= _TOL and (entry_id, heat_id) not in rec["holders"]:
+            rec["holders"].append((entry_id, heat_id))
+
+    for rr in race_rows:
+        heat_id = rr["heat_id"]
+        if heat_id is None:
+            continue
+        try:
+            race, result = await build_race_result(db, rr["race_id"])
+        except Exception:
+            continue
+        if race is None or result is None:
+            continue
+        st = await speed_store.load_speeds(db, rr["race_id"])
+        for m in result.ranking():
+            entry_id = lane_to_entry.get((heat_id, m.start_lane))
+            if entry_id is None:
+                continue
+            lane_sp = st["lane"].get(m.start_lane, {})
+            if m.total_time_us is not None:
+                _consider("overall", m.total_time_us / 1e6,
+                          entry_id, heat_id, higher_is_better=False)
+            _consider("top_speed", lane_sp.get("max_ms"),
+                      entry_id, heat_id, higher_is_better=True)
+            for lap in m.laps:
+                _consider("fastest_lap", lap.lap_time_us / 1e6,
+                          entry_id, heat_id, higher_is_better=False)
+
+    return records

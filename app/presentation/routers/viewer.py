@@ -304,7 +304,10 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                  AND hl.heat_id IN (SELECT id FROM heats WHERE tournament_id=?)
                LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id
                WHERE e.tournament_id=? AND e.status='active'
-               GROUP BY e.id ORDER BY total_points DESC""",
+               GROUP BY e.id
+               ORDER BY total_points DESC,
+                        COALESCE(MIN(CASE WHEN hr.total_time>0 THEN hr.total_time END),
+                                 MIN(CASE WHEN hr.best_time >0 THEN hr.best_time  END)) ASC NULLS LAST""",
             (tid, tid),
         ) as cur:
             rows_pt = await cur.fetchall()
@@ -366,6 +369,16 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                 _avg[eid] = _sp_cache[rid]["lane"].get(lno, {}).get("total_avg")
             for s in standings:
                 s["best_avg"] = _avg.get(s.get("entry_id"))
+            # Av（平均速度）も上位3名へ色付けランクを付与（速度は大きいほど上位）。
+            # ベスト列と同じ 1/2/3 の色分けを Av 列にも出すため。
+            _av = sorted(
+                [(s["best_avg"], s["entry_id"]) for s in standings
+                 if s.get("best_avg") is not None],
+                reverse=True,
+            )
+            _avg_rank = {eid: i for i, (_v, eid) in enumerate(_av[:3], start=1)}
+            for s in standings:
+                s["best_avg_rank"] = _avg_rank.get(s.get("entry_id"))
 
     # ポイント制／並び順（ポイント制）: ボーダーライン同率グループに is_tied_cutoff フラグ付与
     if qt in ("point", "order") and standings:
@@ -988,6 +1001,37 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                     "lap_avg": bm.get("lap_avg"),
                 })
 
+    # ⚡ M4LAPS RECORD HOLDERS ＋ 🎯 POINT LEADER（観覧：決勝進出レーサー枠の下に表示）。
+    #   判定ロジックは admin（予選管理）と共通（qualifying_records）。
+    #   OVERALL/FASTEST LAP/TOP SPEED は M4LAPS時のみ・同率は羅列。
+    #   POINT LEADER はポイント制で常時・同率でも1名（M4LAPSあり=ベストTOTAL最速／なし=直接対決＞1着＞CO）。
+    from app.application import qualifying_records as _qrec
+    _rec_name_by_entry = {}
+    for _s in standings:
+        if _s.get("entry_id") is not None and _s.get("name"):
+            _rec_name_by_entry[_s["entry_id"]] = _s["name"]
+    _rec_heat_labels = _qrec.build_heat_labels(heats)
+    _rh_raw = None
+    if IS_CLOUD and await m4laps_license.is_licensed(db):
+        from app.application import timing_racer_best_service as _rbest2
+        try:
+            _rh_raw = await _rbest2.record_holders_for_tournament(db, tid)
+        except Exception:
+            _rh_raw = None
+    record_holders = _qrec.format_records_display(
+        _rh_raw, _rec_name_by_entry, _rec_heat_labels)
+
+    point_leader = None
+    if qt == "point" and standings:
+        _lead = [s for s in standings if s.get("rank") == 1]
+        _pts = _lead[0].get("total_points") if _lead else None
+        if _lead and _pts:
+            _best_total_by = {s["entry_id"]: s.get("best_total")
+                              for s in standings if s.get("entry_id") is not None}
+            _winner = await _qrec.resolve_point_leader(db, tid, _lead, _best_total_by)
+            point_leader = {"points": _pts,
+                            "holders": [{"name": _winner.get("name")}]}
+
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
         "t": t,
@@ -1006,6 +1050,8 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         "heats": heats,
         "heat_lanes": heat_lanes,
         "standings": standings,
+        "record_holders": record_holders,
+        "point_leader": point_leader,
         "entries": entries,
         "qualifying_type": qt,
         "ht_rounds_data": ht_rounds_data,

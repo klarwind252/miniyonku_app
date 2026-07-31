@@ -32,6 +32,13 @@
 .rc-fin3{background:#166534}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:bold;line-height:1;margin-left:6px;flex-shrink:0}
 .rr-name{flex:1;min-width:0;line-height:1.25;overflow-wrap:anywhere}
+/* レーススケジュールのレーサー名を中央ぞろえ。
+   ・justify-content:center … 名前グループ全体をセル内で中央へ（総当たりの○×・順位バッジ込み／名前カラムが flex:1 で伸びない場合に効く）
+   ・racer-cell > div は名前カラム（ポイント制／ヒートトーナメント）。縦積みの名前＋タイムを align-items:center で中央へ
+   ・rr-name は公開HTML表示の名前span（flex:1 でセル幅いっぱい）。text-align:center で文字を中央に */
+.schedule-table .racer-cell{justify-content:center}
+.schedule-table .racer-cell > div{align-items:center}
+.schedule-table .rr-name{text-align:center}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
 .status-pending{color:#7f8c8d;font-size:12px}
 
@@ -116,6 +123,38 @@
 .entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
 .entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+/* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
+.v-m4rec{margin:0 0 12px;padding:12px 16px;border:2px solid #f0ad4e;
+  border-radius:8px;background:#1c1509}
+.v-m4rec-title{font-weight:bold;font-size:13px;color:#fff;margin-bottom:10px}
+/* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
+   値の右のカラム内で折り返す（左端に落ちない）。 */
+.v-m4rec-row{display:grid;grid-template-columns:180px 130px 1fr;gap:2px 16px;
+  align-items:baseline;padding:9px 2px;border-top:1px solid #3a2f14}
+.v-m4rec-row:first-of-type{border-top:none}
+.v-m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:7px;
+  align-items:baseline;font-weight:bold;font-size:14px;color:#cfd8e3;white-space:nowrap}
+.v-m4rec-ic{text-align:center;min-width:0}
+.v-m4rec-tx{min-width:0}
+.v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.v-m4rec-who{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
+/* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
+.v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
+  background:#241a0c;border:1px solid #4a3a12;border-radius:999px;
+  padding:2px 11px;font-size:14px;line-height:1.6}
+.v-m4rec-holder .nm{font-weight:bold;color:#f4e9d0}
+.v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
+@media(max-width:760px){
+  .v-m4rec{padding:11px 13px}
+  /* モバイル：ラベル＋値を1行目、保持者チップを2行目（全幅）にまとめて縦の冗長さを解消 */
+  .v-m4rec-row{grid-template-columns:auto 1fr;gap:5px 10px;padding:9px 0}
+  .v-m4rec-label{grid-row:1;grid-column:1;font-size:13px}
+  .v-m4rec-val{grid-row:1;grid-column:2;justify-self:end;font-size:16px}
+  .v-m4rec-who{grid-row:2;grid-column:1 / -1}
+  .v-m4rec-holder{font-size:13px;padding:2px 9px}
+  .v-m4rec-holder .rc{font-size:10px}
+}
 {% endblock %}
 
 {% macro finalist_block() %}
@@ -159,12 +198,50 @@
 {% endif %}
 {% endmacro %}
 
-{# 順位アイコン：1〜3位はメダル🥇🥈🥉、4位以下は素の数字（丸バッジは使わない）。
+{# ⚡ M4LAPS RECORD HOLDERS ＋ 🎯 POINT LEADER（決勝進出レーサー枠の下・同じ幅）。
+   同率は値の右にチップで羅列（左端に落とさない）。POINT LEADER は常に1名（絞り込みはルート側／admin同様）。 #}
+{% macro record_holders_block() %}
+{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
+<div class="v-m4rec">
+  <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
+  {% if record_holders and record_holders.overall %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🏁</span><span class="v-m4rec-tx">OVERALL</span></span>
+    <span class="v-m4rec-val">{{ record_holders.overall.value_str }}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if record_holders and record_holders.fastest_lap %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">⏱</span><span class="v-m4rec-tx">FASTEST LAP</span></span>
+    <span class="v-m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if record_holders and record_holders.top_speed %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🚀</span><span class="v-m4rec-tx">TOP SPEED</span></span>
+    <span class="v-m4rec-val">{{ record_holders.top_speed.value_str }}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if point_leader %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🎯</span><span class="v-m4rec-tx">POINT LEADER</span></span>
+    <span class="v-m4rec-val">{{ point_leader.points }} points</span>
+    <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# 順位アイコン：1位はトロフィー🏆、2〜3位はメダル🥈🥉、4位以下は素の数字（丸バッジは使わない）。
    ポイント制でのみ使用（呼び出し側で qualifying_type=='point' を判定）。
    big=true は view(FHD) 用に少し大きめ。 #}
 {% macro rank_icon(rank, big=false) %}
 {%- if rank in (1, 2, 3) -%}
-<span style="font-size:{% if big %}24px{% else %}17px{% endif %};line-height:1;margin-right:4px;flex-shrink:0">{{ {1:'🥇',2:'🥈',3:'🥉'}[rank] }}</span>
+<span style="font-size:{% if big %}28px{% else %}17px{% endif %};line-height:1;margin-right:4px;flex-shrink:0">{{ {1:'🏆',2:'🥈',3:'🥉'}[rank] }}</span>
 {%- else -%}
 <span style="display:inline-flex;align-items:center;justify-content:center;min-width:{% if big %}24px{% else %}18px{% endif %};font-size:{% if big %}18px{% else %}13px{% endif %};font-weight:bold;color:#7f8c8d;margin-right:4px;flex-shrink:0">{{ rank }}</span>
 {%- endif -%}
@@ -260,6 +337,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 </div>
 {% elif not is_none_roundrobin and qualifying_type != "heat_roundrobin" %}{{ finalist_block() }}{% endif %}
+{{ record_holders_block() }}
 
 {% if qualifying_type == "heat_roundrobin" and all_heats_complete %}
 {% set completed_heats = hr_heats_data | selectattr("is_complete") | list %}
@@ -311,7 +389,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {% if top3_nr[1] %}<div style="font-size:12px;color:#7f8c8d;margin-top:2px">{{ top3_nr[1].wins }}勝{{ top3_nr[1].losses }}負</div>{% endif %}
     </div>
     <div style="text-align:center;padding:14px 24px;background:#1a3a20;border-radius:12px;border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %}">
-      <div style="font-size:36px">🥇</div>
+      <div style="font-size:36px">🏆</div>
       <div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:4px">1位</div>
       <div style="font-size:20px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:6px">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
       {% if top3_nr[0] %}<div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:2px">{{ top3_nr[0].wins }}勝{{ top3_nr[0].losses }}負</div>{% endif %}
@@ -625,12 +703,15 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </div>
         </div>
         {% else %}
-        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:13px;color:#2980b9;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
+        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:13px;color:#fff;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
           予選 {{ rno }} 回目
         </div>
         {% endif %}
         <table class="schedule-table">
-          <thead><tr><th>#</th><th>1コース</th><th>2コース</th><th>3コース</th></tr></thead>
+          {# コース見出しを各レーン色で着色（1=青 / 2=赤 / 3=緑。総当たり・ヒートのコースドットと同じ配色）。
+             白太字で背景色に対して視認性を確保。 #}
+          {% set _sc_lc = {1:'#1d5a82', 2:'#a2352a', 3:'#1b7a43'} %}
+          <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
@@ -902,7 +983,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
           {% if m4laps_active and qualifying_type == 'point' %}
           <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
-          <td class="rs-num" style="text-align:center;font-size:12px;color:#8aa0b6">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
+          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_avg_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_avg_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_avg_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
           {% endif %}
           {% endif %}
         </tr>
