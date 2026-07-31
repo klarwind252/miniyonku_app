@@ -44,7 +44,7 @@ def format_records_display(raw, name_by_entry: dict, heat_labels: dict):
         _gap = rec.get("gap")
         gap_str = None
         if _gap is not None:
-            gap_str = f"+{_gap:.2f}" if speed else f"+{_gap:.3f}"
+            gap_str = f"-{_gap:.2f}" if speed else f"-{_gap:.3f}"
         holders = [
             {"name": name_by_entry.get(eid, "?"), "label": heat_labels.get(hid, "")}
             for (eid, hid) in rec["holders"]

@@ -137,7 +137,7 @@
   align-items:baseline;padding:5px;border-top:1px solid #a87937}
 .v-m4rec-row:first-of-type{border-top:none}
 .v-m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:7px;
-  align-items:baseline;font-weight:bold;font-size:14px;color:#cfd8e3;white-space:nowrap}
+  align-items:baseline;font-weight:bold;font-size:14px;color:#fff;white-space:nowrap}
 .v-m4rec-ic{text-align:center;min-width:0}
 .v-m4rec-tx{min-width:0}
 .v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
@@ -147,21 +147,23 @@
 /* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
 .v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
   padding:2px 4px;font-size:14px;line-height:1.6}
-.v-m4rec-holder .nm{font-weight:bold;color:#f4e9d0}
+.v-m4rec-holder .nm{font-weight:bold;color:#fff}
 .v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
 .v-m4rec-none{color:#7a828c;font-size:13px}
 .v-m4rec-rt{color:#f0ad4e;font-weight:bold;font-size:13px;margin-left:2px}
-.v-m4rec-cond{color:#7a828c;font-size:11px;margin-left:10px}
+.v-m4rec-full{color:#f0ad4e;font-weight:bold;font-size:12px;letter-spacing:.6px;margin-left:8px}
+.v-m4rec-cond{grid-column:2 / 4;color:#7a828c;font-size:11px;align-self:baseline;min-width:0;line-height:1.3}
 @media(max-width:760px){
   .v-m4rec{padding:11px 13px}
-  /* モバイル：ラベル＋値＋差を1行目、保持者チップを2行目（全幅）にまとめる */
-  .v-m4rec-row{grid-template-columns:auto auto 1fr;gap:4px 8px;padding:5px 0}
-  .v-m4rec-label{grid-row:1;grid-column:1;font-size:13px}
-  .v-m4rec-val{grid-row:1;grid-column:2;font-size:16px}
-  .v-m4rec-gap{grid-row:1;grid-column:3;justify-self:start}
-  .v-m4rec-who{grid-row:2;grid-column:1 / -1}
-  .v-m4rec-holder{font-size:13px;padding:2px 9px}
+  /* モバイル：項目名を1行目（全幅）、値＋差＋レーサー名を2行目に */
+  .v-m4rec-row{grid-template-columns:auto auto 1fr;gap:1px 6px;padding:6px 0}
+  .v-m4rec-label{grid-row:1;grid-column:1 / -1;font-size:13px;margin-bottom:1px}
+  .v-m4rec-val{grid-row:2;grid-column:1;font-size:16px}
+  .v-m4rec-gap{grid-row:2;grid-column:2}
+  .v-m4rec-who{grid-row:2;grid-column:3}
+  .v-m4rec-holder{font-size:13px;padding:2px 4px}
   .v-m4rec-holder .rc{font-size:10px}
+  .v-m4rec-cond{grid-row:2;grid-column:1 / 3}
 }
 {% endblock %}
 
@@ -217,7 +219,7 @@
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🏁</span><span class="v-m4rec-tx">OVERALL</span></span>
     <span class="v-m4rec-val">{{ record_holders.overall.value_str }}</span>
     <span class="v-m4rec-gap">{{ record_holders.overall.gap_str or "" }}</span>
-    <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if record_holders and record_holders.fastest_lap %}
@@ -225,7 +227,7 @@
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⏱</span><span class="v-m4rec-tx">FASTEST LAP</span></span>
     <span class="v-m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
     <span class="v-m4rec-gap">{{ record_holders.fastest_lap.gap_str or "" }}</span>
-    <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if record_holders and record_holders.top_speed %}
@@ -233,7 +235,7 @@
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🚀</span><span class="v-m4rec-tx">TOP SPEED</span></span>
     <span class="v-m4rec-val">{{ record_holders.top_speed.value_str }}</span>
     <span class="v-m4rec-gap">{{ record_holders.top_speed.gap_str or "" }}</span>
-    <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if point_leader %}
@@ -241,30 +243,30 @@
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🎯</span><span class="v-m4rec-tx">POINT LEADER</span></span>
     <span class="v-m4rec-val">{{ point_leader.points }} points</span>
     <span class="v-m4rec-gap"></span>
-    <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}{% if point_leader.full_score %}<span class="v-m4rec-full">FULL SCORE</span>{% endif %}</span>
   </div>
   {% endif %}
   {# 称号：SWEEP / GRAND SLAM / SPEED STAR / SPRINTER（該当なしは「該当なし」）。admin と同項目。 #}
   {% if achievements %}
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">💯</span><span class="v-m4rec-tx">SWEEP</span></span>
-    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
-    <span class="v-m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">予選 全レース1位（○のみ）</span></span>
+    <span class="v-m4rec-cond">予選 全レース1位（○のみ）</span>
+    <span class="v-m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">👑</span><span class="v-m4rec-tx">GRAND SLAM</span></span>
-    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
-    <span class="v-m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="v-m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span></span>
+    <span class="v-m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span>
+    <span class="v-m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="v-m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⭐</span><span class="v-m4rec-tx">SPEED STAR</span></span>
-    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
-    <span class="v-m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span></span>
+    <span class="v-m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span>
+    <span class="v-m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⚡</span><span class="v-m4rec-tx">SPRINTER</span></span>
-    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
-    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">最も多くの区間で1位</span></span>
+    <span class="v-m4rec-cond">最も多くの区間で1位</span>
+    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>
   {% endif %}
 </div>

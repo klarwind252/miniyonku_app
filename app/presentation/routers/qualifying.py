@@ -1164,6 +1164,9 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         _sweep = await qrec.sweep_entries_for_tournament(db, tid)
     except Exception:
         _sweep = set()
+    # POINT LEADER が全レース1位＝満点なら FULL SCORE 表示（SWEEP成立と同義）
+    if point_leader is not None:
+        point_leader["full_score"] = (point_leader_eid in _sweep)
     achievements = qrec.compute_achievements(
         _rh_raw, _qual_leader_eid, _sweep, _name_by_entry)
 
