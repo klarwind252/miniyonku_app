@@ -277,7 +277,8 @@
    big=true は view(FHD) 用に少し大きめ。 #}
 {% macro rank_icon(rank, big=false) %}
 {%- if rank in (1, 2, 3) -%}
-<span style="font-size:{% if big %}28px{% else %}17px{% endif %};line-height:1;margin-right:4px;flex-shrink:0">{{ {1:'🏆',2:'🥈',3:'🥉'}[rank] }}</span>
+{%- set _rc = {1:'#e8b923', 2:'#c4cbd2', 3:'#bf7d3f'} -%}
+<span style="font-size:{% if big %}26px{% else %}18px{% endif %};line-height:1;margin-right:4px;flex-shrink:0;color:{{ _rc[rank] }};font-weight:bold">{{ {1:'❶',2:'❷',3:'❸'}[rank] }}</span>
 {%- else -%}
 <span style="display:inline-flex;align-items:center;justify-content:center;min-width:{% if big %}24px{% else %}18px{% endif %};font-size:{% if big %}18px{% else %}13px{% endif %};font-weight:bold;color:#7f8c8d;margin-right:4px;flex-shrink:0">{{ rank }}</span>
 {%- endif -%}
