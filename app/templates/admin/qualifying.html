@@ -210,6 +210,8 @@
   font-size:13px;line-height:1.6}
 .m4rec-holder .nm{font-weight:bold;color:#2c3e50}
 .m4rec-holder .rc{color:#9a8f76;font-size:11px}
+.m4rec-none{color:#9aa3ad;font-size:13px}
+.m4rec-rt{color:#e67e22;font-weight:bold;font-size:13px;margin-left:2px}
 @media(max-width:760px){
   .m4rec-row{grid-template-columns:1fr;gap:4px}
   .m4rec-val{font-size:16px}
@@ -1540,6 +1542,29 @@ document.addEventListener('DOMContentLoaded', function(){
           <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">POINT LEADER</span></span>
           <span class="m4rec-val">{{ point_leader.points }} points</span>
           <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+        </div>
+        {% endif %}
+        {# ===== 称号：SWEEP / GRAND SLAM / SPEED STAR / SPRINTER。該当なしは「該当なし」 ===== #}
+        {% if achievements %}
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">💯</span><span class="m4rec-tx">SWEEP</span></span>
+          <span class="m4rec-val"></span>
+          <span class="m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+        </div>
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">👑</span><span class="m4rec-tx">GRAND SLAM</span></span>
+          <span class="m4rec-val"></span>
+          <span class="m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+        </div>
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">⭐</span><span class="m4rec-tx">SPEED STAR</span></span>
+          <span class="m4rec-val"></span>
+          <span class="m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+        </div>
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">SPRINTER</span></span>
+          <span class="m4rec-val"></span>
+          <span class="m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
         </div>
         {% endif %}
         </div>
