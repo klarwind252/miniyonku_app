@@ -1139,6 +1139,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     # 🎯 POINT LEADER：予選順位1位（＝最多ポイント）。同率でも1名に絞る（共通ロジック）。
     #   ポイント制のみ・0点時は出さない。M4LAPSあり→ベストTOTAL最速／なし→直接対決＞1着＞CO。
     point_leader = None
+    point_leader_eid = None
     if t["qualifying_type"] == "point" and standings:
         _lead = [s for s in standings if s.get("rank") == 1]
         _pts = _lead[0].get("total_points") if _lead else None
@@ -1147,6 +1148,15 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             _winner = await qrec.resolve_point_leader(db, tid, _lead, _best_total_by)
             point_leader = {"points": _pts,
                             "holders": [{"name": _winner.get("name")}]}
+            point_leader_eid = _winner.get("entry_id")
+
+    # 称号：SWEEP / GRAND SLAM(予選=Right there!!) / SPEED STAR / SPRINTER
+    try:
+        _sweep = await qrec.sweep_entries_for_tournament(db, tid)
+    except Exception:
+        _sweep = set()
+    achievements = qrec.compute_achievements(
+        _rh_raw, point_leader_eid, _sweep, _name_by_entry)
 
     # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
     entries_by_yomi = sorted(
@@ -1162,6 +1172,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         "best_total_min": best_total_min,
         "record_holders": record_holders,
         "point_leader": point_leader,
+        "achievements": achievements,
         "max_sector_no": max_sector_no,
         "heats": heats,
         "heat_lanes_map": heat_lanes_map,

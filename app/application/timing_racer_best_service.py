@@ -158,6 +158,9 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
         "overall":     {"value": None, "holders": []},
         "fastest_lap": {"value": None, "holders": []},
         "top_speed":   {"value": None, "holders": []},
+        # sno(1..) -> {"value": 区間最速タイム, "holders": [(entry_id, heat_id), ...]}
+        # SPRINTER（全区間1位）判定に使う。区間数は可変。
+        "sectors":     {},
     }
 
     # 反映済み（heat_id 付き）の予選計測レースだけを対象にする。決勝は含めない。
@@ -198,6 +201,18 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
         elif abs(value - cur_v) <= _TOL and (entry_id, heat_id) not in rec["holders"]:
             rec["holders"].append((entry_id, heat_id))
 
+    def _consider_sec(sno: int, value, entry_id: int, heat_id: int):
+        # 区間タイムは小さいほど上位（最速）
+        if value is None:
+            return
+        rec = records["sectors"].setdefault(sno, {"value": None, "holders": []})
+        cur_v = rec["value"]
+        if cur_v is None or value < cur_v - _TOL:
+            rec["value"] = value
+            rec["holders"] = [(entry_id, heat_id)]
+        elif abs(value - cur_v) <= _TOL and (entry_id, heat_id) not in rec["holders"]:
+            rec["holders"].append((entry_id, heat_id))
+
     for rr in race_rows:
         heat_id = rr["heat_id"]
         if heat_id is None:
@@ -222,5 +237,7 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
             for lap in m.laps:
                 _consider("fastest_lap", lap.lap_time_us / 1e6,
                           entry_id, heat_id, higher_is_better=False)
+                for idx, sec in enumerate(lap.sectors):
+                    _consider_sec(idx + 1, sec.dt_us / 1e6, entry_id, heat_id)
 
     return records

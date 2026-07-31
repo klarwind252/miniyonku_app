@@ -119,3 +119,72 @@ async def resolve_point_leader(db, tournament_id: int, leaders: list,
                        -first.get(s["entry_id"], 0),
                        co.get(s["entry_id"], 0)),
     )[0]
+
+
+async def sweep_entries_for_tournament(db, tournament_id: int) -> set:
+    """SWEEP：予選で自分の全レースを1位（○）で終えた entry_id の集合。
+    1回でも CO / 2位以下(rank≠1) / 未消化(結果なし) があれば非該当。"""
+    async with db.execute(
+        """SELECT hl.entry_id, hr.rank, COALESCE(hr.is_co,0) AS is_co
+             FROM heat_lanes hl
+             JOIN heats h ON h.id=hl.heat_id AND h.tournament_id=?
+             LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id""",
+        (tournament_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    scheduled: dict = {}   # entry_id -> 予定レース数
+    good: dict = {}        # entry_id -> 1位かつCO無しの数
+    for r in rows:
+        eid = r["entry_id"]
+        scheduled[eid] = scheduled.get(eid, 0) + 1
+        if r["rank"] == 1 and not r["is_co"]:
+            good[eid] = good.get(eid, 0) + 1
+    return {eid for eid, n in scheduled.items()
+            if n > 0 and good.get(eid, 0) == n}
+
+
+def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) -> dict:
+    """称号（レーサー名リスト。空＝該当なし）を返す。
+
+      SWEEP      … 予選で全レース1位（sweep_eids をそのまま）
+      GRAND SLAM … OVERALL1位 かつ POINT LEADER（予選画面。決勝優勝は未確定→表示側で "Right there!!"）
+      SPEED STAR … OVERALL1位・FASTEST LAP1位・TOP SPEED1位 をすべて保持
+      SPRINTER   … 全区間（セクション）それぞれで1位
+    """
+    rh_raw = rh_raw or {}
+
+    def _eids(rec):
+        return {eid for (eid, _h) in (rec or {}).get("holders", [])}
+
+    ov = _eids(rh_raw.get("overall"))
+    lp = _eids(rh_raw.get("fastest_lap"))
+    ts = _eids(rh_raw.get("top_speed"))
+
+    # SPEED STAR：3記録すべて保持（いずれか未計測なら該当なし）
+    speed_star = (ov & lp & ts) if (ov and lp and ts) else set()
+
+    # SPRINTER：全区間で1位（全セクションの保持者の積集合）
+    secs = rh_raw.get("sectors") or {}
+    if secs:
+        sprinter = None
+        for _sno, rec in secs.items():
+            s = {eid for (eid, _h) in rec.get("holders", [])}
+            sprinter = s if sprinter is None else (sprinter & s)
+        sprinter = sprinter or set()
+    else:
+        sprinter = set()
+
+    # GRAND SLAM（予選）：OVERALL1位 かつ POINT LEADER
+    grand = ({point_leader_eid}
+             if (point_leader_eid is not None and point_leader_eid in ov)
+             else set())
+
+    def _names(eids):
+        return sorted(name_by_entry.get(e, "?") for e in eids)
+
+    return {
+        "sweep":      _names(set(sweep_eids or set())),
+        "grand_slam": _names(grand),
+        "speed_star": _names(speed_star),
+        "sprinter":   _names(sprinter),
+    }
