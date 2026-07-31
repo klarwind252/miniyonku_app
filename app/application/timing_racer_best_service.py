@@ -193,6 +193,7 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
         if value is None:
             return
         rec = records[key]
+        rec.setdefault("_vals", set()).add(value)
         cur_v = rec["value"]
         if cur_v is None or (value > cur_v + _TOL if higher_is_better
                              else value < cur_v - _TOL):
@@ -239,5 +240,11 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
                           entry_id, heat_id, higher_is_better=False)
                 for idx, sec in enumerate(lap.sectors):
                     _consider_sec(idx + 1, sec.dt_us / 1e6, entry_id, heat_id)
+
+    # 2位との差（distinct な上位2値の差）。overall/lap は昇順、top_speed は降順。
+    for _k, _hi in (("overall", False), ("fastest_lap", False), ("top_speed", True)):
+        _vals = sorted(records[_k].get("_vals", set()), reverse=_hi)
+        records[_k]["gap"] = (abs(_vals[0] - _vals[1]) if len(_vals) >= 2 else None)
+        records[_k].pop("_vals", None)
 
     return records

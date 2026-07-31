@@ -41,11 +41,15 @@ def format_records_display(raw, name_by_entry: dict, heat_labels: dict):
             return None
         v = rec["value"]
         vstr = f"{v:.2f} m/s" if speed else f"{v:.3f} sec"
+        _gap = rec.get("gap")
+        gap_str = None
+        if _gap is not None:
+            gap_str = f"+{_gap:.2f}" if speed else f"+{_gap:.3f}"
         holders = [
             {"name": name_by_entry.get(eid, "?"), "label": heat_labels.get(hid, "")}
             for (eid, hid) in rec["holders"]
         ]
-        return {"value_str": vstr, "holders": holders}
+        return {"value_str": vstr, "gap_str": gap_str, "holders": holders}
 
     out = {
         "overall": _fmt(raw.get("overall"), speed=False),

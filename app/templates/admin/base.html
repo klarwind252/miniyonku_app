@@ -33,7 +33,7 @@ nav a.nav-viewer-link:hover{background:#34495e;color:#fff;text-decoration:none}
 .card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);margin-bottom:20px;overflow:hidden}
 /* ⚠ flex-wrap 必須。無いと狭い画面で見出しやボタンが押しつぶされ、
       日本語が1文字ずつ縦に折り返して読めなくなる（幅が足りなければ改行させる）。 */
-.card-header{padding:14px 20px;background:#f8f9fa;border-bottom:1px solid #e9ecef;font-weight:bold;display:flex;align-items:center;gap:10px;flex-wrap:wrap;row-gap:8px}
+.card-header{padding:14px 20px;background:#e9ecef;border-bottom:1px solid #e9ecef;font-weight:bold;font-size:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;row-gap:8px}
 .card-header > div{flex-wrap:wrap}
 .card-header .badge{background:#e74c3c;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:normal}
 .card-body{padding:20px}
@@ -272,8 +272,44 @@ select{background:#fff}
     </select>
   </div>
   {% endif %}
+  <!-- レーサー用アクセスQR（ナビ最右端） -->
+  <div class="nav-group">
+    <button type="button" onclick="openRacerQr()" title="レーサー用アクセスQRを表示"
+            style="display:flex;align-items:center;gap:6px;color:#ecf0f1;padding:14px 16px;font-size:13px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm8 0h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm2 2h2v2h-2v-2zm2-2h2v2h-2v-2zm0 4h2v2h-2v-2z"/></svg>
+      QR
+    </button>
+  </div>
 
 </nav>
+
+<!-- レーサー用アクセスQR モーダル -->
+<div id="racerQrModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;align-items:center;justify-content:center" onclick="if(event.target===this)closeRacerQr()">
+  <div style="background:#fff;border-radius:12px;padding:24px;max-width:360px;width:92vw;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.35)">
+    <div style="font-weight:bold;font-size:16px;color:#2c3e50;margin-bottom:4px">📱 レーサー用アクセスQR</div>
+    <div style="font-size:12px;color:#636e72;margin-bottom:14px">レーサーはこのQRから入場・観覧ページにアクセスできます。</div>
+    <div id="racerQrCanvas" style="display:inline-block;line-height:0;border:1px solid #e9ecef;border-radius:8px;padding:10px;background:#fff"></div>
+    <div id="racerQrUrl" style="font-size:12px;color:#95a5a6;margin-top:12px;word-break:break-all"></div>
+    <button type="button" onclick="closeRacerQr()" style="margin-top:16px;padding:8px 24px;border:none;border-radius:6px;background:#2c3e50;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">閉じる</button>
+  </div>
+</div>
+<script src="/static/js/qrcode.min.js"></script>
+<script>
+// レーサー用アクセスQR（クラウド版）。URL＝現在ホスト＋店舗prefix＋/enter を都度生成。
+function openRacerQr(){
+  var prefix = location.pathname.split('/admin')[0];   // 店舗slug（無ければ空）
+  var url = location.origin + prefix + '/enter';
+  var wrap = document.getElementById('racerQrCanvas');
+  wrap.innerHTML = '';
+  try{ new QRCode(wrap, {text:url, width:240, height:240,
+        colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M}); }
+  catch(e){ wrap.textContent = 'QR生成に失敗しました'; }
+  document.getElementById('racerQrUrl').textContent = url;
+  document.getElementById('racerQrModal').style.display = 'flex';
+}
+function closeRacerQr(){ document.getElementById('racerQrModal').style.display = 'none'; }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeRacerQr(); });
+</script>
 <div class="container">
 {% block content %}{% endblock %}
 </div>

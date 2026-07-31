@@ -93,7 +93,11 @@
 .v-cols.v-view{grid-template-columns:minmax(0,1fr) 500px}
 .v-cols>div{min-width:0}
 .v-cols>div>.v-section{overflow-x:auto}
-@media(max-width:900px){.v-cols,.v-cols.v-view{grid-template-columns:1fr}}
+/* 観覧(2カラム)：右カラム（📊予選順位）をスクロール追従（ナビ52px下に固定）。
+   はみ出す分は内部スクロール。左の🏁レーススケジュールは通常スクロールのまま。 */
+.v-cols.v-view>.v-sticky-col{position:sticky;top:60px;align-self:start;
+  max-height:calc(100vh - 68px);overflow-y:auto}
+@media(max-width:900px){.v-cols,.v-cols.v-view{grid-template-columns:1fr}.v-cols.v-view>.v-sticky-col{position:static;max-height:none;overflow:visible}}
 /* ヒート制総当たり：グループ内「レーススケジュール｜星取表」。スマホ(<=900px)では縦積み（スケジュールの下に星取表） */
 .hr-grp-cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:0}
 .hr-grp-cols>.hr-sched{border-right:1px solid #1e3a5f}
@@ -126,11 +130,11 @@
 /* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
 .v-m4rec{margin:0 0 12px;padding:12px 16px;border:2px solid #f0ad4e;
   border-radius:8px;background:#1c1509}
-.v-m4rec-title{font-weight:bold;font-size:13px;color:#fff;margin-bottom:10px}
-/* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
+.v-m4rec-title{font-weight:bold;font-size:18px;color:#fff;margin-bottom:10px}
+/* ラベル｜値｜差｜保持者 の4カラム。保持者は末列に固定され、はみ出しても
    値の右のカラム内で折り返す（左端に落ちない）。 */
-.v-m4rec-row{display:grid;grid-template-columns:180px 130px 1fr;gap:2px 16px;
-  align-items:baseline;padding:9px 2px;border-top:1px solid #3a2f14}
+.v-m4rec-row{display:grid;grid-template-columns:180px 118px 78px 1fr;gap:2px 14px;
+  align-items:baseline;padding:5px;border-top:1px solid #3a2f14}
 .v-m4rec-row:first-of-type{border-top:none}
 .v-m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:7px;
   align-items:baseline;font-weight:bold;font-size:14px;color:#cfd8e3;white-space:nowrap}
@@ -138,6 +142,7 @@
 .v-m4rec-tx{min-width:0}
 .v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
   font-variant-numeric:tabular-nums;white-space:nowrap}
+.v-m4rec-gap{font-size:12px;color:#8a94a0;font-variant-numeric:tabular-nums;white-space:nowrap}
 .v-m4rec-who{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
 /* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
 .v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
@@ -145,12 +150,16 @@
   padding:2px 11px;font-size:14px;line-height:1.6}
 .v-m4rec-holder .nm{font-weight:bold;color:#f4e9d0}
 .v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
+.v-m4rec-none{color:#7a828c;font-size:13px}
+.v-m4rec-rt{color:#f0ad4e;font-weight:bold;font-size:13px;margin-left:2px}
+.v-m4rec-cond{color:#7a828c;font-size:11px;margin-left:10px}
 @media(max-width:760px){
   .v-m4rec{padding:11px 13px}
-  /* モバイル：ラベル＋値を1行目、保持者チップを2行目（全幅）にまとめて縦の冗長さを解消 */
-  .v-m4rec-row{grid-template-columns:auto 1fr;gap:5px 10px;padding:9px 0}
+  /* モバイル：ラベル＋値＋差を1行目、保持者チップを2行目（全幅）にまとめる */
+  .v-m4rec-row{grid-template-columns:auto auto 1fr;gap:4px 8px;padding:5px 0}
   .v-m4rec-label{grid-row:1;grid-column:1;font-size:13px}
-  .v-m4rec-val{grid-row:1;grid-column:2;justify-self:end;font-size:16px}
+  .v-m4rec-val{grid-row:1;grid-column:2;font-size:16px}
+  .v-m4rec-gap{grid-row:1;grid-column:3;justify-self:start}
   .v-m4rec-who{grid-row:2;grid-column:1 / -1}
   .v-m4rec-holder{font-size:13px;padding:2px 9px}
   .v-m4rec-holder .rc{font-size:10px}
@@ -208,6 +217,7 @@
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🏁</span><span class="v-m4rec-tx">OVERALL</span></span>
     <span class="v-m4rec-val">{{ record_holders.overall.value_str }}</span>
+    <span class="v-m4rec-gap">{{ record_holders.overall.gap_str or "" }}</span>
     <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
@@ -215,6 +225,7 @@
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⏱</span><span class="v-m4rec-tx">FASTEST LAP</span></span>
     <span class="v-m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
+    <span class="v-m4rec-gap">{{ record_holders.fastest_lap.gap_str or "" }}</span>
     <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
@@ -222,6 +233,7 @@
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🚀</span><span class="v-m4rec-tx">TOP SPEED</span></span>
     <span class="v-m4rec-val">{{ record_holders.top_speed.value_str }}</span>
+    <span class="v-m4rec-gap">{{ record_holders.top_speed.gap_str or "" }}</span>
     <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
@@ -229,7 +241,31 @@
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🎯</span><span class="v-m4rec-tx">POINT LEADER</span></span>
     <span class="v-m4rec-val">{{ point_leader.points }} points</span>
+    <span class="v-m4rec-gap"></span>
     <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {# 称号：SWEEP / GRAND SLAM / SPEED STAR / SPRINTER（該当なしは「該当なし」）。admin と同項目。 #}
+  {% if achievements %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">💯</span><span class="v-m4rec-tx">SWEEP</span></span>
+    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
+    <span class="v-m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">予選 全レース1位（○のみ）</span></span>
+  </div>
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">👑</span><span class="v-m4rec-tx">GRAND SLAM</span></span>
+    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
+    <span class="v-m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="v-m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span></span>
+  </div>
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">⭐</span><span class="v-m4rec-tx">SPEED STAR</span></span>
+    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
+    <span class="v-m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span></span>
+  </div>
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">⚡</span><span class="v-m4rec-tx">SPRINTER</span></span>
+    <span class="v-m4rec-val"></span><span class="v-m4rec-gap"></span>
+    <span class="v-m4rec-who">{% if achievements.sprinter %}{% for n in achievements.sprinter %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}<span class="v-m4rec-cond">最も多くの区間で1位</span></span>
   </div>
   {% endif %}
 </div>
@@ -703,14 +739,14 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </div>
         </div>
         {% else %}
-        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:13px;color:#fff;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
+        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
           予選 {{ rno }} 回目
         </div>
         {% endif %}
         <table class="schedule-table">
           {# コース見出しを各レーン色で着色（1=青 / 2=赤 / 3=緑。総当たり・ヒートのコースドットと同じ配色）。
              白太字で背景色に対して視認性を確保。 #}
-          {% set _sc_lc = {1:'#1d5a82', 2:'#a2352a', 3:'#1b7a43'} %}
+          {% set _sc_lc = {1:'#163f5e', 2:'#732519', 3:'#13592f'} %}
           <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
@@ -945,7 +981,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
   <!-- 右：順位表＋エントリー -->
   {% if qualifying_type != 'heat_roundrobin' %}
-  <div>
+  <div class="v-sticky-col">
     {% if standings %}
     <div class="v-section">
       <div class="v-section-title">📊 予選順位</div>

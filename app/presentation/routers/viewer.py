@@ -1022,6 +1022,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         _rh_raw, _rec_name_by_entry, _rec_heat_labels)
 
     point_leader = None
+    _pl_eid = None
     if qt == "point" and standings:
         _lead = [s for s in standings if s.get("rank") == 1]
         _pts = _lead[0].get("total_points") if _lead else None
@@ -1031,6 +1032,15 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             _winner = await _qrec.resolve_point_leader(db, tid, _lead, _best_total_by)
             point_leader = {"points": _pts,
                             "holders": [{"name": _winner.get("name")}]}
+            _pl_eid = _winner.get("entry_id")
+
+    # 称号：SWEEP / GRAND SLAM / SPEED STAR / SPRINTER（admin と共通ロジック）
+    try:
+        _sweep = await _qrec.sweep_entries_for_tournament(db, tid)
+    except Exception:
+        _sweep = set()
+    achievements = _qrec.compute_achievements(
+        _rh_raw, _pl_eid, _sweep, _rec_name_by_entry)
 
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
@@ -1052,6 +1062,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         "standings": standings,
         "record_holders": record_holders,
         "point_leader": point_leader,
+        "achievements": achievements,
         "entries": entries,
         "qualifying_type": qt,
         "ht_rounds_data": ht_rounds_data,
