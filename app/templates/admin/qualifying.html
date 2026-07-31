@@ -1509,28 +1509,6 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     {% endif %}
 {% if not is_heat_roundrobin %}
-{# none_roundrobin: 順位表 + 勝敗表を横並び。それ以外は順位表を全幅にする #}
-{% if is_none_roundrobin %}
-<div class="qual-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
-{% else %}
-<div>
-{% endif %}
-  <div class="card">
-    <div class="card-header">
-      {% if is_roundrobin %}勝敗表{% else %}予選順位表{% endif %}
-
-      {% if finalists %}
-      <span style="font-size:12px;color:#636e72;margin-left:8px;font-weight:normal">決勝進出 {{ finalists }} 名</span>
-      {% endif %}
-      {% if not is_finalized and not is_confirmed_nr %}
-      {# 全レースの結果入力が完了したら自動集計ボタンを緑グローで強調 #}
-      {% set all_races_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
-      <button type="button" class="btn {% if all_races_done %}btn-success btn-autocalc-hl{% else %}btn-secondary{% endif %}" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold"
-              onclick="autoAdvanced({{ t.id }})">⚡ 自動集計</button>
-      {% endif %}
-    </div>
-    <div class="card-body" style="padding:0;overflow-x:auto">
-      {% if standings %}
       {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は値の右にチップで羅列（左端に落とさない） #}
       {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
       <div class="m4rec">
@@ -1565,6 +1543,28 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endif %}
       </div>
       {% endif %}
+{# none_roundrobin: 順位表 + 勝敗表を横並び。それ以外は順位表を全幅にする #}
+{% if is_none_roundrobin %}
+<div class="qual-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+{% else %}
+<div>
+{% endif %}
+  <div class="card">
+    <div class="card-header">
+      {% if is_roundrobin %}勝敗表{% else %}予選順位表{% endif %}
+
+      {% if finalists %}
+      <span style="font-size:12px;color:#636e72;margin-left:8px;font-weight:normal">決勝進出 {{ finalists }} 名</span>
+      {% endif %}
+      {% if not is_finalized and not is_confirmed_nr %}
+      {# 全レースの結果入力が完了したら自動集計ボタンを緑グローで強調 #}
+      {% set all_races_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
+      <button type="button" class="btn {% if all_races_done %}btn-success btn-autocalc-hl{% else %}btn-secondary{% endif %}" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold"
+              onclick="autoAdvanced({{ t.id }})">⚡ 自動集計</button>
+      {% endif %}
+    </div>
+    <div class="card-body" style="padding:0;overflow-x:auto">
+      {% if standings %}
       <table class="std-tbl">
         <thead>
           {% if is_none_roundrobin %}
