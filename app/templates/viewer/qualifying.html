@@ -123,21 +123,30 @@
 .entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
 .entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-/* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下） */
-.v-m4rec{margin:0 16px 12px;padding:11px 16px;border:2px solid #f0ad4e;
+/* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
+.v-m4rec{margin:0 0 12px;padding:12px 16px;border:2px solid #f0ad4e;
   border-radius:8px;background:#1c1509}
-.v-m4rec-title{font-weight:bold;font-size:13px;color:#f0ad4e;letter-spacing:.5px;margin-bottom:8px}
-.v-m4rec-row{display:flex;align-items:baseline;gap:12px;padding:3px 0;flex-wrap:wrap}
-.v-m4rec-label{flex:0 0 150px;font-weight:bold;font-size:14px;color:#cfd8e3}
-.v-m4rec-val{font-weight:bold;font-size:17px;color:#fff;
-  font-variant-numeric:tabular-nums;min-width:110px}
-.v-m4rec-who{font-size:14px;color:#ecf0f1}
-.v-m4rec-who .nm{font-weight:bold}
-.v-m4rec-race{color:#8a94a0;font-size:12px}
-@media(max-width:700px){
-  .v-m4rec-label{flex:0 0 120px;font-size:13px}
-  .v-m4rec-val{font-size:15px;min-width:92px}
-  .v-m4rec-who{font-size:13px}
+.v-m4rec-title{font-weight:bold;font-size:14px;color:#f0ad4e;letter-spacing:.6px;
+  margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid #4a3a12}
+/* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
+   値の右のカラム内で折り返す（左端に落ちない）。 */
+.v-m4rec-row{display:grid;grid-template-columns:180px 130px 1fr;gap:2px 16px;
+  align-items:baseline;padding:9px 2px;border-top:1px solid #3a2f14}
+.v-m4rec-row:first-of-type{border-top:none}
+.v-m4rec-label{font-weight:bold;font-size:14px;color:#cfd8e3;white-space:nowrap}
+.v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.v-m4rec-who{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
+/* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
+.v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
+  background:#241a0c;border:1px solid #4a3a12;border-radius:999px;
+  padding:2px 11px;font-size:14px;line-height:1.6}
+.v-m4rec-holder .nm{font-weight:bold;color:#f4e9d0}
+.v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
+@media(max-width:760px){
+  .v-m4rec-row{grid-template-columns:1fr;gap:4px}
+  .v-m4rec-val{font-size:16px}
+  .v-m4rec-label{font-size:13px}
 }
 {% endblock %}
 
@@ -182,8 +191,8 @@
 {% endif %}
 {% endmacro %}
 
-{# ⚡ M4LAPS RECORD HOLDERS ＋ 🎯 POINT LEADER（決勝進出レーサー枠の下）。
-   3記録の同率は改行せず「/」で羅列。POINT LEADER は常に1名（絞り込みはルート側／admin同様）。 #}
+{# ⚡ M4LAPS RECORD HOLDERS ＋ 🎯 POINT LEADER（決勝進出レーサー枠の下・同じ幅）。
+   同率は値の右にチップで羅列（左端に落とさない）。POINT LEADER は常に1名（絞り込みはルート側／admin同様）。 #}
 {% macro record_holders_block() %}
 {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
 <div class="v-m4rec">
@@ -192,28 +201,28 @@
   <div class="v-m4rec-row">
     <span class="v-m4rec-label">🏁 OVERALL</span>
     <span class="v-m4rec-val">{{ record_holders.overall.value_str }}</span>
-    <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="nm">{{ h.name }}</span> <span class="v-m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if record_holders and record_holders.fastest_lap %}
   <div class="v-m4rec-row">
     <span class="v-m4rec-label">⏱ FASTEST LAP</span>
     <span class="v-m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
-    <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="nm">{{ h.name }}</span> <span class="v-m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if record_holders and record_holders.top_speed %}
   <div class="v-m4rec-row">
     <span class="v-m4rec-label">🚀 TOP SPEED</span>
     <span class="v-m4rec-val">{{ record_holders.top_speed.value_str }}</span>
-    <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="nm">{{ h.name }}</span> <span class="v-m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if point_leader %}
   <div class="v-m4rec-row">
     <span class="v-m4rec-label">🎯 POINT LEADER</span>
     <span class="v-m4rec-val">{{ point_leader.points }} points</span>
-    <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="nm">{{ h.name }}</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+    <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
   </div>
   {% endif %}
 </div>
@@ -967,7 +976,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
           {% if m4laps_active and qualifying_type == 'point' %}
           <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
-          <td class="rs-num" style="text-align:center;font-size:12px;color:#8aa0b6">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
+          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_avg_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_avg_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_avg_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
           {% endif %}
           {% endif %}
         </tr>

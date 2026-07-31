@@ -369,6 +369,16 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                 _avg[eid] = _sp_cache[rid]["lane"].get(lno, {}).get("total_avg")
             for s in standings:
                 s["best_avg"] = _avg.get(s.get("entry_id"))
+            # Av（平均速度）も上位3名へ色付けランクを付与（速度は大きいほど上位）。
+            # ベスト列と同じ 1/2/3 の色分けを Av 列にも出すため。
+            _av = sorted(
+                [(s["best_avg"], s["entry_id"]) for s in standings
+                 if s.get("best_avg") is not None],
+                reverse=True,
+            )
+            _avg_rank = {eid: i for i, (_v, eid) in enumerate(_av[:3], start=1)}
+            for s in standings:
+                s["best_avg_rank"] = _avg_rank.get(s.get("entry_id"))
 
     # ポイント制／並び順（ポイント制）: ボーダーライン同率グループに is_tied_cutoff フラグ付与
     if qt in ("point", "order") and standings:
