@@ -197,7 +197,10 @@
 .m4rec-row{display:grid;grid-template-columns:168px 120px 1fr;gap:2px 14px;
   align-items:baseline;padding:8px 2px;border-top:1px solid #f0e8d4}
 .m4rec-row:first-of-type{border-top:none}
-.m4rec-label{font-weight:bold;font-size:14px;color:#4a4a4a;white-space:nowrap}
+.m4rec-label{display:flex;align-items:baseline;gap:6px;font-weight:bold;font-size:14px;
+  color:#4a4a4a;white-space:nowrap}
+.m4rec-ic{flex:0 0 1.4em;text-align:center}
+.m4rec-tx{flex:0 0 auto}
 .m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .m4rec-who{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
@@ -1534,28 +1537,28 @@ document.addEventListener('DOMContentLoaded', function(){
         <div class="m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
         {% if record_holders and record_holders.overall %}
         <div class="m4rec-row">
-          <span class="m4rec-label">🏁 OVERALL</span>
+          <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">OVERALL</span></span>
           <span class="m4rec-val">{{ record_holders.overall.value_str }}</span>
           <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
         {% if record_holders and record_holders.fastest_lap %}
         <div class="m4rec-row">
-          <span class="m4rec-label">⏱ FASTEST LAP</span>
+          <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">FASTEST LAP</span></span>
           <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
           <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
         {% if record_holders and record_holders.top_speed %}
         <div class="m4rec-row">
-          <span class="m4rec-label">🚀 TOP SPEED</span>
+          <span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">TOP SPEED</span></span>
           <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span>
           <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
         </div>
         {% endif %}
         {% if point_leader %}
         <div class="m4rec-row">
-          <span class="m4rec-label">🎯 POINT LEADER</span>
+          <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">POINT LEADER</span></span>
           <span class="m4rec-val">{{ point_leader.points }} points</span>
           <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
         </div>

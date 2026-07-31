@@ -133,7 +133,10 @@
 .v-m4rec-row{display:grid;grid-template-columns:180px 130px 1fr;gap:2px 16px;
   align-items:baseline;padding:9px 2px;border-top:1px solid #3a2f14}
 .v-m4rec-row:first-of-type{border-top:none}
-.v-m4rec-label{font-weight:bold;font-size:14px;color:#cfd8e3;white-space:nowrap}
+.v-m4rec-label{display:flex;align-items:baseline;gap:7px;font-weight:bold;font-size:14px;
+  color:#cfd8e3;white-space:nowrap}
+.v-m4rec-ic{flex:0 0 1.4em;text-align:center}
+.v-m4rec-tx{flex:0 0 auto}
 .v-m4rec-val{font-weight:bold;font-size:19px;color:#fff;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .v-m4rec-who{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
@@ -144,9 +147,14 @@
 .v-m4rec-holder .nm{font-weight:bold;color:#f4e9d0}
 .v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
 @media(max-width:760px){
-  .v-m4rec-row{grid-template-columns:1fr;gap:4px}
-  .v-m4rec-val{font-size:16px}
-  .v-m4rec-label{font-size:13px}
+  .v-m4rec{padding:11px 13px}
+  /* モバイル：ラベル＋値を1行目、保持者チップを2行目（全幅）にまとめて縦の冗長さを解消 */
+  .v-m4rec-row{grid-template-columns:auto 1fr;gap:5px 10px;padding:9px 0}
+  .v-m4rec-label{grid-row:1;grid-column:1;font-size:13px}
+  .v-m4rec-val{grid-row:1;grid-column:2;justify-self:end;font-size:16px}
+  .v-m4rec-who{grid-row:2;grid-column:1 / -1}
+  .v-m4rec-holder{font-size:13px;padding:2px 9px}
+  .v-m4rec-holder .rc{font-size:10px}
 }
 {% endblock %}
 
@@ -199,28 +207,28 @@
   <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
   {% if record_holders and record_holders.overall %}
   <div class="v-m4rec-row">
-    <span class="v-m4rec-label">🏁 OVERALL</span>
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🏁</span><span class="v-m4rec-tx">OVERALL</span></span>
     <span class="v-m4rec-val">{{ record_holders.overall.value_str }}</span>
     <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if record_holders and record_holders.fastest_lap %}
   <div class="v-m4rec-row">
-    <span class="v-m4rec-label">⏱ FASTEST LAP</span>
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">⏱</span><span class="v-m4rec-tx">FASTEST LAP</span></span>
     <span class="v-m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
     <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if record_holders and record_holders.top_speed %}
   <div class="v-m4rec-row">
-    <span class="v-m4rec-label">🚀 TOP SPEED</span>
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🚀</span><span class="v-m4rec-tx">TOP SPEED</span></span>
     <span class="v-m4rec-val">{{ record_holders.top_speed.value_str }}</span>
     <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span>{% if h.label %}<span class="rc">{{ h.label }}</span>{% endif %}</span>{% endfor %}</span>
   </div>
   {% endif %}
   {% if point_leader %}
   <div class="v-m4rec-row">
-    <span class="v-m4rec-label">🎯 POINT LEADER</span>
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🎯</span><span class="v-m4rec-tx">POINT LEADER</span></span>
     <span class="v-m4rec-val">{{ point_leader.points }} points</span>
     <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="v-m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
   </div>
