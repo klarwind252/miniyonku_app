@@ -27,9 +27,9 @@
    マイレーサー・ハイライトのリセットは racer-cell の inline background だけを消すため、
    td 側のクラス着色は影響を受けない。選択時の racer-cell ハイライト(inline !important)は
    その内側に重なる。 */
-.rc-fin1{background:#6b21a8}
-.rc-fin2{background:#1e40af}
-.rc-fin3{background:#166534}
+.rc-fin1{background:rgba(64,18,96,.5)}
+.rc-fin2{background:rgba(18,38,96,.5)}
+.rc-fin3{background:rgba(14,66,40,.5)}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:bold;line-height:1;margin-left:6px;flex-shrink:0}
 .rr-name{flex:1;min-width:0;line-height:1.25;overflow-wrap:anywhere}
 /* レーススケジュールのレーサー名を中央ぞろえ。
@@ -134,7 +134,7 @@
 /* ラベル｜値｜差｜保持者 の4カラム。保持者は末列に固定され、はみ出しても
    値の右のカラム内で折り返す（左端に落ちない）。 */
 .v-m4rec-row{display:grid;grid-template-columns:180px 118px 78px 1fr;gap:2px 14px;
-  align-items:baseline;padding:5px;border-top:1px solid #3a2f14}
+  align-items:baseline;padding:5px;border-top:1px solid #a87937}
 .v-m4rec-row:first-of-type{border-top:none}
 .v-m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:7px;
   align-items:baseline;font-weight:bold;font-size:14px;color:#cfd8e3;white-space:nowrap}
@@ -146,8 +146,7 @@
 .v-m4rec-who{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
 /* 保持者は「チップ」で並べる（同率羅列でも読みやすい） */
 .v-m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;
-  background:#241a0c;border:1px solid #4a3a12;border-radius:999px;
-  padding:2px 11px;font-size:14px;line-height:1.6}
+  padding:2px 4px;font-size:14px;line-height:1.6}
 .v-m4rec-holder .nm{font-weight:bold;color:#f4e9d0}
 .v-m4rec-holder .rc{color:#9a8f76;font-size:11px}
 .v-m4rec-none{color:#7a828c;font-size:13px}
