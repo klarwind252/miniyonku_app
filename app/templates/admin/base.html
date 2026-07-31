@@ -1058,7 +1058,7 @@ function _showPubToast(msg) {
     transition:background .3s;
   }
   #m4pip .pip-dot.live{background:#2ecc71; box-shadow:0 0 6px rgba(46,204,113,.9)}
-  #m4pip .pip-body{max-height:min(46vh,340px); overflow-y:auto; padding:6px 8px}
+  #m4pip .pip-body{max-height:min(46vh,390px); overflow-y:auto; padding:6px 8px}
   #m4pip.collapsed .pip-body{display:none}
   #m4pip .pip-race{border:1px solid #e9ecef; border-radius:8px; padding:6px 8px; margin-bottom:6px;
     cursor:pointer; position:relative}
@@ -1364,11 +1364,19 @@ function _showPubToast(msg) {
       });
   }
 
-  try{
-    if(localStorage.getItem('m4pip_collapsed')==='0'){
-      pip.classList.remove('collapsed'); btn.textContent='\u25bc';
-    }
-  }catch(e){}
+  // ---- 初期の開閉状態はページ種別で決める ----
+  //   レース情報（/admin/tournaments/{id}）        … 必ず縮小（折りたたみ）
+  //   予選管理（…/qualifying）・決勝管理（…/bracket） … 自動展開
+  // ⚠ 以前は全ページ共通で localStorage に前回状態を保存・復元していたため、
+  //    レース情報を開いても前回展開したままになっていた。ページ種別で毎回決め直す。
+  (function(){
+    var p=location.pathname.replace(/\/+$/,'');
+    var autoExpand =
+         /^\/admin\/tournaments\/\d+\/qualifying(\/.*)?$/.test(p)
+      || /^\/admin\/tournaments\/\d+\/bracket(\/.*)?$/.test(p);
+    pip.classList.toggle('collapsed', !autoExpand);
+    btn.textContent = autoExpand ? '\u25bc' : '\u25b2';
+  })();
   restorePos();
 
   poll();

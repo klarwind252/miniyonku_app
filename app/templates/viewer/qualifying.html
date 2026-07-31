@@ -32,6 +32,13 @@
 .rc-fin3{background:#166534}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:bold;line-height:1;margin-left:6px;flex-shrink:0}
 .rr-name{flex:1;min-width:0;line-height:1.25;overflow-wrap:anywhere}
+/* レーススケジュールのレーサー名を中央ぞろえ。
+   ・justify-content:center … 名前グループ全体をセル内で中央へ（総当たりの○×・順位バッジ込み／名前カラムが flex:1 で伸びない場合に効く）
+   ・racer-cell > div は名前カラム（ポイント制／ヒートトーナメント）。縦積みの名前＋タイムを align-items:center で中央へ
+   ・rr-name は公開HTML表示の名前span（flex:1 でセル幅いっぱい）。text-align:center で文字を中央に */
+.schedule-table .racer-cell{justify-content:center}
+.schedule-table .racer-cell > div{align-items:center}
+.schedule-table .rr-name{text-align:center}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
 .status-pending{color:#7f8c8d;font-size:12px}
 
@@ -116,6 +123,22 @@
 .entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
 .entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+/* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下） */
+.v-m4rec{margin:0 16px 12px;padding:11px 16px;border:2px solid #f0ad4e;
+  border-radius:8px;background:#1c1509}
+.v-m4rec-title{font-weight:bold;font-size:13px;color:#f0ad4e;letter-spacing:.5px;margin-bottom:8px}
+.v-m4rec-row{display:flex;align-items:baseline;gap:12px;padding:3px 0;flex-wrap:wrap}
+.v-m4rec-label{flex:0 0 150px;font-weight:bold;font-size:14px;color:#cfd8e3}
+.v-m4rec-val{font-weight:bold;font-size:17px;color:#fff;
+  font-variant-numeric:tabular-nums;min-width:110px}
+.v-m4rec-who{font-size:14px;color:#ecf0f1}
+.v-m4rec-who .nm{font-weight:bold}
+.v-m4rec-race{color:#8a94a0;font-size:12px}
+@media(max-width:700px){
+  .v-m4rec-label{flex:0 0 120px;font-size:13px}
+  .v-m4rec-val{font-size:15px;min-width:92px}
+  .v-m4rec-who{font-size:13px}
+}
 {% endblock %}
 
 {% macro finalist_block() %}
@@ -159,12 +182,50 @@
 {% endif %}
 {% endmacro %}
 
-{# 順位アイコン：1〜3位はメダル🥇🥈🥉、4位以下は素の数字（丸バッジは使わない）。
+{# ⚡ M4LAPS RECORD HOLDERS ＋ 🎯 POINT LEADER（決勝進出レーサー枠の下）。
+   3記録の同率は改行せず「/」で羅列。POINT LEADER は常に1名（絞り込みはルート側／admin同様）。 #}
+{% macro record_holders_block() %}
+{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
+<div class="v-m4rec">
+  <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
+  {% if record_holders and record_holders.overall %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label">🏁 OVERALL</span>
+    <span class="v-m4rec-val">{{ record_holders.overall.value_str }}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.overall.holders %}<span class="nm">{{ h.name }}</span> <span class="v-m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if record_holders and record_holders.fastest_lap %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label">⏱ FASTEST LAP</span>
+    <span class="v-m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="nm">{{ h.name }}</span> <span class="v-m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if record_holders and record_holders.top_speed %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label">🚀 TOP SPEED</span>
+    <span class="v-m4rec-val">{{ record_holders.top_speed.value_str }}</span>
+    <span class="v-m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="nm">{{ h.name }}</span> <span class="v-m4rec-race">[{{ h.label }}]</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if point_leader %}
+  <div class="v-m4rec-row">
+    <span class="v-m4rec-label">🎯 POINT LEADER</span>
+    <span class="v-m4rec-val">{{ point_leader.points }} points</span>
+    <span class="v-m4rec-who">{% for h in point_leader.holders %}<span class="nm">{{ h.name }}</span>{% if not loop.last %}　/　{% endif %}{% endfor %}</span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# 順位アイコン：1位はトロフィー🏆、2〜3位はメダル🥈🥉、4位以下は素の数字（丸バッジは使わない）。
    ポイント制でのみ使用（呼び出し側で qualifying_type=='point' を判定）。
    big=true は view(FHD) 用に少し大きめ。 #}
 {% macro rank_icon(rank, big=false) %}
 {%- if rank in (1, 2, 3) -%}
-<span style="font-size:{% if big %}24px{% else %}17px{% endif %};line-height:1;margin-right:4px;flex-shrink:0">{{ {1:'🥇',2:'🥈',3:'🥉'}[rank] }}</span>
+<span style="font-size:{% if big %}28px{% else %}17px{% endif %};line-height:1;margin-right:4px;flex-shrink:0">{{ {1:'🏆',2:'🥈',3:'🥉'}[rank] }}</span>
 {%- else -%}
 <span style="display:inline-flex;align-items:center;justify-content:center;min-width:{% if big %}24px{% else %}18px{% endif %};font-size:{% if big %}18px{% else %}13px{% endif %};font-weight:bold;color:#7f8c8d;margin-right:4px;flex-shrink:0">{{ rank }}</span>
 {%- endif -%}
@@ -260,6 +321,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 </div>
 {% elif not is_none_roundrobin and qualifying_type != "heat_roundrobin" %}{{ finalist_block() }}{% endif %}
+{{ record_holders_block() }}
 
 {% if qualifying_type == "heat_roundrobin" and all_heats_complete %}
 {% set completed_heats = hr_heats_data | selectattr("is_complete") | list %}
@@ -311,7 +373,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {% if top3_nr[1] %}<div style="font-size:12px;color:#7f8c8d;margin-top:2px">{{ top3_nr[1].wins }}勝{{ top3_nr[1].losses }}負</div>{% endif %}
     </div>
     <div style="text-align:center;padding:14px 24px;background:#1a3a20;border-radius:12px;border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %}">
-      <div style="font-size:36px">🥇</div>
+      <div style="font-size:36px">🏆</div>
       <div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:4px">1位</div>
       <div style="font-size:20px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:6px">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
       {% if top3_nr[0] %}<div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:2px">{{ top3_nr[0].wins }}勝{{ top3_nr[0].losses }}負</div>{% endif %}
@@ -625,12 +687,15 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </div>
         </div>
         {% else %}
-        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:13px;color:#2980b9;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
+        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:13px;color:#fff;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
           予選 {{ rno }} 回目
         </div>
         {% endif %}
         <table class="schedule-table">
-          <thead><tr><th>#</th><th>1コース</th><th>2コース</th><th>3コース</th></tr></thead>
+          {# コース見出しを各レーン色で着色（1=青 / 2=赤 / 3=緑。総当たり・ヒートのコースドットと同じ配色）。
+             白太字で背景色に対して視認性を確保。 #}
+          {% set _sc_lc = {1:'#2980b9', 2:'#e74c3c', 3:'#27ae60'} %}
+          <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
