@@ -191,7 +191,7 @@
 .m4rec{margin:10px 12px;padding:12px 16px;border:1px solid #e5dcc4;
   border-left:5px solid #f0ad4e;border-radius:10px;background:#fffdf5}
 .m4rec-title{font-weight:bold;font-size:15px;color:#2c3e50;letter-spacing:.3px;margin-bottom:10px}
-.m4rec-title .zap{color:#f0ad4e}
+.zap{color:#f0ad4e}
 /* ラベル｜値｜保持者 の3カラム。保持者は3列目に固定され、はみ出しても
    値の右のカラム内で折り返す（左端に落ちない）。 */
 .m4rec-row{display:grid;grid-template-columns:168px 120px 1fr;gap:2px 14px;
@@ -1511,8 +1511,9 @@ document.addEventListener('DOMContentLoaded', function(){
 {% if not is_heat_roundrobin %}
       {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は値の右にチップで羅列（左端に落とさない） #}
       {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
-      <div class="m4rec">
-        <div class="m4rec-title"><span class="zap">⚡</span> M4LAPS RECORD HOLDERS</div>
+      <div class="card">
+        <div class="card-header"><span><span class="zap">⚡</span> M4LAPS RECORD HOLDERS</span></div>
+        <div class="card-body">
         {% if record_holders and record_holders.overall %}
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">OVERALL</span></span>
@@ -1541,6 +1542,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
         </div>
         {% endif %}
+        </div>
       </div>
       {% endif %}
 {# none_roundrobin: 順位表 + 勝敗表を横並び。それ以外は順位表を全幅にする #}
