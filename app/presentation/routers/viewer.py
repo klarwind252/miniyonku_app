@@ -97,20 +97,24 @@ async def host_sync(request: Request, db: aiosqlite.Connection = Depends(get_db)
     # /admin/... → /view/... に変換
     view_url = _admin_to_view(url)
     st = _state_for(_store_id_of(request))
+    _prev_url = st.get("url")
     st["url"] = view_url
     st["updated_at"] = time.time()
     if scroll_to is not None:
         st["scroll_to"] = scroll_to
         st["scroll_at"] = time.time()
 
-    # 参加者向けHTML配信（トリガー①: ページ切り替え時）
+    # 参加者向けHTML配信（トリガー①: ページ切り替え時のみ）。
+    #   スクロール/クリックによる scroll_to 更新だけでは公開HTMLの内容は変わらないため、
+    #   URL が変わった（別ページに移動した）ときだけ再生成を予約する。
     # schedule_publish() は予約時点の店舗(current_store)をキャプチャし、デバウンス後に
     # その店舗の文脈を復元してから書き出すため、正しい店舗のDB/配信先で反映される。
-    try:
-        from app.services.publish_scheduler import schedule_publish
-        schedule_publish()
-    except Exception:
-        pass
+    if view_url != _prev_url:
+        try:
+            from app.services.publish_scheduler import schedule_publish
+            schedule_publish()
+        except Exception:
+            pass
 
     return JSONResponse({"ok": True, "view_url": view_url})
 

@@ -474,6 +474,31 @@ function _showPubToast(msg) {
     }
   }, true);
 
+  // スクロールに追従：ビューポート上部付近の本文要素(id/data-scroll)を throttled で送信する。
+  // これで観覧画面が管理者のスクロール位置に追従する（観覧側は「追従中」トグルON時のみ適用）。
+  var _scrollSyncTimer = null;
+  function _sendTopScrollTarget() {
+    var nodes = document.querySelectorAll('[data-scroll],[id]');
+    var best = null, bestTop = -1e9;
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var sid = el.dataset.scroll || el.id;
+      if (!sid || sid === 'pagetop') continue;
+      if (el.closest('nav')) continue;                       // 固定ナビは除外
+      var pos = window.getComputedStyle(el).position;
+      if (pos === 'fixed' || pos === 'sticky') continue;     // PIP・固定ボタン等は除外
+      var r = el.getBoundingClientRect();
+      if (r.height < 8) continue;
+      // 上端が上部(<=120px)にあり、その中で最も下＝一番上に見えている本文要素を選ぶ
+      if (r.top <= 120 && r.top > bestTop) { bestTop = r.top; best = sid; }
+    }
+    if (best) syncHost(best);
+  }
+  window.addEventListener('scroll', function() {
+    if (_scrollSyncTimer) return;
+    _scrollSyncTimer = setTimeout(function() { _scrollSyncTimer = null; _sendTopScrollTarget(); }, 300);
+  }, { passive: true });
+
   // 初回通知
   syncHost();
   // 3秒ごとにチェック

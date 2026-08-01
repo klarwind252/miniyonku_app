@@ -369,10 +369,6 @@ function doScroll(scrollId) {
   if (el) {
     var _pos = (scrollId.indexOf('heat-') === 0) ? 'start' : 'center';
     el.scrollIntoView({behavior: 'smooth', block: _pos});
-    // ハイライト
-    el.style.transition = 'box-shadow 0.3s';
-    el.style.boxShadow = '0 0 0 3px #2980b9';
-    setTimeout(() => { el.style.boxShadow = ''; }, 2000);
   }
 }
 
