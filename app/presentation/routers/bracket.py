@@ -4785,30 +4785,49 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
 
             def _on(k):
                 return _cfg.get(k, {}).get("bracket")
-            # 記録系（複数保持は最速＝先頭1人）
+            # フルスコア判定（POINT LEADER が全レース1位＝満点なら FULL SCORE）
+            _pl_full = bool(_pl and _pl_eid is not None and _pl_eid in _sw)
+            # 該当なしでも「該当者なし」で枠を残す（設定「トーナメント表」ON項目を全表示）。
+            # 枠内は 項目名／レーサー名／数値 の3行（数値が無い称号は2行）。
             for _k, _ic, _lb in (("overall", "🏁", "OVERALL"),
                                  ("fastest_lap", "⏱", "FASTEST LAP"),
                                  ("top_speed", "🚀", "TOP SPEED")):
+                if not _on(_k):
+                    continue
                 rec = (_disp or {}).get(_k)
-                if _on(_k) and rec and rec.get("holders"):
-                    _h = rec["holders"][0]
-                    _val = rec.get("value_str", "")
-                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}",
-                                         "lines": [f'{_h.get("name","")} {_val}'.strip()]})
-            if _on("point_leader") and _pl:
-                holder_boxes.append({"label": "🎯POINT LEADER🎯",
-                                     "lines": [f'{_pl["name"]} {_pl["points"]} pt']})
+                if rec and rec.get("holders"):
+                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,
+                                         "name": rec["holders"][0].get("name", ""),
+                                         "sub": [rec.get("value_str", "")]})
+                else:
+                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": True})
+            if _on("point_leader"):
+                if _pl:
+                    _sub = [f'{_pl["points"]} pt']
+                    if _pl_full:
+                        _sub.append("FULL SCORE")
+                    holder_boxes.append({"label": "🎯POINT LEADER🎯", "empty": False,
+                                         "name": _pl["name"], "sub": _sub})
+                else:
+                    holder_boxes.append({"label": "🎯POINT LEADER🎯", "empty": True})
             for _k, _ic, _lb in (("sweep", "💯", "SWEEP"),
                                  ("grand_slam", "👑", "GRAND SLAM"),
                                  ("speed_star", "⭐", "SPEED STAR")):
+                if not _on(_k):
+                    continue
                 _names = _ach.get(_k) or []
-                if _on(_k) and _names:
-                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "lines": [_names[0]]})
+                if _names:
+                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,
+                                         "name": _names[0], "sub": []})
+                else:
+                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": True})
             if _on("sprinter"):
                 _spr = _ach.get("sprinter") or []
                 _snames = [f'S{s["sector"]} {s["names"][0]}' for s in _spr if s.get("names")]
                 if _snames:
-                    holder_boxes.append({"label": "⚡SPRINTER⚡", "lines": _snames})
+                    holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": False, "lines": _snames})
+                else:
+                    holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": True})
     except Exception:
         holder_boxes = []
 
@@ -4905,10 +4924,15 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     /* 🏆 M4LAPS RECORD HOLDERS 対象者（123位の下・横一列。admin/view=6列、スマホ=3列で折り返し） */
     .br-holders { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:14px; }
     .br-holder-box { background:linear-gradient(135deg,#eef5ff,#cfe0f7); border:2px solid #6f9bd1; border-radius:10px; padding:6px 8px; text-align:center; min-width:0; }
+    .br-holder-box.empty { background:#c9cfd6; border-color:#9aa3ad; }
     .br-holder-label { font-size:12px; font-weight:bold; color:#204060; letter-spacing:1px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .br-holder-body { font-size:14px; font-weight:bold; color:#16324f; margin-top:3px; line-height:1.5; }
-    .br-holder-body > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    @media(max-width:480px){ .br-holders { grid-template-columns:repeat(3,1fr); gap:6px; } .br-holder-label{ font-size:11px; } .br-holder-body{ font-size:13px; } }
+    .br-holder-box.empty .br-holder-label { color:#454e58; }
+    .br-holder-name { font-size:15px; font-weight:bold; color:#16324f; margin-top:3px; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .br-holder-sub { font-size:12px; font-weight:bold; color:#3a516c; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .br-holder-list { font-size:13px; font-weight:bold; color:#16324f; margin-top:3px; line-height:1.5; }
+    .br-holder-list > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .br-holder-none { font-size:12px; color:#525b66; margin-top:4px; }
+    @media(max-width:480px){ .br-holders { grid-template-columns:repeat(3,1fr); gap:6px; } .br-holder-label{ font-size:11px; } .br-holder-name{ font-size:13px; } .br-holder-list{ font-size:12px; } }
     /* レイアウト */
     .bracket-outer { position:relative; overflow:visible; width:100%; }
     .bracket-html { display:flex; gap:0; padding:6px 2px; align-items:flex-start; position:relative; width:max-content; min-width:100%; }
@@ -5673,11 +5697,19 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     if holder_boxes:
         _boxes = []
         for b in holder_boxes:
-            _lines = "".join(f'<div>{esc(x)}</div>' for x in b.get("lines", []))
+            _cls = "br-holder-box empty" if b.get("empty") else "br-holder-box"
+            if b.get("empty"):
+                _body = '<div class="br-holder-none">該当者なし</div>'
+            elif b.get("lines"):
+                _body = '<div class="br-holder-list">' + "".join(f'<div>{esc(x)}</div>' for x in b.get("lines", [])) + '</div>'
+            else:
+                _body = f'<div class="br-holder-name">{esc(b.get("name",""))}</div>'
+                for _s in b.get("sub", []):
+                    _body += f'<div class="br-holder-sub">{esc(_s)}</div>'
             _boxes.append(
-                '<div class="br-holder-box">'
+                f'<div class="{_cls}">'
                 f'<div class="br-holder-label">{esc(b.get("label",""))}</div>'
-                f'<div class="br-holder-body">{_lines}</div>'
+                f'{_body}'
                 '</div>'
             )
         holders_html = '<div class="br-holders">' + "".join(_boxes) + '</div>'

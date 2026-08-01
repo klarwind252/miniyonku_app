@@ -206,7 +206,7 @@
       {% for a in heat.advanced %}
       <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
                   background:#0f2a1e;border:1px solid #27ae60;border-radius:6px;margin-bottom:4px">
-        <span style="font-weight:bold;font-size:13px;min-width:28px;color:{{ rank_c.get(a.overall_rank,'#7f8c8d') }}">{{ a.overall_rank }}位</span>
+        <span style="font-weight:bold;font-size:13px;min-width:34px;white-space:nowrap;flex-shrink:0;color:{{ rank_c.get(a.overall_rank,'#7f8c8d') }}">{{ a.overall_rank }}位</span>
         <span style="font-weight:bold;font-size:14px;flex:1;color:#ecf0f1">{{ a.name }}</span>
       </div>
       {% endfor %}
@@ -218,7 +218,7 @@
   <div style="display:flex;flex-wrap:wrap;gap:6px">
     {% for f in finalists_list %}
     <div style="background:#0f2a1a;border:1px solid #27ae60;border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:8px;min-width:140px">
-      <span style="color:#27ae60;font-weight:bold;font-size:13px;width:24px">{{ f.qual_rank }}位</span>
+      <span style="color:#27ae60;font-weight:bold;font-size:13px;min-width:34px;white-space:nowrap;flex-shrink:0">{{ f.qual_rank }}位</span>
       <span style="font-weight:bold;font-size:14px;color:#ecf0f1">{{ f.name }}</span>
       {% if f.seeded %}<span style="color:#d4a017;font-size:13px" title="シード">★</span>{% endif %}
     </div>
