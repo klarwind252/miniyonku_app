@@ -4746,10 +4746,26 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
     try:
         from app.application import qualifying_records as _qrh
         from app.application import timing_racer_best_service as _rbh
+        # 決勝（または3位決定戦/敗者復活）で1位が確定しているか＝優勝確定。
+        # 未確定のうちは RECORD HOLDERS（holder_boxes）を出さない（表彰台1/2/3位と同じタイミング）。
+        _has_final = False
+        async with db.execute(
+            "SELECT 1 FROM bracket_slot_ranks bsr JOIN bracket_groups bg ON bg.id=bsr.group_id "
+            "JOIN bracket_rounds br ON br.id=bg.round_id "
+            "WHERE br.tournament_id=? AND br.round_type IN ('final','third','revival') AND bsr.rank=1 LIMIT 1",
+            (tid,)) as _cfin:
+            _has_final = (await _cfin.fetchone()) is not None
+        if not _has_final:
+            async with db.execute(
+                "SELECT 1 FROM ht_slot_ranks hsr JOIN ht_groups hg ON hg.id=hsr.group_id "
+                "JOIN ht_rounds hr ON hr.id=hg.round_id "
+                "WHERE hr.tournament_id=? AND hr.round_type='final' AND hsr.rank=1 LIMIT 1",
+                (tid,)) as _cfin:
+                _has_final = (await _cfin.fetchone()) is not None
         _cfg = await _qrh.get_ach_config(db)
         _m4row = await (await db.execute("SELECT use_m4laps FROM tournaments WHERE id=?", (tid,))).fetchone()
         _m4_on = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
-        if _m4_on and any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
+        if _has_final and _m4_on and any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
             _trow = await (await db.execute(
                 "SELECT qualifying_type FROM tournaments WHERE id=?", (tid,))).fetchone()
             _qt = dict(_trow).get("qualifying_type") if _trow else None
