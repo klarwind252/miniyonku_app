@@ -894,6 +894,20 @@ async def apply_latest_to_ht_group(
                     "code": "already_has_result",
                     "message": "この組には既に結果が入力されています。上書きされます。",
                 })
+        # この計測結果を既に別のヒート組へ反映していないか
+        keys = race.keys() if hasattr(race, "keys") else []
+        prev = race["applied_ht_group_id"] if "applied_ht_group_id" in keys else None
+        if prev is not None and int(prev) != int(group_id):
+            async with db.execute(
+                "SELECT group_no FROM ht_groups WHERE id = ?", (prev,)
+            ) as cur:
+                pg = await cur.fetchone()
+            gname = f"グループ{pg['group_no']}" if pg else f"組ID {prev}"
+            warnings.append({
+                "code": "already_applied_to_other",
+                "message": f"この計測結果は既に{gname}へ反映済みです。"
+                           f"同じ結果を二重に使うことになります。",
+            })
         if warnings:
             return JSONResponse(
                 {"ok": False, "reason": "warning", "warnings": warnings},
@@ -902,7 +916,7 @@ async def apply_latest_to_ht_group(
 
     ranking = _ranking_payload(result)
     res = await bridge_svc.apply_race_to_ht_group(
-        db, group_id=group_id, ranking=ranking
+        db, race_id=race["id"], group_id=group_id, ranking=ranking
     )
     if res.get("error"):
         raise HTTPException(status_code=400,
@@ -950,6 +964,11 @@ async def reset_ht_group(
 
     await db.execute("DELETE FROM ht_results WHERE group_id = ?", (group_id,))
     await db.execute("DELETE FROM ht_slot_ranks WHERE group_id = ?", (group_id,))
+    # この組に紐づいていた計測レースの反映先リンクを解除（PIPの「反映済」を消す）
+    await db.execute(
+        "UPDATE timing_races SET applied_ht_group_id = NULL WHERE applied_ht_group_id = ?",
+        (group_id,),
+    )
     await db.commit()
 
     fin = await qual_mod._ht_finalize_group(tid, heat_no, group_id, dict(rnd), None, db)
@@ -1049,9 +1068,11 @@ async def pip_latest(
         keys = race.keys() if hasattr(race, "keys") else []
         heat_id = race["heat_id"] if "heat_id" in keys else None
         group_id = race["applied_group_id"] if "applied_group_id" in keys else None
+        ht_group_id = race["applied_ht_group_id"] if "applied_ht_group_id" in keys else None
 
         # 反映先を人間向けラベルにする（内部IDを画面に出さない）。
-        # 予選＝heat_id、決勝＝applied_group_id。どちらも無ければ未反映（None）。
+        # 予選＝heat_id、決勝＝applied_group_id、予選ヒートトーナメント＝applied_ht_group_id。
+        # いずれも無ければ未反映（None）。
         applied_label = None
         if heat_id is not None:
             async with db.execute(
@@ -1064,6 +1085,36 @@ async def pip_latest(
                 applied_label = f"レース{h['heat_no']}"
             else:
                 applied_label = f"ヒート{heat_id}"   # 保険：ヒートが消えている等
+        elif ht_group_id is not None:
+            # 予選ヒートトーナメント：ヒート番号＋ラウンド（準々決勝/準決勝/決勝）＋グループ
+            async with db.execute(
+                """SELECT hg.group_no, hr.round_no, hr.round_type, hr.heat_no,
+                          COALESCE(hr.section_no, 1) AS section_no, hr.tournament_id,
+                          (SELECT COUNT(*) FROM ht_groups hg2 WHERE hg2.round_id = hr.id) AS grp_count
+                     FROM ht_groups hg
+                     JOIN ht_rounds hr ON hr.id = hg.round_id
+                    WHERE hg.id = ?""",
+                (ht_group_id,),
+            ) as cur:
+                g = await cur.fetchone()
+            if g:
+                async with db.execute(
+                    "SELECT MAX(round_no) AS mx FROM ht_rounds "
+                    "WHERE tournament_id = ? AND heat_no = ? AND COALESCE(section_no,1) = ? "
+                    "AND round_type IN ('normal','final')",
+                    (g["tournament_id"], g["heat_no"], g["section_no"]),
+                ) as cur2:
+                    _mx = await cur2.fetchone()
+                total_rounds = (_mx["mx"] or 0) if _mx else 0
+                from app.presentation.routers.bracket import round_label
+                _rl = round_label(g["round_no"], total_rounds, g["round_type"])
+                _grp = f" グループ{g['group_no']}" if (g["grp_count"] or 1) > 1 else ""
+                if g["section_no"] == 0:
+                    applied_label = f"ヒート{g['heat_no']} ヒート決勝 {_rl}{_grp}".strip()
+                else:
+                    applied_label = f"ヒート{g['heat_no']} {_rl}{_grp}"
+            else:
+                applied_label = f"ヒート組{ht_group_id}"
         elif group_id is not None:
             # ラウンド種別（決勝／準決勝／3位決定戦／敗者復活戦／裏R…）を反映してラベル化する。
             async with db.execute(
@@ -1097,6 +1148,7 @@ async def pip_latest(
             "race_id": rid,
             "heat_id": heat_id,
             "applied_group_id": group_id,
+            "applied_ht_group_id": ht_group_id,
             "applied_label": applied_label,
             "target_laps": (race["target_laps"] if "target_laps" in keys else None),
             "created_at": (race["created_at"] if "created_at" in keys else None),

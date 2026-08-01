@@ -195,6 +195,14 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE timing_races ADD COLUMN applied_group_id INTEGER")
         await db.commit()
 
+    # --- ヒートトーナメント（ht_groups）への反映先を記録する ---
+    # 決勝の applied_group_id は bracket_groups を指すため、ヒートトーナメントの
+    # ht_groups.id とは名前空間が別。PIP に「どのヒートのどの組に反映済み」を出すため
+    # 専用カラムで保持する（重複反映の検出・取消時のクリアにも使う）。
+    if "applied_ht_group_id" not in _cols:
+        await db.execute("ALTER TABLE timing_races ADD COLUMN applied_ht_group_id INTEGER")
+        await db.commit()
+
     # --- timing_bests のマイグレーション ---
     # 旧版は上位1件のみ（rank カラムなし）だった。rank が無ければ作り直す。
     # このテーブルは受信時に再構築されるため、作り直しても実害はない。
