@@ -347,6 +347,25 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <div style="font-size:15px;font-weight:bold;color:#333;margin-top:4px">{{ r3 or '—' }}</div>
           </div>
         </div>
+        {% if holder_boxes %}
+        {# 🏆 M4LAPS RECORD HOLDERS 対象者（123位の下・横一列。設定「トーナメント表」ON項目のみ／admin=6列・スマホ=3列） #}
+        <style>
+          .td-holders{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:16px}
+          .td-holder-box{background:linear-gradient(135deg,#eef5ff,#cfe0f7);border:2px solid #6f9bd1;border-radius:10px;padding:6px 8px;text-align:center;min-width:0}
+          .td-holder-label{font-size:12px;font-weight:bold;color:#204060;letter-spacing:1px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .td-holder-body{font-size:14px;font-weight:bold;color:#16324f;margin-top:3px;line-height:1.5}
+          .td-holder-body>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          @media (max-width:600px){.td-holders{grid-template-columns:repeat(3,1fr)}}
+        </style>
+        <div class="td-holders">
+          {% for b in holder_boxes %}
+          <div class="td-holder-box">
+            <div class="td-holder-label">{{ b.label }}</div>
+            <div class="td-holder-body">{% for x in b.lines %}<div>{{ x }}</div>{% endfor %}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       {% endif %}
     </div>

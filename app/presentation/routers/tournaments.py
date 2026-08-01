@@ -657,6 +657,78 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
     _pfx = _store.prefix if _store else ""
     public_base = (f"{PUBLIC_BASE_URL}{_pfx}" if (IS_CLOUD and PUBLIC_BASE_URL) else _pfx)
 
+    # ââ ð M4LAPS RECORD HOLDERS å¯¾è±¡èï¼è¨­å®ããã¼ãã¡ã³ãè¡¨ãONé ç®ã123ä½ã®ä¸ã«è¡¨ç¤ºï¼ââ
+    #    admin ãã¼ãã¡ã³ãè©³ç´°ã®ãçµæç¢ºå®æ¸ã¿ãæ åã»ããã£ã¦ã ã®ä¸ã«æ¨ªä¸åã§è¡¨ç¤ºããã
+    #    éè¨ã¯äºé¸ï¼æ±ºåãåç®ï¼include_finals=Trueï¼ãON/OFFã¯è¨­å®ã®ããã¼ãã¡ã³ãè¡¨ãåã«å¾ãã
+    holder_boxes = []
+    if is_finalized:
+        try:
+            from app.application import qualifying_records as _qrh
+            from app.application import timing_racer_best_service as _rbh
+            _cfg = await _qrh.get_ach_config(db)
+            if any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
+                _qt = dict(t).get("qualifying_type")
+                _nm = {}
+                async with db.execute(
+                    "SELECT e.id AS eid, r.name FROM entries e "
+                    "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?", (tid,)) as cur:
+                    for _r in await cur.fetchall():
+                        _nm[_r["eid"]] = _r["name"]
+                _rh = await _rbh.record_holders_for_tournament(db, tid, include_finals=True)
+                _disp = _qrh.format_records_display(_rh, _nm, {})
+                _best_by = {eid: bm.get("total") for eid, bm
+                            in (await _rbh.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
+                _pl = None
+                _pl_eid = None
+                if _qt == "point":
+                    from app.routers.qualifying import _calc_standings as _cs
+                    _lead = [s for s in [dict(x) for x in await _cs(tid, db)] if s.get("rank") == 1]
+                    if _lead and _lead[0].get("total_points"):
+                        _w = await _qrh.resolve_point_leader(db, tid, _lead, _best_by)
+                        _pl = {"name": _w.get("name"), "points": _lead[0].get("total_points")}
+                        _pl_eid = _w.get("entry_id")
+                _qlead = _pl_eid
+                if _qlead is None and _qt == "order":
+                    from app.routers.qualifying import _calc_standings as _cs2
+                    _r1 = [s for s in [dict(x) for x in await _cs2(tid, db)] if s.get("rank") == 1]
+                    if _r1:
+                        _w2 = await _qrh.resolve_point_leader(db, tid, _r1, _best_by)
+                        _qlead = _w2.get("entry_id") if _w2 else None
+                try:
+                    _sw = await _qrh.sweep_entries_for_tournament(db, tid)
+                except Exception:
+                    _sw = set()
+                _ach = _qrh.compute_achievements(_rh, _qlead, _sw, _nm)
+
+                def _on(k):
+                    return _cfg.get(k, {}).get("bracket")
+                # è¨é²ç³»ï¼è¤æ°ä¿æã¯æéï¼åé ­1äººï¼
+                for _k, _ic, _lb in (("overall", "🏁", "OVERALL"),
+                                     ("fastest_lap", "⏱", "FASTEST LAP"),
+                                     ("top_speed", "🚀", "TOP SPEED")):
+                    rec = (_disp or {}).get(_k)
+                    if _on(_k) and rec and rec.get("holders"):
+                        _h = rec["holders"][0]
+                        _val = rec.get("value_str", "")
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}",
+                                             "lines": [f'{_h.get("name","")} {_val}'.strip()]})
+                if _on("point_leader") and _pl:
+                    holder_boxes.append({"label": "🎯POINT LEADER🎯",
+                                         "lines": [f'{_pl["name"]} {_pl["points"]} pt']})
+                for _k, _ic, _lb in (("sweep", "💯", "SWEEP"),
+                                     ("grand_slam", "👑", "GRAND SLAM"),
+                                     ("speed_star", "⭐", "SPEED STAR")):
+                    _names = _ach.get(_k) or []
+                    if _on(_k) and _names:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "lines": [_names[0]]})
+                if _on("sprinter"):
+                    _spr = _ach.get("sprinter") or []
+                    _snames = [f'S{s["sector"]} {s["names"][0]}' for s in _spr if s.get("names")]
+                    if _snames:
+                        holder_boxes.append({"label": "⚡SPRINTER⚡", "lines": _snames})
+        except Exception:
+            holder_boxes = []
+
     return templates.TemplateResponse("admin/tournament_detail.html", {
         "request": request,
         "t": t,
@@ -674,6 +746,7 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
         "is_finalized": is_finalized,
         "has_finalists": has_finalists,
         "cert_results": cert_results,
+        "holder_boxes": holder_boxes,
         "post_templates": await _get_post_templates(db),
     })
 
