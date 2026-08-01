@@ -14,7 +14,7 @@
 {% block extra_style %}
 .schedule-table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
 .schedule-table th:first-child,.schedule-table td:first-child{width:30px}
-.schedule-table th{background:#1e3a5f;padding:8px 12px;text-align:left;color:#9fb3c8;font-size:12px;font-weight:normal}
+.schedule-table th{background:#1e3a5f;padding:8px 12px;text-align:center;color:#9fb3c8;font-size:12px;font-weight:normal}
 .schedule-table tr.race-row{transition:background .2s}
 .schedule-table tr.done{background:#0d2014}
 .schedule-table td{padding:8px 12px}
@@ -32,12 +32,12 @@
 .rc-fin3{background:rgba(14,66,40,.5)}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:bold;line-height:1;margin-left:6px;flex-shrink:0}
 .rr-name{flex:1;min-width:0;line-height:1.25;overflow-wrap:anywhere}
-/* レーススケジュールのレーサー名を中央ぞろえ。
-   ・justify-content:center … 名前グループ全体をセル内で中央へ（総当たりの○×・順位バッジ込み／名前カラムが flex:1 で伸びない場合に効く）
-   ・racer-cell > div は名前カラム（ポイント制／ヒートトーナメント）。縦積みの名前＋タイムを align-items:center で中央へ
-   ・rr-name は公開HTML表示の名前span（flex:1 でセル幅いっぱい）。text-align:center で文字を中央に */
+/* レーススケジュール：コース見出し行は中央、レーサー名は左ぞろえ。
+   ・racer-cell は左詰め（justify-content:flex-start）
+   ・racer-cell > div は名前カラム（縦積みの名前＋タイム）。公開HTMLでも左ぞろえにする
+   ・rr-name は公開HTML表示の名前span。text-align:left で文字を左に */
 .schedule-table .racer-cell{justify-content:flex-start}
-.schedule-table .racer-cell > div{align-items:center}
+.schedule-table .racer-cell > div{align-items:flex-start}
 .schedule-table .rr-name{text-align:left}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
 .status-pending{color:#7f8c8d;font-size:12px}
@@ -582,7 +582,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </span>
           {% endif %}
         </div>
-        <div style="background:#131e2b;padding:14px">
+        <div style="background:#131e2b;padding:14px 4px">
           {% if not heat_data.sections and not heat_data.heat_final_section %}
           <div style="color:#7f8c8d;font-size:14px;padding:10px;text-align:center">⏳ このヒートはまだ生成されていません</div>
           {% endif %}
@@ -598,7 +598,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% endif %}
           </div>
           {% endif %}
-          <div id="viewer-ht-bracket-{{ hno }}-{{ sec.section_no }}" style="background:#131e2b;overflow-x:auto;width:100%;padding:4px;margin-bottom:8px">
+          <div id="viewer-ht-bracket-{{ hno }}-{{ sec.section_no }}" style="background:#131e2b;overflow-x:auto;width:100%;padding:4px 0;margin-bottom:8px">
             <div style="color:#7f8c8d;font-size:12px;padding:8px">読み込み中...</div>
           </div>
           {% if not loop.last %}<hr style="border:none;border-top:1px solid #2c3e50;margin:12px 0">{% endif %}
@@ -633,7 +633,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               </span>
               {% endif %}
             </div>
-            <div id="viewer-ht-bracket-{{ hno }}-0" style="background:#131e2b;overflow-x:auto;width:100%;padding:8px">
+            <div id="viewer-ht-bracket-{{ hno }}-0" style="background:#131e2b;overflow-x:auto;width:100%;padding:8px 0">
               <div style="color:#7f8c8d;font-size:12px;padding:8px">読み込み中...</div>
             </div>
           </div>
