@@ -4741,10 +4741,81 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
     else:
         svg_data["losers_rounds"] = []
 
-    return HTMLResponse(_render_html_bracket(svg_data, tid=tid))
+    # ── 🏆 M4LAPS RECORD HOLDERS 対象者（設定「トーナメント表」ON項目を123位の下に表示）──
+    holder_boxes = []
+    try:
+        from app.application import qualifying_records as _qrh
+        from app.application import timing_racer_best_service as _rbh
+        _cfg = await _qrh.get_ach_config(db)
+        if any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
+            _trow = await (await db.execute(
+                "SELECT qualifying_type FROM tournaments WHERE id=?", (tid,))).fetchone()
+            _qt = dict(_trow).get("qualifying_type") if _trow else None
+            _nm = {}
+            async with db.execute(
+                "SELECT e.id AS eid, r.name FROM entries e "
+                "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?", (tid,)) as cur:
+                for _r in await cur.fetchall():
+                    _nm[_r["eid"]] = _r["name"]
+            _rh = await _rbh.record_holders_for_tournament(db, tid, include_finals=True)
+            _disp = _qrh.format_records_display(_rh, _nm, {})
+            _best_by = {eid: bm.get("total") for eid, bm
+                        in (await _rbh.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
+            _pl = None
+            _pl_eid = None
+            if _qt == "point":
+                from app.routers.qualifying import _calc_standings as _cs
+                _lead = [s for s in [dict(x) for x in await _cs(tid, db)] if s.get("rank") == 1]
+                if _lead and _lead[0].get("total_points"):
+                    _w = await _qrh.resolve_point_leader(db, tid, _lead, _best_by)
+                    _pl = {"name": _w.get("name"), "points": _lead[0].get("total_points")}
+                    _pl_eid = _w.get("entry_id")
+            _qlead = _pl_eid
+            if _qlead is None and _qt == "order":
+                from app.routers.qualifying import _calc_standings as _cs2
+                _r1 = [s for s in [dict(x) for x in await _cs2(tid, db)] if s.get("rank") == 1]
+                if _r1:
+                    _w2 = await _qrh.resolve_point_leader(db, tid, _r1, _best_by)
+                    _qlead = _w2.get("entry_id") if _w2 else None
+            try:
+                _sw = await _qrh.sweep_entries_for_tournament(db, tid)
+            except Exception:
+                _sw = set()
+            _ach = _qrh.compute_achievements(_rh, _qlead, _sw, _nm)
+
+            def _on(k):
+                return _cfg.get(k, {}).get("bracket")
+            # 記録系（複数保持は最速＝先頭1人）
+            for _k, _ic, _lb in (("overall", "🏁", "OVERALL"),
+                                 ("fastest_lap", "⏱", "FASTEST LAP"),
+                                 ("top_speed", "🚀", "TOP SPEED")):
+                rec = (_disp or {}).get(_k)
+                if _on(_k) and rec and rec.get("holders"):
+                    _h = rec["holders"][0]
+                    _val = rec.get("value_str", "")
+                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}",
+                                         "lines": [f'{_h.get("name","")} {_val}'.strip()]})
+            if _on("point_leader") and _pl:
+                holder_boxes.append({"label": "🎯POINT LEADER🎯",
+                                     "lines": [f'{_pl["name"]} {_pl["points"]} pt']})
+            for _k, _ic, _lb in (("sweep", "💯", "SWEEP"),
+                                 ("grand_slam", "👑", "GRAND SLAM"),
+                                 ("speed_star", "⭐", "SPEED STAR")):
+                _names = _ach.get(_k) or []
+                if _on(_k) and _names:
+                    holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "lines": [_names[0]]})
+            if _on("sprinter"):
+                _spr = _ach.get("sprinter") or []
+                _snames = [f'S{s["sector"]} {s["names"][0]}' for s in _spr if s.get("names")]
+                if _snames:
+                    holder_boxes.append({"label": "⚡SPRINTER⚡", "lines": _snames})
+    except Exception:
+        holder_boxes = []
+
+    return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes))
 
 
-def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False) -> str:
+def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None) -> str:
     """flexboxベースのHTML/CSSトーナメント表（コネクタ線・勝ち上がり強調付き）
 
     compact=True のとき、表彰台（br-podium）を約半分の高さに縮小する（admin画面用）。
@@ -4831,6 +4902,13 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-third-pod { background:linear-gradient(135deg,#fdf0e0,#f5c97a); border:2px solid #cd7f32; border-radius:10px; padding:%(ru_pad)s; flex:1; min-width:140px; text-align:center; }
     .br-third-pod-label { font-size:%(ru_label)s; color:#7a4a10; font-weight:bold; }
     .br-third-pod-name { font-size:%(ru_name)s; font-weight:bold; color:#5a3a10; margin-top:%(ru_mt)s; }""" % _pod + """
+    /* 🏆 M4LAPS RECORD HOLDERS 対象者（123位の下・横一列。admin/view=6列、スマホ=3列で折り返し） */
+    .br-holders { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:14px; }
+    .br-holder-box { background:linear-gradient(135deg,#eef5ff,#cfe0f7); border:2px solid #6f9bd1; border-radius:10px; padding:6px 8px; text-align:center; min-width:0; }
+    .br-holder-label { font-size:12px; font-weight:bold; color:#204060; letter-spacing:1px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .br-holder-body { font-size:14px; font-weight:bold; color:#16324f; margin-top:3px; line-height:1.5; }
+    .br-holder-body > div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    @media(max-width:480px){ .br-holders { grid-template-columns:repeat(3,1fr); gap:6px; } .br-holder-label{ font-size:11px; } .br-holder-body{ font-size:13px; } }
     /* レイアウト */
     .bracket-outer { position:relative; overflow:visible; width:100%; }
     .bracket-html { display:flex; gap:0; padding:6px 2px; align-items:flex-start; position:relative; width:max-content; min-width:100%; }
@@ -5561,11 +5639,26 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             '</div>'
         )
 
+    # ── 🏆 M4LAPS RECORD HOLDERS 対象者（123位ボックスの下・横一列。設定でON項目のみ）──
+    holders_html = ""
+    if holder_boxes:
+        _boxes = []
+        for b in holder_boxes:
+            _lines = "".join(f'<div>{esc(x)}</div>' for x in b.get("lines", []))
+            _boxes.append(
+                '<div class="br-holder-box">'
+                f'<div class="br-holder-label">{esc(b.get("label",""))}</div>'
+                f'<div class="br-holder-body">{_lines}</div>'
+                '</div>'
+            )
+        holders_html = '<div class="br-holders">' + "".join(_boxes) + '</div>'
+
     return (
         f'{css}'
         f'{connector_js}'
         f'<div class="br-wrap">'
         f'{podium_html}'
+        f'{holders_html}'
         f'<div class="bracket-outer">'
         f'<div class="bracket-html">{rounds_html}</div>'
         f'</div>'
