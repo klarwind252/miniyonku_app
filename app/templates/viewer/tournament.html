@@ -135,6 +135,58 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 </div>
 
+{% if is_finalized and (cert_results.get(1) or cert_results.get(2) or cert_results.get(3)) %}
+{% set r1 = cert_results.get(1, '') %}
+{% set r2 = cert_results.get(2, '') %}
+{% set r3 = cert_results.get(3, '') %}
+<div class="v-section">
+  <div class="v-section-title">🏆 結果</div>
+  <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px;padding:10px 0 4px">
+    <div style="text-align:center">
+      <div style="font-size:22px">🥈</div>
+      <div style="font-size:11px;color:#aeb6bf;margin-top:2px">2位</div>
+      <div style="font-size:15px;font-weight:bold;color:#333;margin-top:4px;background:linear-gradient(135deg,#f5f5f5,#dcdcdc);border:2px solid #999;border-radius:8px;padding:4px 12px">{{ r2 or '—' }}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:28px">🏆</div>
+      <div style="font-size:11px;color:#e8c14a;margin-top:2px">1位</div>
+      <div style="font-size:18px;font-weight:900;color:#7a5500;margin-top:4px;background:linear-gradient(135deg,#fff8d6,#ffe066);border:2px solid #d4a017;border-radius:8px;padding:6px 18px">{{ r1 or '—' }}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:22px">🥉</div>
+      <div style="font-size:11px;color:#aeb6bf;margin-top:2px">3位</div>
+      <div style="font-size:15px;font-weight:bold;color:#5a3a10;margin-top:4px;background:linear-gradient(135deg,#fdf0e0,#f5c97a);border:2px solid #cd7f32;border-radius:8px;padding:4px 12px">{{ r3 or '—' }}</div>
+    </div>
+  </div>
+  {% if holder_boxes %}
+  <div class="v-section-title" style="margin-top:16px">⚡ M4LAPS RECORD HOLDERS</div>
+  <style>
+    .vt-holders{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:8px}
+    .vt-holder-box{background:linear-gradient(135deg,#eef5ff,#cfe0f7);border:2px solid #6f9bd1;border-radius:10px;padding:6px 8px;text-align:center;min-width:0}
+    .vt-holder-box.empty{background:#f4f5f7;border-color:#ccd2d9}
+    .vt-holder-label{font-size:12px;font-weight:bold;color:#204060;letter-spacing:1px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .vt-holder-box.empty .vt-holder-label{color:#8a94a0}
+    .vt-holder-name{font-size:15px;font-weight:bold;color:#16324f;margin-top:3px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .vt-holder-sub{font-size:12px;font-weight:bold;color:#3a516c;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .vt-holder-list{font-size:13px;font-weight:bold;color:#16324f;margin-top:3px;line-height:1.5}
+    .vt-holder-list>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .vt-holder-none{font-size:12px;color:#9aa5b1;margin-top:4px}
+    @media (max-width:600px){.vt-holders{grid-template-columns:repeat(3,1fr)}}
+  </style>
+  <div class="vt-holders">
+    {% for b in holder_boxes %}
+    <div class="vt-holder-box{% if b.empty %} empty{% endif %}">
+      <div class="vt-holder-label">{{ b.label }}</div>
+      {% if b.empty %}<div class="vt-holder-none">該当者なし</div>
+      {% elif b.lines %}<div class="vt-holder-list">{% for x in b.lines %}<div>{{ x }}</div>{% endfor %}</div>
+      {% else %}<div class="vt-holder-name">{{ b.name }}</div>{% for s in b.sub %}<div class="vt-holder-sub">{{ s }}</div>{% endfor %}{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="v-section">
   <div class="v-section-title">👥 エントリー <span style="font-size:16px;color:#7f8c8d;font-weight:normal">{{ entries|length }}名</span></div>
   <div class="entry-grid">

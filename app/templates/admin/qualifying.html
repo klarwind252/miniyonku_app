@@ -266,6 +266,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   <a href="/admin/tournaments/{{ t.id }}/certificate" target="_blank" data-short="賞状" class="btn btn-secondary btn-sm">🏅 賞状</a>
   <a href="/admin/tournaments/{{ t.id }}/bracket" data-short="X" class="btn btn-secondary btn-sm">𝕏 ポスト</a>
   <a href="/admin/tournaments/" data-short="一覧" class="btn btn-secondary btn-sm">← レース一覧</a>
+  <a href="/admin/tournaments/{{ t.id }}" data-short="管理" class="btn btn-secondary btn-sm">← レース管理</a>
   {% if not is_none_roundrobin %}<a href="/admin/tournaments/{{ t.id }}/bracket" data-short="決勝" class="btn btn-success btn-sm">🏆 決勝管理</a>{% endif %}
   <a href="/admin/tournaments/{{ t.id }}/edit" data-short="編集" class="btn btn-warning btn-sm">✏️ レース情報を編集</a>
   {% else %}

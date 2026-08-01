@@ -59,7 +59,7 @@ def _get_logo_base64() -> str | None:
     return None
 
 
-def _patch_html_for_static(html: str, slug: str = "") -> str:
+def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False) -> str:
     """
     静的配信用: 全JSを除去し、bracket線描画JS＋有効期限ゲートJSを再注入する。
 
@@ -185,6 +185,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     expiry_script = """<script>
 (function(){
   window.__M4_PUBLIC__ = true;   // #5 公開HTML判定（トーナメント表のレーサー名タップ→成績モーダル）
+  window.__M4_FINALIZED__ = __M4FINAL__;   // 結果確定済みなら「次のレースまで」案内を抑止
   var KEY = "m4_pub_issued___SLUGKEY__";
   var TTL = 24*60*60*1000;          // 24時間
   var CHECK_MS = 30000;             // 30秒ごとに「更新の有無」だけ確認する
@@ -391,7 +392,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   check();
   setInterval(check, CHECK_MS);
 })();
-</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url)
+</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__M4FINAL__", "true" if is_finalized else "false")
 
     # bracket レイアウト＋線描画JSを再注入（admin と同一ロジックを保持したものを使用）。
     # connector_js 内で window._bracketDrawConnectors と init() が定義され、ページ内の
@@ -669,6 +670,10 @@ window.addEventListener('load', function(){
       if(podRank === 1){ return { text: '🎉🏆 優勝おめでとうございます 🏆🎉', urgency: 3 }; }
       if(podRank >= 2){ return { text: '🎊🏅 入賞おめでとうございます 🏅🎊', urgency: 4 }; }
     }
+
+    /* 大会が結果確定済みなら「次のレースまで」カウントダウンは出さない（次のレースは存在しない）。
+       表彰台（優勝/入賞）の祝福メッセージは上で先に返しているため、確定後も維持される。 */
+    if(window.__M4_FINALIZED__) return null;
 
     /* ヒート（トーナメント）予選 */
     if(isHeatQual){
@@ -1469,7 +1474,17 @@ async def export_current_html(db=None) -> bool:
 
         print(f"[public_html] render OK ({len(html)} bytes), injecting bracket html...", flush=True)
         html = await _inject_bracket_html(html, view_url, store)
-        html = _patch_html_for_static(html, slug)
+        # 結果確定済み判定（確定後は「次のレースまで」案内を抑止するためのフラグ注入用）
+        _is_final = False
+        try:
+            import re as _re_fin
+            _mfin = _re_fin.search(r"/view/tournament/(\d+)", view_url)
+            if _mfin:
+                from app.routers.tournaments import _is_result_finalized
+                _is_final = await _is_result_finalized(int(_mfin.group(1)), own_db)
+        except Exception:
+            _is_final = False
+        html = _patch_html_for_static(html, slug, is_finalized=_is_final)
         # ホーム画面アイコン（Webアプリ）: <head> へメタ注入 ＋ 静的 manifest 書き出し（クラウド版のみ）
         try:
             from app import pwa as _pwa

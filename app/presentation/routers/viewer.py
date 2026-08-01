@@ -189,6 +189,146 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
     t_dict = dict(t)
     finalists = calc_finalists(t_dict.get("qualifying_type", ""), t_dict)
 
+    # ââ çµæç¢ºå®æï¼1ã3ä½ããã£ã¦ã ï¼ð M4LAPS RECORD HOLDERS å¯¾è±¡èï¼adminè©³ç´°ã¨ååå®¹ï¼ââ
+    from app.routers.tournaments import _is_result_finalized
+    is_finalized = await _is_result_finalized(tid, db)
+
+    # 1ã3ä½ãåå¾ï¼ç¢ºå®æ¸ã¿ã®å ´åï¼â»admin/tournament_detail ã¨åä¸ã­ã¸ãã¯
+    cert_results = {}
+    if is_finalized:
+        qt_val = dict(t).get("qualifying_type", "")
+        if qt_val == "none_roundrobin":
+            async with db.execute(
+                """SELECT e.none_rr_rank as rank, r.name
+                   FROM entries e JOIN racers r ON r.id=e.racer_id
+                   WHERE e.tournament_id=? AND e.none_rr_rank IN (1,2,3)
+                   ORDER BY e.none_rr_rank""", (tid,)
+            ) as cur:
+                for row in await cur.fetchall():
+                    cert_results[row["rank"]] = row["name"]
+        else:
+            async with db.execute(
+                """SELECT bsr.rank, br.round_type, r.name
+                   FROM bracket_slot_ranks bsr
+                   JOIN bracket_slots bs ON bs.id=bsr.slot_id
+                   JOIN bracket_groups bg ON bg.id=bs.group_id
+                   JOIN bracket_rounds br ON br.id=bg.round_id
+                   JOIN entries e ON e.id=bs.entry_id
+                   JOIN racers r ON r.id=e.racer_id
+                   WHERE br.tournament_id=? AND bsr.rank IN (1,2,3)
+                   ORDER BY CASE br.round_type WHEN 'final' THEN 1 WHEN 'third' THEN 2 ELSE 3 END, bsr.rank""", (tid,)
+            ) as cur:
+                for row in await cur.fetchall():
+                    if row["round_type"] == "final":
+                        if row["rank"] not in cert_results:
+                            cert_results[row["rank"]] = row["name"]
+                    elif row["round_type"] == "third":
+                        if row["rank"] == 1 and 3 not in cert_results:
+                            cert_results[3] = row["name"]
+            if 3 not in cert_results:
+                async with db.execute(
+                    """SELECT ra.name
+                       FROM bracket_results bres
+                       JOIN bracket_slots bs ON bs.id=bres.winner_slot_id
+                       JOIN bracket_groups bg ON bg.id=bres.group_id
+                       JOIN bracket_rounds br ON br.id=bg.round_id
+                       JOIN entries e ON e.id=bs.entry_id
+                       JOIN racers ra ON ra.id=e.racer_id
+                       WHERE br.tournament_id=? AND br.round_type='third'
+                       LIMIT 1""", (tid,)
+                ) as cur:
+                    third_row = await cur.fetchone()
+                    if third_row:
+                        cert_results[3] = third_row["name"]
+
+    # ð M4LAPS RECORD HOLDERS å¯¾è±¡èï¼è¨­å®ããã¼ãã¡ã³ãè¡¨ãONé ç®ã»äºé¸ï¼æ±ºååç®ï¼
+    holder_boxes = []
+    if is_finalized:
+        try:
+            from app.application import qualifying_records as _qrh
+            from app.application import timing_racer_best_service as _rbh
+            _cfg = await _qrh.get_ach_config(db)
+            if any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
+                _qt = dict(t).get("qualifying_type")
+                _nm = {}
+                async with db.execute(
+                    "SELECT e.id AS eid, r.name FROM entries e "
+                    "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?", (tid,)) as cur:
+                    for _r in await cur.fetchall():
+                        _nm[_r["eid"]] = _r["name"]
+                _rh = await _rbh.record_holders_for_tournament(db, tid, include_finals=True)
+                _disp = _qrh.format_records_display(_rh, _nm, {})
+                _best_by = {eid: bm.get("total") for eid, bm
+                            in (await _rbh.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
+                _pl = None
+                _pl_eid = None
+                if _qt == "point":
+                    from app.routers.qualifying import _calc_standings as _cs
+                    _lead = [s for s in [dict(x) for x in await _cs(tid, db)] if s.get("rank") == 1]
+                    if _lead and _lead[0].get("total_points"):
+                        _w = await _qrh.resolve_point_leader(db, tid, _lead, _best_by)
+                        _pl = {"name": _w.get("name"), "points": _lead[0].get("total_points")}
+                        _pl_eid = _w.get("entry_id")
+                _qlead = _pl_eid
+                if _qlead is None and _qt == "order":
+                    from app.routers.qualifying import _calc_standings as _cs2
+                    _r1 = [s for s in [dict(x) for x in await _cs2(tid, db)] if s.get("rank") == 1]
+                    if _r1:
+                        _w2 = await _qrh.resolve_point_leader(db, tid, _r1, _best_by)
+                        _qlead = _w2.get("entry_id") if _w2 else None
+                try:
+                    _sw = await _qrh.sweep_entries_for_tournament(db, tid)
+                except Exception:
+                    _sw = set()
+                _ach = _qrh.compute_achievements(_rh, _qlead, _sw, _nm)
+
+                def _on(k):
+                    return _cfg.get(k, {}).get("bracket")
+                # フルスコア判定（POINT LEADER が全レース1位＝満点なら FULL SCORE）
+                _pl_full = bool(_pl and _pl_eid is not None and _pl_eid in _sw)
+                # 該当なしでも「該当者なし」で枠を残す（設定「トーナメント表」ON項目を全表示）
+                for _k, _ic, _lb in (("overall", "🏁", "OVERALL"),
+                                     ("fastest_lap", "⏱", "FASTEST LAP"),
+                                     ("top_speed", "🚀", "TOP SPEED")):
+                    if not _on(_k):
+                        continue
+                    rec = (_disp or {}).get(_k)
+                    if rec and rec.get("holders"):
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,
+                                             "name": rec["holders"][0].get("name", ""),
+                                             "sub": [rec.get("value_str", "")]})
+                    else:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": True})
+                if _on("point_leader"):
+                    if _pl:
+                        _sub = [f'{_pl["points"]} pt']
+                        if _pl_full:
+                            _sub.append("FULL SCORE")
+                        holder_boxes.append({"label": "🎯POINT LEADER🎯", "empty": False,
+                                             "name": _pl["name"], "sub": _sub})
+                    else:
+                        holder_boxes.append({"label": "🎯POINT LEADER🎯", "empty": True})
+                for _k, _ic, _lb in (("sweep", "💯", "SWEEP"),
+                                     ("grand_slam", "👑", "GRAND SLAM"),
+                                     ("speed_star", "⭐", "SPEED STAR")):
+                    if not _on(_k):
+                        continue
+                    _names = _ach.get(_k) or []
+                    if _names:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,
+                                             "name": _names[0], "sub": []})
+                    else:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": True})
+                if _on("sprinter"):
+                    _spr = _ach.get("sprinter") or []
+                    _snames = [f'S{s["sector"]} {s["names"][0]}' for s in _spr if s.get("names")]
+                    if _snames:
+                        holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": False, "lines": _snames})
+                    else:
+                        holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": True})
+        except Exception:
+            holder_boxes = []
+
     return templates.TemplateResponse("viewer/tournament.html", {
         "request": request,
         "is_public_html": (request.query_params.get("_public") == "1"),
@@ -201,6 +341,9 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
         "regulation_labels": REGULATION_LABELS,
         "qualifying_labels": QUALIFYING_LABELS,
         "finalists": finalists,
+        "is_finalized": is_finalized,
+        "cert_results": cert_results,
+        "holder_boxes": holder_boxes,
     })
 
 

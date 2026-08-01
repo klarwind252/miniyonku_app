@@ -702,30 +702,48 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
 
                 def _on(k):
                     return _cfg.get(k, {}).get("bracket")
-                # è¨é²ç³»ï¼è¤æ°ä¿æã¯æéï¼åé ­1äººï¼
+                # フルスコア判定（POINT LEADER が全レース1位＝満点なら FULL SCORE）
+                _pl_full = bool(_pl and _pl_eid is not None and _pl_eid in _sw)
+                # 該当なしでも「該当者なし」で枠を残す（設定「トーナメント表」ON項目を全表示）
                 for _k, _ic, _lb in (("overall", "🏁", "OVERALL"),
                                      ("fastest_lap", "⏱", "FASTEST LAP"),
                                      ("top_speed", "🚀", "TOP SPEED")):
+                    if not _on(_k):
+                        continue
                     rec = (_disp or {}).get(_k)
-                    if _on(_k) and rec and rec.get("holders"):
-                        _h = rec["holders"][0]
-                        _val = rec.get("value_str", "")
-                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}",
-                                             "lines": [f'{_h.get("name","")} {_val}'.strip()]})
-                if _on("point_leader") and _pl:
-                    holder_boxes.append({"label": "🎯POINT LEADER🎯",
-                                         "lines": [f'{_pl["name"]} {_pl["points"]} pt']})
+                    if rec and rec.get("holders"):
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,
+                                             "name": rec["holders"][0].get("name", ""),
+                                             "sub": [rec.get("value_str", "")]})
+                    else:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": True})
+                if _on("point_leader"):
+                    if _pl:
+                        _sub = [f'{_pl["points"]} pt']
+                        if _pl_full:
+                            _sub.append("FULL SCORE")
+                        holder_boxes.append({"label": "🎯POINT LEADER🎯", "empty": False,
+                                             "name": _pl["name"], "sub": _sub})
+                    else:
+                        holder_boxes.append({"label": "🎯POINT LEADER🎯", "empty": True})
                 for _k, _ic, _lb in (("sweep", "💯", "SWEEP"),
                                      ("grand_slam", "👑", "GRAND SLAM"),
                                      ("speed_star", "⭐", "SPEED STAR")):
+                    if not _on(_k):
+                        continue
                     _names = _ach.get(_k) or []
-                    if _on(_k) and _names:
-                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "lines": [_names[0]]})
+                    if _names:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,
+                                             "name": _names[0], "sub": []})
+                    else:
+                        holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": True})
                 if _on("sprinter"):
                     _spr = _ach.get("sprinter") or []
                     _snames = [f'S{s["sector"]} {s["names"][0]}' for s in _spr if s.get("names")]
                     if _snames:
-                        holder_boxes.append({"label": "⚡SPRINTER⚡", "lines": _snames})
+                        holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": False, "lines": _snames})
+                    else:
+                        holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": True})
         except Exception:
             holder_boxes = []
 
