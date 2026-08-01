@@ -191,12 +191,23 @@ class TimingRaceRepository:
         return cur.rowcount
 
     async def get_race(self, race_id: int):
-        async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, heat_id, applied_group_id, created_at "
-            "FROM timing_races WHERE id = ?",
-            (race_id,),
-        ) as cur:
-            return await cur.fetchone()
+        # applied_ht_group_id はマイグレーション（timing_schema.py）で後から追加された列。
+        # PIP の「反映済（ヒート○ …）」表示に必要なので取得するが、未適用の旧DBでも
+        # レース取得自体は失敗させない（列なしSELECTへフォールバック）。
+        _base = ("id, heat_tag, layout_id, target_laps, green_t_us, heat_id, "
+                 "applied_group_id, created_at")
+        try:
+            async with self.db.execute(
+                f"SELECT {_base}, applied_ht_group_id FROM timing_races WHERE id = ?",
+                (race_id,),
+            ) as cur:
+                return await cur.fetchone()
+        except Exception:
+            async with self.db.execute(
+                f"SELECT {_base} FROM timing_races WHERE id = ?",
+                (race_id,),
+            ) as cur:
+                return await cur.fetchone()
 
     async def list_races(self, limit: int = 50):
         async with self.db.execute(
