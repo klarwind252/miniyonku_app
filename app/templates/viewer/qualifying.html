@@ -1170,11 +1170,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {# 名前タップ→予選タイム詳細モーダル。JSは公開HTMLでは <script> が全除去されるため、
    public_html.py 側で window.openRacerStats を持つこのスクリプトを保持→再注入している。 #}
 {% if m4laps_active %}
-<div id="rs-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:16px">
+<div id="rs-overlay" onclick="if(event.target===this&&window.m4CloseRs)window.m4CloseRs()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:16px">
   <div style="background:#0f1923;border:1px solid #2c3e50;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #2c3e50">
       <div id="rs-title" style="font-weight:bold;font-size:15px;color:#ecf0f1">レーサー詳細</div>
-      <button id="rs-close" type="button" style="background:none;border:none;color:#7f8c8d;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
+      <button id="rs-close" type="button" onclick="if(window.m4CloseRs)window.m4CloseRs()" style="background:none;border:none;color:#7f8c8d;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
     </div>
     <div id="rs-body" style="overflow:auto;padding:10px 12px"></div>
   </div>
@@ -1210,10 +1210,30 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     h+='</tbody></table></div>';
     return h;
   }
-  function closeRs(){ var ov=document.getElementById('rs-overlay'); if(ov) ov.style.display='none'; }
+  // 閉じる処理はグローバル公開し、×ボタン／背景の inline onclick から直接呼ぶ。
+  // （公開HTMLでは <script> が全除去され、delegated な document リスナーより
+  //   inline onclick の方が確実。openRacerStats と同じ経路で必ず発火する。）
+  // 30秒自動更新の applyPartial が .v-container を innerHTML 差し替えすると、
+  //   body へ退避した表示中の #rs-overlay とは別に、非表示の #rs-overlay が
+  //   .v-container 内へ再生成され id が重複する。getElementById は文書順で先頭
+  //   （＝非表示の複製）を返すため、従来の closeRs は表示中モーダルを閉じられなかった。
+  //   → 全ての #rs-overlay を閉じることで複製が残っても確実に閉じる。
+  window.m4CloseRs=function(){
+    var list=document.querySelectorAll('#rs-overlay');
+    for(var i=0;i<list.length;i++){ list[i].style.display='none'; }
+    // 背後に M4LAPS 等のモーダルが残っていればフラグは維持、無ければ自動更新を再開。
+    var mi=document.getElementById('m4-info-overlay');
+    window.__m4ModalOpen = !!(mi && mi.style.display==='block');
+  };
+  function closeRs(){ window.m4CloseRs(); }
   window.openRacerStats=function(tid,eid){
+    // 自動更新等で増えた #rs-overlay の複製を1つに整理してから使う。
+    var dups=document.querySelectorAll('#rs-overlay');
+    for(var k=dups.length-1;k>0;k--){ if(dups[k].parentNode) dups[k].parentNode.removeChild(dups[k]); }
     var ov=document.getElementById('rs-overlay'),bd=document.getElementById('rs-body'),tt=document.getElementById('rs-title');
     if(!ov) return;
+    // 表示中は自動更新を止める（他モーダルと同様）。これで #rs-overlay の複製生成を防ぐ。
+    window.__m4ModalOpen = true;
     // rs-overlay を body 直下へ移動して .v-container(position:relative;z-index:2) のスタッキング文脈から出す。
     // これで M4LAPSモーダル(m4-info-overlay z-index:9800)より前面(z-index:100000)に確実に表示される。
     if(ov.parentNode !== document.body){ document.body.appendChild(ov); }
@@ -1234,8 +1254,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       })
       .catch(function(){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#e74c3c">取得に失敗しました</div>'; });
   };
-  document.addEventListener('click',function(e){ if(e.target&&(e.target.id==='rs-overlay'||e.target.id==='rs-close')) closeRs(); });
-  document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeRs(); });
+  document.addEventListener('click',function(e){ if(e.target&&(e.target.id==='rs-overlay'||e.target.id==='rs-close')) window.m4CloseRs(); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') window.m4CloseRs(); });
 })();</script>
 {% endif %}
 
