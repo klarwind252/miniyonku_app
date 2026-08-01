@@ -1509,7 +1509,7 @@ window.initBracketConnectors = initBracketConnectors;
 .m4rec-full{color:#b8860b;font-weight:bold;font-size:12px;letter-spacing:.6px;margin-left:8px}
 .m4rec-cond{grid-column:2 / 4;color:#95a5a6;font-size:11px;align-self:baseline;min-width:0;line-height:1.3}
 </style>
-{% if has_final_result and ((record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader) %}
+{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
       <div class="card" style="margin-top:32px">
         <div class="card-header"><span><span class="zap">⚡</span> M4LAPS RECORD HOLDERS</span></div>
         <div class="card-body" style="padding-top:8px">

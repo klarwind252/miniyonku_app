@@ -119,8 +119,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
   {# ⚡ M4LAPS RECORD HOLDERS（トーナメント表と ⚡M4LAPS の間）。予選ページと同一内容。
      id="m4-records-sec"：部分更新で二重化するため dedup 対象にする（先頭のみ残す）。 #}
-{% if final_results and ((record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader) %}
   <div id="m4-records-sec" class="v-section" style="margin-top:12px">
+{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
 <div class="v-m4rec">
   <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
   {% if record_holders and record_holders.overall %}
@@ -179,8 +179,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>{% endif %}
   {% endif %}
 </div>
-  </div>
 {% endif %}
+  </div>
 
   {# ⚡ M4LAPS ベスト表（予選ページ viewer/qualifying と同一・決勝トーナメント表の下に表示） #}
   {# id="m4-laps-sec"：決勝表(.br-wrap)と同様、部分更新の二重化に備えたdedup対象マーカー #}
