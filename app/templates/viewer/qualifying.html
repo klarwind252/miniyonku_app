@@ -723,7 +723,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       }
 
       function loadHtBracket(tid, hno, afterLoad) {
-        fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?compact=2')
+        fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?compact=2', {cache:'no-store'})
           .then(function(r){return r.text();})
           .then(function(html){
             var c = document.getElementById('viewer-ht-bracket-'+hno);
@@ -748,7 +748,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       function loadHtBracketSection(tid, hno, sec_no, afterLoad) {
         var url = '/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?compact=2&section_no='+sec_no;
         if(sec_no === 0) url += '&heat_final=1';
-        fetch(url).then(function(r){return r.text();}).then(function(html){
+        fetch(url, {cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
           var c = document.getElementById('viewer-ht-bracket-'+hno+'-'+sec_no);
           if(c) _updateBracket(c, html, afterLoad);
         }).catch(function(){});

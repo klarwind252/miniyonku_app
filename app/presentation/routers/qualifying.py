@@ -3854,18 +3854,35 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
             groups = [dict(g) for g in await cur.fetchall()]
         grp_list = []
         for g in groups:
-            async with db.execute(
-                """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id,
-                          COALESCE(r.name,'') as name,
-                          hsr.rank
-                   FROM ht_slots hs
-                   LEFT JOIN entries e ON e.id=hs.entry_id
-                   LEFT JOIN racers r ON r.id=e.racer_id
-                   LEFT JOIN ht_slot_ranks hsr ON hsr.slot_id=hs.id AND hsr.group_id=?
-                   WHERE hs.group_id=? ORDER BY hs.slot_no""",
-                (g["id"], g["id"]),
-            ) as cur:
-                slots = [dict(s) for s in await cur.fetchall()]
+            # total_time は M4LAPS 反映で入る（schema.py マイグレーションで追加された列）。
+            # 決勝ブラケットと同様、トーナメント表の名前の右にタイムを表示するため取得する。
+            # 未適用の旧DBでも表示できるよう、失敗時は列なしSELECTへフォールバック。
+            try:
+                async with db.execute(
+                    """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id,
+                              COALESCE(r.name,'') as name,
+                              hsr.rank, hsr.total_time
+                       FROM ht_slots hs
+                       LEFT JOIN entries e ON e.id=hs.entry_id
+                       LEFT JOIN racers r ON r.id=e.racer_id
+                       LEFT JOIN ht_slot_ranks hsr ON hsr.slot_id=hs.id AND hsr.group_id=?
+                       WHERE hs.group_id=? ORDER BY hs.slot_no""",
+                    (g["id"], g["id"]),
+                ) as cur:
+                    slots = [dict(s) for s in await cur.fetchall()]
+            except Exception:
+                async with db.execute(
+                    """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id,
+                              COALESCE(r.name,'') as name,
+                              hsr.rank
+                       FROM ht_slots hs
+                       LEFT JOIN entries e ON e.id=hs.entry_id
+                       LEFT JOIN racers r ON r.id=e.racer_id
+                       LEFT JOIN ht_slot_ranks hsr ON hsr.slot_id=hs.id AND hsr.group_id=?
+                       WHERE hs.group_id=? ORDER BY hs.slot_no""",
+                    (g["id"], g["id"]),
+                ) as cur:
+                    slots = [dict(s) for s in await cur.fetchall()]
 
             async with db.execute(
                 "SELECT winner_slot_id FROM ht_results WHERE group_id=?", (g["id"],)
@@ -3876,7 +3893,8 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
                 "slots": [
                     {"slot_id": s["slot_id"], "slot_no": s["slot_no"],
                      "name": s["name"] or None, "entry_id": s["entry_id"],
-                     "rank": s["rank"], "qual_rank": None, "is_seed_slot": False}
+                     "rank": s["rank"], "qual_rank": None, "is_seed_slot": False,
+                     "total_time": s.get("total_time")}
                     for s in slots
                 ],
                 "result": {"winner_slot_id": res["winner_slot_id"]} if res else None,
@@ -4002,17 +4020,31 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
             tgroups = [dict(g) for g in await cur.fetchall()]
         tgrp_list = []
         for tg in tgroups:
-            async with db.execute(
-                """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id,
-                          COALESCE(r.name,'') as name, hsr.rank
-                   FROM ht_slots hs
-                   LEFT JOIN entries e ON e.id=hs.entry_id
-                   LEFT JOIN racers r ON r.id=e.racer_id
-                   LEFT JOIN ht_slot_ranks hsr ON hsr.slot_id=hs.id AND hsr.group_id=?
-                   WHERE hs.group_id=? ORDER BY hs.slot_no""",
-                (tg["id"], tg["id"]),
-            ) as cur:
-                tslots = [dict(s) for s in await cur.fetchall()]
+            # 3位決定戦のスロットにも M4LAPS の total_time を出す（旧DBは列なしにフォールバック）。
+            try:
+                async with db.execute(
+                    """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id,
+                              COALESCE(r.name,'') as name, hsr.rank, hsr.total_time
+                       FROM ht_slots hs
+                       LEFT JOIN entries e ON e.id=hs.entry_id
+                       LEFT JOIN racers r ON r.id=e.racer_id
+                       LEFT JOIN ht_slot_ranks hsr ON hsr.slot_id=hs.id AND hsr.group_id=?
+                       WHERE hs.group_id=? ORDER BY hs.slot_no""",
+                    (tg["id"], tg["id"]),
+                ) as cur:
+                    tslots = [dict(s) for s in await cur.fetchall()]
+            except Exception:
+                async with db.execute(
+                    """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id,
+                              COALESCE(r.name,'') as name, hsr.rank
+                       FROM ht_slots hs
+                       LEFT JOIN entries e ON e.id=hs.entry_id
+                       LEFT JOIN racers r ON r.id=e.racer_id
+                       LEFT JOIN ht_slot_ranks hsr ON hsr.slot_id=hs.id AND hsr.group_id=?
+                       WHERE hs.group_id=? ORDER BY hs.slot_no""",
+                    (tg["id"], tg["id"]),
+                ) as cur:
+                    tslots = [dict(s) for s in await cur.fetchall()]
             async with db.execute(
                 "SELECT winner_slot_id FROM ht_results WHERE group_id=?", (tg["id"],)
             ) as cur:
@@ -4020,7 +4052,8 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
             tgrp_list.append({
                 "slots": [{"slot_id": s["slot_id"], "slot_no": s["slot_no"],
                            "name": s["name"] or None, "entry_id": s["entry_id"],
-                           "rank": s["rank"], "qual_rank": None, "is_seed_slot": False}
+                           "rank": s["rank"], "qual_rank": None, "is_seed_slot": False,
+                           "total_time": s.get("total_time")}
                           for s in tslots],
                 "result": {"winner_slot_id": tres["winner_slot_id"]} if tres else None,
                 "group_id": tg["id"],

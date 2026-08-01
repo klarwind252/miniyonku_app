@@ -1336,6 +1336,22 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
         for _r in await cur.fetchall():
             if _r["tt"] is not None:
                 _all_times.append(round(float(_r["tt"]), 3))
+    # ヒートトーナメント予選（ht_slot_ranks）のタイムも「予選」としてプールに含める。
+    # 決勝ページの色分けは仕様どおり予選＋決勝の合算基準になる。
+    # ※ total_time はマイグレーション追加列のため、旧DBでは静かにスキップ。
+    try:
+        async with db.execute(
+            "SELECT hsr.total_time AS tt FROM ht_slot_ranks hsr "
+            "JOIN ht_groups hg ON hg.id=hsr.group_id "
+            "JOIN ht_rounds hr2 ON hr2.id=hg.round_id "
+            "WHERE hr2.tournament_id=? AND hsr.total_time IS NOT NULL",
+            (tid,),
+        ) as cur:
+            for _r in await cur.fetchall():
+                if _r["tt"] is not None:
+                    _all_times.append(round(float(_r["tt"]), 3))
+    except Exception:
+        pass
     for _gd in list(groups_data) + list(losers_groups_data):
         for _s in _gd.get("slots", []):
             _tt = _s.get("total_time")
@@ -1406,12 +1422,16 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     # 予選完走率（予選のみ。決勝は含めない）：point/order は _calc_standings の race/finish から
     _fr_by_b = {}
     try:
-        if dict(t).get("qualifying_type") in ("point", "order"):
+        _qt_fr = dict(t).get("qualifying_type")
+        if _qt_fr in ("point", "order"):
             from app.routers.qualifying import _calc_standings as _csr_b
             for _s in [dict(x) for x in await _csr_b(tid, db)]:
                 _rc = _s.get("race_count") or 0
                 _fc = _s.get("finish_count") or 0
                 _fr_by_b[_s.get("entry_id")] = (int(_fc / _rc * 100) if _rc > 0 else None)
+        elif _qt_fr in HEAT_TOURNAMENT_TYPES:
+            # ヒートトーナメント：予選（HT）の計測から算出（決勝は含めない）
+            _fr_by_b = await _rbest_svc.ht_finish_rates(db, tid)
     except Exception:
         _fr_by_b = {}
     # ベストタイム順（TOTAL 昇順、記録なしは末尾）で 1..N
@@ -4746,22 +4766,11 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
     try:
         from app.application import qualifying_records as _qrh
         from app.application import timing_racer_best_service as _rbh
-        # 決勝（または3位決定戦/敗者復活）で1位が確定しているか＝優勝確定。
-        # 未確定のうちは RECORD HOLDERS（holder_boxes）を出さない（表彰台1/2/3位と同じタイミング）。
-        _has_final = False
-        async with db.execute(
-            "SELECT 1 FROM bracket_slot_ranks bsr JOIN bracket_groups bg ON bg.id=bsr.group_id "
-            "JOIN bracket_rounds br ON br.id=bg.round_id "
-            "WHERE br.tournament_id=? AND br.round_type IN ('final','third','revival') AND bsr.rank=1 LIMIT 1",
-            (tid,)) as _cfin:
-            _has_final = (await _cfin.fetchone()) is not None
-        if not _has_final:
-            async with db.execute(
-                "SELECT 1 FROM ht_slot_ranks hsr JOIN ht_groups hg ON hg.id=hsr.group_id "
-                "JOIN ht_rounds hr ON hr.id=hg.round_id "
-                "WHERE hr.tournament_id=? AND hr.round_type='final' AND hsr.rank=1 LIMIT 1",
-                (tid,)) as _cfin:
-                _has_final = (await _cfin.fetchone()) is not None
+        # 表示タイミングは「結果確定（＝優勝確定）後」。判定は観覧・公開HTMLと同じ
+        # _is_result_finalized に一元化する（決勝(bracket)のfinal 1位で確定。
+        # ヒートトーナメントの ht 決勝は“予選”なので確定扱いにしない）。
+        from app.presentation.routers.tournaments import _is_result_finalized as _fin_check
+        _has_final = await _fin_check(tid, db)
         _cfg = await _qrh.get_ach_config(db)
         _m4row = await (await db.execute("SELECT use_m4laps FROM tournaments WHERE id=?", (tid,))).fetchone()
         _m4_on = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
@@ -4847,6 +4856,8 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
                 else:
                     holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": True})
     except Exception:
+        import logging
+        logging.getLogger(__name__).exception("[bracket] holder_boxes build failed")
         holder_boxes = []
 
     return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes))

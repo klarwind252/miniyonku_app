@@ -142,6 +142,113 @@ async def build_racer_qualifying_stats(db, tournament_id: int, entry_id: int) ->
             **stat,
         })
 
+    # ── 予選：ヒートトーナメント ──────────────────────────
+    # ヒートトーナメントは heat_lanes ではなく ht_slots に出走枠を持ち、計測は
+    # timing_races.applied_ht_group_id で組に紐づく（突き合わせは slot_no==start_lane）。
+    # 非HT大会では ht_rows が0件になるだけなので、他形式への影響は無い。
+    # applied_ht_group_id / ht_slot_ranks.total_time はマイグレーション追加列のため、
+    # 旧DBでは try/except で静かにスキップ（従来動作のまま）。
+    try:
+        async with db.execute(
+            "SELECT hg.id AS group_id, hg.group_no, hs.slot_no, "
+            "       hr.round_type, hr.round_no, hr.heat_no, "
+            "       COALESCE(hr.section_no, 1) AS section_no "
+            "FROM ht_slots hs "
+            "JOIN ht_groups hg ON hg.id=hs.group_id "
+            "JOIN ht_rounds hr ON hr.id=hg.round_id "
+            "WHERE hr.tournament_id=? AND hs.entry_id=? "
+            "ORDER BY hr.heat_no, COALESCE(hr.section_no,1), hr.round_no, hg.group_no",
+            (tournament_id, entry_id),
+        ) as cur:
+            ht_rows = await cur.fetchall()
+    except Exception:
+        ht_rows = []
+
+    if ht_rows:
+        # HT予選全体の色分け・GAP基準（ht_slot_ranks.total_time が入っていれば使う）。
+        # 通常予選(heat_results)基準とは独立に計算するので既存表示と干渉しない。
+        _ht_all: list[float] = []
+        try:
+            async with db.execute(
+                "SELECT hsr.total_time FROM ht_slot_ranks hsr "
+                "JOIN ht_groups hg ON hg.id=hsr.group_id "
+                "JOIN ht_rounds hr ON hr.id=hg.round_id "
+                "WHERE hr.tournament_id=? AND hsr.total_time IS NOT NULL",
+                (tournament_id,),
+            ) as cur:
+                _ht_all = sorted(float(r["total_time"]) for r in await cur.fetchall())
+        except Exception:
+            _ht_all = []
+        _ht_best = _ht_all[0] if _ht_all else None
+        _ht_top3 = {}
+        for i, v in enumerate(_ht_all[:3], start=1):
+            _ht_top3.setdefault(round(v, 3), i)   # 同値は最上位の順位を採用
+
+        # ラウンド名（準々決勝/準決勝/決勝…）は決勝ブラケットと同じ判定を再利用。
+        # （関数内 import：presentation への依存を必要時のみに留める）
+        try:
+            from app.presentation.routers.bracket import round_label as _ht_round_label
+        except Exception:
+            _ht_round_label = None
+        # (heat_no, section_no) ごとの総ラウンド数（normal/final のみ）
+        _ht_max_rno: dict = {}
+        for b in ht_rows:
+            if b["round_type"] in ("normal", "final"):
+                k = (b["heat_no"], b["section_no"])
+                _ht_max_rno[k] = max(_ht_max_rno.get(k, 0), b["round_no"])
+        # グループ数（「グループN」を付けるか）は同一 round のグループ数で判定
+        async def _grp_count(gid: int) -> int:
+            async with db.execute(
+                "SELECT COUNT(*) FROM ht_groups WHERE round_id="
+                "(SELECT round_id FROM ht_groups WHERE id=?)", (gid,)
+            ) as cur:
+                return (await cur.fetchone())[0]
+
+        for b in ht_rows:
+            gid = b["group_id"]
+            slot_no = b["slot_no"]
+            try:
+                async with db.execute(
+                    "SELECT id FROM timing_races WHERE applied_ht_group_id=? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (gid,),
+                ) as cur:
+                    tr = await cur.fetchone()
+            except Exception:
+                tr = None   # 旧DB（カラム無し）：このレースはスキップ
+            if tr is None:
+                continue
+            _race, result = await build_race_result(db, tr["id"])
+            if result is None:
+                continue
+            machine = result.machines.get(slot_no)
+            if machine is None:
+                continue
+            speeds = await speed_store.load_speeds(db, tr["id"])
+            stat = _lane_stat(machine, speeds, slot_no)
+            _tt = stat["total_time"]
+            # ラベル：PIPの「反映済」表示と同じ形式（ヒートH ラウンド名 グループN）
+            _tot = _ht_max_rno.get((b["heat_no"], b["section_no"]), 0)
+            if _ht_round_label is not None:
+                _rl = _ht_round_label(b["round_no"], _tot, b["round_type"])
+            else:
+                _rl = _BR_TYPE_LABEL.get(b["round_type"], f"ラウンド{b['round_no']}")
+            _grp = f" グループ{b['group_no']}" if (await _grp_count(gid)) > 1 else ""
+            if b["section_no"] == 0:
+                label = f"ヒート{b['heat_no']} ヒート決勝 {_rl}{_grp}".strip()
+            else:
+                label = f"ヒート{b['heat_no']} {_rl}{_grp}"
+            races.append({
+                "label": label,
+                "round_no": b["round_no"],
+                "heat_no": b["heat_no"],
+                "gap": (round(_tt - _ht_best, 3)
+                        if (_tt is not None and _ht_best is not None) else None),
+                "total_rank": (_ht_top3.get(round(_tt, 3))
+                               if _tt is not None else None),
+                **stat,
+            })
+
     # ── 決勝（ブラケット） ────────────────────────────────
     async with db.execute(
         "SELECT bg.id AS group_id, bg.group_no, bs.slot_no, br.round_type, br.round_no "

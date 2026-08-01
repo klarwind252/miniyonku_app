@@ -1158,6 +1158,19 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     for _s in standings:
         if _s.get("entry_id") is not None and _s.get("name"):
             _rec_name_by_entry[_s["entry_id"]] = _s["name"]
+    # ヒートトーナメント等、standings に載らないエントリーの記録保持者が「?」表示に
+    # なるため、大会エントリー全員の名前で不足分だけ補完する。
+    # setdefault なので standings 由来の名前は上書きしない＝他形式への影響なし。
+    try:
+        async with db.execute(
+            "SELECT e.id AS entry_id, r.name FROM entries e "
+            "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?",
+            (tid,),
+        ) as cur:
+            for _r in await cur.fetchall():
+                _rec_name_by_entry.setdefault(_r["entry_id"], _r["name"])
+    except Exception:
+        pass
     _rec_heat_labels = _qrec.build_heat_labels(heats)
     _rh_raw = None
     if IS_CLOUD and await m4laps_license.is_licensed(db):
@@ -1593,12 +1606,18 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             # 完走率（予選）：point/order は _calc_standings の race_count/finish_count から。
             _fr_by = {}
             try:
-                if dict(t).get("qualifying_type") in ("point", "order"):
+                _qt_fr2 = dict(t).get("qualifying_type")
+                if _qt_fr2 in ("point", "order"):
                     from app.routers.qualifying import _calc_standings as _csr
                     for _s in [dict(x) for x in await _csr(tid, db)]:
                         _rc = _s.get("race_count") or 0
                         _fc = _s.get("finish_count") or 0
                         _fr_by[_s.get("entry_id")] = (int(_fc / _rc * 100) if _rc > 0 else None)
+                else:
+                    from app.core.config import HEAT_TOURNAMENT_TYPES as _HTT_V
+                    if _qt_fr2 in _HTT_V:
+                        # ヒートトーナメント：予選（HT）の計測から算出（決勝は含めない）
+                        _fr_by = await _rbsvc2.ht_finish_rates(db, tid)
             except Exception:
                 _fr_by = {}
             # GAP 基準（TOTAL 最小）

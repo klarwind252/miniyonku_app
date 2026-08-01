@@ -365,3 +365,41 @@ async def record_holders_for_tournament(db, tournament_id: int,
         records[_k].pop("_vals", None)
 
     return records
+
+
+async def ht_finish_rates(db, tournament_id: int) -> dict:
+    """ヒートトーナメント予選の完走率（%）を entry_id → int|None で返す。
+
+    定義（通常予選の finish_count/race_count と整合する計測ベースの近似）:
+      分母 = そのエントリーが出走枠を持つ組のうち、計測が反映された組の数
+             （ht_slot_ranks にその組の行が1つ以上ある）
+      分子 = そのうち本人の total_time が記録された（＝完走した）組の数
+    計測反映が1組も無いエントリーは None（表示は「—」）。
+    ※ ht_slot_ranks.total_time はマイグレーション追加列。旧DBでは全員 None を返す
+      （従来どおり「—」表示のまま。例外は出さない）。
+    """
+    rates: dict = {}
+    try:
+        async with db.execute(
+            """SELECT hs.entry_id,
+                      COUNT(*) AS race_count,
+                      SUM(CASE WHEN mine.total_time IS NOT NULL THEN 1 ELSE 0 END) AS finish_count
+                 FROM ht_slots hs
+                 JOIN ht_groups hg ON hg.id = hs.group_id
+                 JOIN ht_rounds hr ON hr.id = hg.round_id
+                 LEFT JOIN ht_slot_ranks mine
+                        ON mine.group_id = hs.group_id AND mine.slot_id = hs.id
+                WHERE hr.tournament_id = ?
+                  AND hs.entry_id IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM ht_slot_ranks any_r
+                               WHERE any_r.group_id = hs.group_id)
+                GROUP BY hs.entry_id""",
+            (tournament_id,),
+        ) as cur:
+            for r in await cur.fetchall():
+                rc = r["race_count"] or 0
+                fc = r["finish_count"] or 0
+                rates[r["entry_id"]] = (int(fc / rc * 100) if rc > 0 else None)
+    except Exception:
+        return {}
+    return rates

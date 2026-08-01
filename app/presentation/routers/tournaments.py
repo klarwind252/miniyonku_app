@@ -898,7 +898,14 @@ async def _is_result_finalized(tid: int, db) -> bool:
     async with db.execute("SELECT qualifying_type FROM tournaments WHERE id=?", (tid,)) as cur:
         _qt_row = await cur.fetchone()
     _is_heat_tour = bool(_qt_row and _qt_row["qualifying_type"] in HEAT_TOURNAMENT_TYPES)
-    if not _is_heat_tour:
+    # 保険の保険：決勝トーナメント（bracket_rounds）が存在する大会では、
+    # ht 側の1位で確定扱いにしない（確定は必ず bracket の final 1位で判定）。
+    _has_bracket = False
+    async with db.execute(
+        "SELECT 1 FROM bracket_rounds WHERE tournament_id=? LIMIT 1", (tid,)
+    ) as cur:
+        _has_bracket = (await cur.fetchone()) is not None
+    if not _is_heat_tour and not _has_bracket:
         # ht_slot_ranksに1位がある（ヒートトーナメント以外で ht を使う形式の保険）
         async with db.execute(
             """SELECT 1 FROM ht_slot_ranks hsr

@@ -76,9 +76,15 @@ def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False
     # admin と同一のブラケット・レイアウトJS（window._bracketDrawConnectors を定義する
     # 自己実行関数ブロック）を、全script除去の前に抽出して保持する。
     # これにより参加者向け静的HTMLでも PC版と同一のツリー配置・コネクタ線描画が動作する。
+    # ⚠ 本文には注入済みブラケット断片の <script> も存在する。`.*?` が </script> を
+    #   跨ぐと「別scriptの開始〜本文HTML〜本命script」まで巻き込んだ巨大マッチになり、
+    #   末尾再注入で本文がまるごと複製される（実障害）。(?:(?!</script>).) で
+    #   同一 <script> ブロック内に限定し、跨りを構造的に不可能にする。
     bracket_layout_js = ""
     _blm = _re.search(
-        r'<script>\s*\(function\(\)\s*\{.*?window\._bracketDrawConnectors.*?\}\)\(\);\s*</script>',
+        r'<script>\s*\(function\(\)\s*\{'
+        r'(?:(?!</script>).)*?window\._bracketDrawConnectors'
+        r'(?:(?!</script>).)*?\}\)\(\);\s*</script>',
         html, flags=_re.DOTALL
     )
     if _blm:
@@ -86,9 +92,12 @@ def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False
 
     # 名前タップ→予選タイム詳細モーダルのJS（window.openRacerStats を定義）も、
     # 全script除去の前に抽出して保持し、後で再注入する。
+    # （上と同じ理由で、同一 <script> ブロック内に限定する）
     racer_stats_js = ""
     _rsm = _re.search(
-        r'<script>\s*\(function\(\)\s*\{.*?window\.openRacerStats.*?\}\)\(\);\s*</script>',
+        r'<script>\s*\(function\(\)\s*\{'
+        r'(?:(?!</script>).)*?window\.openRacerStats'
+        r'(?:(?!</script>).)*?\}\)\(\);\s*</script>',
         html, flags=_re.DOTALL
     )
     if _rsm:
