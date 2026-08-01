@@ -1338,10 +1338,16 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
                             '<div id="no-bracket" style="display:none;',
                         )
 
+    _is_qual = bool(re.search(r"/view/tournament/\d+/qualifying", view_url))
+
     # 決勝トーナメント表(.br-wrap)が万一二重に出た場合は、先頭＝上の1つだけ残す。
     # JS ガード(_m4DedupBracket)は公開HTMLのJS除去や部分更新のタイミングで効かない
     # ことがあるため、サーバー側でも「上だけ」を保証する。
-    html = _keep_first_br_wrap(html)
+    # ※予選ヒートトーナメント/ヒート決勝はヒート・セクションごとに複数の .br-wrap が
+    #   正規に並ぶ。ここで先頭だけ残すと正規のブラケットまで消えてしまうため、予選では
+    #   一括間引きを行わず、後述の「👥エントリー以降を除去」で誤混入分だけを消す。
+    if not _is_qual:
+        html = _keep_first_br_wrap(html)
 
     # ⚡ M4LAPS ベスト表・🏆 決勝進出レーサー節も、決勝表(.br-wrap)と同様に
     # 部分更新(applyPartial)のタイミングで二重化することがあるため、先頭の1つだけ残す。
@@ -1353,14 +1359,47 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     #   予選ページの正規レイアウトでは、トーナメント表(.br-wrap)・⚡M4LAPSベスト表・🏆決勝進出節は
     #   必ずエントリーより上にある。エントリー以降にこれらが残るのは注入/重複の誤混入なので安全に消せる。
     #   ※決勝ページ(/bracket)はエントリーの後にブラケットが正規に来るため、URLで予選だけに限定する。
-    if re.search(r"/view/tournament/\d+/qualifying", view_url):
+    if _is_qual:
         html = _strip_blocks_after(html, "👥 エントリー", [
             '<div class="br-wrap">',       # 決勝/ヒートのトーナメント表
+            '<div class="br-wrap"',        # 属性付きの br-wrap（前方一致）
             '<div id="m4-laps-sec"',       # ⚡ M4LAPS ベスト表
             '<div id="m4-finalists-sec"',  # 🏆 決勝進出レーサー節
         ])
 
     return html
+
+
+_SCRIPT_STYLE_RE = re.compile(r'<(script|style)\b[^>]*>.*?</\1>', re.DOTALL | re.IGNORECASE)
+
+
+def _mask_script_style(html: str) -> str:
+    """<script>/<style> ブロックを同じ長さの空白へ置換する（インデックスは不変）。
+    ブラケットHTMLは内部に <script>/<style> を含み、その中の文字列に <div/</div> が
+    現れると div の対応数えを誤るため、数える前にマスクして無害化する。"""
+    return _SCRIPT_STYLE_RE.sub(lambda m: " " * len(m.group(0)), html)
+
+
+def _div_block_end(masked: str, open_pos: int):
+    """masked（script/style マスク済み）で open_pos の <div> に対応する </div> の
+    直後インデックスを返す。対応が取れなければ None。"""
+    depth = 0
+    p = open_pos
+    n = len(masked)
+    while p < n:
+        nd = masked.find('<div', p)
+        nc = masked.find('</div>', p)
+        if nc == -1:
+            return None
+        if nd != -1 and nd < nc:
+            depth += 1
+            p = nd + 4
+        else:
+            depth -= 1
+            p = nc + 6
+            if depth == 0:
+                return p
+    return None
 
 
 def _keep_first_div_block(html: str, open_marker: str) -> str:
@@ -1380,23 +1419,8 @@ def _keep_first_div_block(html: str, open_marker: str) -> str:
         if second == -1:
             break
         # second から始まる div ブロックの終端を <div>/</div> の対応で探す
-        pos = second
-        depth = 0
-        end = None
-        while pos < len(html):
-            nd = html.find('<div', pos)
-            nc = html.find('</div>', pos)
-            if nc == -1:
-                break
-            if nd != -1 and nd < nc:
-                depth += 1
-                pos = nd + 4
-            else:
-                depth -= 1
-                pos = nc + 6
-                if depth == 0:
-                    end = pos
-                    break
+        # （<script>/<style> 内の <div> は数えない）
+        end = _div_block_end(_mask_script_style(html), second)
         if end is None:
             break
         html = html[:second] + html[end:]
@@ -1430,27 +1454,11 @@ def _strip_blocks_after(html: str, after_marker: str, block_markers: list) -> st
                 best = p
         if best is None:
             break
-        pos = best
-        p = pos
-        depth = 0
-        end = None
-        while p < len(html):
-            nd = html.find('<div', p)
-            nc = html.find('</div>', p)
-            if nc == -1:
-                break
-            if nd != -1 and nd < nc:
-                depth += 1
-                p = nd + 4
-            else:
-                depth -= 1
-                p = nc + 6
-                if depth == 0:
-                    end = p
-                    break
+        # best から始まる div ブロックの終端（<script>/<style> 内の <div> は無視）
+        end = _div_block_end(_mask_script_style(html), best)
         if end is None:
             break
-        html = html[:pos] + html[end:]
+        html = html[:best] + html[end:]
     return html
     """GCS の index.html に上書きアップロード"""
     try:
