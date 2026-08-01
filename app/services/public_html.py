@@ -921,12 +921,12 @@ window.addEventListener('load', function(){
     var b = document.createElement('div');
     b.id = 'm4-position-banner';
     b.style.cssText = 'position:fixed;left:0;width:100vw;top:' + headerH + 'px;z-index:8999;'
-      + 'padding:4px 10px;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.35);'
+      + 'padding:2px 10px;box-sizing:border-box;box-shadow:0 2px 6px rgba(0,0,0,.35);'
       + 'color:#fff;font-size:13px;text-align:center;'
       + 'transform:translateZ(0);-webkit-transform:translateZ(0);';
     b.innerHTML = lines.map(function(l){
       return '<div style="background:' + urgencyColor(l.urgency) + ';padding:6px 10px;'
-        + 'border-radius:4px;margin:2px 0;font-weight:bold;">'
+        + 'border-radius:4px;margin:1px 0;font-weight:bold;">'
         + escHtml(l.name) + '：' + escHtml(l.text) + '</div>';
     }).join('');
     document.body.appendChild(b);
@@ -1326,6 +1326,17 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     html = _keep_first_div_block(html, '<div id="m4-laps-sec"')
     html = _keep_first_div_block(html, '<div id="m4-finalists-sec"')
 
+    # 予選ページ限定：👥エントリー一覧より後ろに出た表示をすべて除去する（＝エントリーの下は何も出さない）。
+    #   予選ページの正規レイアウトでは、トーナメント表(.br-wrap)・⚡M4LAPSベスト表・🏆決勝進出節は
+    #   必ずエントリーより上にある。エントリー以降にこれらが残るのは注入/重複の誤混入なので安全に消せる。
+    #   ※決勝ページ(/bracket)はエントリーの後にブラケットが正規に来るため、URLで予選だけに限定する。
+    if re.search(r"/view/tournament/\d+/qualifying", view_url):
+        html = _strip_blocks_after(html, "👥 エントリー", [
+            '<div class="br-wrap">',       # 決勝/ヒートのトーナメント表
+            '<div id="m4-laps-sec"',       # ⚡ M4LAPS ベスト表
+            '<div id="m4-finalists-sec"',  # 🏆 決勝進出レーサー節
+        ])
+
     return html
 
 
@@ -1372,6 +1383,52 @@ def _keep_first_div_block(html: str, open_marker: str) -> str:
 def _keep_first_br_wrap(html: str) -> str:
     """後方互換ラッパー：決勝トーナメント表(.br-wrap)が複数あれば先頭だけ残す。"""
     return _keep_first_div_block(html, '<div class="br-wrap">')
+
+
+def _strip_blocks_after(html: str, after_marker: str, block_markers: list) -> str:
+    """after_marker（最後の出現位置）より後ろに現れる、block_markers のいずれかで始まる
+    <div> ブロックを、すべてブロック単位で除去する。ネストした <div> を数えて終端を正しく
+    判定する（_keep_first_div_block と同じ数え方）。
+
+    用途：予選公開HTMLで『👥エントリー一覧より下に誤って出た表示（トーナメント表・M4LAPS
+    ベスト表・決勝進出節）』を消す。正規レイアウトではこれらはエントリーより上にあるため、
+    ここで消えるのは誤混入分だけ（エントリー節そのものは開始タグが marker より前なので消えない）。
+    """
+    base = html.rfind(after_marker)
+    if base == -1:
+        return html
+    start = base + len(after_marker)
+    while True:
+        # start 以降で最も手前に現れる block_marker を探す
+        best = None
+        for mk in block_markers:
+            p = html.find(mk, start)
+            if p != -1 and (best is None or p < best):
+                best = p
+        if best is None:
+            break
+        pos = best
+        p = pos
+        depth = 0
+        end = None
+        while p < len(html):
+            nd = html.find('<div', p)
+            nc = html.find('</div>', p)
+            if nc == -1:
+                break
+            if nd != -1 and nd < nc:
+                depth += 1
+                p = nd + 4
+            else:
+                depth -= 1
+                p = nc + 6
+                if depth == 0:
+                    end = p
+                    break
+        if end is None:
+            break
+        html = html[:pos] + html[end:]
+    return html
     """GCS の index.html に上書きアップロード"""
     try:
         from google.cloud import storage  # type: ignore

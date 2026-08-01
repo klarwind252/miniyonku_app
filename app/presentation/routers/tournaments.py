@@ -492,6 +492,11 @@ async def tournament_add(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_m4laps_default', ?)",
         ("1" if use_m4laps else "0",),
     )
+    # 予選形式の「前回の選択」を設定の規定値（default_qualifying）へ保存＝次回の新規作成フォーム初期値に反映
+    await db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('default_qualifying', ?)",
+        (qualifying_type,),
+    )
     # レース情報の画像アセット（コースレイアウト/タイムスケジュール/備考）を保存
     await _save_race_assets(new_tid, await request.form(), db)
     # 並び順（勝ち抜け）の段階設定を保存
@@ -1788,6 +1793,11 @@ async def tournament_edit_save(
     await db.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_m4laps_default', ?)",
         ("1" if use_m4laps else "0",),
+    )
+    # 予選形式の「前回の選択」を設定の規定値（default_qualifying）へ保存＝次回の新規作成フォーム初期値に反映
+    await db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('default_qualifying', ?)",
+        (qualifying_type,),
     )
     # レース情報の画像アセットを保存
     await _save_race_assets(tid, await request.form(), db)

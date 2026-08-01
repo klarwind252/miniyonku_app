@@ -250,7 +250,7 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
   </div>
 </div>
 
-<div class="v-container"{% if is_public_html %} style="padding-left:5px;padding-right:5px;padding-bottom:72px"{% endif %}>
+<div class="v-container"{% if is_public_html %} style="padding-top:2px;padding-left:5px;padding-right:5px;padding-bottom:72px"{% endif %}>
 {% block content %}
 <div class="v-waiting">
   {% if IS_CLOUD and request.state.store and request.state.store.name %}

@@ -250,6 +250,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% endif %}
         {% endif %}
 
+        {% if request.state.m4laps_licensed and t.use_m4laps != 0 %}<tr><td style="color:#636e72;font-size:13px;padding:6px 0">⚡ M4LAPS</td><td style="color:#8e44ad;font-weight:bold">使用</td></tr>{% endif %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">レーン数</td><td>{{ t.lane_count }} レーン</td></tr>
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">備考</td><td style="white-space:pre-wrap">{{ t.note or '-' }}</td></tr>
       </table>

@@ -344,6 +344,7 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
         "is_finalized": is_finalized,
         "cert_results": cert_results,
         "holder_boxes": holder_boxes,
+        "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),
     })
 
 
