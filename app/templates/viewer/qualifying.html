@@ -1214,6 +1214,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   window.openRacerStats=function(tid,eid){
     var ov=document.getElementById('rs-overlay'),bd=document.getElementById('rs-body'),tt=document.getElementById('rs-title');
     if(!ov) return;
+    // rs-overlay を body 直下へ移動して .v-container(position:relative;z-index:2) のスタッキング文脈から出す。
+    // これで M4LAPSモーダル(m4-info-overlay z-index:9800)より前面(z-index:100000)に確実に表示される。
+    if(ov.parentNode !== document.body){ document.body.appendChild(ov); }
     tt.textContent='読み込み中…';
     bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">読み込み中…</div>';
     ov.style.display='flex';
