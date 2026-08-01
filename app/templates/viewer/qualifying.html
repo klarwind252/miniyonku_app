@@ -698,6 +698,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       }
 
       function applyHtScroll() {
+        if (!window.syncEnabled) return;  // 「追従中」トグルOFF時は読込時スクロールもしない
         fetch('/view/host-state').then(function(r){return r.json();}).then(function(d){
           if(d.scroll_to){
             var el=document.getElementById(d.scroll_to);
@@ -1295,23 +1296,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
 {% block auto_refresh %}
 (function() {
-  // ページロード時刻（これより古いscroll_atは無視）
+  // ページロード時刻
   var pageLoadAt = Date.now();
-  var lastScrollAt = pageLoadAt;
   var lastReloadAt = pageLoadAt;
 
   function pollHostState() {
     fetch('/view/host-state').then(function(r){ return r.json(); }).then(function(d) {
-      // スクロール追従：ページロード後に発生したscroll_atのみ処理
-      var scrollAtMs = d.scroll_at ? d.scroll_at * 1000 : 0;
-      if (d.scroll_to && scrollAtMs > lastScrollAt) {
-        lastScrollAt = scrollAtMs;
-        var el = document.getElementById(d.scroll_to);
-        if (el) {
-          var pos = (d.scroll_to.indexOf('heat-')===0) ? 'start' : 'center';
-          el.scrollIntoView({behavior: 'smooth', block: pos});
-        }
-      }
+      // スクロール追従は base.html の pollHostState に集約（「追従中」トグルON時のみ）。
       // 10秒ごとにリロード
       if (Date.now() - lastReloadAt > 10000) {
         location.reload();

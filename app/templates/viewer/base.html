@@ -359,7 +359,7 @@ function toggleSync() {
 })();
 
 // スクロール追従
-let lastScrollAt = 0;
+let lastScrollAt = Date.now();  // ページ読込前の古い scroll_at は無視
 function doScroll(scrollId) {
   if (!scrollId) return;
   // IDで検索
@@ -367,7 +367,8 @@ function doScroll(scrollId) {
   // data-scroll属性でも検索
   if (!el) el = document.querySelector('[data-scroll="' + scrollId + '"]');
   if (el) {
-    el.scrollIntoView({behavior: 'smooth', block: 'center'});
+    var _pos = (scrollId.indexOf('heat-') === 0) ? 'start' : 'center';
+    el.scrollIntoView({behavior: 'smooth', block: _pos});
     // ハイライト
     el.style.transition = 'box-shadow 0.3s';
     el.style.boxShadow = '0 0 0 3px #2980b9';
@@ -375,7 +376,7 @@ function doScroll(scrollId) {
   }
 }
 
-// ホスト状態をポーリング（URL追従のみ、スクロール追従は廃止）
+// ホスト状態をポーリング（URL追従＋スクロール追従。スクロール追従は「追従中」トグルON時のみ）
 //
 // 複数店舗（クラウド版）対応：
 //   host-state（JSON応答）は StoreResolverMiddleware の本文書き換え対象外で、
@@ -411,7 +412,13 @@ async function pollHostState() {
         return;
       }
     }
-    // スクロール追従は廃止（管理者のスクロール位置が観覧者に強制適用されるため）
+    // スクロール追従（「追従中」トグルON時のみ＝この関数は先頭で syncEnabled をガード済み）。
+    // admin がクリックした要素の id(scroll_to) へ、ページ読込後の新しい scroll_at のときだけ移動。
+    var scrollAtMs = data.scroll_at ? data.scroll_at * 1000 : 0;
+    if (data.scroll_to && scrollAtMs > lastScrollAt) {
+      lastScrollAt = scrollAtMs;
+      doScroll(data.scroll_to);
+    }
   } catch(e) {}
 }
 

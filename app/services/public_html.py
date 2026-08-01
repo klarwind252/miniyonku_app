@@ -809,10 +809,12 @@ window.addEventListener('load', function(){
         }
         myTr.querySelectorAll('.racer-cell').forEach(function(cell){
           if(rcName(cell) === name){
-            cell.style.setProperty('background', 'rgb(230,126,34)', 'important');
+            // ハイライトはセル(td)いっぱいに広げる（td padding の内側まで塗る）
+            var td = cell.closest('td') || cell;
+            td.style.setProperty('background', 'rgb(230,126,34)', 'important');
+            td.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
             cell.style.setProperty('color', '#ffffff', 'important');
             cell.style.fontWeight = 'bold';
-            cell.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
           }
         });
         return before === 0
@@ -889,6 +891,8 @@ window.addEventListener('load', function(){
       s.style.removeProperty('background'); s.style.removeProperty('box-shadow');
     });
     document.querySelectorAll('.racer-cell').forEach(function(c){
+      var td = c.closest('td');
+      if(td){ td.style.removeProperty('background'); td.style.removeProperty('box-shadow'); }
       c.style.removeProperty('background'); c.style.removeProperty('color');
       c.style.removeProperty('box-shadow'); c.style.fontWeight = '';
     });
@@ -984,6 +988,8 @@ window.addEventListener('load', function(){
       s.style.removeProperty('box-shadow');
     });
     document.querySelectorAll('.racer-cell').forEach(function(c){
+      var td = c.closest('td');
+      if(td){ td.style.removeProperty('background'); td.style.removeProperty('box-shadow'); }
       c.style.removeProperty('background');
       c.style.removeProperty('color');
       c.style.removeProperty('box-shadow');
