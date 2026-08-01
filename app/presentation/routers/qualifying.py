@@ -3400,19 +3400,11 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
                 "groups_data": sec_groups_data,
             })
 
-        # このヒート内の全スロットの total_time から最速3値を求め、各スロットに
-        # time_rank(1/2/3) を付ける（決勝ブラケットと同じ淡色ハイライト表示用）。同値は同順位。
-        _all_ht_times = sorted({
-            round(float(_s["total_time"]), 3)
-            for _e in groups_data_all for _s in _e["slots"]
-            if _s.get("total_time") is not None
-        })[:3]
-        _ht_time_rank_of = {v: i for i, v in enumerate(_all_ht_times, start=1)}
+        # time_rank(1/2/3) のハイライトは「予選全ヒート通算での最速3タイム」に付ける。
+        # ここ（ヒートループ内）では初期化のみ。実際の順位付けはループ後にまとめて行う。
         for _e in groups_data_all:
             for _s in _e["slots"]:
-                _tt = _s.get("total_time")
-                _s["time_rank"] = (_ht_time_rank_of.get(round(float(_tt), 3))
-                                   if _tt is not None else None)
+                _s["time_rank"] = None
 
         adv_per = group_advance  # qual_group_advance が正（group_count=1でも同じ）
         advanced = await _ht_get_advanced(tid, hno, adv_per, db)
@@ -3521,6 +3513,24 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
                 for a in advanced:
                     if a.get("entry_id"):
                         excluded_entry_ids.add(a["entry_id"])
+
+    # ── 予選全ヒート通算での time_rank(1/2/3) ──
+    # ハイライト（淡色 t1/t2/t3）は「予選全体での最速3タイム」に付ける。
+    # ヒート単位ではなく all_heats 横断で total_time を集計して順位付けする。同値は同順位。
+    _all_q_times = sorted({
+        round(float(_s["total_time"]), 3)
+        for _h in all_heats
+        for _e in _h["groups_data"]
+        for _s in _e["slots"]
+        if _s.get("total_time") is not None
+    })[:3]
+    _q_time_rank_of = {v: i for i, v in enumerate(_all_q_times, start=1)}
+    for _h in all_heats:
+        for _e in _h["groups_data"]:
+            for _s in _e["slots"]:
+                _tt = _s.get("total_time")
+                _s["time_rank"] = (_q_time_rank_of.get(round(float(_tt), 3))
+                                   if _tt is not None else None)
 
     # 予選順位（ポイント制）を取得
     from app.routers.bracket import _get_all_standings
