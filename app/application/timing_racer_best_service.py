@@ -32,26 +32,43 @@ def _blank() -> dict:
     return {}
 
 
-async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
+async def racer_bests_for_tournament(db, tournament_id: int,
+                                     include_finals: bool = False) -> dict[int, dict]:
     """entry_id -> {metric: value} のベスト表を返す。
 
     値は「そのレーサーがこの大会で出した最良値」。
     タイム系は最小、速度系は最大が採用される。
     記録が無いレーサー・指標は単にキーが無い（テンプレート側で「—」表示）。
+    include_finals=True のときは決勝（applied_group_id）の計測も合算する。
     """
     rrepo = TimingRaceRepository(db)
     lrepo = TimingLayoutRepository(db)
 
-    # この大会の予選ヒートに反映された計測レースを集める（heat_id で紐づく）
-    # ⚠ 決勝は含めない（予選は予選内だけで集計する）。決勝の集計は別途対応。
-    async with db.execute(
-        """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
-             FROM timing_races tr
-             JOIN heats h ON h.id = tr.heat_id
-            WHERE h.tournament_id = ?""",
-        (tournament_id,),
-    ) as cur:
-        race_rows = await cur.fetchall()
+    # 予選ヒート（heat_id）の計測レース。include_finals なら決勝グループ（applied_group_id）も。
+    if include_finals:
+        async with db.execute(
+            """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
+                 FROM timing_races tr
+                 JOIN heats h ON h.id = tr.heat_id
+                WHERE h.tournament_id = ?
+               UNION ALL
+               SELECT tr.id AS race_id, NULL AS heat_id, tr.applied_group_id AS group_id
+                 FROM timing_races tr
+                 JOIN bracket_groups bg ON bg.id = tr.applied_group_id
+                 JOIN bracket_rounds br ON br.id = bg.round_id
+                WHERE br.tournament_id = ?""",
+            (tournament_id, tournament_id),
+        ) as cur:
+            race_rows = await cur.fetchall()
+    else:
+        async with db.execute(
+            """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
+                 FROM timing_races tr
+                 JOIN heats h ON h.id = tr.heat_id
+                WHERE h.tournament_id = ?""",
+            (tournament_id,),
+        ) as cur:
+            race_rows = await cur.fetchall()
     if not race_rows:
         return {}
 
@@ -137,7 +154,8 @@ async def racer_bests_for_tournament(db, tournament_id: int) -> dict[int, dict]:
     return bests
 
 
-async def record_holders_for_tournament(db, tournament_id: int) -> dict:
+async def record_holders_for_tournament(db, tournament_id: int,
+                                        include_finals: bool = False) -> dict:
     """大会全体の「記録保持者」を返す（予選のみ・反映済みヒート対象）。
 
     次の3記録について、最良値と、それを出した (entry_id, heat_id) の一覧を集める。
@@ -163,20 +181,37 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
         "sectors":     {},
     }
 
-    # 反映済み（heat_id 付き）の予選計測レースだけを対象にする。決勝は含めない。
-    async with db.execute(
-        """SELECT tr.id AS race_id, tr.heat_id
-             FROM timing_races tr
-             JOIN heats h ON h.id = tr.heat_id
-            WHERE h.tournament_id = ?""",
-        (tournament_id,),
-    ) as cur:
-        race_rows = await cur.fetchall()
+    # 反映済みの計測レースを対象にする。include_finals なら決勝（applied_group_id）も合算。
+    if include_finals:
+        async with db.execute(
+            """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
+                 FROM timing_races tr
+                 JOIN heats h ON h.id = tr.heat_id
+                WHERE h.tournament_id = ?
+               UNION ALL
+               SELECT tr.id AS race_id, NULL AS heat_id, tr.applied_group_id AS group_id
+                 FROM timing_races tr
+                 JOIN bracket_groups bg ON bg.id = tr.applied_group_id
+                 JOIN bracket_rounds br ON br.id = bg.round_id
+                WHERE br.tournament_id = ?""",
+            (tournament_id, tournament_id),
+        ) as cur:
+            race_rows = await cur.fetchall()
+    else:
+        async with db.execute(
+            """SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id
+                 FROM timing_races tr
+                 JOIN heats h ON h.id = tr.heat_id
+                WHERE h.tournament_id = ?""",
+            (tournament_id,),
+        ) as cur:
+            race_rows = await cur.fetchall()
     if not race_rows:
         return records
 
-    heat_ids = sorted({r["heat_id"] for r in race_rows if r["heat_id"] is not None})
+    # レーン→エントリー（予選H：heat_lanes / 決勝G：bracket_slots）
     lane_to_entry: dict = {}
+    heat_ids = sorted({r["heat_id"] for r in race_rows if r["heat_id"] is not None})
     if heat_ids:
         ph = ",".join("?" * len(heat_ids))
         async with db.execute(
@@ -184,7 +219,17 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
             heat_ids,
         ) as cur:
             for r in await cur.fetchall():
-                lane_to_entry[(r["heat_id"], r["lane_no"])] = r["entry_id"]
+                lane_to_entry[("H", r["heat_id"], r["lane_no"])] = r["entry_id"]
+    group_ids = sorted({r["group_id"] for r in race_rows if r["group_id"] is not None})
+    if group_ids:
+        ph = ",".join("?" * len(group_ids))
+        async with db.execute(
+            f"SELECT group_id, slot_no, entry_id FROM bracket_slots "
+            f"WHERE group_id IN ({ph}) AND entry_id IS NOT NULL",
+            group_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                lane_to_entry[("G", r["group_id"], r["slot_no"])] = r["entry_id"]
 
     _TOL = 1e-6
 
@@ -215,8 +260,13 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
             rec["holders"].append((entry_id, heat_id))
 
     for rr in race_rows:
-        heat_id = rr["heat_id"]
-        if heat_id is None:
+        # 予選ヒート(H)か決勝グループ(G)かでレーン→エントリーの引き方が変わる。
+        # holders に入れる heat_id は予選のみ実値、決勝は None（ラベルは付けない）。
+        if rr["heat_id"] is not None:
+            _scope, _owner, _hid = "H", rr["heat_id"], rr["heat_id"]
+        elif rr["group_id"] is not None:
+            _scope, _owner, _hid = "G", rr["group_id"], None
+        else:
             continue
         try:
             race, result = await build_race_result(db, rr["race_id"])
@@ -226,20 +276,20 @@ async def record_holders_for_tournament(db, tournament_id: int) -> dict:
             continue
         st = await speed_store.load_speeds(db, rr["race_id"])
         for m in result.ranking():
-            entry_id = lane_to_entry.get((heat_id, m.start_lane))
+            entry_id = lane_to_entry.get((_scope, _owner, m.start_lane))
             if entry_id is None:
                 continue
             lane_sp = st["lane"].get(m.start_lane, {})
             if m.total_time_us is not None:
                 _consider("overall", m.total_time_us / 1e6,
-                          entry_id, heat_id, higher_is_better=False)
+                          entry_id, _hid, higher_is_better=False)
             _consider("top_speed", lane_sp.get("max_ms"),
-                      entry_id, heat_id, higher_is_better=True)
+                      entry_id, _hid, higher_is_better=True)
             for lap in m.laps:
                 _consider("fastest_lap", lap.lap_time_us / 1e6,
-                          entry_id, heat_id, higher_is_better=False)
+                          entry_id, _hid, higher_is_better=False)
                 for idx, sec in enumerate(lap.sectors):
-                    _consider_sec(idx + 1, sec.dt_us / 1e6, entry_id, heat_id)
+                    _consider_sec(idx + 1, sec.dt_us / 1e6, entry_id, _hid)
 
     # 2位との差（distinct な上位2値の差）。overall/lap は昇順、top_speed は降順。
     for _k, _hi in (("overall", False), ("fastest_lap", False), ("top_speed", True)):

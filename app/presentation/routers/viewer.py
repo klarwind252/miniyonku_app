@@ -1334,7 +1334,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         try:
             from app.application import timing_racer_best_service as _rbsvc
             from app.application import qualifying_records as _qr
-            _rh = await _rbsvc.record_holders_for_tournament(db, tid)
+            _rh = await _rbsvc.record_holders_for_tournament(db, tid, include_finals=True)
             _ov = {eid for (eid, _h) in (_rh.get("overall") or {}).get("holders", [])}
             _qlead = None
             _qt = dict(t).get("qualifying_type")
@@ -1344,7 +1344,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
                 _r1 = [s for s in _qst if s.get("rank") == 1]
                 if _r1:
                     _bt = {eid: bm.get("total") for eid, bm
-                           in (await _rbsvc.racer_bests_for_tournament(db, tid)).items()}
+                           in (await _rbsvc.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
                     _w = await _qr.resolve_point_leader(db, tid, _r1, _bt)
                     _qlead = _w.get("entry_id") if _w else None
             if (_champ_eid in _ov) and (_qlead is not None) and (_champ_eid == _qlead):
@@ -1362,7 +1362,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         try:
             from app.application import timing_racer_best_service as _rbsvc2
             from app.application import qualifying_records as _qr2
-            _rh2 = await _rbsvc2.record_holders_for_tournament(db, tid)
+            _rh2 = await _rbsvc2.record_holders_for_tournament(db, tid, include_finals=True)
             _nm2 = {}
             async with db.execute(
                 "SELECT e.id AS entry_id, r.name FROM entries e "
@@ -1375,7 +1375,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             _qt2 = dict(t).get("qualifying_type")
             _pl_eid2 = None
             _best_total_by2 = {eid: bm.get("total") for eid, bm
-                               in (await _rbsvc2.racer_bests_for_tournament(db, tid)).items()}
+                               in (await _rbsvc2.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
             if _qt2 == "point":
                 from app.routers.qualifying import _calc_standings as _cs2
                 _qst2 = [dict(s) for s in await _cs2(tid, db)]
@@ -1422,7 +1422,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
     if IS_CLOUD and await m4laps_license.is_licensed(db):
         from app.application import timing_racer_best_service as _rbest
         try:
-            _rbests = await _rbest.racer_bests_for_tournament(db, tid)
+            _rbests = await _rbest.racer_bests_for_tournament(db, tid, include_finals=True)
         except Exception:
             _rbests = {}
         if _rbests:

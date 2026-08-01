@@ -1353,7 +1353,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     from app.application import timing_racer_best_service as _rbest_svc
     _m4_lic = bool(_IS_CLOUD_B and getattr(request.state, "m4laps_licensed", False))
     try:
-        racer_bests = await _rbest_svc.racer_bests_for_tournament(db, tid) if _m4_lic else {}
+        racer_bests = await _rbest_svc.racer_bests_for_tournament(db, tid, include_finals=True) if _m4_lic else {}
     except Exception:
         racer_bests = {}
     # 記録のある最大セクター番号（列を出す範囲）
@@ -1403,6 +1403,17 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     ) as cur:
         for _r in await cur.fetchall():
             _name_by_eid_b[_r["entry_id"]] = _r["name"]
+    # 予選完走率（予選のみ。決勝は含めない）：point/order は _calc_standings の race/finish から
+    _fr_by_b = {}
+    try:
+        if dict(t).get("qualifying_type") in ("point", "order"):
+            from app.routers.qualifying import _calc_standings as _csr_b
+            for _s in [dict(x) for x in await _csr_b(tid, db)]:
+                _rc = _s.get("race_count") or 0
+                _fc = _s.get("finish_count") or 0
+                _fr_by_b[_s.get("entry_id")] = (int(_fc / _rc * 100) if _rc > 0 else None)
+    except Exception:
+        _fr_by_b = {}
     # ベストタイム順（TOTAL 昇順、記録なしは末尾）で 1..N
     qbest_rows = []
     _ordered_b = sorted(
@@ -1414,6 +1425,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
             "rank": _i,
             "entry_id": eid,
             "name": _name_by_eid_b.get(eid, ""),
+            "finish_rate": _fr_by_b.get(eid),
             "bm": bm,
         })
 
@@ -1426,12 +1438,12 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
         try:
             from app.application import qualifying_records as _qrb
             from app.application import timing_racer_best_service as _rbb
-            _rhb = await _rbb.record_holders_for_tournament(db, tid)
+            _rhb = await _rbb.record_holders_for_tournament(db, tid, include_finals=True)
             record_holders = _qrb.format_records_display(_rhb, _name_by_eid_b, {})
             _qtb = dict(t).get("qualifying_type")
             _plb_eid = None
             _btb = {eid: bm.get("total") for eid, bm
-                    in (await _rbb.racer_bests_for_tournament(db, tid)).items()}
+                    in (await _rbb.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
             if _qtb == "point":
                 from app.routers.qualifying import _calc_standings as _csb
                 _qstb = [dict(s) for s in await _csb(tid, db)]
@@ -3849,6 +3861,29 @@ async def _get_group_detail(group_id: int, db: aiosqlite.Connection):
     _times = {r["slot_id"]: r["total_time"] for r in _rank_rows}
     for _s in slots:
         _s["total_time"] = _times.get(_s["slot_id"])
+    # total_time が NULL のスロットは、このグループに反映済みの決勝レースから補完する
+    # （bracket_slot_ranks に time が書かれていない古いデータ・手入力後でもタイムを出す）。
+    if any(_s.get("total_time") is None for _s in slots):
+        try:
+            async with db.execute(
+                "SELECT id FROM timing_races WHERE applied_group_id=? "
+                "ORDER BY id DESC LIMIT 1",
+                (group_id,),
+            ) as cur:
+                _trow = await cur.fetchone()
+            if _trow:
+                from app.application.timing_race_service import build_race_result
+                _race, _result = await build_race_result(db, _trow["id"])
+                _tt_by_lane = {}
+                if _result is not None:
+                    for _m in _result.ranking():
+                        if _m.total_time_us is not None:
+                            _tt_by_lane[_m.start_lane] = _m.total_time_us / 1e6
+                for _s in slots:
+                    if _s.get("total_time") is None:
+                        _s["total_time"] = _tt_by_lane.get(_s.get("slot_no"))
+        except Exception:
+            pass
 
     return slots, result, ranks
 
@@ -4815,8 +4850,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-round-label.final { color:#d4a017 !important; font-size:20px; }
     .br-round-groups { display:flex; flex-direction:column; flex:1; justify-content:flex-start; gap:0; position:relative; min-height:90px; padding-top:4px; overflow:visible; }
     /* グループ枠 */
-    .br-group { background:#fff; border:1px solid #ced4da; border-radius:9px; padding:3px 3px 3px 13px; display:flex; flex-direction:column; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.07); position:absolute; left:0; right:0; overflow:visible; }
-    .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:0 1px 3px rgba(0,0,0,0.07); }
+    .br-group { background:#fff; border:1px solid #ced4da; border-radius:9px; padding:3px 3px 3px 13px; display:flex; flex-direction:column; gap:2px; box-shadow:none; position:absolute; left:0; right:0; overflow:visible; }
+    .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:none; }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
     /* スロット共通 */
     .br-slot { display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
@@ -5281,6 +5316,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 midYs.push(cy);
               }
               // 合流の縦線Xは、その合流ブロックの feeder 右端と次グループ左端の「中点」に置く。
+              var mergeWon = feeders.every(function(f){return f.classList.contains('has-winner');});
               var gapX = nextX - rightX;            // feeder右端〜次グループ左端のすき間
               var vX;
               if (gapX >= 16) {
@@ -5293,24 +5329,24 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 var hg = feeders[hi];
                 var hr = getGroupRect(hg, container);
                 var hy = hr.top + hr.height / 2;
-                dline(svg, hr.right, hy, vX, hy, hg.classList.contains('has-winner') ? '#27ae60' : '#adb5bd');
+                dline(svg, hr.right, hy, vX, hy, hg.classList.contains('has-winner') ? '#e2001a' : '#adb5bd');
               }
               if (midYs.length > 1) {
-                dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), '#adb5bd');
-                dline(svg, vX, nextMidY, nextX, nextMidY, '#adb5bd');
+                dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), mergeWon ? '#e2001a' : '#adb5bd');
+                dline(svg, vX, nextMidY, nextX, nextMidY, mergeWon ? '#e2001a' : '#adb5bd');
               } else {
                 // 単独合流でも、次グループの中心Yへ段差ルーティングする。
                 // （従来は feeder の高さのまま真横に引いていたため、次グループが
                 //   縦にずれて配置されると別グループへ刺さって見える結線バグになっていた）
                 if (Math.abs(midYs[0] - nextMidY) >= 2) {
-                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), '#adb5bd');
+                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), mergeWon ? '#e2001a' : '#adb5bd');
                 }
-                dline(svg, vX, nextMidY, nextX, nextMidY, '#adb5bd');
+                dline(svg, vX, nextMidY, nextX, nextMidY, mergeWon ? '#e2001a' : '#adb5bd');
               }
               // 次グループへ入る到達線（確定時は緑で色付け）。開始Xを vX 以上にクランプして、
               // 最左の次グループで nextX-24 がグループ左外へはみ出すのを防ぐ。
               var inX = Math.max(vX, nextX - 24);
-              dline(svg, inX, nextMidY, nextX, nextMidY, nextGroup.classList.contains('has-winner') ? '#27ae60' : '#adb5bd');
+              dline(svg, inX, nextMidY, nextX, nextMidY, mergeWon ? '#e2001a' : '#adb5bd');
             } else {
               var nextRight = nRect.right;
               var midYs = [], leftX = Infinity;
@@ -5320,6 +5356,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 leftX = Math.min(leftX, cr.left);
                 midYs.push(cy);
               }
+              var mergeWon = feeders.every(function(f){return f.classList.contains('has-winner');});
               var gapXr = leftX - nextRight;        // 次グループ右端〜feeder左端のすき間
               var vX;
               if (gapXr >= 16) {
@@ -5331,20 +5368,20 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 var hg = feeders[hi];
                 var hr = getGroupRect(hg, container);
                 var hy = hr.top + hr.height / 2;
-                dline(svg, hr.left, hy, vX, hy, hg.classList.contains('has-winner') ? '#27ae60' : '#adb5bd');
+                dline(svg, hr.left, hy, vX, hy, hg.classList.contains('has-winner') ? '#e2001a' : '#adb5bd');
               }
               if (midYs.length > 1) {
-                dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), '#adb5bd');
-                dline(svg, vX, nextMidY, nextRight, nextMidY, '#adb5bd');
+                dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), mergeWon ? '#e2001a' : '#adb5bd');
+                dline(svg, vX, nextMidY, nextRight, nextMidY, mergeWon ? '#e2001a' : '#adb5bd');
               } else {
                 // 単独合流でも、次グループの中心Yへ段差ルーティングする（正方向と同じ修正）
                 if (Math.abs(midYs[0] - nextMidY) >= 2) {
-                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), '#adb5bd');
+                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), mergeWon ? '#e2001a' : '#adb5bd');
                 }
-                dline(svg, vX, nextMidY, nextRight, nextMidY, '#adb5bd');
+                dline(svg, vX, nextMidY, nextRight, nextMidY, mergeWon ? '#e2001a' : '#adb5bd');
               }
               var inXr = Math.min(vX, nextRight + 24);
-              dline(svg, nextRight, nextMidY, inXr, nextMidY, nextGroup.classList.contains('has-winner') ? '#27ae60' : '#adb5bd');
+              dline(svg, nextRight, nextMidY, inXr, nextMidY, mergeWon ? '#e2001a' : '#adb5bd');
             }
           }
         }
@@ -5361,13 +5398,14 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             var cy = r.top + r.height / 2;
             rightX = Math.max(rightX, r.right);
             midYs.push(cy);
-            dline(svg, r.right, cy, r.right + 24, cy, g.classList.contains('has-winner') ? '#27ae60' : '#adb5bd');
+            dline(svg, r.right, cy, r.right + 24, cy, g.classList.contains('has-winner') ? '#e2001a' : '#adb5bd');
           });
+          var mergeWon = semiGroups.every(function(g){return g.classList.contains('has-winner');});
           var vX = rightX + 24;
           var centerY = midYs.reduce(function(a,b){return a+b;},0) / midYs.length;
-          if (midYs.length > 1) dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), '#adb5bd');
-          dline(svg, vX, centerY, fRect.left, centerY, '#adb5bd');
-          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.left, Math.min(centerY,fMidY), fRect.left, Math.max(centerY,fMidY), '#adb5bd');
+          if (midYs.length > 1) dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), mergeWon ? '#e2001a' : '#adb5bd');
+          dline(svg, vX, centerY, fRect.left, centerY, mergeWon ? '#e2001a' : '#adb5bd');
+          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.left, Math.min(centerY,fMidY), fRect.left, Math.max(centerY,fMidY), mergeWon ? '#e2001a' : '#adb5bd');
         } else {
           var leftX = Infinity;
           semiGroups.forEach(function(g) {
@@ -5375,13 +5413,14 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             var cy = r.top + r.height / 2;
             leftX = Math.min(leftX, r.left);
             midYs.push(cy);
-            dline(svg, r.left - 24, cy, r.left, cy, g.classList.contains('has-winner') ? '#27ae60' : '#adb5bd');
+            dline(svg, r.left - 24, cy, r.left, cy, g.classList.contains('has-winner') ? '#e2001a' : '#adb5bd');
           });
+          var mergeWon = semiGroups.every(function(g){return g.classList.contains('has-winner');});
           var vX = leftX - 24;
           var centerY = midYs.reduce(function(a,b){return a+b;},0) / midYs.length;
-          if (midYs.length > 1) dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), '#adb5bd');
-          dline(svg, fRect.right, centerY, vX, centerY, '#adb5bd');
-          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.right, Math.min(centerY,fMidY), fRect.right, Math.max(centerY,fMidY), '#adb5bd');
+          if (midYs.length > 1) dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), mergeWon ? '#e2001a' : '#adb5bd');
+          dline(svg, fRect.right, centerY, vX, centerY, mergeWon ? '#e2001a' : '#adb5bd');
+          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.right, Math.min(centerY,fMidY), fRect.right, Math.max(centerY,fMidY), mergeWon ? '#e2001a' : '#adb5bd');
         }
       }
 
