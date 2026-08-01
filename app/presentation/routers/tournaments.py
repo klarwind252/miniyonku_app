@@ -394,6 +394,12 @@ async def tournament_new(request: Request, db: aiosqlite.Connection = Depends(ge
     async with db.execute("SELECT value FROM app_settings WHERE key='qual_heat_exclude_default'") as cur:
         ex_row = await cur.fetchone()
     default_heat_exclude = (ex_row["value"] == "1") if ex_row else False
+    # M4LAPS 使用チェックの初期値（前回レース作成/編集時の選択を保持＝sticky）
+    async with db.execute("SELECT value FROM app_settings WHERE key='use_m4laps_default'") as cur:
+        m4_row = await cur.fetchone()
+    default_use_m4laps = (m4_row["value"] != "0") if m4_row else True
+    from app.domain import m4laps_license as _m4l
+    m4laps_licensed = await _m4l.is_licensed(db)
     garappa_enabled = (await _get_store1_name(db)).strip() == GARAPPA_STORE_NAME
     return templates.TemplateResponse("admin/tournament_form.html", {
         "request": request,
@@ -404,6 +410,8 @@ async def tournament_new(request: Request, db: aiosqlite.Connection = Depends(ge
         "qualifying_labels": QUALIFYING_LABELS,
         "default_qualifying": default_qualifying,
         "default_heat_exclude": default_heat_exclude,
+        "default_use_m4laps": default_use_m4laps,
+        "m4laps_licensed": m4laps_licensed,
         "garappa_enabled": garappa_enabled,
         "race_assets": {k: [] for k in _ASSET_KINDS},
     })
@@ -439,6 +447,7 @@ async def tournament_add(
     order_round_count: int = Form(3),
     order_free_max_runs: int = Form(0),
     use_racer_master: int = Form(1),
+    use_m4laps: int = Form(1),
     pre_entry: int = Form(0),
     pre_entry_method: str = Form(""),
     pre_entry_deadline: str = Form(""),
@@ -466,8 +475,8 @@ async def tournament_add(
             qual_heat_final, qual_heat_final_advance, qual_final_advance,
             point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
             order_round_mode, order_round_count, order_free_max_runs,
-            use_racer_master, pre_entry, pre_entry_method, pre_entry_deadline)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            use_racer_master, pre_entry, pre_entry_method, pre_entry_deadline, use_m4laps)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, date, time_slot, time_slot_free, regulation,
          qualifying_type, final_type, lane_count, note, time_schedule,
          qual_heat_count, qual_heat_advance,
@@ -475,9 +484,14 @@ async def tournament_add(
          qual_heat_final, qual_heat_final_advance, qual_final_advance,
          point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
          order_round_mode, order_round_count, order_free_max_runs,
-         use_racer_master, pre_entry, method, deadline),
+         use_racer_master, pre_entry, method, deadline, use_m4laps),
     )
     new_tid = cur_ins.lastrowid
+    # M4LAPS 使用チェックの「前回の選択」を保存（次回の新規作成フォームの初期値＝sticky）
+    await db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_m4laps_default', ?)",
+        ("1" if use_m4laps else "0",),
+    )
     # レース情報の画像アセット（コースレイアウト/タイムスケジュール/備考）を保存
     await _save_race_assets(new_tid, await request.form(), db)
     # 並び順（勝ち抜け）の段階設定を保存
@@ -661,7 +675,7 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
     #    admin ãã¼ãã¡ã³ãè©³ç´°ã®ãçµæç¢ºå®æ¸ã¿ãæ åã»ããã£ã¦ã ã®ä¸ã«æ¨ªä¸åã§è¡¨ç¤ºããã
     #    éè¨ã¯äºé¸ï¼æ±ºåãåç®ï¼include_finals=Trueï¼ãON/OFFã¯è¨­å®ã®ããã¼ãã¡ã³ãè¡¨ãåã«å¾ãã
     holder_boxes = []
-    if is_finalized:
+    if is_finalized and dict(t).get("use_m4laps", 1) != 0:
         try:
             from app.application import qualifying_records as _qrh
             from app.application import timing_racer_best_service as _rbh
@@ -1663,6 +1677,8 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
     ow_stages = await load_order_winner_stages(tid, db)
     garappa_enabled = ((await _get_store1_name(db)).strip() == GARAPPA_STORE_NAME) \
         or (t["qualifying_type"] == "heat_tournament_garappa")
+    from app.domain import m4laps_license as _m4l_e
+    m4laps_licensed = await _m4l_e.is_licensed(db)
     return templates.TemplateResponse("admin/tournament_edit.html", {
         "request": request,
         "t": t,
@@ -1673,6 +1689,7 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
         "qualifying_labels": QUALIFYING_LABELS,
         "order_winner_stages_json": json.dumps(ow_stages, ensure_ascii=False),
         "garappa_enabled": garappa_enabled,
+        "m4laps_licensed": m4laps_licensed,
         "race_assets": await _load_race_assets(tid, db),
     })
 
@@ -1706,6 +1723,7 @@ async def tournament_edit_save(
     order_round_count: int = Form(3),
     order_free_max_runs: int = Form(0),
     use_racer_master: int = Form(1),
+    use_m4laps: int = Form(1),
     time_schedule: str = Form(""),
     db: aiosqlite.Connection = Depends(get_db),
 ):
@@ -1756,7 +1774,7 @@ async def tournament_edit_save(
            qual_heat_final=?, qual_heat_final_advance=?, qual_final_advance=?,
            point_1st=?, point_2nd=?, point_3rd=?, point_co=?,
            qual_round_count=?, qual_heat_exclude=?,
-           order_round_mode=?, order_round_count=?, order_free_max_runs=?, use_racer_master=?
+           order_round_mode=?, order_round_count=?, order_free_max_runs=?, use_racer_master=?, use_m4laps=?
            WHERE id=?""",
         (date, name, time_slot, time_slot_free, regulation,
          qualifying_type, final_type, note, time_schedule,
@@ -1764,7 +1782,12 @@ async def tournament_edit_save(
          qual_group_count, qual_group_advance,
          qual_heat_final, qual_heat_final_advance, qual_final_advance,
          point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
-         order_round_mode, order_round_count, order_free_max_runs, use_racer_master, tid),
+         order_round_mode, order_round_count, order_free_max_runs, use_racer_master, use_m4laps, tid),
+    )
+    # M4LAPS 使用チェックの「前回の選択」を保存（次回の新規作成フォームの初期値＝sticky）
+    await db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_m4laps_default', ?)",
+        ("1" if use_m4laps else "0",),
     )
     # レース情報の画像アセットを保存
     await _save_race_assets(tid, await request.form(), db)

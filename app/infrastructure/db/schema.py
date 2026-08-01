@@ -664,6 +664,14 @@ async def init_db(db_path: str = None):
             await db.execute("ALTER TABLE tournaments ADD COLUMN use_racer_master INTEGER DEFAULT 1")
             print("[DB] migration: tournaments.use_racer_master added")
 
+        # tournaments.use_m4laps（このレースでM4LAPS(ラップタイマー)を使用するか / 初期値1）
+        #   0=使用しない → PIP・反映ボタン・RECORD HOLDERS 等のM4LAPS項目をこのレースでは非表示。
+        async with db.execute("PRAGMA table_info(tournaments)") as cur:
+            t_cols_m4 = {r["name"] async for r in cur}
+        if "use_m4laps" not in t_cols_m4:
+            await db.execute("ALTER TABLE tournaments ADD COLUMN use_m4laps INTEGER DEFAULT 1")
+            print("[DB] migration: tournaments.use_m4laps added")
+
         # tournaments.pre_entry / pre_entry_method（事前エントリー設定 / 作成時のみ確定）
         #   pre_entry        : 0=OFF（既定） / 1=ON
         #   pre_entry_method : NULL（既定） / 'manual'（手動） / 'form'（エントリーフォーム）

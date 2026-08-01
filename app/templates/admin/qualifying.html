@@ -1011,7 +1011,7 @@ document.addEventListener('DOMContentLoaded', function(){
                     onclick="resetRace({{ heat.id }}, {{ t.id }})"
                     title="このレースの結果を取り消して未入力に戻します">取消</button>
             {% endif %}
-          {% elif IS_CLOUD and request.state.m4laps_licensed and not is_finalized %}
+          {% elif IS_CLOUD and request.state.m4laps_licensed and not is_finalized and (t.use_m4laps is not defined or t.use_m4laps != 0) %}
             <button type="button" class="m4-apply-btn" onclick="applyTimingToHeat({{ heat.id }}, this)"
                     title="ラップタイマーの最新の計測結果をこのヒートに反映します">反映</button>
           {% endif %}

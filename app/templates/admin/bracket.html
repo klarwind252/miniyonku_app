@@ -971,7 +971,7 @@ updateSeedSummary(0);
 {% set normal_groups = groups_data | selectattr("round.round_type", "equalto", "normal") | list %}
 {# M4LAPS（連動型ラップタイマー）の表示条件。
    クラウド版かつライセンス登録済みのときだけ、反映ボタン・タイム・順位バッジを出す。 #}
-{% set m4_on = IS_CLOUD and request.state.m4laps_licensed %}
+{% set m4_on = IS_CLOUD and request.state.m4laps_licensed and (t.use_m4laps is not defined or t.use_m4laps != 0) %}
 {% set final_groups  = groups_data | selectattr("round.round_type", "equalto", "final")  | list %}
 {% set third_groups  = groups_data | selectattr("round.round_type", "in", ["third","revival"]) | list %}
 

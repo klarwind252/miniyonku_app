@@ -1173,6 +1173,11 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     _ach_cfg = await qrec.get_ach_config(db)
     record_holders, point_leader, achievements = qrec.apply_panel_config(
         record_holders, point_leader, achievements, _ach_cfg)
+    # このレースがM4LAPS不使用（use_m4laps=0）なら RECORD HOLDERS パネルを丸ごと非表示にする
+    if dict(t).get("use_m4laps", 1) == 0:
+        record_holders = None
+        point_leader = None
+        achievements = None
 
     # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
     entries_by_yomi = sorted(

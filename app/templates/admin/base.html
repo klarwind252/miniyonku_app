@@ -1067,7 +1067,7 @@ function _showPubToast(msg) {
 })();
 </script>
 
-{% if IS_CLOUD and request.state.m4laps_licensed %}
+{% if IS_CLOUD and request.state.m4laps_licensed and (t is not defined or not t or t.use_m4laps != 0) %}
 <!-- ============ M4LAPS PIP（ラップタイマー受信・全admin画面共通／PC） ============ -->
 <style>
   #m4pip{

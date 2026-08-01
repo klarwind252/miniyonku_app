@@ -1434,7 +1434,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     record_holders = None
     point_leader = None
     achievements = None
-    if qbest_rows:
+    if qbest_rows and dict(t).get("use_m4laps", 1) != 0:
         try:
             from app.application import qualifying_records as _qrb
             from app.application import timing_racer_best_service as _rbb
@@ -4747,7 +4747,9 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
         from app.application import qualifying_records as _qrh
         from app.application import timing_racer_best_service as _rbh
         _cfg = await _qrh.get_ach_config(db)
-        if any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
+        _m4row = await (await db.execute("SELECT use_m4laps FROM tournaments WHERE id=?", (tid,))).fetchone()
+        _m4_on = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
+        if _m4_on and any(_cfg.get(k, {}).get("bracket") for k in _qrh._ACH_KEYS):
             _trow = await (await db.execute(
                 "SELECT qualifying_type FROM tournaments WHERE id=?", (tid,))).fetchone()
             _qt = dict(_trow).get("qualifying_type") if _trow else None

@@ -243,7 +243,7 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
 
     # ð M4LAPS RECORD HOLDERS å¯¾è±¡èï¼è¨­å®ããã¼ãã¡ã³ãè¡¨ãONé ç®ã»äºé¸ï¼æ±ºååç®ï¼
     holder_boxes = []
-    if is_finalized:
+    if is_finalized and dict(t).get("use_m4laps", 1) != 0:
         try:
             from app.application import qualifying_records as _qrh
             from app.application import timing_racer_best_service as _rbh
@@ -1200,6 +1200,10 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     _ach_cfg = await _qrec.get_ach_config(db)
     record_holders, point_leader, achievements = _qrec.apply_panel_config(
         record_holders, point_leader, achievements, _ach_cfg)
+    if dict(t).get("use_m4laps", 1) == 0:
+        record_holders = None
+        point_leader = None
+        achievements = None
 
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
@@ -1554,6 +1558,10 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         _ach_cfg_b = await _qrcfg.get_ach_config(db)
         record_holders, point_leader, achievements = _qrcfg.apply_panel_config(
             record_holders, point_leader, achievements, _ach_cfg_b)
+        if dict(t).get("use_m4laps", 1) == 0:
+            record_holders = None
+            point_leader = None
+            achievements = None
     except Exception:
         pass
 
