@@ -1089,6 +1089,16 @@ window.addEventListener('load', function(){
   var PREFIX = slugPrefix();
   function assetUrl(u){ return (u.charAt(0) === '/') ? (PREFIX + u) : u; }
   window.m4OpenInfo = function(kind){
+    if(kind === 'm4laps'){
+      // ⚡LAPS：非表示divの M4LAPS ベスト表をそのままモーダルに表示する。
+      var src = document.getElementById('m4-laps-modal-content');
+      var tt = document.getElementById('m4-info-title'); if(tt){ tt.textContent = '⚡ M4LAPS'; }
+      var bb = document.getElementById('m4-info-body');
+      if(bb){ bb.innerHTML = src ? src.innerHTML : '<div style="color:#95a5a6">（内容がありません）</div>'; }
+      var ovv = document.getElementById('m4-info-overlay'); if(ovv){ ovv.style.display = 'block'; }
+      window.__m4ModalOpen = true;
+      return;
+    }
     var d = DATA[kind]; if(!d) return;
     var t = document.getElementById('m4-info-title'); if(t){ t.textContent = d.title; }
     var html = '';
@@ -1111,7 +1121,14 @@ window.addEventListener('load', function(){
     window.__m4ModalOpen = false;
   };
   var bar = document.getElementById('m4-info-bar');
-  if(bar){ document.body.style.paddingBottom = (Math.round(bar.getBoundingClientRect().height) + 8) + 'px'; }
+  if(bar){
+    var barH = Math.round(bar.getBoundingClientRect().height);
+    document.body.style.paddingBottom = (barH + 8) + 'px';
+    // 「↑ 上へ」「🏆 過去成績」ボタンをタイスケ帯の上に必ず出す（帯の裏に隠れないよう持ち上げる）
+    var _lift = (barH + 8) + 'px';
+    var _tb = document.getElementById('m4-top-btn'); if(_tb){ _tb.style.bottom = _lift; }
+    var _hb = document.getElementById('m4-history-btn'); if(_hb){ _hb.style.bottom = _lift; }
+  }
 })();
 </script>"""
 

@@ -60,9 +60,9 @@
 .m4l-rank{font-weight:bold;font-size:15px}
 .m4l-table td.m4l-name{text-align:left;font-weight:bold;font-size:14px;color:#ecf0f1}
 .m4l-num{font-variant-numeric:tabular-nums;color:#cdd6df}
-.m4l-num.b1{background:#6b21a8;color:#fff;font-weight:bold}
-.m4l-num.b2{background:#1e40af;color:#fff;font-weight:bold}
-.m4l-num.b3{background:#166534;color:#fff;font-weight:bold}
+.m4l-num.b1{background:rgba(64,18,96,.5);color:#fff;font-weight:bold}
+.m4l-num.b2{background:rgba(18,38,96,.5);color:#fff;font-weight:bold}
+.m4l-num.b3{background:rgba(14,66,40,.5);color:#fff;font-weight:bold}
 .rank-col{font-size:20px;font-weight:bold;width:40px}
 /* 名前タップ→タイム詳細モーダル */
 .rs-name{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
@@ -796,7 +796,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% elif lane.rank %}
                 {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
-                <div style="display:flex;flex-direction:column;min-width:0;flex:1">
+                <div style="display:flex;flex-direction:column;min-width:0;flex:1{% if not is_public_html %};align-items:flex-start{% endif %}">
                   <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name"{% if _frank %} style="color:#fff"{% endif %}>{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle{% if _frank %};color:#fff{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
                   {% if m4laps_active and lane.total_time %}<span style="font-size:{% if is_public_html %}13px{% else %}19px{% endif %};font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px;font-weight:{% if _frank %}bold{% else %}normal{% endif %};color:{% if _frank %}#fff{% else %}#8aa0b6{% endif %}">{{ '%.3f'|format(lane.total_time) }}</span>{% endif %}
                 </div>
@@ -1042,8 +1042,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.finish_count or 0 }}</td>
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
           {% if m4laps_active and qualifying_type == 'point' %}
-          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
-          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_avg_rank == 1 %}color:#fff;background:#6b21a8;font-weight:bold{% elif s.best_avg_rank == 2 %}color:#fff;background:#1e40af;font-weight:bold{% elif s.best_avg_rank == 3 %}color:#fff;background:#166534;font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
+          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:rgba(64,18,96,.5);font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:rgba(18,38,96,.5);font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:rgba(14,66,40,.5);font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
+          <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_avg_rank == 1 %}color:#fff;background:rgba(64,18,96,.5);font-weight:bold{% elif s.best_avg_rank == 2 %}color:#fff;background:rgba(18,38,96,.5);font-weight:bold{% elif s.best_avg_rank == 3 %}color:#fff;background:rgba(14,66,40,.5);font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
           {% endif %}
           {% endif %}
         </tr>
@@ -1107,8 +1107,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
        表示内容は admin（予選管理）の予選順位表と同じ：順位・レーサー名・
        TOTAL BEST(TIME/GAP/Av./MAX)・LAP BEST(TIME/Av.)。 #}
     {% if m4laps_active and m4laps_rows %}
-    <div class="v-section" style="margin-top:12px">
-      <div class="v-section-title">⚡ M4LAPS</div>
+    {% set _m4tbl %}
       <div class="std-scroll">
         <table class="m4l-table">
           <thead>
@@ -1139,7 +1138,16 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </tbody>
         </table>
       </div>
+    {% endset %}
+    {# 公開HTMLでは M4LAPS表をインライン表示せず、下部「⚡LAPS」ボタンのモーダルで表示する（viewは従来どおりインライン）。 #}
+    {% if is_public_html %}
+    <div id="m4-laps-modal-content" style="display:none">{{ _m4tbl }}</div>
+    {% else %}
+    <div class="v-section" style="margin-top:12px">
+      <div class="v-section-title">⚡ M4LAPS</div>
+      {{ _m4tbl }}
     </div>
+    {% endif %}
     {% endif %}
 
     <div class="v-section" style="position:sticky;top:8px">
