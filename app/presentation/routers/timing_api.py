@@ -915,9 +915,12 @@ async def apply_latest_to_ht_group(
             )
 
     ranking = _ranking_payload(result)
-    res = await bridge_svc.apply_race_to_ht_group(
-        db, race_id=race["id"], group_id=group_id, ranking=ranking
-    )
+    try:
+        res = await bridge_svc.apply_race_to_ht_group(
+            db, race_id=race["id"], group_id=group_id, ranking=ranking
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"反映処理でエラー: {e}")
     if res.get("error"):
         raise HTTPException(status_code=400,
                             detail="このグループの出走枠が見つかりません")
@@ -964,11 +967,15 @@ async def reset_ht_group(
 
     await db.execute("DELETE FROM ht_results WHERE group_id = ?", (group_id,))
     await db.execute("DELETE FROM ht_slot_ranks WHERE group_id = ?", (group_id,))
-    # この組に紐づいていた計測レースの反映先リンクを解除（PIPの「反映済」を消す）
-    await db.execute(
-        "UPDATE timing_races SET applied_ht_group_id = NULL WHERE applied_ht_group_id = ?",
-        (group_id,),
-    )
+    # この組に紐づいていた計測レースの反映先リンクを解除（PIPの「反映済」を消す）。
+    # カラム未追加の旧DBでも取消自体は成立させる。
+    try:
+        await db.execute(
+            "UPDATE timing_races SET applied_ht_group_id = NULL WHERE applied_ht_group_id = ?",
+            (group_id,),
+        )
+    except Exception:
+        pass
     await db.commit()
 
     fin = await qual_mod._ht_finalize_group(tid, heat_no, group_id, dict(rnd), None, db)

@@ -248,13 +248,19 @@ async def apply_race_to_ht_group(db, *, race_id: int, group_id: int,
             "INSERT INTO ht_results (group_id, winner_slot_id) VALUES (?,?)",
             (group_id, winner_slot_id),
         )
-
-    # どのヒート組へ反映したかを記録（PIPの「反映済」表示・重複反映の検出に使う）
-    await db.execute(
-        "UPDATE timing_races SET applied_ht_group_id = ? WHERE id = ?",
-        (group_id, race_id),
-    )
+    # 核となる順位・勝者を先に確定させる（この後の記録が失敗しても反映は成立させる）
     await db.commit()
+
+    # どのヒート組へ反映したかを記録（PIPの「反映済」表示・重複反映の検出に使う）。
+    # マイグレーション未適用（カラム無し）の旧DBでも反映自体は成立させる。
+    try:
+        await db.execute(
+            "UPDATE timing_races SET applied_ht_group_id = ? WHERE id = ?",
+            (group_id, race_id),
+        )
+        await db.commit()
+    except Exception:
+        pass
 
     return {
         "saved": len(matched),
