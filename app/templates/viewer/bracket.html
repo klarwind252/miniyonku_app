@@ -157,26 +157,26 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   {% endif %}
   {# 称号：SWEEP / GRAND SLAM / SPEED STAR / SPRINTER（該当なしは「該当なし」）。admin と同項目。 #}
   {% if achievements %}
-  <div class="v-m4rec-row">
+  {% if achievements.sweep is not none %}<div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">💯</span><span class="v-m4rec-tx">SWEEP</span></span>
     <span class="v-m4rec-cond">予選 全レース1位（○のみ）</span>
     <span class="v-m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
-  </div>
-  <div class="v-m4rec-row">
+  </div>{% endif %}
+  {% if achievements.grand_slam is not none %}<div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">👑</span><span class="v-m4rec-tx">GRAND SLAM</span></span>
     <span class="v-m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span>
     <span class="v-m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="v-m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
-  </div>
-  <div class="v-m4rec-row">
+  </div>{% endif %}
+  {% if achievements.speed_star is not none %}<div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⭐</span><span class="v-m4rec-tx">SPEED STAR</span></span>
     <span class="v-m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span>
     <span class="v-m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
-  </div>
-  <div class="v-m4rec-row">
+  </div>{% endif %}
+  {% if achievements.sprinter is not none %}<div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">⚡</span><span class="v-m4rec-tx">SPRINTER</span></span>
     <span class="v-m4rec-cond">各セクターの1位</span>
     <span class="v-m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="v-m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
-  </div>
+  </div>{% endif %}
   {% endif %}
 </div>
 {% endif %}

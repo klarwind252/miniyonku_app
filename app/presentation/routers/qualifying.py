@@ -1169,6 +1169,10 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         point_leader["full_score"] = (point_leader_eid in _sweep)
     achievements = qrec.compute_achievements(
         _rh_raw, _qual_leader_eid, _sweep, _name_by_entry)
+    # 設定（予選/決勝ON/OFF）を反映：OFF項目はパネルから隠す
+    _ach_cfg = await qrec.get_ach_config(db)
+    record_holders, point_leader, achievements = qrec.apply_panel_config(
+        record_holders, point_leader, achievements, _ach_cfg)
 
     # エントリー一覧は読み仮名順で横に並べる（yomi が無ければ名前でフォールバック）
     entries_by_yomi = sorted(

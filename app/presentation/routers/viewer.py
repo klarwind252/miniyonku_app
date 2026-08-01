@@ -1053,6 +1053,10 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         point_leader["full_score"] = (_pl_eid in _sweep)
     achievements = _qrec.compute_achievements(
         _rh_raw, _qual_leader_eid, _sweep, _rec_name_by_entry)
+    # 設定（予選/決勝ON/OFF）を反映：OFF項目はパネルから隠す
+    _ach_cfg = await _qrec.get_ach_config(db)
+    record_holders, point_leader, achievements = _qrec.apply_panel_config(
+        record_holders, point_leader, achievements, _ach_cfg)
 
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
@@ -1401,6 +1405,14 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             record_holders = None
             point_leader = None
             achievements = None
+    # 設定（予選/決勝ON/OFF）を反映：OFF項目はパネルから隠す
+    try:
+        from app.application import qualifying_records as _qrcfg
+        _ach_cfg_b = await _qrcfg.get_ach_config(db)
+        record_holders, point_leader, achievements = _qrcfg.apply_panel_config(
+            record_holders, point_leader, achievements, _ach_cfg_b)
+    except Exception:
+        pass
 
     # ── M4LAPS ベスト表（観覧：決勝トーナメント表の下に表示）────────────────
     # 予選ページ（viewer/qualifying）と同一ロジック。TOTAL BEST(TIME/GAP/Av./MAX)・

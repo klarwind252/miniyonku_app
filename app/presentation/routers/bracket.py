@@ -1460,6 +1460,14 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
             record_holders = None
             point_leader = None
             achievements = None
+    # 設定（予選/決勝ON/OFF）を反映：OFF項目はパネルから隠す
+    try:
+        from app.application import qualifying_records as _qrcfg
+        _ach_cfg_b = await _qrcfg.get_ach_config(db)
+        record_holders, point_leader, achievements = _qrcfg.apply_panel_config(
+            record_holders, point_leader, achievements, _ach_cfg_b)
+    except Exception:
+        pass
 
     return templates.TemplateResponse("admin/bracket.html", {
         "request": request,

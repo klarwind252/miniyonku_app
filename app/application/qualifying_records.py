@@ -191,3 +191,54 @@ def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) ->
         "speed_star": _names(speed_star),
         "sprinter":   sprinter_sectors,
     }
+
+
+# ── ⚡ M4LAPS RECORD HOLDERS 表示設定（設定ページの app_settings 'm4laps_ach_config'）──
+_ACH_KEYS = ("overall", "fastest_lap", "top_speed", "point_leader",
+             "sweep", "grand_slam", "speed_star", "sprinter")
+
+
+async def get_ach_config(db) -> dict:
+    """各項目の panel(予選/決勝) / bracket(トーナメント表) / cert(賞状) のON/OFF。
+    未設定は panel=True（従来どおり全表示）。"""
+    import json as _j
+    cfg = {k: {"panel": True, "bracket": False, "cert": False} for k in _ACH_KEYS}
+    try:
+        async with db.execute(
+            "SELECT value FROM app_settings WHERE key='m4laps_ach_config'") as cur:
+            row = await cur.fetchone()
+        if row and row[0]:
+            saved = _j.loads(row[0])
+            for k in _ACH_KEYS:
+                if isinstance(saved.get(k), dict):
+                    cfg[k]["panel"] = bool(saved[k].get("panel", True))
+                    cfg[k]["bracket"] = bool(saved[k].get("bracket", False))
+                    cfg[k]["cert"] = bool(saved[k].get("cert", False))
+    except Exception:
+        pass
+    return cfg
+
+
+def apply_panel_config(record_holders, point_leader, achievements, cfg):
+    """設定で panel=False の項目を「予選/決勝」パネルから隠す。
+    record_holders の各記録は None に、point_leader は None に、
+    achievements の各称号は None に（テンプレは None の行を出さない）。"""
+    cfg = cfg or {}
+
+    def _on(k):
+        return cfg.get(k, {}).get("panel", True)
+
+    if record_holders:
+        if not _on("overall"):
+            record_holders["overall"] = None
+        if not _on("fastest_lap"):
+            record_holders["fastest_lap"] = None
+        if not _on("top_speed"):
+            record_holders["top_speed"] = None
+    if point_leader is not None and not _on("point_leader"):
+        point_leader = None
+    if achievements:
+        for k in ("sweep", "grand_slam", "speed_star", "sprinter"):
+            if not _on(k):
+                achievements[k] = None
+    return record_holders, point_leader, achievements
