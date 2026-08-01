@@ -25,6 +25,13 @@
 .slot-name{font-weight:bold;font-size:14px;flex:1;cursor:pointer;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slot-name:hover{color:#2980b9;text-decoration:underline}
 .win-btn{width:40px;height:40px;border-radius:6px;font-size:18px;font-weight:bold;cursor:pointer;border:2px solid #dee2e6;background:#fff;color:#95a5a6;font-family:inherit;transition:all .1s}
+.m4-apply-btn{width:44px;height:44px;font-size:12px;border:none;border-radius:5px;background:#1a56db;color:#fff;cursor:pointer;white-space:nowrap;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.m4-apply-btn:hover{background:#1546b0}
+.m4-apply-btn:active{background:#113a92}
+.m4-apply-btn:disabled{opacity:.5;cursor:wait}
+.m4-reset-btn{width:44px;height:44px;font-size:12px;border:1px solid #f5b7b1;border-radius:5px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.m4-reset-btn:hover{background:#fbe3e0;border-color:#e9967f}
+.m4-reset-btn:active{background:#f7d3ce}
 .win-btn.sel{border-color:#27ae60;background:#eafaf1;color:#27ae60}
 .grp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:8px}
 /* ===== 上部アクションバー（sticky・全admin画面で共通） =====
@@ -375,6 +382,12 @@
         グループ{{ g.group_no }}
         {% if result %}<span style="margin-left:6px;font-size:11px;color:#27ae60">✓完了</span>{% endif %}
       </div>
+      {% if m4_on %}
+      <div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
+        {% if result %}<button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
+        {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
+      </div>
+      {% endif %}
       {% set use_rank = is_rank_rnd and n_slots >= 3 %}
       {% for slot in slots %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
@@ -488,6 +501,12 @@
       <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:#d4a017">
         グループ{{ g.group_no }}{% if result %} <span style="color:#27ae60;font-weight:normal">✓完了</span>{% endif %}
       </div>
+      {% if m4_on %}
+      <div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
+        {% if result %}<button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
+        {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
+      </div>
+      {% endif %}
       {% for slot in slots %}
       {% set cr = ranks.get(slot.slot_id) %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
@@ -569,6 +588,12 @@
       グループ{{ g.group_no }}
       {% if result %}<span style="margin-left:6px;font-size:11px;color:#27ae60">✓完了</span>{% endif %}
     </div>
+    {% if m4_on %}
+    <div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
+      {% if result %}<button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
+      {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
+    </div>
+    {% endif %}
     {% set use_rank = is_rank_rnd and n_slots >= 3 %}
     {% for slot in slots %}
     {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
@@ -1141,4 +1166,55 @@ function htGenerateSync(hno){
 
 </script>
 
+<script>
+async function applyTimingToHtGroup(groupId, tid, hno, btn, force){
+  const orig = btn.dataset.origLabel || btn.textContent;
+  btn.dataset.origLabel = orig;
+  btn.disabled = true; btn.textContent = '反映中…';
+  try{
+    const picked = (typeof m4pipSelectedRaceId === 'function') ? m4pipSelectedRaceId() : null;
+    const qs = [];
+    if (picked) qs.push('race_id=' + picked);
+    if (force)  qs.push('force=true');
+    const url = '/api/timing/apply/ht-group/' + groupId + (qs.length ? '?' + qs.join('&') : '');
+    const res = await fetch(url, {method:'POST'});
+    if(res.status === 409){
+      const d = await res.json();
+      if(d.reason === 'locked'){ alert(d.message || 'このヒートはロック中です。'); btn.disabled=false; btn.textContent=orig; return; }
+      const msg = (d.warnings || []).map(function(w){ return '・' + w.message; }).join('\n');
+      btn.disabled = false; btn.textContent = orig;
+      if(confirm(msg + '\n\nそれでも反映しますか？')){ return applyTimingToHtGroup(groupId, tid, hno, btn, true); }
+      return;
+    }
+    if(res.ok){
+      const d = await res.json();
+      let msg = (d.saved||0) + '件の順位を反映しました。';
+      if(d.unmatched_slots && d.unmatched_slots.length) msg += '\n※ 計測記録が無い枠: ' + d.unmatched_slots.join(', ');
+      if(d.unmatched_records && d.unmatched_records.length) msg += '\n※ 対応する枠が無い記録: レーン' + d.unmatched_records.join(', ');
+      if((d.unmatched_slots&&d.unmatched_slots.length) || (d.unmatched_records&&d.unmatched_records.length)) alert(msg);
+      try{ sessionStorage.setItem('m4HtScroll', String(window.scrollY)); }catch(_){}
+      location.reload(); return;
+    }
+    let detail=''; try{ const e = await res.json(); detail = e.detail || ''; }catch(_){}
+    alert('反映できませんでした。' + (detail ? '\n' + detail : ''));
+  }catch(e){ alert('通信エラーが発生しました: ' + e); }
+  btn.disabled = false; btn.textContent = orig;
+}
+async function resetHtGroup(groupId, tid, hno){
+  if(!confirm('この組の結果を取り消します。よろしいですか？')) return;
+  try{
+    const res = await fetch('/api/timing/apply/ht-group/' + groupId + '/reset', {method:'POST'});
+    if(res.status === 409){ const d=await res.json(); alert(d.message || 'ロック中のため取消できません。'); return; }
+    if(res.ok){ try{ sessionStorage.setItem('m4HtScroll', String(window.scrollY)); }catch(_){} location.reload(); return; }
+    alert('取消できませんでした。');
+  }catch(e){ alert('通信エラーが発生しました: ' + e); }
+}
+(function(){
+  var y=null; try{ var v=sessionStorage.getItem('m4HtScroll'); if(v!==null){ y=parseInt(v,10); sessionStorage.removeItem('m4HtScroll'); } }catch(_){}
+  if(y===null||isNaN(y)||y<=0) return;
+  if('scrollRestoration' in history) history.scrollRestoration='manual';
+  var tries=0; function restore(){ window.scrollTo(0,y); if(++tries<12) setTimeout(restore,100); }
+  if(document.readyState==='complete') restore(); else window.addEventListener('load', restore);
+})();
+</script>
 {% endblock %}

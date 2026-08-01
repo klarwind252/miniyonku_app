@@ -3508,6 +3508,11 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         all_standings.append({**s, "rank": rank})
         prev_pts = pts
 
+    # M4LAPS（ラップタイマー）反映ボタンの表示可否。決勝管理と同じ基準（大会の use_m4laps）。
+    async with db.execute("SELECT use_m4laps FROM tournaments WHERE id=?", (tid,)) as cur:
+        _m4row = await cur.fetchone()
+    m4_on = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
+
     return templates.TemplateResponse("admin/heat_tournament.html", {
         "request": request,
         "t": t,
@@ -3518,6 +3523,7 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         "entries": entries,
         "all_heats": all_heats,
         "all_standings": all_standings,
+        "m4_on": m4_on,
     })
 
 
@@ -4423,6 +4429,20 @@ async def ht_save_result(tid: int, heat_no: int, group_id: int, request: Request
 
     await db.commit()
 
+    # 保存後の共通処理（進出・次ラウンド生成・ロック判定）は _ht_finalize_group に集約。
+    # 手入力保存・PIP反映・取消 のいずれからも同じ経路を通す。
+    return JSONResponse(
+        await _ht_finalize_group(tid, heat_no, group_id, dict(rnd), winner_slot_id, db)
+    )
+
+
+async def _ht_finalize_group(tid: int, heat_no: int, group_id: int,
+                             rnd: dict, winner_slot_id, db) -> dict:
+    """ヒートトーナメントのグループ結果を保存した後の共通後処理。
+
+    ht_save_result（手入力）・PIP反映・取消 から共通で呼ぶ。rnd は
+    round_type / round_no / round_id / section_no を含む辞書。
+    """
     # 次ラウンドが既に存在する場合、現ラウンド全グループの勝者で対応スロットを再構成する。
     # （勝者の取り消し・変更も毎回反映されるよう、winner_slot_id の有無で分岐しない）
     if rnd["section_no"] == 0:
@@ -4490,7 +4510,7 @@ async def ht_save_result(tid: int, heat_no: int, group_id: int, request: Request
     # ヒート決勝で進出が全員確定したら、このヒートを自動ロックする
     await _maybe_lock_heat(tid, heat_no, db)
     locked_now = await _is_heat_locked(tid, heat_no, db)
-    return JSONResponse({"ok": True, "advanced": bool(advanced), "is_final_done": is_final_done, "round_done": round_done, "locked": locked_now})
+    return {"ok": True, "advanced": bool(advanced), "is_final_done": is_final_done, "round_done": round_done, "locked": locked_now}
 
 
 async def _ht_all_groups_ranked(tid: int, heat_no: int, group_advance: int, db) -> tuple[bool, str]:

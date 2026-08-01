@@ -838,6 +838,129 @@ async def apply_latest_to_bracket(
                          "advanced": bool(advanced), **res})
 
 
+async def _ht_group_round(db, group_id: int):
+    """ht グループ → 所属ラウンド情報（tid/heat_no/round_*）を返す。無ければ None。"""
+    async with db.execute(
+        """SELECT hr.tournament_id AS tid, hr.heat_no AS heat_no,
+                  hr.round_type, hr.round_no, hr.id AS round_id,
+                  COALESCE(hr.section_no, 1) AS section_no
+           FROM ht_groups hg JOIN ht_rounds hr ON hr.id = hg.round_id
+           WHERE hg.id = ?""",
+        (group_id,),
+    ) as cur:
+        return await cur.fetchone()
+
+
+@router.post("/api/timing/apply/ht-group/{group_id}")
+async def apply_latest_to_ht_group(
+    group_id: int,
+    race_id: int | None = None,
+    force: bool = False,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """最新の計測結果をヒートトーナメントのグループへ反映する（slot_no ↔ レーン番号で照合）。
+
+    決勝ブラケットの反映（apply_latest_to_bracket）と同じ流儀。ヒートトーナメント専用の
+    後処理（進出・次ラウンド生成・ロック）は qualifying._ht_finalize_group を共用する。
+    """
+    from app.presentation.routers import qualifying as qual_mod
+
+    rnd = await _ht_group_round(db, group_id)
+    if rnd is None:
+        raise HTTPException(status_code=404, detail="グループが見つかりません")
+    tid, heat_no = rnd["tid"], rnd["heat_no"]
+
+    # ヒートがロック（結果確定）中は反映不可
+    if await qual_mod._is_heat_locked(tid, heat_no, db):
+        return JSONResponse(
+            {"ok": False, "reason": "locked",
+             "message": "このヒートは結果確定済み（ロック中）です。取消してから反映してください。"},
+            status_code=409,
+        )
+
+    repo = TimingRaceRepository(db)
+    race, result = await _pick_race(db, repo, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="反映できる計測結果がありません")
+
+    if not force:
+        warnings = []
+        async with db.execute(
+            "SELECT 1 FROM ht_results WHERE group_id = ?", (group_id,)
+        ) as cur:
+            if await cur.fetchone():
+                warnings.append({
+                    "code": "already_has_result",
+                    "message": "この組には既に結果が入力されています。上書きされます。",
+                })
+        if warnings:
+            return JSONResponse(
+                {"ok": False, "reason": "warning", "warnings": warnings},
+                status_code=409,
+            )
+
+    ranking = _ranking_payload(result)
+    res = await bridge_svc.apply_race_to_ht_group(
+        db, group_id=group_id, ranking=ranking
+    )
+    if res.get("error"):
+        raise HTTPException(status_code=400,
+                            detail="このグループの出走枠が見つかりません")
+
+    # 手動保存と同じ後処理（進出・次ラウンド生成・ロック判定）
+    try:
+        fin = await qual_mod._ht_finalize_group(
+            tid, heat_no, group_id, dict(rnd), res.get("winner_slot_id"), db
+        )
+    except Exception as e:
+        return JSONResponse({"ok": True, "race_id": race["id"],
+                             "saved": res.get("saved", 0), "advance_error": str(e)})
+
+    # 参加者向けHTMLの再配信（bracket 反映と同じ）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
+    return JSONResponse({"race_id": race["id"], "saved": res.get("saved", 0), **fin})
+
+
+@router.post("/api/timing/apply/ht-group/{group_id}/reset")
+async def reset_ht_group(
+    group_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """ヒートトーナメントのグループ結果を取り消す（進出も再計算する）。"""
+    from app.presentation.routers import qualifying as qual_mod
+
+    rnd = await _ht_group_round(db, group_id)
+    if rnd is None:
+        raise HTTPException(status_code=404, detail="グループが見つかりません")
+    tid, heat_no = rnd["tid"], rnd["heat_no"]
+
+    if await qual_mod._is_heat_locked(tid, heat_no, db):
+        return JSONResponse(
+            {"ok": False, "reason": "locked",
+             "message": "このヒートは結果確定済み（ロック中）です。"},
+            status_code=409,
+        )
+
+    await db.execute("DELETE FROM ht_results WHERE group_id = ?", (group_id,))
+    await db.execute("DELETE FROM ht_slot_ranks WHERE group_id = ?", (group_id,))
+    await db.commit()
+
+    fin = await qual_mod._ht_finalize_group(tid, heat_no, group_id, dict(rnd), None, db)
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+    return JSONResponse(fin)
+
+
 async def _pick_race(db, repo, race_id: int | None):
     """反映元のレースを決める。race_id 未指定なら記録のある最新レース。"""
     if race_id is not None:

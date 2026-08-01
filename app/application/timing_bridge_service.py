@@ -192,6 +192,71 @@ async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
     }
 
 
+async def apply_race_to_ht_group(db, *, group_id: int,
+                                 ranking: list[dict]) -> dict:
+    """計測結果をヒートトーナメントのグループへ反映して保存する。
+
+    ヒートトーナメントは決勝ブラケットと同じ「トーナメント形式」だが、専用テーブルを使う。
+        ht_slots      (id, group_id, slot_no, entry_id)   … 誰がどの枠か
+        ht_results    (group_id, winner_slot_id)          … 勝者
+        ht_slot_ranks (group_id, slot_id, rank)           … 各枠の順位
+    ※ ht_* にはタイム列が無いため、順位と勝者のみ保存する（画面表示も○のみで従来どおり）。
+
+    突き合わせの鍵は **slot_no ↔ start_lane**（決勝ブラケットと同じ考え方）。
+
+    戻り値: {"saved": n, "winner_slot_id":.., "unmatched_slots":[], "unmatched_records":[]}
+    """
+    async with db.execute(
+        "SELECT id AS slot_id, slot_no, entry_id FROM ht_slots "
+        "WHERE group_id = ? ORDER BY slot_no",
+        (group_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    # 空き枠（entry_id=NULL）は対象外
+    slots = [
+        {"lane_id": r["slot_id"], "lane_no": r["slot_no"], "entry_id": r["entry_id"]}
+        for r in rows if r["entry_id"] is not None
+    ]
+    if not slots:
+        return {"saved": 0, "error": "ht_slots not found",
+                "winner_slot_id": None, "unmatched_slots": [], "unmatched_records": []}
+
+    m = match_ranking_to_lanes(ranking, slots)
+    matched = m["matched"]
+    if not matched:
+        return {"saved": 0, "error": "no match",
+                "winner_slot_id": None,
+                "unmatched_slots": m["unmatched_lanes"],
+                "unmatched_records": m["unmatched_records"]}
+
+    # 突き合わせできた枠の中で1位から順位を振り直す（決勝ブラケットと同じ流儀）。
+    await db.execute("DELETE FROM ht_slot_ranks WHERE group_id = ?", (group_id,))
+    winner_slot_id = None
+    for i, x in enumerate(sorted(matched, key=lambda mm: int(mm["rank"])), start=1):
+        await db.execute(
+            "INSERT INTO ht_slot_ranks (group_id, slot_id, rank) VALUES (?,?,?)",
+            (group_id, x["lane_id"], i),
+        )
+        if i == 1:
+            winner_slot_id = x["lane_id"]
+
+    # 勝者を確定（DELETE→INSERT。ht_results は group_id にユニーク制約が無いため）
+    await db.execute("DELETE FROM ht_results WHERE group_id = ?", (group_id,))
+    if winner_slot_id is not None:
+        await db.execute(
+            "INSERT INTO ht_results (group_id, winner_slot_id) VALUES (?,?)",
+            (group_id, winner_slot_id),
+        )
+    await db.commit()
+
+    return {
+        "saved": len(matched),
+        "winner_slot_id": winner_slot_id,
+        "unmatched_slots": m["unmatched_lanes"],
+        "unmatched_records": m["unmatched_records"],
+    }
+
+
 async def apply_race_to_heat(db, *, race_id: int, heat_id: int,
                              ranking: list[dict], calc_points=default_calc_points) -> dict:
     """計測結果を指定ヒートへ反映して保存する。
