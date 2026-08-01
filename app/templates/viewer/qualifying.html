@@ -463,6 +463,40 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 {% endif %}
 
+{# ⚡M4LAPS ベスト表（予選内の記録のみ）。右カラム（各形式）とヒート制総当たり（右カラム無し）で共用するマクロ。 #}
+{% macro m4laps_tbl() %}
+      <div class="std-scroll">
+        <table class="m4l-table">
+          <thead>
+            <tr class="m4l-grp">
+              <th colspan="2"></th>
+              <th class="m4l-sep" colspan="4">TOTAL BEST</th>
+              <th class="m4l-sep" colspan="2">LAP BEST</th>
+            </tr>
+            <tr>
+              <th>順位</th><th style="text-align:left">レーサー</th>
+              <th class="m4l-sep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
+              <th class="m4l-sep">TIME</th><th>Av.</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in m4laps_rows %}
+            <tr {% if r.entry_id %}onclick="openRacerStats({{ t.id }},{{ r.entry_id }})" style="cursor:pointer"{% endif %}>
+              <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
+              <td class="m4l-name">{{ r.name }}</td>
+              <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
+              <td class="m4l-num">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
+              <td class="m4l-num{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}{% endif %}">{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</td>
+              <td class="m4l-num{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}{% endif %}">{% if r.max_ms is not none %}{{ '%.2f'|format(r.max_ms) }}{% else %}—{% endif %}</td>
+              <td class="m4l-sep m4l-num{% if m4laps_best_ranks.lap.get(r.entry_id) %} b{{ m4laps_best_ranks.lap.get(r.entry_id) }}{% endif %}">{% if r.lap is not none %}{{ '%.3f'|format(r.lap) }}{% else %}—{% endif %}</td>
+              <td class="m4l-num{% if m4laps_best_ranks.lap_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.lap_avg.get(r.entry_id) }}{% endif %}">{% if r.lap_avg is not none %}{{ '%.2f'|format(r.lap_avg) }}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+{% endmacro %}
+
 <div class="v-cols{% if qualifying_type == 'heat_roundrobin' %} single{% elif not is_public_html %} v-view{% endif %}">
   <!-- 左：スケジュール -->
   <div>
@@ -1003,6 +1037,19 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {% endif %}
   </div>
 
+  {# ヒート制総当たりは右カラムが無いため、⚡M4LAPS ベスト表を左カラム末尾に表示する
+     （公開HTMLは下部「⚡LAPS」ボタンのモーダル用に非表示格納）。 #}
+  {% if qualifying_type == 'heat_roundrobin' and m4laps_active and m4laps_rows %}
+  {% if is_public_html %}
+  <div id="m4-laps-modal-content" style="display:none">{{ m4laps_tbl() }}</div>
+  {% else %}
+  <div class="v-section" style="margin-top:12px">
+    <div class="v-section-title">⚡ M4LAPS</div>
+    {{ m4laps_tbl() }}
+  </div>
+  {% endif %}
+  {% endif %}
+
   <!-- 右：順位表＋エントリー -->
   {% if qualifying_type != 'heat_roundrobin' %}
   <div class="v-sticky-col">
@@ -1107,45 +1154,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
        表示内容は admin（予選管理）の予選順位表と同じ：順位・レーサー名・
        TOTAL BEST(TIME/GAP/Av./MAX)・LAP BEST(TIME/Av.)。 #}
     {% if m4laps_active and m4laps_rows %}
-    {% set _m4tbl %}
-      <div class="std-scroll">
-        <table class="m4l-table">
-          <thead>
-            <tr class="m4l-grp">
-              <th colspan="2"></th>
-              <th class="m4l-sep" colspan="4">TOTAL BEST</th>
-              <th class="m4l-sep" colspan="2">LAP BEST</th>
-            </tr>
-            <tr>
-              <th>順位</th><th style="text-align:left">レーサー</th>
-              <th class="m4l-sep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
-              <th class="m4l-sep">TIME</th><th>Av.</th>
-            </tr>
-          </thead>
-          <tbody>
-          {% for r in m4laps_rows %}
-            <tr {% if r.entry_id %}onclick="openRacerStats({{ t.id }},{{ r.entry_id }})" style="cursor:pointer"{% endif %}>
-              <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
-              <td class="m4l-name">{{ r.name }}</td>
-              <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
-              <td class="m4l-num">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
-              <td class="m4l-num{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}{% endif %}">{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</td>
-              <td class="m4l-num{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}{% endif %}">{% if r.max_ms is not none %}{{ '%.2f'|format(r.max_ms) }}{% else %}—{% endif %}</td>
-              <td class="m4l-sep m4l-num{% if m4laps_best_ranks.lap.get(r.entry_id) %} b{{ m4laps_best_ranks.lap.get(r.entry_id) }}{% endif %}">{% if r.lap is not none %}{{ '%.3f'|format(r.lap) }}{% else %}—{% endif %}</td>
-              <td class="m4l-num{% if m4laps_best_ranks.lap_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.lap_avg.get(r.entry_id) }}{% endif %}">{% if r.lap_avg is not none %}{{ '%.2f'|format(r.lap_avg) }}{% else %}—{% endif %}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endset %}
     {# 公開HTMLでは M4LAPS表をインライン表示せず、下部「⚡LAPS」ボタンのモーダルで表示する（viewは従来どおりインライン）。 #}
     {% if is_public_html %}
-    <div id="m4-laps-modal-content" style="display:none">{{ _m4tbl }}</div>
+    <div id="m4-laps-modal-content" style="display:none">{{ m4laps_tbl() }}</div>
     {% else %}
     <div class="v-section" style="margin-top:12px">
       <div class="v-section-title">⚡ M4LAPS</div>
-      {{ _m4tbl }}
+      {{ m4laps_tbl() }}
     </div>
     {% endif %}
     {% endif %}

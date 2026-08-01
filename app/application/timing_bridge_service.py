@@ -231,13 +231,21 @@ async def apply_race_to_ht_group(db, *, race_id: int, group_id: int,
 
     # 突き合わせできた枠の中で1位から順位を振り直す（決勝ブラケットと同じ流儀）。
     # タイム（total_time/best_time）も保存して、決勝と同様に画面へ表示できるようにする。
+    # ※ total_time/best_time 列はマイグレーション（schema.py）で追加される。
+    #   未適用の旧DBでは列なしINSERTへフォールバックし、反映自体は必ず成立させる。
     await db.execute("DELETE FROM ht_slot_ranks WHERE group_id = ?", (group_id,))
     winner_slot_id = None
     for i, x in enumerate(sorted(matched, key=lambda mm: int(mm["rank"])), start=1):
-        await db.execute(
-            "INSERT INTO ht_slot_ranks (group_id, slot_id, rank, total_time, best_time) VALUES (?,?,?,?,?)",
-            (group_id, x["lane_id"], i, x.get("total_time"), x.get("best_time")),
-        )
+        try:
+            await db.execute(
+                "INSERT INTO ht_slot_ranks (group_id, slot_id, rank, total_time, best_time) VALUES (?,?,?,?,?)",
+                (group_id, x["lane_id"], i, x.get("total_time"), x.get("best_time")),
+            )
+        except Exception:
+            await db.execute(
+                "INSERT INTO ht_slot_ranks (group_id, slot_id, rank) VALUES (?,?,?)",
+                (group_id, x["lane_id"], i),
+            )
         if i == 1:
             winner_slot_id = x["lane_id"]
 

@@ -36,6 +36,10 @@
 .m4-reset-btn{width:44px;height:44px;font-size:12px;border:1px solid #f5b7b1;border-radius:5px;background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .m4-reset-btn:hover{background:#fbe3e0;border-color:#e9967f}
 .m4-reset-btn:active{background:#f7d3ce}
+/* M4LAPS ベスト表の1/2/3位（予選管理と同じ薄い色付き：紫/青/緑） */
+.qb-b1{background:#f3e8ff;color:#6b21a8;font-weight:bold;border-radius:3px;padding:1px 5px}
+.qb-b2{background:#dbeafe;color:#1e40af;font-weight:bold;border-radius:3px;padding:1px 5px}
+.qb-b3{background:#dcfce7;color:#166534;font-weight:bold;border-radius:3px;padding:1px 5px}
 .win-btn.sel{border-color:#27ae60;background:#eafaf1;color:#27ae60}
 .grp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:8px}
 /* ===== 上部アクションバー（sticky・全admin画面で共通） =====
@@ -662,6 +666,50 @@
 </div>
 {% if not loop.last %}<hr class="hr-divider">{% endif %}
 {% endfor %}
+
+{# ── ⚡M4LAPS ベスト表（最終ヒートの下・予選内の記録のみで集計）──
+   観覧の予選ポイント制と同じ列構成（順位/レーサー/TOTAL BEST/LAP BEST）。 #}
+{% if m4_on and m4laps_rows %}
+<div class="card" style="margin-top:16px">
+  <div class="card-header"><span>⚡ M4LAPS</span></div>
+  <div class="card-body" style="overflow-x:auto">
+    <table style="border-collapse:collapse;width:100%;font-size:13px;background:#fff">
+      <thead>
+        <tr>
+          <th colspan="2" style="border-bottom:1px solid #e9ecef"></th>
+          <th colspan="4" style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px;border-left:2px solid #dde3ea;border-bottom:1px solid #e9ecef">TOTAL BEST</th>
+          <th colspan="2" style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px;border-left:2px solid #dde3ea;border-bottom:1px solid #e9ecef">LAP BEST</th>
+        </tr>
+        <tr>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px">順位</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:left;padding:5px 8px">レーサー</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px;border-left:2px solid #dde3ea">TIME</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px">GAP</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px">Av.</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px">MAX</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px;border-left:2px solid #dde3ea">TIME</th>
+          <th style="background:#f4f6f8;color:#7f8c8d;font-weight:bold;font-size:12px;text-align:center;padding:5px 8px">Av.</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in m4laps_rows %}
+        <tr>
+          <td style="text-align:center;font-weight:bold;font-size:15px;padding:5px 8px;border-bottom:1px solid #eef1f4;color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#888{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
+          <td style="font-weight:bold;color:#2c3e50;white-space:nowrap;padding:5px 8px;border-bottom:1px solid #eef1f4">{{ r.name }}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;padding:5px 8px;border-left:2px solid #dde3ea;border-bottom:1px solid #eef1f4"><span{% if m4laps_best_ranks.total.get(r.entry_id) %} class="qb-b{{ m4laps_best_ranks.total.get(r.entry_id) }}"{% endif %}>{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</span></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;padding:5px 8px;border-bottom:1px solid #eef1f4">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;padding:5px 8px;border-bottom:1px solid #eef1f4"><span{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} class="qb-b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}"{% endif %}>{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</span></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;padding:5px 8px;border-bottom:1px solid #eef1f4"><span{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} class="qb-b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}"{% endif %}>{% if r.max_ms is not none %}{{ '%.2f'|format(r.max_ms) }}{% else %}—{% endif %}</span></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;padding:5px 8px;border-left:2px solid #dde3ea;border-bottom:1px solid #eef1f4"><span{% if m4laps_best_ranks.lap.get(r.entry_id) %} class="qb-b{{ m4laps_best_ranks.lap.get(r.entry_id) }}"{% endif %}>{% if r.lap is not none %}{{ '%.3f'|format(r.lap) }}{% else %}—{% endif %}</span></td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;padding:5px 8px;border-bottom:1px solid #eef1f4"><span{% if m4laps_best_ranks.lap_avg.get(r.entry_id) %} class="qb-b{{ m4laps_best_ranks.lap_avg.get(r.entry_id) }}"{% endif %}>{% if r.lap_avg is not none %}{{ '%.2f'|format(r.lap_avg) }}{% else %}—{% endif %}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div style="font-size:11px;color:#95a5a6;margin-top:6px">※ 予選（このヒートトーナメント内）で計測された記録のみ。TOTAL BEST TIME の速い順。</div>
+  </div>
+</div>
+{% endif %}
 
 <script>
 // ヒート単位でトーナメント表（SVG）を画像出力

@@ -69,14 +69,36 @@ async def racer_bests_for_tournament(db, tournament_id: int,
             (tournament_id,),
         ) as cur:
             race_rows = await cur.fetchall()
+
+    # 行を dict に正規化し、予選ヒートトーナメント（applied_ht_group_id）の計測も
+    # 「予選の記録」として常に合算する（include_finals に関わらず）。
+    # ※ 旧DBはカラム未追加の可能性があるため、失敗しても静かにスキップする。
+    race_rows = [{"race_id": r["race_id"], "heat_id": r["heat_id"],
+                  "group_id": r["group_id"], "ht_group_id": None}
+                 for r in race_rows]
+    try:
+        async with db.execute(
+            """SELECT tr.id AS race_id, tr.applied_ht_group_id AS ht_group_id
+                 FROM timing_races tr
+                 JOIN ht_groups hg ON hg.id = tr.applied_ht_group_id
+                 JOIN ht_rounds hr ON hr.id = hg.round_id
+                WHERE hr.tournament_id = ?""",
+            (tournament_id,),
+        ) as cur:
+            for r in await cur.fetchall():
+                race_rows.append({"race_id": r["race_id"], "heat_id": None,
+                                  "group_id": None, "ht_group_id": r["ht_group_id"]})
+    except Exception:
+        pass
     if not race_rows:
         return {}
 
     heat_ids = sorted({r["heat_id"] for r in race_rows if r["heat_id"] is not None})
     group_ids = sorted({r["group_id"] for r in race_rows if r["group_id"] is not None})
+    ht_group_ids = sorted({r["ht_group_id"] for r in race_rows if r["ht_group_id"] is not None})
 
-    # ("H", heat_id, lane_no) / ("G", group_id, slot_no) -> entry_id
-    # M4LAPS の start_lane は heat_lanes.lane_no / bracket_slots.slot_no と一致する。
+    # ("H", heat_id, lane_no) / ("G", group_id, slot_no) / ("T", ht_group_id, slot_no) -> entry_id
+    # M4LAPS の start_lane は heat_lanes.lane_no / bracket_slots.slot_no / ht_slots.slot_no と一致する。
     lane_to_entry: dict = {}
     if heat_ids:
         ph = ",".join("?" * len(heat_ids))
@@ -95,6 +117,15 @@ async def racer_bests_for_tournament(db, tournament_id: int,
         ) as cur:
             for r in await cur.fetchall():
                 lane_to_entry[("G", r["group_id"], r["slot_no"])] = r["entry_id"]
+    if ht_group_ids:
+        ph = ",".join("?" * len(ht_group_ids))
+        async with db.execute(
+            f"SELECT group_id, slot_no, entry_id FROM ht_slots "
+            f"WHERE group_id IN ({ph}) AND entry_id IS NOT NULL",
+            ht_group_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                lane_to_entry[("T", r["group_id"], r["slot_no"])] = r["entry_id"]
 
     # レイアウトごとの速度設定はキャッシュ（同じコースを何度も読まない）
     cfg_cache: dict = {}
@@ -112,11 +143,14 @@ async def racer_bests_for_tournament(db, tournament_id: int,
 
     for rr in race_rows:
         rid = rr["race_id"]
-        # 予選ヒート（H）か決勝グループ（G）かでレーン→エントリーの引き方が変わる
+        # 予選ヒート（H）／決勝グループ（G）／予選ヒートトーナメント（T）で
+        # レーン→エントリーの引き方が変わる
         if rr["heat_id"] is not None:
             _scope, _owner = "H", rr["heat_id"]
-        else:
+        elif rr["group_id"] is not None:
             _scope, _owner = "G", rr["group_id"]
+        else:
+            _scope, _owner = "T", rr["ht_group_id"]
         try:
             race, result = await build_race_result(db, rid)
         except Exception:
@@ -206,10 +240,30 @@ async def record_holders_for_tournament(db, tournament_id: int,
             (tournament_id,),
         ) as cur:
             race_rows = await cur.fetchall()
+
+    # 行を dict に正規化し、予選ヒートトーナメント（applied_ht_group_id）も
+    # 「予選の記録」として常に合算する（旧DBはカラム未追加の可能性があるため失敗は無視）。
+    race_rows = [{"race_id": r["race_id"], "heat_id": r["heat_id"],
+                  "group_id": r["group_id"], "ht_group_id": None}
+                 for r in race_rows]
+    try:
+        async with db.execute(
+            """SELECT tr.id AS race_id, tr.applied_ht_group_id AS ht_group_id
+                 FROM timing_races tr
+                 JOIN ht_groups hg ON hg.id = tr.applied_ht_group_id
+                 JOIN ht_rounds hr ON hr.id = hg.round_id
+                WHERE hr.tournament_id = ?""",
+            (tournament_id,),
+        ) as cur:
+            for r in await cur.fetchall():
+                race_rows.append({"race_id": r["race_id"], "heat_id": None,
+                                  "group_id": None, "ht_group_id": r["ht_group_id"]})
+    except Exception:
+        pass
     if not race_rows:
         return records
 
-    # レーン→エントリー（予選H：heat_lanes / 決勝G：bracket_slots）
+    # レーン→エントリー（予選H：heat_lanes / 決勝G：bracket_slots / 予選HT：ht_slots）
     lane_to_entry: dict = {}
     heat_ids = sorted({r["heat_id"] for r in race_rows if r["heat_id"] is not None})
     if heat_ids:
@@ -230,6 +284,16 @@ async def record_holders_for_tournament(db, tournament_id: int,
         ) as cur:
             for r in await cur.fetchall():
                 lane_to_entry[("G", r["group_id"], r["slot_no"])] = r["entry_id"]
+    ht_group_ids = sorted({r["ht_group_id"] for r in race_rows if r["ht_group_id"] is not None})
+    if ht_group_ids:
+        ph = ",".join("?" * len(ht_group_ids))
+        async with db.execute(
+            f"SELECT group_id, slot_no, entry_id FROM ht_slots "
+            f"WHERE group_id IN ({ph}) AND entry_id IS NOT NULL",
+            ht_group_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                lane_to_entry[("T", r["group_id"], r["slot_no"])] = r["entry_id"]
 
     _TOL = 1e-6
 
@@ -260,12 +324,15 @@ async def record_holders_for_tournament(db, tournament_id: int,
             rec["holders"].append((entry_id, heat_id))
 
     for rr in race_rows:
-        # 予選ヒート(H)か決勝グループ(G)かでレーン→エントリーの引き方が変わる。
-        # holders に入れる heat_id は予選のみ実値、決勝は None（ラベルは付けない）。
+        # 予選ヒート(H)／決勝グループ(G)／予選ヒートトーナメント(T)で
+        # レーン→エントリーの引き方が変わる。
+        # holders に入れる heat_id は予選ヒートのみ実値、それ以外は None（ラベルは付けない）。
         if rr["heat_id"] is not None:
             _scope, _owner, _hid = "H", rr["heat_id"], rr["heat_id"]
         elif rr["group_id"] is not None:
             _scope, _owner, _hid = "G", rr["group_id"], None
+        elif rr["ht_group_id"] is not None:
+            _scope, _owner, _hid = "T", rr["ht_group_id"], None
         else:
             continue
         try:

@@ -3366,11 +3366,24 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
                         "SELECT * FROM ht_results WHERE group_id=?", (g["id"],)
                     ) as cur:
                         result = await cur.fetchone()
-                    async with db.execute(
-                        "SELECT slot_id, rank FROM ht_slot_ranks WHERE group_id=? ORDER BY rank",
-                        (g["id"],),
-                    ) as cur:
-                        ranks = {r["slot_id"]: r["rank"] for r in await cur.fetchall()}
+                    # total_time はマイグレーション（schema.py）で追加された列。
+                    # 未適用の旧DBでも予選ページが開けるよう、失敗時は列なしで再取得する。
+                    try:
+                        async with db.execute(
+                            "SELECT slot_id, rank, total_time FROM ht_slot_ranks WHERE group_id=? ORDER BY rank",
+                            (g["id"],),
+                        ) as cur:
+                            _rank_rows = [dict(r) for r in await cur.fetchall()]
+                    except Exception:
+                        async with db.execute(
+                            "SELECT slot_id, rank FROM ht_slot_ranks WHERE group_id=? ORDER BY rank",
+                            (g["id"],),
+                        ) as cur:
+                            _rank_rows = [dict(r) for r in await cur.fetchall()]
+                    ranks = {r["slot_id"]: r["rank"] for r in _rank_rows}
+                    _times = {r["slot_id"]: r.get("total_time") for r in _rank_rows}
+                    for _s in slots:
+                        _s["total_time"] = _times.get(_s["slot_id"])
                     entry = {
                         "round": rnd,
                         "group": g,
@@ -3386,6 +3399,20 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
                 "rounds": sec_rounds,
                 "groups_data": sec_groups_data,
             })
+
+        # このヒート内の全スロットの total_time から最速3値を求め、各スロットに
+        # time_rank(1/2/3) を付ける（決勝ブラケットと同じ淡色ハイライト表示用）。同値は同順位。
+        _all_ht_times = sorted({
+            round(float(_s["total_time"]), 3)
+            for _e in groups_data_all for _s in _e["slots"]
+            if _s.get("total_time") is not None
+        })[:3]
+        _ht_time_rank_of = {v: i for i, v in enumerate(_all_ht_times, start=1)}
+        for _e in groups_data_all:
+            for _s in _e["slots"]:
+                _tt = _s.get("total_time")
+                _s["time_rank"] = (_ht_time_rank_of.get(round(float(_tt), 3))
+                                   if _tt is not None else None)
 
         adv_per = group_advance  # qual_group_advance が正（group_count=1でも同じ）
         advanced = await _ht_get_advanced(tid, hno, adv_per, db)
@@ -3513,6 +3540,80 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         _m4row = await cur.fetchone()
     m4_on = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
 
+    # ── ⚡M4LAPS ベスト表（最終ヒートの下に表示。予選内の記録のみで集計）──
+    # 観覧の予選ポイント制と同じ列構成（順位/レーサー/TOTAL BEST TIME/GAP/Av./MAX/LAP BEST TIME/Av.）。
+    # ⚠ この集計はページ表示の付加情報。どんな失敗（未マイグレーションDB・想定外データ等）でも
+    #    ページ本体は必ず表示する＝ブロック全体を握りつぶして空表示に落とす。
+    m4laps_rows = []
+    m4laps_best_ranks = {}
+    try:
+        from app.core.config import IS_CLOUD as _IS_CLOUD_HT
+        _m4_lic = bool(_IS_CLOUD_HT and getattr(request.state, "m4laps_licensed", False))
+        if m4_on and _m4_lic:
+            from app.application import timing_racer_best_service as _rbest
+            try:
+                _rbests = await _rbest.racer_bests_for_tournament(db, tid)  # 予選のみ
+            except Exception:
+                _rbests = {}
+            if _rbests:
+                _name_by_eid = {}
+                async with db.execute(
+                    """SELECT e.id AS entry_id, r.name FROM entries e
+                       JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?""",
+                    (tid,),
+                ) as cur:
+                    for _r in await cur.fetchall():
+                        _name_by_eid[_r["entry_id"]] = _r["name"]
+                _best_total_min = None
+                for _bm in _rbests.values():
+                    _tv = _bm.get("total")
+                    if _tv is not None and (_best_total_min is None or _tv < _best_total_min):
+                        _best_total_min = _tv
+                _LOWER = {"total", "lap"}
+
+                def _rank_map_v(metric, lower):
+                    vals = [(eid, bm[metric]) for eid, bm in _rbests.items()
+                            if bm.get(metric) is not None]
+                    vals.sort(key=lambda x: x[1], reverse=not lower)
+                    out = {}
+                    pos = 0
+                    prev = None
+                    for _i, (eid, v) in enumerate(vals, start=1):
+                        if prev is None or v != prev:
+                            pos = _i
+                            prev = v
+                        if pos > 3:
+                            break
+                        out[eid] = pos
+                    return out
+
+                for _m in ("total", "total_avg", "max_ms", "lap", "lap_avg"):
+                    m4laps_best_ranks[_m] = _rank_map_v(_m, _m in _LOWER)
+                _ordered = sorted(
+                    _rbests.items(),
+                    key=lambda kv: (kv[1].get("total") is None, kv[1].get("total") or 0.0),
+                )
+                for _i, (eid, bm) in enumerate(_ordered, start=1):
+                    _tot = bm.get("total")
+                    m4laps_rows.append({
+                        "rank": _i,
+                        "entry_id": eid,
+                        "name": _name_by_eid.get(eid, ""),
+                        "total": _tot,
+                        "gap": ((_tot - _best_total_min)
+                                if (_tot is not None and _best_total_min is not None) else None),
+                        "total_avg": bm.get("total_avg"),
+                        "max_ms": bm.get("max_ms"),
+                        "lap": bm.get("lap"),
+                        "lap_avg": bm.get("lap_avg"),
+                    })
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "[ht_top] M4LAPS best table build failed (page continues)")
+        m4laps_rows = []
+        m4laps_best_ranks = {}
+
     return templates.TemplateResponse("admin/heat_tournament.html", {
         "request": request,
         "t": t,
@@ -3524,6 +3625,8 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         "all_heats": all_heats,
         "all_standings": all_standings,
         "m4_on": m4_on,
+        "m4laps_rows": m4laps_rows,
+        "m4laps_best_ranks": m4laps_best_ranks,
     })
 
 

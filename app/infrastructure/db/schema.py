@@ -297,6 +297,19 @@ async def init_db(db_path: str = None):
             await db.commit()
             print("[DB] migration: ht_slots.seed_rank added")
 
+        # ht_slot_ranks に total_time / best_time を追加（M4LAPS反映のタイム表示用）。
+        # 手入力ではNULLのまま（従来どおり）。決勝ブラケット(bracket_slot_ranks)と同じ扱い。
+        async with db.execute("PRAGMA table_info(ht_slot_ranks)") as cur:
+            _hsr_cols = [r[1] for r in await cur.fetchall()]
+        if "total_time" not in _hsr_cols:
+            await db.execute("ALTER TABLE ht_slot_ranks ADD COLUMN total_time REAL")
+            await db.commit()
+            print("[DB] migration: ht_slot_ranks.total_time added")
+        if "best_time" not in _hsr_cols:
+            await db.execute("ALTER TABLE ht_slot_ranks ADD COLUMN best_time REAL")
+            await db.commit()
+            print("[DB] migration: ht_slot_ranks.best_time added")
+
         # bracket_rounds テーブル
         async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bracket_rounds'") as cur:
             if not await cur.fetchone():
