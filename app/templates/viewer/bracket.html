@@ -119,8 +119,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
   {# ⚡ M4LAPS RECORD HOLDERS（トーナメント表と ⚡M4LAPS の間）。予選ページと同一内容。
      id="m4-records-sec"：部分更新で二重化するため dedup 対象にする（先頭のみ残す）。 #}
+{% if final_results and ((record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader) %}
   <div id="m4-records-sec" class="v-section" style="margin-top:12px">
-{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
 <div class="v-m4rec">
   <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS</div>
   {% if record_holders and record_holders.overall %}
@@ -179,14 +179,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>{% endif %}
   {% endif %}
 </div>
-{% endif %}
   </div>
+{% endif %}
 
   {# ⚡ M4LAPS ベスト表（予選ページ viewer/qualifying と同一・決勝トーナメント表の下に表示） #}
   {# id="m4-laps-sec"：決勝表(.br-wrap)と同様、部分更新の二重化に備えたdedup対象マーカー #}
   {% if m4laps_active and m4laps_rows %}
-  <div id="m4-laps-sec" class="v-section" style="margin-top:12px">
-    <div class="v-section-title">⚡ M4LAPS</div>
+  {% set _m4tbl %}
     <div style="overflow-x:auto">
       <table class="m4l-table">
         <thead>
@@ -218,7 +217,16 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         </tbody>
       </table>
     </div>
+  {% endset %}
+  {# 公開HTMLでは M4LAPS表をインライン表示せず、下部「⚡LAPS」ボタンのモーダルで表示する（viewは従来どおりインライン）。 #}
+  {% if is_public_html %}
+  <div id="m4-laps-modal-content" style="display:none">{{ _m4tbl }}</div>
+  {% else %}
+  <div id="m4-laps-sec" class="v-section" style="margin-top:12px">
+    <div class="v-section-title">⚡ M4LAPS</div>
+    {{ _m4tbl }}
   </div>
+  {% endif %}
   {% endif %}
 
   {# 🏆 決勝進出レーサー（M4LAPSの下・トーナメント表の有無に関わらず常時表示） #}
@@ -358,6 +366,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   window.openRacerStats=function(tid,eid){
     var ov=document.getElementById('rs-overlay'),bd=document.getElementById('rs-body'),tt=document.getElementById('rs-title');
     if(!ov) return;
+    // rs-overlay を body 直下へ移動して .v-container(position:relative;z-index:2) のスタッキング文脈から出す。
+    // これで M4LAPSモーダル(m4-info-overlay z-index:9800)より前面(z-index:100000)に確実に表示される。
+    if(ov.parentNode !== document.body){ document.body.appendChild(ov); }
     tt.textContent='読み込み中…';
     bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">読み込み中…</div>';
     ov.style.display='flex';
