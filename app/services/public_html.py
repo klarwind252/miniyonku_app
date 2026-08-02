@@ -1469,6 +1469,9 @@ def _strip_blocks_after(html: str, after_marker: str, block_markers: list) -> st
             break
         html = html[:best] + html[end:]
     return html
+
+
+async def _upload_to_gcs(html: str, bucket: str) -> bool:
     """GCS の index.html に上書きアップロード"""
     try:
         from google.cloud import storage  # type: ignore

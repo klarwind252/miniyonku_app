@@ -1628,6 +1628,22 @@ async def bracket_confirm_finalists(
     finalists = confirmed_base + extra
     patterns = combinations_2_3(len(finalists))
 
+    # シード情報とパターン変数（メインの bracket ページと同じ算出。従来は未定義の
+    # まま参照しており、このルートは同率選択後に必ず NameError で 500 になっていた）。
+    seeded_ids, super_seeded_ids = await _get_seeded_ids(tid, db)
+    for f in finalists:
+        f["seeded"] = 2 if f["entry_id"] in super_seeded_ids else (
+            1 if f["entry_id"] in seeded_ids else 0)
+    _seeded_eids = {f["entry_id"] for f in finalists if f.get("seeded") in (1, 2)}
+    non_seeded_multi = [f for f in finalists if f.get("seeded") == 0]
+    non_seeded_single = [f for f in finalists
+                         if f.get("seeded") == 0 and f["entry_id"] not in _seeded_eids]
+    target_n_multi = len(non_seeded_multi)
+    target_n_single = len(non_seeded_single)
+    patterns_multi = combinations_2_3(target_n_multi) if target_n_multi >= 2 else []
+    patterns_single = combinations_2_3(target_n_single) if target_n_single >= 2 else []
+    target_n = target_n_multi
+
     return templates.TemplateResponse("admin/bracket.html", {
         "request": request,
         "t": t,
@@ -1647,6 +1663,13 @@ async def bracket_confirm_finalists(
         "tie_candidates": [],
         "needed_from_tie": 0,
         "confirmed_ids": ",".join(str(i) for i in selected_ids),
+        # テンプレート（パターン選択カード）が参照する変数。未定義だと Jinja の
+        # UndefinedError になるため、シード情報とあわせて必ず渡す。
+        "seeded_ids": list(seeded_ids),
+        "super_seeded_ids": list(super_seeded_ids),
+        "use_ht_seed": False,
+        "ht_seed_keys": [],
+        "ht_seeded_count": sum(1 for f in finalists if f.get("seeded")),
     })
 
 
