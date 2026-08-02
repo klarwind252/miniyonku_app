@@ -91,7 +91,10 @@ def _state_for(store_id: int) -> dict:
 async def host_sync(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """管理画面から現在URLを通知"""
     import time
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     url = body.get("url", "/view/")
     scroll_to = body.get("scroll_to", None)
     # /admin/... → /view/... に変換

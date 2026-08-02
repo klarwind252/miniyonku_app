@@ -135,7 +135,10 @@ async def layout_validate(
     body(JSON): {"elements": [{"kind":"SG","node_id":6}, {"kind":"SQ","node_id":0},
                               {"kind":"LC"}, ...]}
     """
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     raw = data.get("elements", [])
     layout = [LayoutElement(kind=e["kind"], node_id=e.get("node_id")) for e in raw]
     result = validate_layout(layout)
@@ -163,7 +166,10 @@ async def layout_save(
                  "elements":[...]}
     warning のみなら force=true で保存可。error があれば拒否。
     """
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     raw = data.get("elements", [])
     name = (data.get("name") or "コース").strip()
     try:

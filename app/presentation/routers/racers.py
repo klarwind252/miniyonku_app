@@ -3,7 +3,7 @@ import csv
 import io
 
 import aiosqlite
-from fastapi import APIRouter, Request, Depends, Form, Query, UploadFile, File
+from fastapi import APIRouter, Request, Depends, Form, Query, UploadFile, File, HTTPException
 from fastapi.responses import (
     HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse,
 )
@@ -184,7 +184,10 @@ async def import_preview(file: UploadFile = File(...),
 
 @router.post("/import-commit")
 async def import_commit(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     rows = body.get("rows", [])
     return JSONResponse(await RacerService(db).import_commit(rows))
 

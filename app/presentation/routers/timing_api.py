@@ -62,7 +62,10 @@ async def create_race(
                  "green_t_us":int?}
     """
     _check_token(x_timing_token)
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     repo = TimingRaceRepository(db)
     race_id = await repo.create_race(
         heat_tag=data.get("heat_tag"),
@@ -93,7 +96,10 @@ async def set_race_green(
     戻り値: {"updated": 1} / レースが無ければ 404
     """
     _check_token(x_timing_token)
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     green = data.get("green_t_us")
     if green is None:
         raise HTTPException(status_code=400, detail="green_t_us required")
@@ -120,7 +126,10 @@ async def post_events(
     戻り値: {"inserted":n, "duplicate":m}
     """
     _check_token(x_timing_token)
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     events = data.get("events", [])
     repo = TimingRaceRepository(db)
 
@@ -521,7 +530,10 @@ async def create_sample_race(
     if not sample_svc.SAMPLE_ENABLED:
         raise HTTPException(status_code=404)
 
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     lrepo = TimingLayoutRepository(db)
     rrepo = TimingRaceRepository(db)
 

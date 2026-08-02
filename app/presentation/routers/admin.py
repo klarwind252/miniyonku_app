@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import aiosqlite
@@ -650,7 +650,10 @@ async def save_day_type(request: Request, db: aiosqlite.Connection = Depends(get
     """当日の料金区分を保存する"""
     from fastapi.responses import JSONResponse as _JSONResponse
     from datetime import date as _date
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     day_type = body.get("day_type", "weekday")
     today = _date.today().isoformat()
     if day_type == "__auto__":
@@ -687,7 +690,10 @@ async def save_telop(request: Request, db: aiosqlite.Connection = Depends(get_db
     """テロップを保存する。action='show' で表示（本文必須）、action='clear' で消去。"""
     from fastapi.responses import JSONResponse as _JSONResponse
     from datetime import datetime as _dt
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     action = (body.get("action") or "show").strip()
     text = (body.get("text") or "").strip()[:200]   # 帯なので程々の長さに切り詰め
     active = "0" if (action == "clear" or not text) else "1"
@@ -1346,7 +1352,10 @@ async def toggle_public_html(request: Request, db: aiosqlite.Connection = Depend
         )
         await db.commit()
         return JSONResponse({"ok": True, "enabled": False, "locked": True})
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
     want_enable = body.get("enabled", False)
 
     # ONにしようとしている場合は必須項目チェック
