@@ -64,7 +64,18 @@ async def _collect_race_rows(db, tournament_id: int, include_finals: bool) -> li
                                   "group_id": None, "ht_group_id": r["ht_group_id"]})
     except Exception:
         pass
-    return race_rows
+    # 安全網：1レースは必ず1回だけ走査する。反映操作の履歴によっては heat_id と
+    # applied_(ht_)group_id が同時に残り得るため、race_id で重複排除する
+    # （先勝ち＝上の並びどおり 予選H → 決勝G → 予選HT の優先）。重複を許すと
+    # 同じ記録が別のレーン対応表で二重集計され、RECORD HOLDERS が壊れる。
+    _seen: set = set()
+    _uniq: list[dict] = []
+    for _row in race_rows:
+        if _row["race_id"] in _seen:
+            continue
+        _seen.add(_row["race_id"])
+        _uniq.append(_row)
+    return _uniq
 
 
 async def _build_lane_to_entry(db, race_rows: list[dict]) -> dict:

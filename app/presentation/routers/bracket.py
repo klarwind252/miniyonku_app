@@ -1608,6 +1608,8 @@ async def bracket_confirm_finalists(
     """同率選択後の確認→パターン選択画面"""
     async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
         t = await cur.fetchone()
+    if not t:
+        return RedirectResponse(url="/admin/tournaments/")
 
     from app.routers.tournaments import calc_finalists as calc_n
     t_dict = dict(t)
