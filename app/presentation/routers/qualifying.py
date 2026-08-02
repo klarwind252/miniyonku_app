@@ -1071,9 +1071,12 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
 
     # レーサー別ベスト（予選順位表に表示）。反映済みヒートのみ対象・1パス集計。
     from app.application import timing_racer_best_service as rbest_svc
+    # M4LAPS 一括スキャン（予選のみ）。このページのベスト表と RECORD HOLDERS で共有する。
+    _m4_scan_q = None
     try:
-        racer_bests = await rbest_svc.racer_bests_for_tournament(db, tid) \
-            if IS_CLOUD and getattr(request.state, "m4laps_licensed", False) else {}
+        if IS_CLOUD and getattr(request.state, "m4laps_licensed", False):
+            _m4_scan_q = await rbest_svc.scan_tournament_metrics(db, tid)
+        racer_bests = _m4_scan_q["bests"] if _m4_scan_q else {}
     except Exception:
         racer_bests = {}
     # 実際に記録のある最大セクター番号（列を出す範囲を決める）
@@ -1129,11 +1132,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     for _e in entries:
         _name_by_entry.setdefault(_e["entry_id"], _e["name"])
     _heat_labels = qrec.build_heat_labels(heats)
-    try:
-        _rh_raw = await rbest_svc.record_holders_for_tournament(db, tid) \
-            if IS_CLOUD and getattr(request.state, "m4laps_licensed", False) else None
-    except Exception:
-        _rh_raw = None
+    # 上の一括スキャン結果を再利用（再走査しない）
+    _rh_raw = _m4_scan_q["records"] if _m4_scan_q else None
     record_holders = qrec.format_records_display(_rh_raw, _name_by_entry, _heat_labels)
 
     # 🎯 POINT LEADER：予選順位1位（＝最多ポイント）。同率でも1名に絞る（共通ロジック）。
@@ -3345,41 +3345,70 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         section_nos = sorted(set(r["section_no"] for r in rounds)) if rounds else []
         sections_data = []
         groups_data_all = []
+        # ── バッチ取得（N+1解消）───────────────────────────────
+        # 従来はグループごとに groups/slots/results/ranks の4クエリを
+        # ネストループ内で発行していた（＝グループ数×4クエリ）。ヒート単位の
+        # IN句一括取得（計4クエリ）に変更し、Python側でグルーピングする。
+        groups_by_round: dict = {}
+        slots_by_group: dict = {}
+        results_by_group: dict = {}
+        rankrows_by_group: dict = {}
+        _round_ids = [r["id"] for r in rounds]
+        if _round_ids:
+            _phr = ",".join("?" * len(_round_ids))
+            async with db.execute(
+                f"SELECT * FROM ht_groups WHERE round_id IN ({_phr}) ORDER BY round_id, group_no",
+                _round_ids,
+            ) as cur:
+                for _g in await cur.fetchall():
+                    _gd = dict(_g)
+                    groups_by_round.setdefault(_gd["round_id"], []).append(_gd)
+            _gids = [g["id"] for gl in groups_by_round.values() for g in gl]
+            if _gids:
+                _phg = ",".join("?" * len(_gids))
+                async with db.execute(
+                    f"""SELECT hs.group_id, hs.id as slot_id, hs.slot_no, hs.entry_id, r.name
+                       FROM ht_slots hs LEFT JOIN entries e ON e.id=hs.entry_id
+                       LEFT JOIN racers r ON r.id=e.racer_id
+                       WHERE hs.group_id IN ({_phg}) ORDER BY hs.group_id, hs.slot_no""",
+                    _gids,
+                ) as cur:
+                    for _s in await cur.fetchall():
+                        _sd = dict(_s)
+                        slots_by_group.setdefault(_sd.pop("group_id"), []).append(_sd)
+                async with db.execute(
+                    f"SELECT * FROM ht_results WHERE group_id IN ({_phg})", _gids,
+                ) as cur:
+                    for _r in await cur.fetchall():
+                        _rd = dict(_r)
+                        results_by_group.setdefault(_rd["group_id"], _rd)
+                # total_time はマイグレーション（schema.py）で追加された列。
+                # 未適用の旧DBでも予選ページが開けるよう、失敗時は列なしで再取得する。
+                try:
+                    async with db.execute(
+                        f"SELECT group_id, slot_id, rank, total_time FROM ht_slot_ranks "
+                        f"WHERE group_id IN ({_phg}) ORDER BY group_id, rank",
+                        _gids,
+                    ) as cur:
+                        _all_rank_rows = [dict(r) for r in await cur.fetchall()]
+                except Exception:
+                    async with db.execute(
+                        f"SELECT group_id, slot_id, rank FROM ht_slot_ranks "
+                        f"WHERE group_id IN ({_phg}) ORDER BY group_id, rank",
+                        _gids,
+                    ) as cur:
+                        _all_rank_rows = [dict(r) for r in await cur.fetchall()]
+                for _rr in _all_rank_rows:
+                    rankrows_by_group.setdefault(_rr["group_id"], []).append(_rr)
+
         for sec_no in section_nos:
             sec_rounds = [r for r in rounds if r["section_no"] == sec_no]
             sec_groups_data = []
             for rnd in sec_rounds:
-                async with db.execute(
-                    "SELECT * FROM ht_groups WHERE round_id=? ORDER BY group_no", (rnd["id"],)
-                ) as cur:
-                    groups = [dict(r) for r in await cur.fetchall()]
-                for g in groups:
-                    async with db.execute(
-                        """SELECT hs.id as slot_id, hs.slot_no, hs.entry_id, r.name
-                           FROM ht_slots hs LEFT JOIN entries e ON e.id=hs.entry_id
-                           LEFT JOIN racers r ON r.id=e.racer_id
-                           WHERE hs.group_id=? ORDER BY hs.slot_no""",
-                        (g["id"],),
-                    ) as cur:
-                        slots = [dict(r) for r in await cur.fetchall()]
-                    async with db.execute(
-                        "SELECT * FROM ht_results WHERE group_id=?", (g["id"],)
-                    ) as cur:
-                        result = await cur.fetchone()
-                    # total_time はマイグレーション（schema.py）で追加された列。
-                    # 未適用の旧DBでも予選ページが開けるよう、失敗時は列なしで再取得する。
-                    try:
-                        async with db.execute(
-                            "SELECT slot_id, rank, total_time FROM ht_slot_ranks WHERE group_id=? ORDER BY rank",
-                            (g["id"],),
-                        ) as cur:
-                            _rank_rows = [dict(r) for r in await cur.fetchall()]
-                    except Exception:
-                        async with db.execute(
-                            "SELECT slot_id, rank FROM ht_slot_ranks WHERE group_id=? ORDER BY rank",
-                            (g["id"],),
-                        ) as cur:
-                            _rank_rows = [dict(r) for r in await cur.fetchall()]
+                for g in groups_by_round.get(rnd["id"], []):
+                    slots = slots_by_group.get(g["id"], [])
+                    result = results_by_group.get(g["id"])
+                    _rank_rows = rankrows_by_group.get(g["id"], [])
                     ranks = {r["slot_id"]: r["rank"] for r in _rank_rows}
                     _times = {r["slot_id"]: r.get("total_time") for r in _rank_rows}
                     for _s in slots:
@@ -3388,7 +3417,7 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
                         "round": rnd,
                         "group": g,
                         "slots": slots,
-                        "result": dict(result) if result else None,
+                        "result": result,
                         "ranks": ranks,
                     }
                     sec_groups_data.append(entry)

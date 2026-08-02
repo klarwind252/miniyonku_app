@@ -693,10 +693,11 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
                     "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?", (tid,)) as cur:
                     for _r in await cur.fetchall():
                         _nm[_r["eid"]] = _r["name"]
-                _rh = await _rbh.record_holders_for_tournament(db, tid, include_finals=True)
+                _scan_t = await _rbh.scan_tournament_metrics(db, tid, include_finals=True)
+                _rh = _scan_t["records"]
                 _disp = _qrh.format_records_display(_rh, _nm, {})
                 _best_by = {eid: bm.get("total") for eid, bm
-                            in (await _rbh.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
+                            in _scan_t["bests"].items()}
                 _pl = None
                 _pl_eid = None
                 if _qt == "point":

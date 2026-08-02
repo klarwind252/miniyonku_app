@@ -1368,8 +1368,19 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     from app.core.config import IS_CLOUD as _IS_CLOUD_B
     from app.application import timing_racer_best_service as _rbest_svc
     _m4_lic = bool(_IS_CLOUD_B and getattr(request.state, "m4laps_licensed", False))
+    # M4LAPS 一括スキャン（このページ内で1回だけ実行し、以降は結果を再利用）。
+    # ベスト表／RECORD HOLDERS パネルが bests・records を共有する（従来は
+    # 同じ全レース走査を3回繰り返していた）。
+    _m4_scan_memo: dict = {}
+
+    async def _get_m4_scan():
+        if "v" not in _m4_scan_memo:
+            _m4_scan_memo["v"] = await _rbest_svc.scan_tournament_metrics(
+                db, tid, include_finals=True)
+        return _m4_scan_memo["v"]
+
     try:
-        racer_bests = await _rbest_svc.racer_bests_for_tournament(db, tid, include_finals=True) if _m4_lic else {}
+        racer_bests = (await _get_m4_scan())["bests"] if _m4_lic else {}
     except Exception:
         racer_bests = {}
     # 記録のある最大セクター番号（列を出す範囲）
@@ -1419,19 +1430,12 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     ) as cur:
         for _r in await cur.fetchall():
             _name_by_eid_b[_r["entry_id"]] = _r["name"]
-    # 予選完走率（予選のみ。決勝は含めない）：point/order は _calc_standings の race/finish から
+    # 予選完走率（予選のみ。決勝は含めない）：
+    # 予選タイプに依存しない統一集計（通常ヒート＋予選HTを件数合算してから％化）。
+    # point/order・heat_tournament系・heat_roundrobin（混在型）のすべてをカバーする。
     _fr_by_b = {}
     try:
-        _qt_fr = dict(t).get("qualifying_type")
-        if _qt_fr in ("point", "order"):
-            from app.routers.qualifying import _calc_standings as _csr_b
-            for _s in [dict(x) for x in await _csr_b(tid, db)]:
-                _rc = _s.get("race_count") or 0
-                _fc = _s.get("finish_count") or 0
-                _fr_by_b[_s.get("entry_id")] = (int(_fc / _rc * 100) if _rc > 0 else None)
-        elif _qt_fr in HEAT_TOURNAMENT_TYPES:
-            # ヒートトーナメント：予選（HT）の計測から算出（決勝は含めない）
-            _fr_by_b = await _rbest_svc.ht_finish_rates(db, tid)
+        _fr_by_b = await _rbest_svc.qualifying_finish_rates(db, tid)
     except Exception:
         _fr_by_b = {}
     # ベストタイム順（TOTAL 昇順、記録なしは末尾）で 1..N
@@ -1457,13 +1461,12 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     if qbest_rows and dict(t).get("use_m4laps", 1) != 0:
         try:
             from app.application import qualifying_records as _qrb
-            from app.application import timing_racer_best_service as _rbb
-            _rhb = await _rbb.record_holders_for_tournament(db, tid, include_finals=True)
+            _rhb = (await _get_m4_scan())["records"]
             record_holders = _qrb.format_records_display(_rhb, _name_by_eid_b, {})
             _qtb = dict(t).get("qualifying_type")
             _plb_eid = None
             _btb = {eid: bm.get("total") for eid, bm
-                    in (await _rbb.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
+                    in (await _get_m4_scan())["bests"].items()}
             if _qtb == "point":
                 from app.routers.qualifying import _calc_standings as _csb
                 _qstb = [dict(s) for s in await _csb(tid, db)]
@@ -4784,10 +4787,11 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
                 "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?", (tid,)) as cur:
                 for _r in await cur.fetchall():
                     _nm[_r["eid"]] = _r["name"]
-            _rh = await _rbh.record_holders_for_tournament(db, tid, include_finals=True)
+            _scan_t = await _rbh.scan_tournament_metrics(db, tid, include_finals=True)
+            _rh = _scan_t["records"]
             _disp = _qrh.format_records_display(_rh, _nm, {})
             _best_by = {eid: bm.get("total") for eid, bm
-                        in (await _rbh.racer_bests_for_tournament(db, tid, include_finals=True)).items()}
+                        in _scan_t["bests"].items()}
             _pl = None
             _pl_eid = None
             if _qt == "point":
