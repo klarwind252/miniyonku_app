@@ -76,7 +76,8 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             target_laps  INTEGER NOT NULL DEFAULT 3,
             green_t_us   INTEGER,               -- 緑時刻（NULLなら走行式・DA4）
             heat_id      INTEGER,               -- 将来：既存トーナメントheatへの橋渡し用
-            created_at   TEXT DEFAULT (datetime('now','localtime'))
+            created_at   TEXT DEFAULT (datetime('now','localtime')),
+            client_key   TEXT                   -- レース生成の冪等キー（任意・GW再送対策）
         );
 
         -- 通過イベント（GWが記録した材料・DA3）。冪等キーは D12。
@@ -239,4 +240,16 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             (node_id, kind, label),
         )
 
+
+    # 既存DBへの追加列（client_key）: レース生成の冪等化。
+    try:
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
+        if "client_key" not in cols:
+            await db.execute("ALTER TABLE timing_races ADD COLUMN client_key TEXT")
+    except Exception:
+        pass
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_timing_races_client_key "
+        "ON timing_races(client_key) WHERE client_key IS NOT NULL"
+    )
     await db.commit()

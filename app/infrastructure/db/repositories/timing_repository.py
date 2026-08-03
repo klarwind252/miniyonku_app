@@ -166,14 +166,60 @@ class TimingRaceRepository:
         layout_id: int | None,
         target_laps: int,
         green_t_us: int | None,
+        client_key: str | None = None,
     ) -> int:
+        # 冪等キー（任意）: GWが (device_id:boot_id:heat_tag) 等を送ってきた場合、
+        # 200応答の消失→再送で同一ヒートのレースが二重生成される事故を防ぐ。
+        # 旧ファーム（キーなし）は従来どおり毎回新規作成（後方互換）。
+        if client_key:
+            async with self.db.execute(
+                "SELECT id FROM timing_races WHERE client_key = ?", (client_key,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row:
+                return row["id"] if hasattr(row, "keys") else row[0]
         cur = await self.db.execute(
-            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us) "
-            "VALUES (?, ?, ?, ?)",
-            (heat_tag, layout_id, target_laps, green_t_us),
+            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (heat_tag, layout_id, target_laps, green_t_us, client_key),
         )
         await self.db.commit()
         return cur.lastrowid
+
+    async def insert_events_batch(self, race_id: int, events: list) -> tuple[int, int]:
+        """イベント一括挿入（単一トランザクション）。戻り値 (inserted, duplicate)。
+
+        従来の insert_event はイベント1件ごとに commit しており、GWの1バッチ
+        （最大数十件）で数十回の fsync が走っていた。バッチ全体を1Txにまとめ、
+        入力検証（lane範囲・必須キー）もここで行う。
+        """
+        inserted = 0
+        duplicate = 0
+        try:
+            for ev in events:
+                lane = int(ev["lane"])
+                if not (1 <= lane <= 8):
+                    raise ValueError(f"lane out of range: {lane}")
+                cur = await self.db.execute(
+                    "INSERT OR IGNORE INTO timing_events "
+                    "(race_id, device_id, src, src_boot_id, seq, lane, t_us, t_us_b, quality) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (race_id, str(ev["device_id"]), int(ev["src"]),
+                     int(ev["src_boot_id"]), int(ev["seq"]), lane,
+                     int(ev["t_us"]), ev.get("t_us_b"), int(ev.get("quality", 0))),
+                )
+                if cur.rowcount > 0:
+                    inserted += 1
+                else:
+                    duplicate += 1
+            await self.db.commit()
+        except Exception:
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+            raise
+        return inserted, duplicate
 
     async def set_green_t_us(self, race_id: int, green_t_us: int) -> int:
         """既存レースに緑時刻を後付けする（F1式へ切り替える）。

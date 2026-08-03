@@ -34,10 +34,23 @@ from app.presentation.routers.m4laps_guard import require_m4laps
 router = APIRouter()
 
 TIMING_TOKEN = os.environ.get("TIMING_TOKEN", "")
+# クラウド公開時にトークン未設定だと、GW受信口が事実上の無認証公開になる。
+# 既存デプロイを壊さないため既定は警告のみ。TIMING_TOKEN_REQUIRED=1 で強制拒否。
+_TOKEN_REQUIRED = os.environ.get("TIMING_TOKEN_REQUIRED", "0") == "1"
+try:
+    from app.core.config import IS_CLOUD as _IS_CLOUD_T
+    if _IS_CLOUD_T and not TIMING_TOKEN:
+        print("[timing] WARNING: クラウド版で TIMING_TOKEN 未設定。"
+              "/api/timing/* が無認証で公開されています。環境変数 TIMING_TOKEN を設定してください。", flush=True)
+except Exception:
+    pass
 
 
 def _check_token(x_timing_token: str | None):
-    """TIMING_TOKEN が設定されていれば照合。未設定なら素通し。"""
+    """TIMING_TOKEN が設定されていれば照合。未設定なら素通し
+    （TIMING_TOKEN_REQUIRED=1 のときは未設定を拒否＝安全側強制）。"""
+    if _TOKEN_REQUIRED and not TIMING_TOKEN:
+        raise HTTPException(status_code=503, detail="TIMING_TOKEN not configured")
     if TIMING_TOKEN and x_timing_token != TIMING_TOKEN:
         raise HTTPException(status_code=401, detail="invalid timing token")
 
@@ -71,6 +84,7 @@ async def create_race(
         heat_tag=data.get("heat_tag"),
         layout_id=data.get("layout_id"),
         target_laps=int(data.get("target_laps") or 3),
+        client_key=(str(data.get("client_key")) if data.get("client_key") else None),
         green_t_us=data.get("green_t_us"),
     )
     return JSONResponse({"race_id": race_id})
@@ -137,25 +151,24 @@ async def post_events(
     if race is None:
         raise HTTPException(status_code=404, detail="race not found")
 
-    inserted = 0
-    duplicate = 0
-    for ev in events:
-        try:
-            is_new = await repo.insert_event(race_id, ev)
-        except (KeyError, ValueError, TypeError) as e:
-            raise HTTPException(status_code=400, detail=f"bad event: {e}")
-        if is_new:
-            inserted += 1
-        else:
-            duplicate += 1
+    if not isinstance(events, list):
+        raise HTTPException(status_code=400, detail="events must be a list")
+    if len(events) > 2000:
+        # GWの1バッチは最大でも数百件（1レース=3レーン×周回×ゲート数）。
+        # 上限超過は不正または暴走とみなし、メモリ・Tx肥大を防ぐ。
+        raise HTTPException(status_code=413, detail="too many events in one batch")
+    try:
+        inserted, duplicate = await repo.insert_events_batch(race_id, events)
+    except (KeyError, ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"bad event: {e}")
 
     # 速度・平均を計算して保存（都度計算をやめ、受信時に書き込む）。
     # ⚠ ベスト更新より先に保存する（ベストは保存値を読むため）。
     try:
         await speed_store.compute_and_store_speeds(db, race_id)
         await db.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[timing] speed store failed race={race_id}: {type(e).__name__}: {e}", flush=True)
 
     # ベスト記録を更新（保存済みの速度を使う）。
     # 失敗しても受信自体は成功として扱う（記録の取りこぼしを防ぐため）
@@ -164,8 +177,8 @@ async def post_events(
         bests = await best_svc.update_for_race(
             db, race_id, build_race_result, *(await _speed_fns_for_race(db, race_id))
         )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[timing] bests update failed race={race_id}: {type(e).__name__}: {e}", flush=True)
 
     return JSONResponse({"inserted": inserted, "duplicate": duplicate,
                          "bests_updated": bests})
