@@ -97,6 +97,52 @@ struct RawEvent {
 static const char* SPOOL = "/spool.jsonl";
 static uint32_t s_race_id = 0;
 
+// ---- 排他運用（GW/RC/SG は各ペア1台のみ・在席テーブル）----------------------
+//  方針（本改修）：GW6/7・RC8/9・SG10/11 は「どちらか1台だけ電源ON」で運用する。
+//    同種が2台“生きている”ことを検知したら排他ロックし、新規スタートを受け付けない
+//    （既存の「GW2台オン検知」思想＝docs/14 §14.11 を RC/SG にも統合）。
+//    片方の電源を切れば PRESENCE_TIMEOUT_MS 経過後に警告が自動で消え、待機へ戻る。
+//  GWはハブとして全機の受信でsrcを見て在席を記録する。GW同士は自分の在席ビーコン
+//    （tick_gw_presence）で互いに検知する。RC/SGは画面を持たないためGWのTFTへ代理表示。
+static constexpr uint32_t PRESENCE_TIMEOUT_MS = 10000;  // 10秒無受信で離脱扱い（docs/11.4）
+static constexpr uint32_t GW_BEACON_MS        = 2000;   // GW自身の在席ビーコン周期
+static uint32_t s_last_seen[proto::NODE_ID_MAX + 1] = {0};
+static bool     s_ever_seen[proto::NODE_ID_MAX + 1] = {false};
+static uint8_t  s_active_sg_id = 10;   // 現在通電中のシグナルID（10 or 11）＝COMMAND送信先
+
+// 受信のたびに送信元node_idの在席時刻を更新する（0xFE/0xFFは無視）。
+static inline void mark_seen(uint8_t src) {
+  if (src > proto::NODE_ID_MAX) return;
+  s_last_seen[src] = millis();
+  s_ever_seen[src] = true;
+}
+static inline bool node_alive(uint8_t id) {
+  return s_ever_seen[id] && (millis() - s_last_seen[id] <= PRESENCE_TIMEOUT_MS);
+}
+
+// 排他状態を評価。g_status.gw_dup/rc_dup/sg_dup を更新し、いずれか競合なら true。
+//  あわせて“生きているSG”を s_active_sg_id に反映し、予備SG単独運用でも光るようにする。
+static bool eval_exclusivity() {
+  bool gw_peer = false; int rc = 0, sg = 0; int last_sg = -1;
+  for (uint8_t id = 0; id <= proto::NODE_ID_MAX; id++) {
+    if (!node_alive(id)) continue;
+    switch (proto::kind_of(id)) {
+      case proto::KIND_GW: if (id != NODE_ID) gw_peer = true; break;  // 自分以外のGW＝重複
+      case proto::KIND_RC: rc++; break;
+      case proto::KIND_SG: sg++; last_sg = id; break;
+      default: break;   // SQ等は排他対象外
+    }
+  }
+  if (last_sg >= 0) s_active_sg_id = (uint8_t)last_sg;   // 生存SGへCMDを向ける
+  disp::g_status.gw_dup = gw_peer;
+  disp::g_status.rc_dup = (rc >= 2);
+  disp::g_status.sg_dup = (sg >= 2);
+  return gw_peer || (rc >= 2) || (sg >= 2);
+}
+static inline bool exclusivity_conflict() {
+  return disp::g_status.gw_dup || disp::g_status.rc_dup || disp::g_status.sg_dup;
+}
+
 // ---- WiFi ------------------------------------------------------------------
 //  #9保険：接続確立後に一度だけDNS解決を試し、s_dns_ok を決める。
 //  DNS明示（8.8.8.8/1.1.1.1）は、ルーターがESP32へDNSを配らない会場対策。
@@ -175,13 +221,18 @@ static bool set_race_green(uint32_t rid, uint64_t green_us) {
 static void signal_cmd(uint8_t code) {
   proto::CommandBody c = {};
   c.code = code;
-  mesh::send(proto::PT_COMMAND, 10 /*SG10*/, &c, sizeof(c));
+  // 生きているシグナル（SG10 or 予備SG11）へ送る。既定はSG10。
+  mesh::send(proto::PT_COMMAND, s_active_sg_id, &c, sizeof(c));
 }
 
 // ---- スタートシーケンス制御 -----------------------------------------------
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
   if (s_state != ST_IDLE) return;             // 二度押し無視
+  if (exclusivity_conflict()) {               // GW/RC/SG重複中は新規スタートを受け付けない
+    Serial.println("[SEQ] blocked: GW/RC/SG duplicate active (power off one)");
+    return;
+  }
   // #19+#20: 演出のみ即実行。HTTPS（レース作成）はここでは一切しない。
   //  本関数はESP-NOW受信コールバック文脈からも呼ばれるため、ブロッキングI/O禁止。
   //  レース作成は tick_race_registration()（loop文脈）が拾う。
@@ -316,6 +367,7 @@ static void spool_append(const RawEvent& e) {
 // ---- 受信ハンドラ ----------------------------------------------------------
 static void on_recv(const proto::PktHeader& h, const uint8_t* body,
                     int body_len, const uint8_t*) {
+  mark_seen(h.src);                    // 在席記録（排他検知の土台・全種別で更新）
   switch (h.type) {
     case proto::PT_SYNC_REQ: {
       if (body_len >= (int)sizeof(proto::SyncBody)) {
@@ -492,6 +544,16 @@ static void tick_buttons() {
   } else { gray_down = 0; }
 }
 
+// ---- GW自身の在席ビーコン（相手GWが「GW2台」を検知できるように）------------
+//  GWはRC/SGのように定期ハートビートを出していなかったため、相手GWから見えない。
+//  ここで自分の在席をブロードキャストし、GW6⇔GW7 が相互に重複検知できるようにする。
+static void tick_gw_presence() {
+  static uint32_t last = 0;
+  if (millis() - last < GW_BEACON_MS) return;
+  last = millis();
+  mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, nullptr, 0);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -523,7 +585,20 @@ static void tick_display() {
   // ステータス更新（NODE充足は残課題#8で実数へ。今はJOIN実数の反映口のみ用意）
   disp::g_status.wifi_ok = (WiFi.status() == WL_CONNECTED);
   disp::g_status.ch      = ESPNOW_CHANNEL;
-  // beam_ok / node_have / node_need / unsent / gw_dup は各機能側から順次代入予定。
+  // beam_ok / node_have / node_need / unsent は各機能側から順次代入予定。
+
+  // 排他検知（GW/RC/SG）。gw_dup/rc_dup/sg_dup を更新し、生存SGも確定する。
+  bool conflict = eval_exclusivity();
+  if (conflict) {
+    // 排他エラーは通常画面より優先して全面表示（優先順位：GW > SG > RC）。
+    disp::ErrItem errs[3]; int cnt = 0;   // 既定でarg_i=0/label空。kindのみ下で設定。
+    if (disp::g_status.gw_dup) errs[cnt++].kind = disp::ERR_GW_DUP;
+    if (disp::g_status.sg_dup) errs[cnt++].kind = disp::ERR_SG_DUP;
+    if (disp::g_status.rc_dup) errs[cnt++].kind = disp::ERR_RC_DUP;
+    disp::draw_error(errs, cnt);
+    disp::commit();               // ステータスバーを重ねて転送
+    return;
+  }
 
   switch (s_state) {
     case ST_IDLE:
@@ -545,6 +620,7 @@ static void tick_display() {
 
 void loop() {
   tick_buttons();
+  tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_sequence();
   tick_race_registration();   // #20: レース作成/green後付けをloop文脈で非同期実行
 

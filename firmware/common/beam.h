@@ -26,8 +26,9 @@ static const int PIN_B[LANES] = {19, 21, 22};   // L1, L2, L3
 
 // ---- しきい値 --------------------------------------------------------------
 //  最短遮断は 2.0〜8.0 m/s で 19〜75ms（docs/01）。跳ねはµsオーダ。
+//  A-B穴間隔は 30mm（docs/05・20260804変更確定）。最低想定 3m/s → A→B は最大10ms。
 static constexpr uint32_t DEBOUNCE_US  = 1500;   // 跳ね除去（遮断幅19msより十分小）
-static constexpr uint32_t PAIR_WAIT_US = 5000;   // A→B待ち猶予。超えたら片ビーム(q=1)
+static constexpr uint32_t PAIR_WAIT_US = 12000;  // A→B待ち猶予(30mm/3m/s=10ms+余裕)。超えたら片ビーム(q=1)
 
 // ---- 確定した1通過（1レーンぶん）------------------------------------------
 struct Hit {

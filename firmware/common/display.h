@@ -50,10 +50,14 @@ struct Status {
   bool beam_ok    = false;
   int  unsent     = 0;      // 未送信件数（0で○）
   bool gw_dup     = false;  // GW2台検知（true=異常）
+  bool rc_dup     = false;  // RC2台検知（リモコン重複・true=異常）
+  bool sg_dup     = false;  // SG2台検知（シグナル重複・true=異常）
 };
 
 // ---- エラー種別（docs/20.5 優先順位）---------------------------------------
-enum ErrKind { ERR_GW_DUP=0, ERR_SEND_FAIL, ERR_NODE_LOST, ERR_BEAM_CUT };
+//  ⚠ RC/SG重複（ERR_RC_DUP/ERR_SG_DUP）は本改修で追加した新種別。
+//     docs/20章追記（文言確定）にはまだ無いので、確定日本語文言は後日そこへ追記すること。
+enum ErrKind { ERR_GW_DUP=0, ERR_SEND_FAIL, ERR_NODE_LOST, ERR_BEAM_CUT, ERR_RC_DUP, ERR_SG_DUP };
 
 struct ErrItem {
   ErrKind kind;
@@ -89,7 +93,8 @@ static void draw_status_bar() {
   Status& st = g_status;   // 共有状態（main側が更新）
   bool node_ok = (st.node_need > 0) && (st.node_have == st.node_need);
   bool send_ok = (st.unsent == 0);
-  bool any_ng  = (!st.wifi_ok) || (!node_ok) || (!st.beam_ok) || (!send_ok) || st.gw_dup;
+  bool any_dup = st.gw_dup || st.rc_dup || st.sg_dup;   // GW/RC/SGいずれかの重複
+  bool any_ng  = (!st.wifi_ok) || (!node_ok) || (!st.beam_ok) || (!send_ok) || any_dup;
 
   uint16_t bg = any_ng ? C_BARERR : C_BLACK;
   s_spr.fillRect(0, H - BAR_H, W, BAR_H, bg);
@@ -115,9 +120,11 @@ static void draw_status_bar() {
   s_spr.drawString(buf, x, y); x += 96;
   // ビーム
   s_spr.drawString(st.beam_ok ? "beam O" : "beam x", x, y); x += 60;
-  // 送信 or GW重複（GW重複は最重要なので、その時だけ差し替え表示）
-  if (st.gw_dup) {
-    s_spr.drawString("GWdup x", x, y);
+  // 送信 or 重複検知（重複は最重要なので、その時だけ差し替え表示）
+  //  優先順位：GW > SG > RC（GWが最重要・docs/20.5）。
+  if (any_dup) {
+    const char* d = st.gw_dup ? "GWx2 x" : (st.sg_dup ? "SGx2 x" : "RCx2 x");
+    s_spr.drawString(d, x, y);
   } else {
     snprintf(buf, sizeof(buf), "send%d %s", st.unsent, send_ok?"O":"x");
     s_spr.drawString(buf, x, y);
@@ -248,6 +255,16 @@ static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
       out[n++] = "2) clean slit";
       out[n++] = "3) swap LED";
       break;
+    case ERR_RC_DUP:      // リモコン2台検知（本改修で追加・GW2台と同思想）
+      out[n++] = "! REMOTE x2";
+      out[n++] = "Two remotes are on.";
+      out[n++] = "Power OFF one of them.";
+      break;
+    case ERR_SG_DUP:      // シグナル2台検知（本改修で追加・GW2台と同思想）
+      out[n++] = "! SIGNAL x2";
+      out[n++] = "Two signals are on.";
+      out[n++] = "Power OFF one of them.";
+      break;
   }
 }
 
@@ -258,6 +275,8 @@ static void err_summary_line(const ErrItem& e, char* out, size_t n) {
     case ERR_SEND_FAIL: snprintf(out, n, "- send failed (%d held)", e.arg_i); break;
     case ERR_NODE_LOST: snprintf(out, n, "- %s no response", e.label); break;
     case ERR_BEAM_CUT:  snprintf(out, n, "- %s beam cut", e.label); break;
+    case ERR_RC_DUP:    snprintf(out, n, "- remote x2 (power off 1)"); break;
+    case ERR_SG_DUP:    snprintf(out, n, "- signal x2 (power off 1)"); break;
   }
 }
 
