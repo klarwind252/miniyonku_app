@@ -84,7 +84,9 @@ class MachineResult:
     laps: list[LapResult] = field(default_factory=list)
     total_time_us: int | None = None   # 完了時のみ
     completed_laps: int = 0
-    dnf: bool = False                   # 理想状態版では常にFalse
+    dnf: bool = False                   # E5(24.39)：CO＝規定周回未達。DNF表示・ranking末尾
+    jump_start: bool = False            # G1(24.53)：フライング。F1式でS/G通過が緑より前
+    missing: bool = False               # E1(24.37)：通過回数の不整合＝欠測あり（⚠要確認）
 
     @property
     def best_lap_us(self) -> int | None:
@@ -107,6 +109,9 @@ class RaceResult:
         done = [m for m in self.machines.values() if m.total_time_us is not None]
         notdone = [m for m in self.machines.values() if m.total_time_us is None]
         done.sort(key=lambda m: m.total_time_us)  # type: ignore[arg-type]
+        # E5(24.39)：DNF・計測中は完了者の後ろ。未完了どうしは周回数の多い順
+        #   （途中経過を活かし、より進んだ車を上に）。
+        notdone.sort(key=lambda m: m.completed_laps, reverse=True)
         return done + notdone
 
 
@@ -158,6 +163,15 @@ def build_race(
     # key: (lane, gate_index) -> list[(t_us, event, gate)]
     grouped: dict[tuple[int, int], list[tuple[int, PassEvent, Gate]]] = {}
     for ev in events:
+        # E3(24.36/B1)：q=3(未同期)イベントはタイム・速度ごと剥奪＝欠測扱い。
+        # E4(24.36/A8)：逆走(B→Aの順＝t_us_b<t_us でマイナス速度)イベントも剥奪。
+        #   剥奪した通過は grouped に入れない＝そのゲート通過が欠測になる。位相ズレは
+        #   E1(欠測検知・2-a)が「⚠要確認」で拾う（24.1：補完せず事実を示す）。
+        #   逆走判定は t_us_b があるときのみ（None/0は片ビーム欠=A2で逆走ではない）。
+        if ev.quality == 3:
+            continue
+        if ev.t_us_b is not None and ev.t_us_b != 0 and ev.t_us_b < ev.t_us:
+            continue
         gate = n2g.get(ev.node_id)
         if gate is None:
             # レイアウトに無いノード＝予定外（理想状態版では発生しない想定）
@@ -227,10 +241,43 @@ def build_race(
             final = sg_map.get(target_laps)
             if final is not None and t0 is not None and mres.completed_laps == target_laps:
                 mres.total_time_us = final[0] - t0
+            # G1(24.53)：フライング検知。F1式で1周目S/G通過が緑(t0)より前なら
+            #   その車はマイナスF1タイム＝フライング。total符号ではなく1周目通過で判定
+            #   （完走してtotalが正に戻るケースもあるため）。判断はここ(サーバー)に集約・24.1。
+            first = sg_map.get(1)
+            if first is not None and t0 is not None and first[0] < t0:
+                mres.jump_start = True
         else:
             final = sg_map.get(target_laps)
             if final is not None and t0 is not None and mres.completed_laps == target_laps:
                 mres.total_time_us = final[0] - t0
+
+        # E5(24.39)：CO→DNF。規定周回に達しなかった車はDNFとして表示する。
+        #   COした車はコース上で止まり、以降そのレーンから通過イベントが来なくなる。
+        #   沈黙検知は作らず（D3/24.26）、運営が灰ボタンで手動送信する運用のため、
+        #   結果は completed_laps < target_laps の形で届く。これをDNFと判定する。
+        #   途中経過(laps・sectors・completed_laps)はそのまま残し、表示できる範囲で
+        #   見せる（24.39・TFT側24.4と一貫）。total_time_us は未完了で None のまま。
+        if mres.completed_laps < target_laps:
+            mres.dnf = True
+
+        # E1(24.37)：通過回数の整合性チェック（欠測検知）。補完はしない・24.1。
+        #   completed_laps 周まで到達した車について、各SQゲートがその全周ぶんの通過を
+        #   持っているかを確認する。1つでも飛んでいれば欠測ありとして missing=True。
+        #   末尾の周から欠けるCO(E5)は completed_laps 自体が縮むので誤検知しない。
+        #   剥奪(E3/E4)で中間ゲートが欠けたケースもここで拾える。
+        if mres.completed_laps >= 1:
+            for g in course.gates:
+                if g.kind != "SQ":
+                    continue
+                gmap = gates_map.get(g.index, {})
+                # 1..completed_laps の各周でこのSQの通過があるか
+                for lap in range(1, mres.completed_laps + 1):
+                    if lap not in gmap:
+                        mres.missing = True
+                        break
+                if mres.missing:
+                    break
 
         result.machines[start_lane] = mres
 

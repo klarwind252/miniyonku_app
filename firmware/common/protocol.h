@@ -97,7 +97,7 @@ struct JoinAckBody {
 };
 
 // EVENT：通過打刻。時刻はノード側でGW時刻へ換算済み（docs/12 S3）。
-//   quality: 0=正常 / 1=片ビーム欠 / 3=未同期のまま打刻（docs/13.4）
+//   quality: 0=正常 / 1=片ビーム欠 / 2=両ビーム欠(張り付き・A1) / 3=未同期のまま打刻（docs/13.4・24.5）
 struct EventBody {
   uint8_t  lane;         // 物理レーン 1..3
   uint8_t  quality;      // 上記

@@ -196,3 +196,79 @@ def test_six_laps():
         m = race.machines[start_lane]
         assert m.completed_laps == 6
         assert m.total_time_us is not None
+
+
+# ---------------------------------------------------------------------------
+# E5(24.39)：CO→DNF
+# ---------------------------------------------------------------------------
+
+# 無ローテーション（LCなし）レイアウト: S/G → SQ → SQ。
+#   rot_total=0 なので各車は自分の物理レーンに固定され、1台がCOしても
+#   他車の同定に干渉しない（DNF混在の検証に使う。rotation.py の「LC0=検証用途」）。
+LAYOUT_NOROT = [
+    LayoutElement("SG", node_id=6),
+    LayoutElement("SQ", node_id=0),
+    LayoutElement("SQ", node_id=1),
+]
+
+
+def make_events_norot(laps_by_lane, target_laps=3, start_t=1_000_000):
+    """無ローテーション版イベント生成。laps_by_lane で各スタートレーンの周回数を指定。
+
+    指定周回数だけS/G完了＋中間ゲート通過を作る（省略時は target_laps 周＝完走）。
+    rot_total=0 なので phys_lane == start_lane。周回数を減らせばCO（DNF）を再現できる。
+    """
+    events = []
+    lap_ms = {1: 12_000, 2: 12_200, 3: 11_900}
+    for start_lane in (1, 2, 3):
+        n = laps_by_lane.get(start_lane, target_laps)
+        lap_us = lap_ms[start_lane] * 1000
+        # スタート打刻 passing=0
+        events.append(PassEvent(node_id=6, lane=start_lane, t_us=start_t, seq=0))
+        for lap in range(1, n + 1):
+            base = start_t + lap * lap_us
+            t_sq0 = start_t + (lap - 1) * lap_us + int(lap_us * 0.33)
+            events.append(PassEvent(node_id=0, lane=start_lane, t_us=t_sq0))
+            t_sq1 = start_t + (lap - 1) * lap_us + int(lap_us * 0.66)
+            events.append(PassEvent(node_id=1, lane=start_lane, t_us=t_sq1))
+            events.append(PassEvent(node_id=6, lane=start_lane, t_us=base))
+    return events
+
+
+def test_e5_all_dnf_when_target_higher():
+    """全車2周で止まり規定3周に満たない → 全車DNF。途中経過は残り欠測ではない。"""
+    events = make_events(target_laps=2)                # 2周ぶんだけ生成（通常レイアウト）
+    race = build_race(LAYOUT, events, target_laps=3)   # 規定は3周
+    assert set(race.machines.keys()) == {1, 2, 3}
+    for m in race.machines.values():
+        assert m.completed_laps == 2
+        assert m.dnf is True                # 規定未達＝DNF
+        assert m.total_time_us is None      # 未完了は合計なし＝ranking末尾
+        assert m.missing is False           # 2周ぶんは揃っている＝欠測ではない
+        assert len(m.laps) == 2             # 途中経過はそのまま残す
+
+
+def test_e5_dnf_mixed_and_ranking():
+    """レーン2が1周でCO、他2台は3周完走 → レーン2のみDNFで末尾。完走車は通常表示。"""
+    events = make_events_norot({2: 1}, target_laps=3)  # レーン2だけ1周で停止
+    race = build_race(LAYOUT_NOROT, events, target_laps=3)
+
+    m1, m2, m3 = race.machines[1], race.machines[2], race.machines[3]
+    assert m1.dnf is False and m1.completed_laps == 3 and m1.total_time_us is not None
+    assert m3.dnf is False and m3.completed_laps == 3 and m3.total_time_us is not None
+    assert m2.dnf is True and m2.completed_laps == 1 and m2.total_time_us is None
+    assert len(m2.laps) == 1               # 途中経過（1周ぶん）は残る
+
+    ranking = race.ranking()
+    assert ranking[-1].start_lane == 2                      # DNFは末尾
+    assert {r.start_lane for r in ranking[:2]} == {1, 3}    # 完走2台が上位
+
+
+def test_e5_dnf_partial_progress_more_laps_ranked_higher():
+    """DNF車どうしは周回数の多い順（途中経過を活かして並べる）。"""
+    events = make_events_norot({1: 1, 2: 2, 3: 0}, target_laps=3)
+    race = build_race(LAYOUT_NOROT, events, target_laps=3)
+    for m in race.machines.values():
+        assert m.dnf is True               # 全車3周未達＝DNF
+    order = [m.start_lane for m in race.ranking()]
+    assert order == [2, 1, 3]              # 周回数 2 > 1 > 0 の順

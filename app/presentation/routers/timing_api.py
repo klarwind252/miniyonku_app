@@ -405,6 +405,9 @@ async def results_page(
                     "time_part": _split_ts(race["created_at"])[1],
                     "heat_id": race["heat_id"],
                     "mode": result.mode,               # 'f1'=レース / 'run'=フリー
+                    "jump_start": m.jump_start,         # G1(24.53)：フライング=JS表示
+                    "missing": m.missing,               # E1(24.37)：欠測あり=⚠要確認表示
+                    "dnf": m.dnf,                       # E5(24.39)：CO=DNF表示
                     "pos": pos,
                     "start_lane": m.start_lane,
                     "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
@@ -1041,6 +1044,9 @@ def _ranking_payload(result) -> list[dict]:
             "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
             "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
             "completed_laps": m.completed_laps,
+            "jump_start": m.jump_start,   # G1(24.53)：フライング=JS表示用
+            "missing": m.missing,         # E1(24.37)：欠測あり=⚠要確認
+            "dnf": m.dnf,                 # E5(24.39)：CO=DNF表示
         })
     return rows
 
@@ -1092,6 +1098,7 @@ async def pip_latest(
                     "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
                     "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
                     "completed_laps": m.completed_laps,
+                    "dnf": m.dnf,                       # E5(24.39)：CO=DNF表示
                 })
         # 記録が組み立てられなかったレースは出さない（「計測中／記録なし」を除外）
         if not rows:
@@ -1314,6 +1321,7 @@ async def result_detail_page(
             machines.append({
                 "start_lane": m.start_lane,
                 "completed_laps": m.completed_laps,
+                "dnf": m.dnf,   # E5(24.39)：CO=DNF表示
                 "total_s": (m.total_time_us / 1e6) if m.total_time_us else None,
                 "laps": laps,
             })

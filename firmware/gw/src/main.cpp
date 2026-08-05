@@ -77,6 +77,10 @@ static constexpr int PIN_BTN_RED  = 26;   // 赤 SIGNAL（押下LOW・内部プ�
 static constexpr int PIN_BTN_GRAY = 27;   // 灰 RESET
 static constexpr uint32_t DEBOUNCE_MS   = 20;
 static constexpr uint32_t RESET_HOLD_MS = 600;   // RESETは600ms長押し（docs/12 S9）
+// 24.3(1-e)：送信失敗中に灰ボタンを OVERRIDE_HOLD_MS 長押しすると「封じ強制解除」。
+//   長時間WiFi不通時、運営が承知の上で次レースへ進むための緊急解除（灰ボタン起点で
+//   既存操作と衝突しない。データはスプールに残るのでD1で後日後送り可能）。
+static constexpr uint32_t OVERRIDE_HOLD_MS = 3000;  // 灰3秒超で封じ強制解除
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
 enum GwState { ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
@@ -96,6 +100,9 @@ struct RawEvent {
 
 static const char* SPOOL = "/spool.jsonl";
 static uint32_t s_race_id = 0;
+// 24.3(1-e)：送信失敗中は「次の赤ボタン(新レース開始)を封じる」安全フラグ。
+//   flush_spool 成功でクリア、失敗でセット。灰3秒長押し(緊急解除)でも手動クリア可。
+static bool s_send_blocked = false;
 
 // ---- 排他運用（GW/RC/SG は各ペア1台のみ・在席テーブル）----------------------
 //  方針（本改修）：GW6/7・RC8/9・SG10/11 は「どちらか1台だけ電源ON」で運用する。
@@ -229,6 +236,10 @@ static void signal_cmd(uint8_t code) {
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
   if (s_state != ST_IDLE) return;             // 二度押し無視
+  if (s_send_blocked) {                        // 1-e：送信失敗中は新レースを封じる
+    Serial.println("[SEQ] blocked: 前レース未送信。灰ボタンで再送、または灰3秒長押しで強制解除");
+    return;
+  }
   if (exclusivity_conflict()) {               // GW/RC/SG重複中は新規スタートを受け付けない
     Serial.println("[SEQ] blocked: GW/RC/SG duplicate active (power off one)");
     return;
@@ -246,7 +257,17 @@ static void on_signal_pressed() {
   s_need_green_patch = false;
 }
 
+// flush_spool / spool_has_data は本関数より後方で定義されるため前方宣言。
+static bool spool_has_data();
+static void flush_spool();
+
 static void on_reset_pressed() {
+  // 24.3：灰ボタン押下時、スプールに溜まっていれば送信（空なら何もしない）。
+  //   送信 → 表示リセット → IDLE の順。送信失敗しても RESET 自体は進める
+  //   （灰ボタンは再送手段として残す設計・24.3）。WiFi不通時は flush_spool 内で
+  //   送信せず return し、データはスプールに残る（消えない）。
+  if (spool_has_data()) flush_spool();
+
   s_state = ST_IDLE;
   s_green_t_us = 0;
   s_need_race        = false;   // #20: 保留中のサーバー登録も破棄
@@ -359,6 +380,12 @@ static void spool_append(const RawEvent& e) {
   doc["t_us"]        = e.t_us;
   if (e.t_us_b) doc["t_us_b"] = e.t_us_b;
   doc["quality"]     = e.quality;
+  // 24.3(1-c)：race_id は「セクターから受信した瞬間」の値を刻む。flush時点の
+  //   s_race_id では、受信〜送信間に再起動等でIDが変わると誤帰属する。
+  //   rid はスプール内部の振り分け専用（送信ペイロードには載せない。サーバーの
+  //   冪等キーは device_id/src/src_boot_id/seq で race_id を含まないため）。
+  //   rid=0 は「受信時まだレース未確定」を意味し、flush時にその時点の確定IDへ寄せる。
+  doc["rid"]         = s_race_id;
   serializeJson(doc, f);           // 1行1JSON
   f.print('\n');
   f.close();
@@ -418,21 +445,44 @@ static bool ensure_race() {
   return s_race_id != 0;
 }
 
-// ---- スプール先頭 drop 行を捨て、残りを書き戻す（100件上限で持ち越すとき）---
-//  有効行(空行/壊れ行を除く)を drop 行スキップして、残りを一時ファイルへ写し置換。
-static void rewrite_spool_drop_first(int drop) {
+// ---- スプールに送るべき行があるか（空/存在しないなら false）----------------
+//  24.3：灰ボタンは「溜まっていれば送信・空なら何もしない」。その判定に使う。
+static bool spool_has_data() {
+  if (!LittleFS.exists(SPOOL)) return false;
+  File f = LittleFS.open(SPOOL, FILE_READ);
+  if (!f) return false;
+  bool has = false;
+  while (f.available()) {
+    String line = f.readStringUntil('\n'); line.trim();
+    if (line.length() > 0) { has = true; break; }   // 有効行が1行でもあれば true
+  }
+  f.close();
+  return has;
+}
+
+// ---- 指定 rid の行を先頭から最大 limit 件だけ除去し、残りを書き戻す（1-c）-----
+//  flush で送れた group_rid の行（最大100件）をスプールから消す。別 rid の行と、
+//  100件上限で送りきれなかった同 rid の残りは持ち越す。照合は冪等キーではなく
+//  「rid一致かつ先頭から limit 件」で足りる（送信は先頭から詰めているため順序一致）。
+static void rewrite_spool_drop_group(uint32_t rid, int limit) {
   File in = LittleFS.open(SPOOL, FILE_READ);
   if (!in) return;
   const char* TMP = "/spool.tmp";
   File out = LittleFS.open(TMP, FILE_WRITE);
   if (!out) { in.close(); return; }
-  int skipped = 0;
+  int removed = 0;
   while (in.available()) {
     String line = in.readStringUntil('\n');
     String t = line; t.trim();
-    if (t.length() == 0) continue;               // 空行は捨てる
-    if (skipped < drop) { skipped++; continue; } // 送信済みの先頭drop行を捨てる
-    out.print(t); out.print('\n');               // 残りを持ち越し
+    if (t.length() == 0) continue;                 // 空行は捨てる
+    JsonDocument ev;
+    if (deserializeJson(ev, t) != DeserializationError::Ok) continue; // 壊れ行は捨てる
+    uint32_t r = ev["rid"] | 0;
+    if (r == rid && removed < limit) {             // 送信済みの同 rid 先頭 limit 件を捨てる
+      removed++;
+      continue;
+    }
+    out.print(t); out.print('\n');                 // 残りを持ち越し
   }
   in.close();
   out.close();
@@ -441,30 +491,62 @@ static void rewrite_spool_drop_first(int drop) {
 }
 
 // ---- スプールPOST（200まで消さない・S8）-----------------------------------
+// ---- スプールPOST（200まで消さない・S8／rid=受信時race_idでグループ送信・1-c）---
+//  24.3(1-c)：各行が受信時の race_id(rid) を持つ。1回のflushでは「先頭有効行の
+//  グループ(=同じ送信先race_id)」だけを最大100件集めて送る。これにより受信〜送信間に
+//  s_race_id が変わっても、行は自分の rid のレースへ正しく送られる（誤帰属しない）。
+//  rid=0 の行（受信時レース未確定）は、その時点の確定 race_id(ensure_race) へ寄せる。
 static void flush_spool() {
   if (!LittleFS.exists(SPOOL)) return;
-  if (!ensure_race()) return;
   File f = LittleFS.open(SPOOL, FILE_READ);
   if (!f) return;
-  // 各行(1JSON)を events 配列へ積み直す。手連結せず ArduinoJson で組む。
+
+  // まず先頭の有効行から「今回送るグループの rid」を決める。
+  uint32_t group_rid = 0;
+  bool group_found = false;
+  while (f.available()) {
+    String line = f.readStringUntil('\n'); line.trim();
+    if (line.length() == 0) continue;
+    JsonDocument ev;
+    if (deserializeJson(ev, line) != DeserializationError::Ok) continue;
+    group_rid = ev["rid"] | 0;
+    group_found = true;
+    break;
+  }
+  f.close();
+  if (!group_found) return;   // 有効行なし
+
+  // 送信先 race_id を確定。group_rid>0 ならそれを使う。0 なら ensure_race で確定。
+  uint32_t dest_race_id = group_rid;
+  if (dest_race_id == 0) {
+    if (!ensure_race()) return;   // WiFi不通等：送らずデータは残す
+    dest_race_id = s_race_id;
+  }
+  if (dest_race_id == 0) return;
+
+  // dest グループ(rid==group_rid)の行だけを最大100件、events配列へ積む。
+  f = LittleFS.open(SPOOL, FILE_READ);
+  if (!f) return;
   JsonDocument out;
   JsonArray arr = out["events"].to<JsonArray>();
   int n = 0;
-  bool capped = false;                            // 100件で打ち切ったか
+  bool capped = false;
   while (f.available()) {
     String line = f.readStringUntil('\n'); line.trim();
     if (line.length() == 0) continue;
     JsonDocument ev;
     if (deserializeJson(ev, line) != DeserializationError::Ok) continue; // 壊れた行は捨てる
+    if ((uint32_t)(ev["rid"] | 0) != group_rid) continue;   // 別グループは今回送らない
+    ev.remove("rid");                                       // rid は内部用。送信payloadから除く
     arr.add(ev);
     n++;
-    if (n >= 100) { capped = true; break; }       // 1回のPOSTは100件まで（RAM枯渇・長時間ブロック防止）
+    if (n >= 100) { capped = true; break; }                // 1回のPOSTは100件まで
   }
   f.close();
   if (n == 0) return;
   String payload; serializeJson(out, payload);
 
-  String url = server_base() + "/api/timing/races/" + s_race_id + "/events";
+  String url = server_base() + "/api/timing/races/" + dest_race_id + "/events";
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, url);
@@ -473,14 +555,16 @@ static void flush_spool() {
   int code = http.POST(payload);
   http.end();
 
-  if (code != 200) { Serial.printf("[POST] 失敗 code=%d\n", code); return; }
-
-  if (!capped) {
-    LittleFS.remove(SPOOL);                       // 全件送れた→スプール消去
-  } else {
-    rewrite_spool_drop_first(n);                  // 送った先頭n件を消し、残りは次回へ持ち越す
+  if (code != 200) {
+    Serial.printf("[POST] 失敗 code=%d\n", code);
+    s_send_blocked = true;              // 1-e：送信失敗→次レース封じ
+    return;
   }
-  Serial.printf("[POST] %d件 送信%s\n", n, capped ? "（続きあり）" : "");
+
+  // 送信成功：送った group_rid の行を（最大100件ぶん）スプールから除去。
+  rewrite_spool_drop_group(group_rid, n);
+  s_send_blocked = false;              // 1-e：送信成功→封じ解除
+  Serial.printf("[POST] rid=%u %d件 送信%s\n", group_rid, n, capped ? "（続きあり・同rid）" : "");
 }
 
 // ---- レイアウト取得（GW向け軽量版 /for_gw・docs/19.16）--------------------
@@ -533,13 +617,23 @@ static void tick_buttons() {
     red_t = millis(); red_last = red_now;
     if (red_now) on_signal_pressed();
   }
-  // 灰：600ms長押しでRESET（docs/12 S9）
-  static uint32_t gray_down = 0; static bool gray_fired = false;
+  // 灰：600ms長押しでRESET（docs/12 S9）／さらに3秒超で送信封じの緊急解除（1-e）
+  static uint32_t gray_down = 0; static bool gray_fired = false; static bool ovr_fired = false;
   bool gray_now = (digitalRead(PIN_BTN_GRAY) == LOW);
   if (gray_now) {
-    if (gray_down == 0) { gray_down = millis(); gray_fired = false; }
-    else if (!gray_fired && (millis() - gray_down) >= RESET_HOLD_MS) {
-      gray_fired = true; on_reset_pressed();
+    if (gray_down == 0) { gray_down = millis(); gray_fired = false; ovr_fired = false; }
+    else {
+      uint32_t held = millis() - gray_down;
+      if (!gray_fired && held >= RESET_HOLD_MS) {
+        gray_fired = true; on_reset_pressed();     // 600ms：通常RESET（再送も試みる）
+      }
+      if (!ovr_fired && held >= OVERRIDE_HOLD_MS) {
+        ovr_fired = true;                          // 3秒：封じの緊急解除
+        if (s_send_blocked) {
+          s_send_blocked = false;
+          Serial.println("[SEQ] 送信封じを強制解除（データはスプールに保持・後日後送り可）");
+        }
+      }
     }
   } else { gray_down = 0; }
 }
@@ -634,8 +728,8 @@ void loop() {
     Serial.printf("[SG] lane=%u q=%u\n", hit.lane, hit.quality);
   }
 
-  static uint32_t last = 0;
-  if (millis() - last > 3000) { last = millis(); flush_spool(); }
+  // 24.3：3秒ごとの機械的POSTは廃止。送信は灰ボタン(on_reset_pressed)起点のみ。
+  //   （旧: static uint32_t last=0; if (millis()-last>3000){ last=millis(); flush_spool(); }）
 
   tick_fetch_layout();   // #14：成功60s/失敗5sのバックオフで /for_gw を取得
   tick_display();        // TFT描画（状態機械に同期・約4fps）

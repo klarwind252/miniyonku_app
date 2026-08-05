@@ -76,7 +76,10 @@ static void enqueue_event(const beam::Hit& hit) {
     p.tries = 0;
     p.last_ms = 0;   // すぐ送る
     p.body.lane    = hit.lane;
-    p.body.quality = tsync::is_synced() ? hit.quality : 3;   // 未同期は3（S4）
+    // 張り付き(2/A1)は同期状態に依らない異常通知なので未同期でも 2 を保つ。
+    //   それ以外は S4 に従い未同期なら 3 で上書き。
+    p.body.quality = (hit.quality == 2) ? 2
+                     : (tsync::is_synced() ? hit.quality : 3);
     p.body._pad    = 0;
     p.body.t_us    = tsync::to_gw_us(hit.t_a_us);            // GW時刻へ換算（S3）
     p.body.t_us_b  = hit.t_b_us ? tsync::to_gw_us(hit.t_b_us) : 0;
@@ -146,10 +149,13 @@ void loop() {
   beam::Hit hit;
   while (beam::poll(hit)) {    // 溜まった通過を全部拾う
     enqueue_event(hit);
-    Serial.printf("[EV] lane=%u q=%u tA=%llu tB=%llu\n",
-                  hit.lane, tsync::is_synced() ? hit.quality : 3,
+    uint8_t q = (hit.quality == 2) ? 2
+                : (tsync::is_synced() ? hit.quality : 3);
+    Serial.printf("[EV] lane=%u q=%u tA=%llu tB=%llu%s\n",
+                  hit.lane, q,
                   (unsigned long long)hit.t_a_us,
-                  (unsigned long long)hit.t_b_us);
+                  (unsigned long long)hit.t_b_us,
+                  (q == 2) ? " STICK(A1)" : "");
   }
   service_pending();
 }

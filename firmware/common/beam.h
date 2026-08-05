@@ -29,14 +29,23 @@ static const int PIN_B[LANES] = {19, 21, 22};   // L1, L2, L3
 //  A-B穴間隔は 30mm（docs/05・20260804変更確定）。最低想定 3m/s → A→B は最大10ms。
 static constexpr uint32_t DEBOUNCE_US  = 1500;   // 跳ね除去（遮断幅19msより十分小）
 static constexpr uint32_t PAIR_WAIT_US = 12000;  // A→B待ち猶予(30mm/3m/s=10ms+余裕)。超えたら片ビーム(q=1)
+// 24.5 A1：両ビーム欠（LED破損・センサー破損・光軸ズレ・CO停車・外乱光の感度飽和）。
+//   遮断(LOW)が STICK_US 継続したら「張り付き」＝異常として quality=2 を1回発火。
+//   最遅3m/s→遮断75ms の 6.7倍 ≒ 500ms。正常な通過(最長75ms)を誤検知しない閾値。
+static constexpr uint32_t STICK_US     = 500000; // 500ms（A1張り付き判定）
 
 // ---- 確定した1通過（1レーンぶん）------------------------------------------
 struct Hit {
   uint8_t  lane;      // 1..3（人向け番号。配列index+1）
   uint64_t t_a_us;    // A遮断µs（自分時計）
   uint64_t t_b_us;    // B遮断µs（0=取れず）
-  uint8_t  quality;   // 0=両取得 / 1=片ビーム欠
+  uint8_t  quality;   // 0=両取得 / 1=片ビーム欠 / 2=両ビーム欠(張り付き・A1)
 };
+
+// ---- 張り付き(A1)監視用の状態（レーンごと）--------------------------------
+//  遮断が始まった時刻を保持。STICK_US 継続で quality=2 を1回発火。復帰で解除。
+static uint64_t s_block_since[LANES] = {0};   // 0=非遮断 / 非0=遮断開始µs
+static bool     s_stick_fired[LANES] = {false}; // このブロック区間で発火済みか
 
 // ---- ISR用の生状態（レーンごと・volatile）---------------------------------
 static volatile uint64_t s_a_edge[LANES] = {0};
@@ -85,9 +94,48 @@ static void begin() {
   attachInterrupt(digitalPinToInterrupt(PIN_B[2]), isr_b<2>, FALLING);
 }
 
+// 素子の生状態（74HC14先：受信=HIGH / 遮断=LOW）
+static inline bool raw_a_blocked(int lane_idx) { return digitalRead(PIN_A[lane_idx]) == LOW; }
+static inline bool raw_b_blocked(int lane_idx) { return digitalRead(PIN_B[lane_idx]) == LOW; }
+
+// ---- 張り付き(A1)判定：どこか1レーンで STICK_US 継続遮断なら quality=2 を返す ----
+//  24.5 A1：両ビーム欠（LED破損・センサー破損・光軸ズレ・CO停車・外乱光の感度飽和）。
+//  正常な通過は最長75msで解けるので、500ms継続=異常。1ブロック区間で1回だけ発火する。
+static bool poll_stick(Hit& out) {
+  uint64_t t = now_us();
+  for (int i = 0; i < LANES; i++) {
+    bool blocked = raw_a_blocked(i) || raw_b_blocked(i);
+    if (!blocked) {                       // 復帰：状態リセット（次の張り付きに備える）
+      s_block_since[i] = 0;
+      s_stick_fired[i] = false;
+      continue;
+    }
+    if (s_block_since[i] == 0) {           // 遮断開始
+      s_block_since[i] = t;
+      continue;
+    }
+    if (!s_stick_fired[i] && (t - s_block_since[i]) >= STICK_US) {
+      s_stick_fired[i] = true;            // このブロック区間では二度発火しない
+      out.lane    = (uint8_t)(i + 1);
+      out.t_a_us  = t;                    // 張り付き検知時刻（参考値）
+      out.t_b_us  = 0;
+      out.quality = 2;                    // A1：両ビーム欠（張り付き）
+      // エッジ由来の未確定分は捨てる（張り付き中の片エッジは通過ではない）
+      noInterrupts();
+      s_a_edge[i] = 0; s_b_edge[i] = 0;
+      interrupts();
+      return true;
+    }
+  }
+  return false;
+}
+
 // ---- ポーリング回収（loopから毎回呼ぶ）------------------------------------
 //  どこか1レーンで通過が確定したら true と Hit を返す。複数同時は次回以降で回収。
 static bool poll(Hit& out) {
+  // A1張り付きを先に判定（異常は通過確定より優先して知らせる）
+  if (poll_stick(out)) return true;
+
   for (int i = 0; i < LANES; i++) {
     noInterrupts();
     uint64_t a = s_a_edge[i], b = s_b_edge[i];
@@ -111,9 +159,5 @@ static bool poll(Hit& out) {
   }
   return false;
 }
-
-// デバッグ：素子の生状態（74HC14先：受信=HIGH / 遮断=LOW）
-static inline bool raw_a_blocked(int lane_idx) { return digitalRead(PIN_A[lane_idx]) == LOW; }
-static inline bool raw_b_blocked(int lane_idx) { return digitalRead(PIN_B[lane_idx]) == LOW; }
 
 } // namespace beam

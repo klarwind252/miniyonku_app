@@ -52,12 +52,22 @@ struct Status {
   bool gw_dup     = false;  // GW2台検知（true=異常）
   bool rc_dup     = false;  // RC2台検知（リモコン重複・true=異常）
   bool sg_dup     = false;  // SG2台検知（シグナル重複・true=異常）
+  bool sync_ok    = true;   // 時刻同期完了（B1・24.11。false=未同期でSync x）
+  bool lost       = false;  // あきらめ(give up)発生（C1・24.14。true=Lost x・灰リセットまで保持）
 };
 
 // ---- エラー種別（docs/20.5 優先順位）---------------------------------------
 //  ⚠ RC/SG重複（ERR_RC_DUP/ERR_SG_DUP）は本改修で追加した新種別。
 //     docs/20章追記（文言確定）にはまだ無いので、確定日本語文言は後日そこへ追記すること。
-enum ErrKind { ERR_GW_DUP=0, ERR_SEND_FAIL, ERR_NODE_LOST, ERR_BEAM_CUT, ERR_RC_DUP, ERR_SG_DUP };
+//  ⚠ A1/A2/C1（ERR_SENSOR_BOTH/ERR_SPEED_ONLY/ERR_SECTOR_COMM）は 24.5/24.6/24.14 で確定。
+//     優先順位（20.5.2＋24.14）：GW2台 > 送信失敗 > ノード離脱 > ビーム切れ/A1 > A2 > SG重複 > RC重複 > C1
+enum ErrKind {
+  ERR_GW_DUP=0, ERR_SEND_FAIL, ERR_NODE_LOST, ERR_BEAM_CUT,
+  ERR_SENSOR_BOTH,   // A1：両ビーム欠(Wセンサー不良/CO/外乱光)・24.6
+  ERR_SPEED_ONLY,    // A2：片ビーム欠(速度未計測)・24.6
+  ERR_RC_DUP, ERR_SG_DUP,
+  ERR_SECTOR_COMM    // C1：セクター通信不良(Lost)・24.14・最後尾
+};
 
 struct ErrItem {
   ErrKind kind;
@@ -94,7 +104,8 @@ static void draw_status_bar() {
   bool node_ok = (st.node_need > 0) && (st.node_have == st.node_need);
   bool send_ok = (st.unsent == 0);
   bool any_dup = st.gw_dup || st.rc_dup || st.sg_dup;   // GW/RC/SGいずれかの重複
-  bool any_ng  = (!st.wifi_ok) || (!node_ok) || (!st.beam_ok) || (!send_ok) || any_dup;
+  bool any_ng  = (!st.wifi_ok) || (!node_ok) || (!st.beam_ok) || (!send_ok)
+                 || any_dup || (!st.sync_ok) || st.lost;   // Sync×・Lost×も赤バー（24.11）
 
   uint16_t bg = any_ng ? C_BARERR : C_BLACK;
   s_spr.fillRect(0, H - BAR_H, W, BAR_H, bg);
@@ -103,32 +114,39 @@ static void draw_status_bar() {
   s_spr.setTextFont(2);
 
   int y = H - BAR_H/2;
-  int x = 4;
+  int x = 2;
   char buf[24];
 
+  // 8項目を320px幅に収めるため間隔を詰める（フォント2・ML基準）。
+  //  GW ch WiFi Node Beam Send Sync Lost（24.11の並び）。
   // GW番号（○×なし）
   snprintf(buf, sizeof(buf), "GW%u", st.gw_id);
-  s_spr.drawString(buf, x, y); x += 40;
+  s_spr.drawString(buf, x, y); x += 30;
   // ch（○×なし）
   snprintf(buf, sizeof(buf), "ch%u", st.ch);
-  s_spr.drawString(buf, x, y); x += 40;
-  // WiFi（○×は実機で記号調整。ここではO/xで表現）
-  s_spr.drawString(st.wifi_ok ? "WiFi O" : "WiFi x", x, y); x += 60;
-  // NODE
-  if (st.node_need > 0) snprintf(buf, sizeof(buf), "NODE %d/%d %s", st.node_have, st.node_need, node_ok?"O":"x");
-  else                  snprintf(buf, sizeof(buf), "NODE -/-");
-  s_spr.drawString(buf, x, y); x += 96;
-  // ビーム
-  s_spr.drawString(st.beam_ok ? "beam O" : "beam x", x, y); x += 60;
-  // 送信 or 重複検知（重複は最重要なので、その時だけ差し替え表示）
+  s_spr.drawString(buf, x, y); x += 28;
+  // WiFi
+  s_spr.drawString(st.wifi_ok ? "WiFiO" : "WiFix", x, y); x += 44;
+  // Node
+  if (st.node_need > 0) snprintf(buf, sizeof(buf), "Nd%d/%d%s", st.node_have, st.node_need, node_ok?"O":"x");
+  else                  snprintf(buf, sizeof(buf), "Nd-/-");
+  s_spr.drawString(buf, x, y); x += 52;
+  // Beam
+  s_spr.drawString(st.beam_ok ? "BmO" : "Bmx", x, y); x += 32;
+  // Send or 重複検知（重複は最重要なので、その時だけ差し替え表示）
   //  優先順位：GW > SG > RC（GWが最重要・docs/20.5）。
   if (any_dup) {
-    const char* d = st.gw_dup ? "GWx2 x" : (st.sg_dup ? "SGx2 x" : "RCx2 x");
+    const char* d = st.gw_dup ? "GWx2x" : (st.sg_dup ? "SGx2x" : "RCx2x");
     s_spr.drawString(d, x, y);
   } else {
-    snprintf(buf, sizeof(buf), "send%d %s", st.unsent, send_ok?"O":"x");
+    snprintf(buf, sizeof(buf), "Sd%d%s", st.unsent, send_ok?"O":"x");
     s_spr.drawString(buf, x, y);
   }
+  x += 44;
+  // Sync（時刻同期・B1/24.11）
+  s_spr.drawString(st.sync_ok ? "SyO" : "Syx", x, y); x += 32;
+  // Lost（あきらめ発生・C1/24.14。灰リセットまで保持）
+  s_spr.drawString(st.lost ? "Lox" : "LoO", x, y);
 }
 
 // ===== 待機(IDLE)画面（docs/20.2）==========================================
@@ -255,6 +273,20 @@ static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
       out[n++] = "2) clean slit";
       out[n++] = "3) swap LED";
       break;
+    case ERR_SENSOR_BOTH: // A1：両ビーム欠(Wセンサー不良/CO/外乱光)・24.6（label=SQ/レーン）
+      out[n++] = "! DUAL SENSOR FAULT";
+      out[n++] = "Both beams blocked.";
+      out[n++] = "1) ceiling LED";
+      out[n++] = "2) floor W-sensor";
+      out[n++] = "3) wiring / stray light";
+      break;
+    case ERR_SPEED_ONLY:  // A2：片ビーム欠(速度未計測)・24.6（label=SQ/レーン）
+      out[n++] = "! SPEED NOT MEASURED";
+      out[n++] = "One beam missing.";
+      out[n++] = "1) clean floor";
+      out[n++] = "2) floor sensor";
+      out[n++] = "3) ceiling LED";
+      break;
     case ERR_RC_DUP:      // リモコン2台検知（本改修で追加・GW2台と同思想）
       out[n++] = "! REMOTE x2";
       out[n++] = "Two remotes are on.";
@@ -264,6 +296,12 @@ static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
       out[n++] = "! SIGNAL x2";
       out[n++] = "Two signals are on.";
       out[n++] = "Power OFF one of them.";
+      break;
+    case ERR_SECTOR_COMM: // C1：セクター通信不良(Lost)・24.14（label=SQ名）
+      out[n++] = "! SECTOR COMM LOST";
+      out[n++] = "Data did not arrive.";
+      out[n++] = "1) restart S/G & node";
+      out[n++] = "2) replace if persists";
       break;
   }
 }
@@ -275,8 +313,11 @@ static void err_summary_line(const ErrItem& e, char* out, size_t n) {
     case ERR_SEND_FAIL: snprintf(out, n, "- send failed (%d held)", e.arg_i); break;
     case ERR_NODE_LOST: snprintf(out, n, "- %s no response", e.label); break;
     case ERR_BEAM_CUT:  snprintf(out, n, "- %s beam cut", e.label); break;
+    case ERR_SENSOR_BOTH: snprintf(out, n, "- %s dual sensor fault", e.label); break;
+    case ERR_SPEED_ONLY:  snprintf(out, n, "- %s speed not measured", e.label); break;
     case ERR_RC_DUP:    snprintf(out, n, "- remote x2 (power off 1)"); break;
     case ERR_SG_DUP:    snprintf(out, n, "- signal x2 (power off 1)"); break;
+    case ERR_SECTOR_COMM: snprintf(out, n, "- %s comm lost (1 dropped)", e.label); break;
   }
 }
 
