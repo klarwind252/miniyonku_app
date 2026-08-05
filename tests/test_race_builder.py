@@ -311,3 +311,70 @@ def test_e6_unknown_planned_mode_never_warns():
     """未知の予定値 → 照合しない（安全側）。"""
     assert mode_mismatch("bogus", green_t_us=None) is False
     assert mode_mismatch("", green_t_us=1_000_000) is False
+
+
+# ---------------------------------------------------------------------------
+# F6(24.48/2-h)：build_race 全体が 1〜2レーンでも動く（可変レーン化の統合実証）
+# ---------------------------------------------------------------------------
+
+def make_events_lanes(lanes, target_laps=2, start_t=1_000_000):
+    """rot_total=1 の LAYOUT(S/G→SQ→LC→SQ)を、指定レーン数で全車完走させる合成イベント。
+
+    lanes を expected_* に明示的に渡す点が make_events（3固定）との違い。
+    """
+    from app.domain.rotation import expected_sg_lane, expected_lane
+    events = []
+    rot_total = 1
+    lap_ms = {1: 12_000, 2: 12_200, 3: 11_900}
+    for start_lane in range(1, lanes + 1):
+        lap_us = lap_ms[start_lane] * 1000
+        events.append(PassEvent(
+            node_id=6, lane=expected_sg_lane(start_lane, 0, rot_total, lanes),
+            t_us=start_t, seq=0))
+        for lap in range(1, target_laps + 1):
+            base = start_t + lap * lap_us
+            events.append(PassEvent(
+                node_id=0, lane=expected_lane(start_lane, lap, 0, rot_total, lanes),
+                t_us=start_t + (lap - 1) * lap_us + int(lap_us * 0.33)))
+            events.append(PassEvent(
+                node_id=1, lane=expected_lane(start_lane, lap, 1, rot_total, lanes),
+                t_us=start_t + (lap - 1) * lap_us + int(lap_us * 0.66)))
+            events.append(PassEvent(
+                node_id=6, lane=expected_sg_lane(start_lane, lap, rot_total, lanes),
+                t_us=base))
+    return events
+
+
+def test_build_race_lanes2_full():
+    """2レーン：2台が2周完走。同定・ラップ・合計が正しく組める。"""
+    events = make_events_lanes(lanes=2, target_laps=2)
+    race = build_race(LAYOUT, events, target_laps=2, lanes=2)
+    assert set(race.machines.keys()) == {1, 2}
+    for m in race.machines.values():
+        assert m.completed_laps == 2
+        assert m.dnf is False
+        assert m.total_time_us is not None
+        assert len(m.laps) == 2
+
+
+def test_build_race_lanes1_full():
+    """1レーン：1台がLCなし(rot_total=0)で完走。ローテーションなしでも組める。"""
+    events = make_events_norot({1: 3}, target_laps=3)   # レーン1のみ3周（他は生成しても可）
+    # 1レーン運用：レーン1の車だけを対象に build_race(lanes=1)
+    ev1 = [e for e in events if e.lane == 1]
+    race = build_race(LAYOUT_NOROT, ev1, target_laps=3, lanes=1)
+    assert set(race.machines.keys()) == {1}
+    m = race.machines[1]
+    assert m.completed_laps == 3
+    assert m.dnf is False
+    assert m.total_time_us is not None
+
+
+def test_build_race_lanes3_regression():
+    """3レーン（既定）は従来通り3台完走。可変化で回帰していないこと。"""
+    events = make_events_lanes(lanes=3, target_laps=3)
+    race = build_race(LAYOUT, events, target_laps=3, lanes=3)
+    assert set(race.machines.keys()) == {1, 2, 3}
+    for m in race.machines.values():
+        assert m.completed_laps == 3
+        assert m.total_time_us is not None

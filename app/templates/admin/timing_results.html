@@ -131,6 +131,11 @@
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:15px}
+  /* 結果フラグ・バッジ（サーバー判定を表示。24.1：値は補完せず事実を示す）*/
+  .rflag{display:block;margin-top:2px;font-size:10px;font-weight:bold;line-height:1.25;border-radius:6px;padding:1px 3px;white-space:nowrap}
+  .rflag-dnf{background:#7f8c8d;color:#fff}   /* DNF：CO等で規定周回未達（E5・24.39）*/
+  .rflag-js{background:#c0392b;color:#fff}    /* JS：フライング（G1・24.53）*/
+  .rflag-warn{background:#f39c12;color:#fff}  /* ⚠要確認：欠測あり（E1・24.37）*/
   /* LANEはセル全体を塗って白抜き文字にする（POSの素の数字と明確に分ける） */
   .c-lane{width:50px;text-align:center;vertical-align:middle;
     font-size:15px;font-weight:bold;color:#fff}
@@ -297,7 +302,11 @@
             {% if row.is_first_of_lane %}
             <td class="c-lane lane-{{ ((row.start_lane - 1) % 5) + 1 }}"
                 rowspan="{{ row.lane_row_count }}">{{ row.start_lane }}</td>
-            <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}</td>
+            <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}
+              {% if row.dnf %}<span class="rflag rflag-dnf" title="コースアウト等で規定周回に届かず（DNF・24.39）">DNF</span>{% endif %}
+              {% if row.jump_start %}<span class="rflag rflag-js" title="フライング：S/G通過が緑より前（JS・24.53）">JS</span>{% endif %}
+              {% if row.missing %}<span class="rflag rflag-warn" title="通過回数に欠測あり。値は補完していません（要確認・24.37）">&#9888;要確認</span>{% endif %}
+            </td>
             <td class="c-total gsep{% if row.rank_total %} r{{ row.rank_total }}{% endif %}"
                 rowspan="{{ row.lane_row_count }}"
                 {% if row.rank_total %}title="この日の{{ row.rank_total }}位（トータルタイム）"{% endif %}>

@@ -234,3 +234,61 @@ def test_validate_duplicate_node_is_error():
     r = validate_layout(layout)
     assert not r.can_commit
     assert any(i.code == "node_duplicated" for i in r.errors)
+
+
+# ---------------------------------------------------------------------------
+# F6(24.48/2-h)：可変レーン化（1〜3レーン）。mod3→modN が正しく効くことの実証。
+# ---------------------------------------------------------------------------
+
+def test_lanes1_no_rotation():
+    """1レーン：ローテーションは起きず、常にレーン1（rot_total不問）。"""
+    for lap in range(1, 5):
+        assert expected_lane(1, lap=lap, rot_to_gate=0, rot_total=1, lanes=1) == 1
+        assert expected_sg_lane(1, passing=lap, rot_total=1, lanes=1) == 1
+    # 逆同定も必ずレーン1→スタート1
+    assert identify_start_lane(1, lap=3, rot_to_gate=0, rot_total=1, lanes=1) == 1
+
+
+def test_lanes2_rotation_mod2():
+    """2レーン・rot_total=1：1周ごとにレーンが入れ替わる（mod2）。"""
+    # スタート1: 1周目=1, 2周目=2, 3周目=1 …（S/G rot_to_gate=0）
+    assert expected_lane(1, lap=1, rot_to_gate=0, rot_total=1, lanes=2) == 1
+    assert expected_lane(1, lap=2, rot_to_gate=0, rot_total=1, lanes=2) == 2
+    assert expected_lane(1, lap=3, rot_to_gate=0, rot_total=1, lanes=2) == 1
+    # スタート2は逆位相
+    assert expected_lane(2, lap=1, rot_to_gate=0, rot_total=1, lanes=2) == 2
+    assert expected_lane(2, lap=2, rot_to_gate=0, rot_total=1, lanes=2) == 1
+
+
+def test_lanes2_identify_roundtrip():
+    """2レーン：expected→identify の往復で元のスタートレーンに戻る（全周・全ゲート）。"""
+    for lanes in (1, 2, 3):
+        for start in range(1, lanes + 1):
+            for lap in range(1, 4):
+                for rtg in range(0, 3):
+                    obs = expected_lane(start, lap, rtg, rot_total=1, lanes=lanes)
+                    got = identify_start_lane(obs, lap, rtg, rot_total=1, lanes=lanes)
+                    assert got == start, (lanes, start, lap, rtg, obs, got)
+
+
+def test_validate_lanes2_lc_multiple_of_2_is_error():
+    """2レーン：LCが2の倍数だと1周で元レーンに戻る→エラー。奇数ならOK。"""
+    def layout(lc):
+        return [LayoutElement("SG", node_id=6)] + [LayoutElement("LC")] * lc + \
+               [LayoutElement("SQ", node_id=0)]
+    # LC=2（2の倍数）→ error
+    r2 = validate_layout(layout(2), lanes=2)
+    assert not r2.can_commit
+    assert any(i.code == "lc_multiple_of_lanes" for i in r2.errors)
+    # LC=1（奇数）→ エラーなし（確定可）
+    r1 = validate_layout(layout(1), lanes=2)
+    assert r1.can_commit
+
+
+def test_validate_lanes3_unchanged():
+    """3レーン（既定）の挙動は不変：LC=3はエラー、LC=1はOK。回帰確認。"""
+    def layout(lc):
+        return [LayoutElement("SG", node_id=6)] + [LayoutElement("LC")] * lc + \
+               [LayoutElement("SQ", node_id=0)]
+    assert not validate_layout(layout(3), lanes=3).can_commit
+    assert validate_layout(layout(1), lanes=3).can_commit
