@@ -104,6 +104,23 @@ static uint32_t s_race_id = 0;
 //   flush_spool 成功でクリア、失敗でセット。灰3秒長押し(緊急解除)でも手動クリア可。
 static bool s_send_blocked = false;
 
+// ---- ③群 GW配線（A1/A2・Sync・C1 Lost・24.4⑤画面フロー・27章）--------------
+//  A1(q=2 両ビーム欠)/A2(q=1 片ビーム欠)は per-raceで最悪値を保持し、灰ボタン後3秒だけ表示。
+//  Sync(q=3 未同期打刻)は自動復帰型なので直近受信時刻だけ持つ。
+//  C1 Lostは give-up通知(PT_LOST_NOTICE)で立て、灰リセットまで出しっぱなし。
+static bool     s_race_q2 = false;  static uint8_t s_race_q2_src = 0;  // A1：両ビーム欠(q=2)
+static bool     s_race_q1 = false;  static uint8_t s_race_q1_src = 0;  // A2：片ビーム欠(q=1)
+static uint32_t s_last_q3_ms     = 0;   // B1：未同期打刻(q=3)を最後に受けた時刻→Sync×(自動復帰)
+static uint32_t s_post_err_until = 0;   // 24.4⑤：灰ボタン後3秒だけA1/A2を出す窓(millis基準)
+static uint8_t  s_lost_src       = 0;   // C1：give-up通知の発生SQ(Lostラベル用・24.14)
+
+// 受信/自機の通過qualityを per-raceフラグへ反映（A1/A2/Sync集約の入口）。
+static inline void note_quality(uint8_t q, uint8_t src) {
+  if (q == 2)      { if (!s_race_q2) { s_race_q2 = true; s_race_q2_src = src; } }
+  else if (q == 1) { if (!s_race_q1) { s_race_q1 = true; s_race_q1_src = src; } }
+  else if (q == 3) { s_last_q3_ms = millis(); }
+}
+
 // ---- 排他運用（GW/RC/SG は各ペア1台のみ・在席テーブル）----------------------
 //  方針（本改修）：GW6/7・RC8/9・SG10/11 は「どちらか1台だけ電源ON」で運用する。
 //    同種が2台“生きている”ことを検知したら排他ロックし、新規スタートを受け付けない
@@ -250,6 +267,7 @@ static void on_signal_pressed() {
   s_red_dur_ms = 3000 + (esp_random() % 2000);   // 3.0〜5.0秒
   s_armed_ms   = millis();
   s_state      = ST_ARMED;
+  s_race_q2 = false; s_race_q1 = false;   // 24.4：新レース開始でA1/A2 per-raceフラグをclear
   signal_cmd(proto::CMD_RED);
   Serial.printf("[SEQ] ARMED red=%ums\n", s_red_dur_ms);
   s_race_id          = 0;
@@ -267,6 +285,12 @@ static void on_reset_pressed() {
   //   （灰ボタンは再送手段として残す設計・24.3）。WiFi不通時は flush_spool 内で
   //   送信せず return し、データはスプールに残る（消えない）。
   if (spool_has_data()) flush_spool();
+
+  // 24.4⑤：待機画面に入った直後、3秒間だけA1/A2エラーを表示する窓を開く。
+  s_post_err_until = millis() + 3000;
+  // C1(24.14)：Lostは灰リセットで解除（自動復帰しない出しっぱなし型なので手動clear）。
+  disp::g_status.lost = false;
+  s_lost_src = 0;
 
   s_state = ST_IDLE;
   s_green_t_us = 0;
@@ -409,6 +433,7 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
         mesh::send_ack(proto::PT_EVENT_ACK, h.src, h.seq);   // ingest前ACK（S5）
         RawEvent e{ h.src, h.boot_id, h.seq, b.lane, b.quality, b.t_us, b.t_us_b };
         spool_append(e);
+        note_quality(b.quality, h.src);   // A1/A2/Sync集約（27章）
         Serial.printf("[EV] src=SQ%u lane=%u q=%u t=%llu\n",
                       h.src, b.lane, b.quality, (unsigned long long)b.t_us);
       }
@@ -430,6 +455,14 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
         // ACK（届いた確認・docs/12 COMMAND_ACK）
         mesh::send_ack(proto::PT_COMMAND_ACK, h.src, h.seq);
       }
+    } break;
+
+    case proto::PT_LOST_NOTICE: {
+      // C1(24.14/案A・27章)：SQがEVENTをあきらめた通知。Lost×＋「セクター通信不良」を
+      //   表示する（灰リセットまで出しっぱなし）。発生SQは h.src。
+      disp::g_status.lost = true;
+      s_lost_src = h.src;
+      Serial.printf("[LOSTNOTE] src=SQ%u\n", h.src);
     } break;
 
     case proto::PT_HEARTBEAT: break;
@@ -681,6 +714,12 @@ static void tick_display() {
   disp::g_status.ch      = ESPNOW_CHANNEL;
   // beam_ok / node_have / node_need / unsent は各機能側から順次代入予定。
 
+  // Sync集約（B1/24.11・27章）：自機未同期 or 直近q=3受信 で Sync×（自動復帰型）。
+  {
+    bool recent_q3 = (s_last_q3_ms != 0) && (millis() - s_last_q3_ms < 10000);
+    disp::g_status.sync_ok = tsync::is_synced() && !recent_q3;
+  }
+
   // 排他検知（GW/RC/SG）。gw_dup/rc_dup/sg_dup を更新し、生存SGも確定する。
   bool conflict = eval_exclusivity();
   if (conflict) {
@@ -692,6 +731,33 @@ static void tick_display() {
     disp::draw_error(errs, cnt);
     disp::commit();               // ステータスバーを重ねて転送
     return;
+  }
+
+  // 待機画面のエラー面（27章/24.4⑤・24.14）：
+  //   C1 Lost は灰リセットまで出しっぱなし。A1/A2 は灰ボタン後3秒だけ。いずれも待機(ST_IDLE)で出す。
+  //   排他系(GW/RC/SG重複)は上で return 済みなので、ここは A1/A2/Lost に絞れる（errs枠溢れ回避・27.3）。
+  if (s_state == ST_IDLE) {
+    bool show_post = ((int32_t)(s_post_err_until - millis()) > 0);   // wrap安全な残時間判定
+    bool a1 = show_post && s_race_q2;
+    bool a2 = show_post && s_race_q1;
+    if (disp::g_status.lost || a1 || a2) {
+      disp::ErrItem errs[3]; int cnt = 0;
+      if (disp::g_status.lost) {
+        errs[cnt].kind = disp::ERR_SECTOR_COMM;                       // C1（最後尾・出しっぱなし）
+        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_lost_src); cnt++;
+      }
+      if (a1 && cnt < 3) {
+        errs[cnt].kind = disp::ERR_SENSOR_BOTH;                       // A1 両ビーム欠
+        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_race_q2_src); cnt++;
+      }
+      if (a2 && cnt < 3) {
+        errs[cnt].kind = disp::ERR_SPEED_ONLY;                        // A2 片ビーム欠
+        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_race_q1_src); cnt++;
+      }
+      disp::draw_error(errs, cnt);
+      disp::commit();
+      return;
+    }
   }
 
   switch (s_state) {
@@ -725,6 +791,7 @@ void loop() {
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };
     spool_append(e);
+    note_quality(hit.quality, (uint8_t)NODE_ID);   // 自機S/GのA1/A2も拾う（27章）
     Serial.printf("[SG] lane=%u q=%u\n", hit.lane, hit.quality);
   }
 

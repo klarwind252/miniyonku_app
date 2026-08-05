@@ -51,6 +51,7 @@ enum PktType : uint8_t {
   PT_COMMAND_ACK = 9,
   PT_HEALTH      = 10,  // ノード→GW：詳細健全性
   PT_CONFIG      = 11,  // GW→ノード：設定配布（チャンネル等）
+  PT_LOST_NOTICE = 12,  // SQ→GW：EVENT再送(4回)あきらめ通知（C1・24.14/案A・27章）
 };
 
 // ---- フラグ ----------------------------------------------------------------
@@ -119,6 +120,16 @@ struct CommandBody {
   uint8_t  code;         // CmdCode
   uint8_t  _pad[3];
   uint32_t arg;          // 予備（ランダム時間msなど）
+};
+
+// LOST_NOTICE：SQがEVENTの再送(4回)をあきらめた通知（C1・24.14/案A・27章）。
+//   give-upはSQ側で起き、その通過EVENTはGWに届かない。GWがLostを知る唯一の経路として
+//   あきらめた瞬間に本通知を1本送る（best-effort・本通知自体は再送しない）。
+//   発生SQのnode_idは header.src に入る。GWは Lost× と「セクター通信不良」を表示（灰まで保持）。
+struct LostNoticeBody {
+  uint8_t  lane;         // 消えた通過のレーン（ログ用）
+  uint8_t  _pad[3];
+  uint32_t dropped_seq;  // 消えたEVENTのseq（ログ用）
 };
 #pragma pack(pop)
 

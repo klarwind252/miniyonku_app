@@ -54,6 +54,25 @@ class PassEvent:
 StartMode = Literal["f1", "run"]  # F1式 / 走行式
 
 
+def mode_mismatch(planned_mode: str | None, green_t_us: int | None) -> bool:
+    """D7/E6(24.34)：予定モードと実測（green_t_us の有無）の食い違い判定。
+
+    リアルタイム判別はせず、結果をヒートへ反映(apply)する時点の事後チェックで
+    「予定と実際のズレ」に気づくための純粋関数（24.34 確定方針）。
+
+      planned_mode : 'f1'（F1式・緑あり予定）/ 'run'（走行式・緑なし予定）
+                     / None（予定未設定＝チェックしない）
+      green_t_us   : 実測レコードの緑時刻。None なら走行式で走ったと判別（DA4）。
+
+    予定f1なのに緑なし、予定runなのに緑あり、なら食い違い(True)。
+    予定未設定(None)や未知の値のときはチェックしない(False)。
+    """
+    if planned_mode not in ("f1", "run"):
+        return False
+    actual: StartMode = "f1" if green_t_us is not None else "run"
+    return planned_mode != actual
+
+
 # ---------------------------------------------------------------------------
 # 出力データ
 # ---------------------------------------------------------------------------

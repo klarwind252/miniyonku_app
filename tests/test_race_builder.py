@@ -272,3 +272,42 @@ def test_e5_dnf_partial_progress_more_laps_ranked_higher():
         assert m.dnf is True               # 全車3周未達＝DNF
     order = [m.start_lane for m in race.ranking()]
     assert order == [2, 1, 3]              # 周回数 2 > 1 > 0 の順
+
+
+# ---------------------------------------------------------------------------
+# D7/E6(24.34)：予定モードと実測(green_t_us)の食い違い判定
+# ---------------------------------------------------------------------------
+
+from app.domain.race_builder import mode_mismatch
+
+
+def test_e6_mode_match_f1():
+    """予定F1式・緑あり → 一致（警告なし）。"""
+    assert mode_mismatch("f1", green_t_us=1_000_000) is False
+
+
+def test_e6_mode_match_run():
+    """予定走行式・緑なし → 一致（警告なし）。"""
+    assert mode_mismatch("run", green_t_us=None) is False
+
+
+def test_e6_mode_mismatch_f1_but_no_green():
+    """予定F1式なのに緑なし（出し忘れ） → 食い違い。"""
+    assert mode_mismatch("f1", green_t_us=None) is True
+
+
+def test_e6_mode_mismatch_run_but_green():
+    """予定走行式なのに緑あり（誤操作） → 食い違い。"""
+    assert mode_mismatch("run", green_t_us=1_000_000) is True
+
+
+def test_e6_no_planned_mode_never_warns():
+    """予定未設定(None) → 照合しない（緑の有無に関わらずFalse）。"""
+    assert mode_mismatch(None, green_t_us=None) is False
+    assert mode_mismatch(None, green_t_us=1_000_000) is False
+
+
+def test_e6_unknown_planned_mode_never_warns():
+    """未知の予定値 → 照合しない（安全側）。"""
+    assert mode_mismatch("bogus", green_t_us=None) is False
+    assert mode_mismatch("", green_t_us=1_000_000) is False

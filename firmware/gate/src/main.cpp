@@ -99,6 +99,13 @@ static void service_pending() {
     if (p.tries >= MAX_TRIES) {
       p.used = false;
       Serial.printf("[WARN] event give up lane=%u\n", p.body.lane);
+      // C1(24.14/案A・27章)：あきらめた瞬間、GWへLost通知を1本送る（best-effort）。
+      //   この通知自体は再送管理しない。届けばGWが Lost×/セクター通信不良を表示。
+      //   落ちても既存のNode×や後続EVENTのseq飛びで異常自体は別途露見しうる。
+      proto::LostNoticeBody ln{};
+      ln.lane        = p.body.lane;
+      ln.dropped_seq = p.seq;
+      mesh::send(proto::PT_LOST_NOTICE, 6 /*GW*/, &ln, sizeof(ln));
       continue;
     }
     mesh::send(proto::PT_EVENT, 6 /*GW*/, &p.body, sizeof(p.body));

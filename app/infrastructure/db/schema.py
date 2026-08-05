@@ -99,6 +99,7 @@ async def init_db(db_path: str = None):
             group_no       INTEGER DEFAULT 0,
             round_no       INTEGER DEFAULT 0,
             status         TEXT DEFAULT 'pending',
+            planned_mode   TEXT DEFAULT NULL,          -- D7/E6(24.34)：予定モード 'f1'/'run'/NULL
             FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
         );
         CREATE TABLE IF NOT EXISTS heat_lanes (
@@ -201,6 +202,15 @@ async def init_db(db_path: str = None):
         if "advanced" not in e_cols:
             await db.execute("ALTER TABLE entries ADD COLUMN advanced INTEGER DEFAULT NULL")
             print("[DB] migration: entries.advanced added")
+
+        # heats.planned_mode カラム（D7/E6・24.34：予定モード F1式/走行式）
+        #   反映(apply)時に実測 green_t_us の有無と照合し、食い違いを警告するために使う。
+        #   NULL=予定未設定＝照合しない（ヒート設定UI未実装の現状は無警告で後方互換）。
+        async with db.execute("PRAGMA table_info(heats)") as cur:
+            heats_cols = [r["name"] for r in await cur.fetchall()]
+        if "planned_mode" not in heats_cols:
+            await db.execute("ALTER TABLE heats ADD COLUMN planned_mode TEXT")
+            print("[DB] migration: heats.planned_mode added")
 
         # tournaments 追加カラム
         async with db.execute("PRAGMA table_info(tournaments)") as cur:

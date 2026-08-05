@@ -28,6 +28,7 @@ from app.application import timing_speed_service as spd_svc
 from app.application import timing_sample_service as sample_svc
 from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
+from app.domain.race_builder import mode_mismatch  # D7/E6(24.34)：予定/実測モード照合
 from app.presentation.templates import templates
 from app.presentation.routers.m4laps_guard import require_m4laps
 
@@ -746,6 +747,27 @@ async def apply_latest_to_heat(
                 "code": "already_applied_to_other",
                 "message": f"この計測結果は既に{hname}へ反映済みです。"
                            f"同じ結果を二重に使うことになります。",
+            })
+        # ③ D7/E6(24.34)：予定モードと実測(green_t_us)の食い違い（事後チェック）。
+        #   ヒート設定 planned_mode('f1'/'run'/NULL) と反映レコードの green_t_us 有無を照合。
+        #   緑の出し忘れ/誤操作で予定とズレていれば警告。NULLなら照合しない（後方互換）。
+        try:
+            async with db.execute(
+                "SELECT planned_mode FROM heats WHERE id = ?", (heat_id,)
+            ) as cur:
+                hrow = await cur.fetchone()
+            planned_mode = hrow["planned_mode"] if hrow else None
+        except Exception:
+            planned_mode = None   # 旧DB（planned_mode列なし）は照合しない
+        race_green = race["green_t_us"] if "green_t_us" in keys else None
+        if mode_mismatch(planned_mode, race_green):
+            planned_label = "F1式（緑あり）" if planned_mode == "f1" else "走行式（緑なし）"
+            actual_label = "F1式（緑あり）" if race_green is not None else "走行式（緑なし）"
+            warnings.append({
+                "code": "mode_mismatch",
+                "message": f"このヒートの予定は{planned_label}ですが、"
+                           f"計測結果は{actual_label}です。"
+                           f"緑の出し忘れ・誤操作の可能性があります。",
             })
         if warnings:
             return JSONResponse(
