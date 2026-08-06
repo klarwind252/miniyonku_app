@@ -29,6 +29,12 @@ from app.domain.rotation import (
     expected_lane,
     expected_sg_lane,
 )
+from app.application.timing_sample_irregular import (
+    assign_lane_patterns,
+    should_emit,
+    should_emit_start,
+    describe_pattern,
+)
 
 # サンプル送信機能の有効/無効。既定は有効（テスト環境での確認用）。
 # 本番では .env に M4LAPS_SAMPLE=0 を入れてボタンごと消す。
@@ -113,6 +119,7 @@ def build_sample_events(
     total_s: float = TARGET_TOTAL_S,
     beam_gap_by_node: dict | None = None,
     seed: int | None = None,
+    irregular: bool = False,
 ) -> tuple[int | None, list[dict]]:
     """1レース分のサンプル通過イベントを組み立てる。
 
@@ -173,7 +180,28 @@ def build_sample_events(
             "quality": 0,
         })
 
+    # イレギュラーパターン（DNS/CO/スキップ）を各スタートレーンに割り当てる。
+    # 「無」のときは None のまま＝従来どおり全マシン完走。
+    lane_patterns = None
+    if irregular:
+        gate_names = [g.kind for g in gates]  # ["SG","SQ0",...] 形式（ログ用）
+        lane_patterns = assign_lane_patterns(
+            n_lanes=lanes,
+            total_laps=target_laps,
+            n_gates=n_gates,
+            rnd=rnd,
+        )
+        for sl, pat in enumerate(lane_patterns, 1):
+            print(f"  [irregular] start_lane={sl}: "
+                  f"{describe_pattern(pat, gate_names)}")
+
     for start_lane in range(1, lanes + 1):
+        pat = lane_patterns[start_lane - 1] if lane_patterns else None
+
+        # DNS：一度も通過しない＝このマシンのイベントを一切生成しない
+        if pat and not should_emit_start(pat):
+            continue
+
         # このマシンのFINISHタイム（1台ずつ独立に引く＝順位は毎回ランダム）
         target = rnd.uniform(total_s - TOTAL_JITTER_S, total_s + TOTAL_JITTER_S)
 
@@ -197,9 +225,14 @@ def build_sample_events(
                                 spread=0.18, cap=SECTOR_MAX_S)
 
             # 周の途中にあるセクションゲート（区間タイムを積み上げて打刻）
+            # ⚠ 時刻(acc)は欠落があっても必ず積み上げる。欠落するのは「打刻を
+            #    出すか」だけで、時間そのものは進む（後ろのゲートの時刻がズレない）。
             acc = 0.0
             for i, g in enumerate(gates[1:], start=1):
                 acc += secs[i - 1]
+                # gate_idx: 中間ゲートは 1.. （0はS/G周回完了）
+                if pat and not should_emit(pat, lap, i):
+                    continue
                 _emit(
                     g,
                     expected_lane(start_lane, lap, g.rot_to_gate, rot_total, lanes),
@@ -208,7 +241,10 @@ def build_sample_events(
 
             # 周回完了（S/G lap回目の通過）。端数はここで吸収する
             t_lap_start += lap_us
-            _emit(sg, expected_sg_lane(start_lane, lap, rot_total, lanes), t_lap_start)
+            # gate_idx=0 が「周回完了S/G」。COで周を締められない場合は出さない。
+            if not (pat and not should_emit(pat, lap, 0)):
+                _emit(sg, expected_sg_lane(start_lane, lap, rot_total, lanes),
+                      t_lap_start)
 
     events.sort(key=lambda e: e["t_us"])
     return green_t_us, events

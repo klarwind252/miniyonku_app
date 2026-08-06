@@ -566,6 +566,8 @@ async def create_sample_race(
     n_races = max(1, min(int(data.get("races") or 1), sample_svc.MAX_RACES))
     heat_tag = data.get("heat_tag")
     heat_tag = int(heat_tag) if heat_tag not in (None, "") else None
+    # イレギュラーデータ生成フラグ（無=従来どおり全完走 / 有=CO/DNS等を混ぜる）
+    irregular = bool(data.get("irregular"))
 
     elems = await lrepo.get_elements(layout_id)
     layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems]
@@ -586,6 +588,7 @@ async def create_sample_race(
                 # レース同士が時間的に重ならないよう、1本ぶんずつ後ろにずらす
                 base_t_us=base + int(i * (sample_svc.TARGET_TOTAL_S + 10) * 1_000_000),
                 beam_gap_by_node=gaps,
+                irregular=irregular,
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))

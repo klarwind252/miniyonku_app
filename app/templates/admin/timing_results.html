@@ -70,6 +70,13 @@
       <input type="number" id="smpHeat" placeholder="なし" style="width:90px">
     </div>
     <div>
+      <label for="smpIrregular">イレギュラーデータ</label>
+      <select id="smpIrregular" style="width:130px">
+        <option value="0">無（全完走）</option>
+        <option value="1">有（ランダム）</option>
+      </select>
+    </div>
+    <div>
       <button type="button" class="btn btn-primary btn-sm" id="smpBtn" onclick="sendSample()">📡 送信</button>
     </div>
   </div>
@@ -502,7 +509,8 @@ async function sendSample(){
     laps: parseInt(document.getElementById('smpLaps').value, 10),
     lanes: parseInt(document.getElementById('smpLanes').value, 10),
     races: parseInt(document.getElementById('smpRaces').value, 10),
-    heat_tag: heat === '' ? null : parseInt(heat, 10)
+    heat_tag: heat === '' ? null : parseInt(heat, 10),
+    irregular: document.getElementById('smpIrregular').value === '1'
   };
   if(!confirm('サンプルの計測記録を ' + body.races + ' レース分投入します。\n'
       + '本物の記録と同じ扱いになります。よろしいですか？')) return;
