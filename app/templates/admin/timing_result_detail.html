@@ -11,6 +11,11 @@
   .lap-table th:first-child, .lap-table td:first-child { text-align:left; }
   .mono { font-family:'SF Mono',Consolas,monospace; }
   .sector-cell { color:#7f8c8d; font-size:12px; }
+  /* 結果フラグ・バッジ（DNF/JS/⚠要確認・24.1：事実を表示）*/
+  .rd-flag{display:inline-block;margin-left:6px;font-size:11px;font-weight:bold;border-radius:6px;padding:1px 6px;color:#fff;vertical-align:middle}
+  .rd-dnf{background:#7f8c8d}
+  .rd-js{background:#c0392b}
+  .rd-warn{background:#f39c12}
 </style>
 {% endblock %}
 {% block content %}
@@ -55,7 +60,11 @@
               {% if r.pos == 1 %}🏆{% elif r.pos == 2 %}🥈{% elif r.pos == 3 %}🥉{% else %}{{ r.pos }}{% endif %}
             </span>
           </td>
-          <td>{{ r.start_lane }}コース スタート</td>
+          <td>{{ r.start_lane }}コース スタート
+            {% if r.dnf %}<span class="rd-flag rd-dnf" title="コースアウト等で規定周回に届かず（DNF・24.39）">DNF</span>{% endif %}
+            {% if r.jump_start %}<span class="rd-flag rd-js" title="フライング：S/G通過が緑より前（JS・24.53）">JS</span>{% endif %}
+            {% if r.missing %}<span class="rd-flag rd-warn" title="通過回数に欠測あり。値は補完していません（要確認・24.37）">&#9888;要確認</span>{% endif %}
+          </td>
           <td class="mono">{% if r.total_s %}{{ '%.3f'|format(r.total_s) }} 秒{% else %}—{% endif %}</td>
           <td class="mono">{% if r.best_s %}{{ '%.3f'|format(r.best_s) }} 秒{% else %}—{% endif %}</td>
         </tr>

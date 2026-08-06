@@ -1326,6 +1326,9 @@ async def result_detail_page(
                 "start_lane": m.start_lane,
                 "total_s": (m.total_time_us / 1e6) if m.total_time_us else None,
                 "best_s": (m.best_lap_us / 1e6) if m.best_lap_us else None,
+                "dnf": m.dnf,               # E5(24.39)：CO=DNF表示
+                "jump_start": m.jump_start, # G1(24.53)：フライング=JS表示
+                "missing": m.missing,       # E1(24.37)：欠測あり=⚠要確認
             })
         for sl in sorted(result.machines):
             m = result.machines[sl]
