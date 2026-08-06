@@ -26,6 +26,10 @@ from app.application import timing_best_service as best_svc
 from app.application import timing_bridge_service as bridge_svc
 from app.application import timing_speed_service as spd_svc
 from app.application import timing_sample_service as sample_svc
+from app.application.timing_sample_irregular import (
+    describe_pattern_short as irr_describe,
+    summarize_patterns as irr_summary,
+)
 from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
 from app.domain.race_builder import mode_mismatch  # D7/E6(24.34)：予定/実測モード照合
@@ -406,6 +410,7 @@ async def results_page(
                     "time_part": _split_ts(race["created_at"])[1],
                     "heat_id": race["heat_id"],
                     "mode": result.mode,               # 'f1'=レース / 'run'=フリー
+                    "sample_note": (r["sample_note"] if "sample_note" in r.keys() else None),
                     "jump_start": m.jump_start,         # G1(24.53)：フライング=JS表示
                     "missing": m.missing,               # E1(24.37)：欠測あり=⚠要確認表示
                     "dnf": m.dnf,                       # E5(24.39)：CO=DNF表示
@@ -580,7 +585,7 @@ async def create_sample_race(
     base = int(time.time() * 1_000_000)
     for i in range(n_races):
         try:
-            green_t_us, events = sample_svc.build_sample_events(
+            green_t_us, events, lane_patterns, gate_names = sample_svc.build_sample_events(
                 layout_elems,
                 target_laps=laps,
                 lanes=lanes,
@@ -593,11 +598,23 @@ async def create_sample_race(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+        # イレギュラー生成のときは、各レーンの割当パターンを注釈にして残す。
+        # 例: "全車CO ｜ L1:CO(1周SQ0手前) L2:CO(2周SQ1手前) L3:DNS"
+        # gate_names は build_course のゲート列（LC除外）なので gate_idx と一致する。
+        sample_note = None
+        if irregular and lane_patterns:
+            summary = irr_summary(lane_patterns)
+            parts = []
+            for sl, pat in enumerate(lane_patterns, 1):
+                parts.append(f"L{sl}:{irr_describe(pat, gate_names)}")
+            sample_note = summary + " ｜ " + " ".join(parts)
+
         race_id = await rrepo.create_race(
             heat_tag=heat_tag,
             layout_id=layout_id,
             target_laps=laps,
             green_t_us=green_t_us,
+            sample_note=sample_note,
         )
         for ev in events:
             await rrepo.insert_event(race_id, ev)

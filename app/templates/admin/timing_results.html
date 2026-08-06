@@ -137,6 +137,10 @@
   .mode-chip{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold}
   .mode-race{background:#fdeaea;color:#c0392b}   /* レース：緑ランプありのスタート */
   .mode-free{background:#eafaf1;color:#27ae60}   /* フリー：走行しながら計測 */
+  /* サンプル送信で作ったイレギュラーパターンのメモ（実データには出ない） */
+  .smp-note-tag{margin-top:4px;font-size:10px;line-height:1.35;color:#8a6d1f;
+    background:#fff8e1;border:1px solid #f0e0a8;border-radius:6px;
+    padding:3px 6px;max-width:150px;word-break:break-word;white-space:normal}
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:15px}
   /* 結果フラグ・バッジ（サーバー判定を表示。24.1：値は補完せず事実を示す）*/
   .rflag{display:block;margin-top:2px;font-size:10px;font-weight:bold;line-height:1.25;border-radius:6px;padding:1px 3px;white-space:nowrap}
@@ -303,6 +307,11 @@
                 <span class="linked-badge">ヒート{{ row.heat_id }}</span>
                 {% endif %}
               </div>
+              {% if row.sample_note %}
+              <div class="smp-note-tag" title="サンプル送信で生成したイレギュラーパターン">
+                🧪 {{ row.sample_note }}
+              </div>
+              {% endif %}
             </td>
             {% endif %}
             {# POS・LANE・TOTAL はレーンごとに1回だけ #}

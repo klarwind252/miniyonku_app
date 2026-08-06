@@ -120,12 +120,16 @@ def build_sample_events(
     beam_gap_by_node: dict | None = None,
     seed: int | None = None,
     irregular: bool = False,
-) -> tuple[int | None, list[dict]]:
+) -> tuple[int | None, list[dict], list[dict] | None, list[str]]:
     """1レース分のサンプル通過イベントを組み立てる。
 
-    戻り値: (green_t_us または None, events)
+    戻り値: (green_t_us または None, events, lane_patterns, gate_names)
       events は timing_api の受信口と同じ形:
       {device_id, src, src_boot_id, seq, lane, t_us, t_us_b, quality}
+      lane_patterns は irregular=True のとき各スタートレーンの割当パターン
+      （index0=start_lane1）。irregular=False のときは None。
+      gate_names は build_course のゲート列（LC除外・gate_idxと一致）。
+      注釈のゲート名解決に使う。
 
     mode: "race"（F1式・緑ランプあり）/ "free"（走行式・緑なし）
 
@@ -247,4 +251,7 @@ def build_sample_events(
                       t_lap_start)
 
     events.sort(key=lambda e: e["t_us"])
-    return green_t_us, events
+    # gate_names は build_course のゲート列（LC除外・gate_idxと一致）。
+    # 注釈のゲート名がズレないよう、呼び出し側にはこれを使わせる。
+    gate_name_list = [g.kind for g in gates]
+    return green_t_us, events, lane_patterns, gate_name_list

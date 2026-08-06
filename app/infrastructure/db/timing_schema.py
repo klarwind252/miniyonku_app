@@ -252,4 +252,14 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_timing_races_client_key "
         "ON timing_races(client_key) WHERE client_key IS NOT NULL"
     )
+
+    # 既存DBへの追加列（sample_note）: サンプル送信で生成したレースに、
+    # どのイレギュラーパターンで作ったかのメモを残す（実機データは常にNULL）。
+    # 一覧の「レース」ラベル下に表示するだけの用途。集計には一切使わない。
+    try:
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
+        if "sample_note" not in cols:
+            await db.execute("ALTER TABLE timing_races ADD COLUMN sample_note TEXT")
+    except Exception:
+        pass
     await db.commit()

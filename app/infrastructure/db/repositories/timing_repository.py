@@ -167,6 +167,7 @@ class TimingRaceRepository:
         target_laps: int,
         green_t_us: int | None,
         client_key: str | None = None,
+        sample_note: str | None = None,
     ) -> int:
         # 冪等キー（任意）: GWが (device_id:boot_id:heat_tag) 等を送ってきた場合、
         # 200応答の消失→再送で同一ヒートのレースが二重生成される事故を防ぐ。
@@ -179,9 +180,9 @@ class TimingRaceRepository:
             if row:
                 return row["id"] if hasattr(row, "keys") else row[0]
         cur = await self.db.execute(
-            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (heat_tag, layout_id, target_laps, green_t_us, client_key),
+            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note),
         )
         await self.db.commit()
         return cur.lastrowid
@@ -257,7 +258,7 @@ class TimingRaceRepository:
 
     async def list_races(self, limit: int = 50):
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
             "FROM timing_races ORDER BY id DESC LIMIT ?",
             (limit,),
         ) as cur:
@@ -280,7 +281,7 @@ class TimingRaceRepository:
     async def list_races_by_date(self, date: str, limit: int = 500):
         """指定日（YYYY-MM-DD）のレースを新しい順に返す。"""
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
             "FROM timing_races WHERE substr(created_at,1,10) = ? "
             "ORDER BY id DESC LIMIT ?",
             (date, limit),
@@ -293,7 +294,7 @@ class TimingRaceRepository:
         created_at は "YYYY-MM-DD HH:MM:SS" 形式なので日付部分で比較する。
         """
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
             "FROM timing_races "
             "WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ? "
             "ORDER BY id ASC LIMIT ?",
@@ -309,7 +310,7 @@ class TimingRaceRepository:
         固定長・ゼロ埋めの文字列なので、辞書順の比較で日時の比較になる。
         """
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
             "FROM timing_races WHERE created_at >= ? AND created_at <= ? "
             "ORDER BY id ASC LIMIT ?",
             (ts_from, ts_to, limit),

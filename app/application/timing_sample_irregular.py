@@ -196,3 +196,58 @@ def describe_pattern(pattern: dict, gate_names: list[str] | None = None) -> str:
         return ("スキップ復帰4（{}周目 {} だけ欠落）".format(
             pattern["skip_lap"], gname(pattern["skip_gate"])))
     return "不明({})".format(ptype)
+
+
+def describe_pattern_short(pattern: dict, gate_names: list[str] | None = None) -> str:
+    """一覧の注釈用の短い説明（例: "完走" / "CO(2周目SQ1手前)" / "DNS"）。
+
+    レース一覧の「レース」ラベル下に L1/L2/L3 と並べて出すため、簡潔にする。
+    """
+    ptype = pattern["type"]
+
+    def gname(idx: int) -> str:
+        if gate_names and 0 <= idx < len(gate_names):
+            return gate_names[idx]
+        return f"G{idx}"
+
+    if ptype == "finish":
+        return "完走"
+    if ptype == "dns":
+        return "DNS"
+    if ptype == "co":
+        return "CO({}周{}手前)".format(pattern["stop_lap"], gname(pattern["stop_gate"]))
+    if ptype == "skip":
+        return "スキップ({}周{}欠)".format(pattern["skip_lap"], gname(pattern["skip_gate"]))
+    return "?"
+
+
+def summarize_patterns(patterns: list[dict]) -> str:
+    """レース全体の一言サマリ（例: "全車CO" / "全車完走" / "1台DNS" / "混在"）。
+
+    L1/L2/L3 の詳細とは別に、ぱっと見の状態を短く表す。
+    """
+    types = [p["type"] for p in patterns]
+    n = len(types)
+    n_fin = types.count("finish")
+    n_dns = types.count("dns")
+    n_co = types.count("co")
+    n_skip = types.count("skip")
+
+    if n_fin == n:
+        return "全車完走"
+    if n_dns == n:
+        return "全車DNS"
+    if n_co == n:
+        return "全車CO"
+    # 完走ゼロ＝誰も完走せず
+    if n_fin == 0:
+        return "全車リタイア"
+    # それ以外は混在。特筆すべき台数だけ添える
+    tags = []
+    if n_dns:
+        tags.append(f"DNS{n_dns}")
+    if n_co:
+        tags.append(f"CO{n_co}")
+    if n_skip:
+        tags.append(f"スキップ{n_skip}")
+    return "完走{}／{}".format(n_fin, "・".join(tags)) if tags else "混在"
