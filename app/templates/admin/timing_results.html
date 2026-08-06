@@ -439,12 +439,15 @@ async function deleteRace(raceId, ts){
 // テスト用サンプル送信（実機GWの代わりにダミー記録を投入する）
 function toggleSample(){
   const c = document.getElementById('smpCard');
-  c.style.display = (c.style.display === 'none') ? 'block' : 'none';
+  const open = (c.style.display === 'none');
+  c.style.display = open ? 'block' : 'none';
+  // 開閉状態を覚えて、送信後のリロードでも開いたままにする
+  try{ localStorage.setItem('m4sample_open', open ? '1' : '0'); }catch(e){}
 }
 
 // 入力内容は端末に覚えさせ、次に開いたときも同じ条件で送れるようにする
 const SMP_KEY = 'm4sample_form';
-const SMP_FIELDS = ['smpLayout','smpMode','smpLaps','smpLanes','smpRaces','smpHeat'];
+const SMP_FIELDS = ['smpLayout','smpMode','smpLaps','smpLanes','smpRaces','smpHeat','smpIrregular'];
 
 function smpSave(){
   try{
@@ -477,6 +480,14 @@ function smpRestore(){
 }
 
 document.addEventListener('DOMContentLoaded', function(){
+  // 前回開いていたらパネルを開いたまま復元（送信後のリロード対策）
+  try{
+    const card = document.getElementById('smpCard');
+    if(card && localStorage.getItem('m4sample_open') === '1'){
+      card.style.display = 'block';
+    }
+  }catch(e){}
+
   const sel = document.getElementById('smpLayout');
   if(!sel) return;
   // レイアウトを「選び直したとき」だけ、そのレイアウトの既定周回数に合わせる。
