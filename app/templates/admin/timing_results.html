@@ -158,16 +158,16 @@
   .pc-close{border:none;background:#f2f2f2;border-radius:8px;width:32px;height:32px;
     font-size:18px;cursor:pointer;color:#666}
   .pc-close:hover{background:#e6e6e6}
-  .pc-body{padding:8px 10px}
+  .pc-body{padding:4px 6px}
   /* スマホでもグラフを横スクロールで全部見られるように */
   #pcChartWrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
     padding-bottom:6px}
-  .pc-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .pc-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
   .pc-legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:12px;
     padding:3px 8px;border-radius:14px;border:1px solid #ddd;cursor:pointer;user-select:none}
   .pc-legend .lg.off{opacity:.35;text-decoration:line-through}
   .pc-legend .lg .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
-  .pc-note{font-size:11px;color:#888;margin-top:8px;line-height:1.5}
+  .pc-note{font-size:11px;color:#888;margin-top:4px;line-height:1.4}
   .pc-smpnote{margin-top:12px;font-size:12px;line-height:1.4;color:#8a6d1f;
     background:#fff8e1;border:1px solid #f0e0a8;border-radius:8px;
     padding:8px 12px;word-break:break-word}
@@ -707,7 +707,7 @@ function renderPositionChart(){
   // SVG レイアウト（文字を大きくしたぶん、間隔・余白も広げる）
   const W = Math.max(560, nx * 64);
   const H = 74 + maxRank * 96;
-  const padL = 70, padR = 66, padT = 46, padB = 84;
+  const padL = 52, padR = 60, padT = 40, padB = 66;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const xAt = p => padL + (nx <= 1 ? plotW/2 : plotW * p / (nx - 1));
@@ -750,7 +750,7 @@ function renderPositionChart(){
     }
   });
   // 軸見出し
-  svg += '<text x="' + (padL - 50) + '" y="' + (padT - 12) + '" font-size="18" fill="#000">順位</text>';
+  svg += '<text x="2" y="' + (padT - 12) + '" font-size="15" fill="#000">順位</text>';
 
   // 各レーンの折れ線
   d.lanes.forEach(lane => {

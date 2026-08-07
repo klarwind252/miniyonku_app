@@ -49,6 +49,7 @@ class PassEvent:
     t_us_b: int | None = None   # ビームBの打刻（速度用・任意）
     quality: int = 0      # 0正常 / 1片ビーム欠 / 3未同期
     seq: int = 0          # 発生ノードごとの通番（欠番検出用）
+    id: int | None = None  # timing_events.id（点除外訂正で参照・J群 §24.82）
 
 
 StartMode = Literal["f1", "run"]  # F1式 / 走行式
@@ -84,6 +85,7 @@ class SectorTime:
     from_gate_index: int
     to_gate_index: int
     dt_us: int
+    to_event_id: int | None = None  # 到達点（to_gate）の元イベントid（J群 §24.82）
 
 
 @dataclass
@@ -331,10 +333,11 @@ def _build_sectors(
     """
     # この周に通ったゲートを、通過順（index順）に、時刻付きで集める
     # S/G(周回開始) は lap_start_t、S/G(周回完了) は lap_end_t を端点にする
-    points: list[tuple[int, int]] = []  # (gate_index, t_us)
+    points: list[tuple[int, int, int | None]] = []  # (gate_index, t_us, event_id)
 
     # 周回開始の起点＝前のS/G通過（or 緑）: gate_index を S/G として端点に置く
-    points.append((sg_gate.index, lap_start_t))
+    # 起点の event_id は前周の到達点なのでここでは None（線の始点は除外対象にしない）
+    points.append((sg_gate.index, lap_start_t, None))
 
     # 中間のセクションゲート（index順）: この周(lap)の通過を拾う
     for g in course.gates:
@@ -343,16 +346,21 @@ def _build_sectors(
         gm = gates_map.get(g.index, {})
         cur = gm.get(lap)
         if cur is not None:
-            points.append((g.index, cur[0]))
+            _ev = cur[1]
+            points.append((g.index, cur[0], getattr(_ev, "id", None)))
 
-    # 周回完了のS/G
-    points.append((sg_gate.index, lap_end_t))
+    # 周回完了のS/G（この周の完了イベント）
+    sg_map = gates_map.get(sg_gate.index, {})
+    sg_cur = sg_map.get(lap)
+    sg_ev_id = getattr(sg_cur[1], "id", None) if sg_cur is not None else None
+    points.append((sg_gate.index, lap_end_t, sg_ev_id))
 
     # 時刻順に並べ（通常は既に順序通り）、隣接差をセクターに
     points.sort(key=lambda x: x[1])
     sectors: list[SectorTime] = []
     for a, b in zip(points, points[1:]):
         sectors.append(SectorTime(
-            from_gate_index=a[0], to_gate_index=b[0], dt_us=b[1] - a[1]
+            from_gate_index=a[0], to_gate_index=b[0], dt_us=b[1] - a[1],
+            to_event_id=b[2],
         ))
     return sectors
