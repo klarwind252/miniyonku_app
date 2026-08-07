@@ -193,14 +193,11 @@
   .pc-raw-dev.ok    .pc-raw-tag{color:#16a34a}
   .pc-raw-chips{display:flex;flex-wrap:wrap;gap:4px}
   .pc-raw-chip{display:inline-flex;align-items:center;gap:3px;font-size:11px;
-    padding:2px 7px;border-radius:10px;background:#f6f8fb;cursor:pointer;
+    padding:2px 7px;border-radius:10px;background:#f6f8fb;
     border:1px solid #e2e8f0;border-left:4px solid var(--lc);color:#333;white-space:nowrap}
   .pc-raw-chip b{color:var(--lc)}
   .pc-raw-chip .qd{width:7px;height:7px;border-radius:50%;background:var(--qc);display:inline-block}
   .pc-raw-chip.off{opacity:.28}
-  .pc-raw-chip.del{opacity:.5;text-decoration:line-through;background:#f1f1f1;
-    border-left-color:#bbb;color:#999}
-  .pc-raw-chip.del b{color:#999}
   .pc-raw-none,.pc-raw-empty{font-size:11px;color:#aaa;padding:2px 4px}
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:15px}
   /* 結果フラグ・バッジ（サーバー判定を表示。24.1：値は補完せず事実を示す）*/
@@ -662,8 +659,7 @@ async function sendSample(){
         <div class="pc-rawsec-h">生データ（通過ログ・時刻順）
           <small>各ゲートの「実回数／期待回数」を対比。
             赤＝乗入（検出過多）疑い・橙＝欠落（検出過少）疑い。
-            チップ左の色＝走行レーン、右の丸＝受光品質（緑:正常／橙:片ビーム欠／赤:両ビーム欠／灰:未同期）。
-            チップ／上の折れ線の点をタップで、その通過を除外・復活（即再判定）。</small>
+            チップ左の色＝走行レーン、右の丸＝受光品質（緑:正常／橙:片ビーム欠／赤:両ビーム欠／灰:未同期）。</small>
         </div>
         <div id="pcRawWrap"></div>
       </div>
@@ -678,15 +674,11 @@ async function sendSample(){
 const PC_LANE_COLORS = ['#2563eb','#dc2626','#16a34a','#f59e0b','#7c3aed','#0891b2'];
 let pcHidden = {};   // start_lane -> true（非表示）
 let pcData = null;
-let pcRaceId = null; // 現在開いているレースID（除外POST用）
-let pcWhen = '';     // タイトル用の日時（再読込時に維持）
 
 async function openPositionChart(raceId, when){
   const ov = document.getElementById('pcOverlay');
-  pcRaceId = raceId;
-  if(when !== undefined) pcWhen = when || '';
   document.getElementById('pcTitle').textContent =
-    '📈 ポジションチャート　' + (pcWhen || '');
+    '📈 ポジションチャート　' + (when || '');
   document.getElementById('pcChartWrap').innerHTML = '<div style="padding:40px;text-align:center;color:#999">読み込み中…</div>';
   document.getElementById('pcRawWrap').innerHTML = '';
   document.getElementById('pcLegend').innerHTML = '';
@@ -823,8 +815,7 @@ function renderPositionChart(){
       svg += '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="' + dotColor +
              '" stroke="#fff" stroke-width="2" class="pc-pt" ' +
              'data-lane="' + lane.start_lane + '" data-gate="' + p.gate + '" data-lap="' + p.lap +
-             '" data-rank="' + p.rank + '" data-t="' + p.t_s + '" data-phys="' + (p.phys != null ? p.phys : '') +
-             '" data-eid="' + (p.event_id != null ? p.event_id : '') + '"/>';
+             '" data-rank="' + p.rank + '" data-t="' + p.t_s + '" data-phys="' + (p.phys != null ? p.phys : '') + '"/>';
       if(p.t_s != null && p.pos > 0){
         const prevT = (i > 0) ? pts[i - 1].t_s : 0;
         const sector = p.t_s - prevT;
@@ -873,20 +864,6 @@ function renderPositionChart(){
       tip.style.top = (ev.clientY + 12) + 'px';
     });
     c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
-    // 折れ線の点タップ→その通過を除外（即再判定・線を引き直し）
-    c.addEventListener('click', () => {
-      const eid = c.dataset.eid;
-      if(!eid){
-        alert('この点に対応する通過イベントを特定できませんでした。');
-        return;
-      }
-      const msg = 'この通過を除外しますか？\n' +
-                  'LANE ' + c.dataset.lane + ' ／ ' + c.dataset.gate +
-                  '（' + c.dataset.lap + '周目）' +
-                  (c.dataset.phys ? ' ／ 走行レーン ' + c.dataset.phys : '') + '\n' +
-                  '除外すると再判定され、線からこの点が消えます。';
-      if(confirm(msg)) excludeEvent(parseInt(eid, 10), true);
-    });
   });
 
 }
@@ -932,13 +909,10 @@ function renderRawDetections(){
         const laneColor = PC_LANE_COLORS[((lane || 1) - 1) % PC_LANE_COLORS.length];
         const qc = PC_Q_COLOR[det.quality] || '#9ca3af';
         const off = pcHidden[lane] ? ' off' : '';   // 凡例で隠したレーンは薄く
-        const del = det.excluded ? ' del' : '';      // 除外済みは取り消し線
         const title = 'LANE ' + lane + ' ／ ' + det.t_s.toFixed(3) + 's ／ seq ' +
-                      det.seq + ' ／ ' + (PC_Q_LABEL[det.quality] || ('q' + det.quality)) +
-                      ' ／ タップで' + (det.excluded ? '復活' : '除外');
-        html += '<span class="pc-raw-chip' + off + del + '" ' +
-                'style="--lc:' + laneColor + ';--qc:' + qc + '" title="' + title + '" ' +
-                'onclick="excludeEvent(' + det.id + ', ' + (det.excluded ? 'false' : 'true') + ')">' +
+                      det.seq + ' ／ ' + (PC_Q_LABEL[det.quality] || ('q' + det.quality));
+        html += '<span class="pc-raw-chip' + off + '" ' +
+                'style="--lc:' + laneColor + ';--qc:' + qc + '" title="' + title + '">' +
                 '<b>L' + lane + '</b>' + det.t_s.toFixed(2) +
                 '<i class="qd"></i></span>';
       });
@@ -947,23 +921,6 @@ function renderRawDetections(){
   });
 
   wrap.innerHTML = html;
-}
-
-// 通過イベントを除外/復活する。永続化後、チャートを取り直して丸ごと再描画（＝即再判定）。
-async function excludeEvent(eventId, excluded){
-  if(pcRaceId == null) return;
-  try{
-    const res = await fetch('/api/timing/races/' + pcRaceId + '/events/' + eventId + '/exclude', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({excluded: excluded})
-    });
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    // 再判定を反映：同じレースのチャートを取り直す（日時タイトルは維持）
-    await openPositionChart(pcRaceId);
-  }catch(e){
-    alert('反映に失敗しました（' + e.message + '）');
-  }
 }
 
 // Escでモーダルを閉じる

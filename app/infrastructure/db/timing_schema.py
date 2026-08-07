@@ -277,16 +277,4 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         pass
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_timing_races_status ON timing_races(status)")
-
-    # 既存DBへの追加列（timing_events.excluded）: 訂正モーダルでの「通過の除外」。
-    #   0=有効（既定） / 1=除外。除外した検出は同定・集計（build_race）から外れるが、
-    #   生データ表示には薄字で残す（消さずに「無かったこと」にできる＝復活も可能）。
-    try:
-        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_events)")).fetchall()]
-        if "excluded" not in cols:
-            await db.execute(
-                "ALTER TABLE timing_events ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
-    except Exception:
-        pass
-
     await db.commit()
