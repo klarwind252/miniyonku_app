@@ -188,16 +188,13 @@ def build_sample_events(
     # 「無」のときは None のまま＝従来どおり全マシン完走。
     lane_patterns = None
     if irregular:
-        gate_names = [g.kind for g in gates]  # ["SG","SQ0",...] 形式（ログ用）
+        gate_names = [g.kind for g in gates]
         lane_patterns = assign_lane_patterns(
             n_lanes=lanes,
             total_laps=target_laps,
             n_gates=n_gates,
             rnd=rnd,
         )
-        for sl, pat in enumerate(lane_patterns, 1):
-            print(f"  [irregular] start_lane={sl}: "
-                  f"{describe_pattern(pat, gate_names)}")
 
     for start_lane in range(1, lanes + 1):
         pat = lane_patterns[start_lane - 1] if lane_patterns else None
