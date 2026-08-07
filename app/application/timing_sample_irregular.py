@@ -97,17 +97,21 @@ def _roll_one(total_laps: int, max_gate_idx: int, n_gates: int,
     if name == "dns":
         return {"type": "dns"}
 
+    # CO の stop_gate 上限。n_gates を許すと「全SE通過後・周回完了GW手前」の
+    # 最終区間での落車も生成できる（should_emit は既にこれを正しく処理する）。
+    co_max = n_gates
+
     if name == "co_early":
         return {"type": "co", "stop_lap": 1,
-                "stop_gate": rnd.randint(1, max_gate_idx)}
+                "stop_gate": rnd.randint(1, co_max)}
 
     if name == "co_mid":
         return {"type": "co", "stop_lap": min(2, total_laps),
-                "stop_gate": rnd.randint(1, max_gate_idx)}
+                "stop_gate": rnd.randint(1, co_max)}
 
     if name == "co_late":
         return {"type": "co", "stop_lap": total_laps,
-                "stop_gate": rnd.randint(1, max_gate_idx)}
+                "stop_gate": rnd.randint(1, co_max)}
 
     if name == "skip":
         # スキップは中間ゲートのみ（最終ゲートを飛ばすとCOと区別つかないので
@@ -188,36 +192,78 @@ def describe_pattern(pattern: dict, gate_names: list[str] | None = None) -> str:
     if ptype == "finish":
         return "完走"
     if ptype == "dns":
-        return "DNS（0 スタートせず）"
+        return "DNS（スタートせず）"
     if ptype == "co":
-        return ("CO（{}周目 {} 手前で停止）".format(
-            pattern["stop_lap"], gname(pattern["stop_gate"])))
+        return "CO（{}）".format(_co_segment(pattern, gate_names))
     if ptype == "skip":
-        return ("スキップ復帰4（{}周目 {} だけ欠落）".format(
-            pattern["skip_lap"], gname(pattern["skip_gate"])))
+        return "スキップ復帰（{}）".format(_skip_segment(pattern, gate_names))
     return "不明({})".format(ptype)
 
 
-def describe_pattern_short(pattern: dict, gate_names: list[str] | None = None) -> str:
-    """一覧の注釈用の短い説明（例: "完走" / "CO(2周目SQ1手前)" / "DNS"）。
+def _seg_names(gate_names: list[str] | None) -> list[str]:
+    """gate_names（["SG","SQ","SQ"...]）を表示用（["GW","SQ0","SQ1"...]）に変換。
 
-    レース一覧の「レース」ラベル下に L1/L2/L3 と並べて出すため、簡潔にする。
+    SG は GW、SE(SQ) は 0 始まりの連番 SQ0, SQ1, ... にする。
+    """
+    if not gate_names:
+        return []
+    out = []
+    sq = 0
+    for k in gate_names:
+        if k == "SG":
+            out.append("GW")
+        else:
+            out.append(f"SQ{sq}")
+            sq += 1
+    return out
+
+
+def _co_segment(pattern: dict, gate_names: list[str] | None) -> str:
+    """CO の区間表記を返す。例: "1周目：GW-SQ0" / "2周目：SQ0-SQ1"。
+
+    stop_gate は「その手前で止まった」ゲートの index。
+    直前に通過した gate[stop_gate-1] と、落ちた次の gate[stop_gate] で区間を作る。
+    最終ゲートの先（周回完了 GW 手前）で落ちた場合は "…-GW"。
+    """
+    names = _seg_names(gate_names)
+    g = pattern["stop_gate"]
+    lap = pattern["stop_lap"]
+
+    def nm(i: int) -> str:
+        if 0 <= i < len(names):
+            return names[i]
+        return "GW"  # 範囲外は周回完了の GW
+
+    prev_g = nm(g - 1)
+    next_g = nm(g)
+    return f"{lap}周目：{prev_g}-{next_g}"
+
+
+def _skip_segment(pattern: dict, gate_names: list[str] | None) -> str:
+    """スキップ（欠落）の区間表記。例: "2周目：SQ0欠"（そのゲートの検知漏れ）。"""
+    names = _seg_names(gate_names)
+    g = pattern["skip_gate"]
+    lap = pattern["skip_lap"]
+    gname = names[g] if 0 <= g < len(names) else f"G{g}"
+    return f"{lap}周目：{gname}欠"
+
+
+def describe_pattern_short(pattern: dict, gate_names: list[str] | None = None) -> str:
+    """一覧の注釈用の短い説明。
+
+    例: "完走" / "CO(2周目：SQ0-SQ1)" / "DNS" / "スキップ(1周目：SQ0欠)"
+    CO は「どの区間で落ちたか（前ゲート-次ゲート）」を示す。
     """
     ptype = pattern["type"]
-
-    def gname(idx: int) -> str:
-        if gate_names and 0 <= idx < len(gate_names):
-            return gate_names[idx]
-        return f"G{idx}"
 
     if ptype == "finish":
         return "完走"
     if ptype == "dns":
         return "DNS"
     if ptype == "co":
-        return "CO({}周{}手前)".format(pattern["stop_lap"], gname(pattern["stop_gate"]))
+        return "CO({})".format(_co_segment(pattern, gate_names))
     if ptype == "skip":
-        return "スキップ({}周{}欠)".format(pattern["skip_lap"], gname(pattern["skip_gate"]))
+        return "スキップ({})".format(_skip_segment(pattern, gate_names))
     return "?"
 
 

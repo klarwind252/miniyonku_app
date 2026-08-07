@@ -167,6 +167,21 @@
   .pc-legend .lg.off{opacity:.35;text-decoration:line-through}
   .pc-legend .lg .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
   .pc-note{font-size:11px;color:#888;margin-top:8px;line-height:1.5}
+  /* 生データ表示（物理レーンごとの全受信内容） */
+  .pc-raw-head{margin-top:16px;font-weight:bold;font-size:13px;color:#444;
+    border-top:1px solid #eee;padding-top:12px}
+  .pc-raw-lane{margin-top:10px;padding:8px 10px;background:#fafafa;border-radius:8px}
+  .pc-raw-lane-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .rl-badge{color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px}
+  .rl-cnt{font-size:11px;color:#888}
+  .pc-raw-tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .pc-raw-tbl th{text-align:left;color:#999;font-weight:normal;font-size:11px;
+    padding:2px 8px;border-bottom:1px solid #e5e5e5}
+  .pc-raw-tbl td{padding:2px 8px;border-bottom:1px solid #f0f0f0}
+  .pc-raw-tbl .rw-i{color:#bbb;width:28px}
+  .pc-raw-tbl .rw-g{font-weight:bold;color:#333;width:56px}
+  .pc-raw-tbl .rw-t{color:#555;width:70px}
+  .pc-raw-tbl .rw-q,.pc-raw-tbl .rw-s{color:#999}
   .pc-smpnote{margin-top:12px;font-size:12px;line-height:1.4;color:#8a6d1f;
     background:#fff8e1;border:1px solid #f0e0a8;border-radius:8px;
     padding:8px 12px;word-break:break-word}
@@ -633,6 +648,8 @@ async function sendSample(){
         横軸＝通過ゲート（左から時系列）。線が途中で止まる＝その地点でリタイア（CO）。
         凡例をタップで各レーンの表示/非表示。点にカーソルを合わせると詳細。
       </div>
+      <div class="pc-raw-head">生データ（物理レーンごとの全検出）</div>
+      <div id="pcRaw"></div>
     </div>
   </div>
 </div>
@@ -803,6 +820,44 @@ function renderPositionChart(){
     });
     c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
   });
+
+  // グラフの下に生データ（物理レーンごとの全検出）を描く
+  renderRawData();
+}
+
+function renderRawData(){
+  const wrap = document.getElementById('pcRaw');
+  const raw = pcData && pcData.raw;
+  if(!raw || !raw.lanes || raw.lanes.length === 0){
+    wrap.innerHTML = '<div style="color:#999;font-size:12px;padding:8px">生データがありません</div>';
+    return;
+  }
+
+  let html = '';
+  raw.lanes.forEach(lane => {
+    const color = PC_LANE_COLORS[(lane.lane - 1) % PC_LANE_COLORS.length];
+    // 全受信内容を時刻順の表で出す（解釈はしない・そのまま並べる）
+    let rows = '';
+    lane.detections.forEach((d, i) => {
+      rows += '<tr>' +
+                '<td class="rw-i">' + (i + 1) + '</td>' +
+                '<td class="rw-g">' + d.gate + '</td>' +
+                '<td class="rw-t">' + d.t_s + '</td>' +
+                '<td class="rw-q">' + (d.quality != null ? d.quality : '') + '</td>' +
+                '<td class="rw-s">' + (d.seq != null ? d.seq : '') + '</td>' +
+              '</tr>';
+    });
+    html += '<div class="pc-raw-lane">' +
+              '<div class="pc-raw-lane-h">' +
+                '<span class="rl-badge" style="background:' + color + '">LANE ' + lane.lane + '</span>' +
+                '<span class="rl-cnt">検出 ' + lane.detections.length + ' 件</span>' +
+              '</div>' +
+              '<table class="pc-raw-tbl"><thead><tr>' +
+                '<th>#</th><th>ゲート</th><th>時刻(s)</th><th>quality</th><th>seq</th>' +
+              '</tr></thead><tbody>' + rows + '</tbody></table>' +
+            '</div>';
+  });
+  wrap.innerHTML = html;
 }
 
 // Escでモーダルを閉じる

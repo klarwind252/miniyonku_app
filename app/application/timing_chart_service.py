@@ -203,3 +203,131 @@ def build_position_chart(race_row, result, layout_elems: list) -> dict:
         "lanes": lanes_out,
         "lap_colors": LAP_COLORS,
     }
+
+
+def build_raw_detections(race_row, event_rows, layout_elems: list,
+                         n_lanes: int | None = None) -> dict:
+    """物理レーンごとの「全検出」を時刻順に整形する（生データ表示用）。
+
+    同定を通さず、届いた通過をそのまま物理レーン別に並べる。
+    乗入（検出過多）・欠落（検出過少）が、期待回数との対比で一目で分かる。
+
+    Args:
+        race_row:     get_race の行（target_laps を使う）
+        event_rows:   get_events の結果（src, lane, t_us, quality, seq を持つ）
+        layout_elems: LayoutElement 相当（kind/node_id）。ゲート名の解決に使う。
+        n_lanes:      レーン数。省略時はイベントに現れる最大laneから推定。
+
+    Returns:
+        {
+          "gates": [{"node_id":6,"name":"GW"}, {"node_id":0,"name":"SE0"}, ...],
+          "expected": {node_id: 期待回数, ...},
+          "lanes": [
+            {
+              "lane": 1,
+              "detections": [{"gate":"GW","node_id":6,"t_s":0.0,"seq":..,"quality":..}, ...],
+              "counts": {node_id: 実回数},
+              "count_status": {node_id: "ok"|"over"|"under"}
+            }, ...
+          ]
+        }
+    """
+    target_laps = race_row["target_laps"]
+
+    # node_id → 表示名（GW / SE0 / SE1 ...）。レイアウトの通過順で採番。
+    course = build_course([
+        LayoutElement(kind=e["kind"] if isinstance(e, dict) else e.kind,
+                      node_id=e["node_id"] if isinstance(e, dict) else e.node_id)
+        for e in layout_elems
+    ])
+    name_by_node = {}
+    gates_meta = []
+    sq = 0
+    for g in course.gates:
+        if g.node_id is None:
+            continue
+        if g.kind == "SG":
+            nm = "GW"
+        else:
+            nm = f"SE{sq}"
+            sq += 1
+        name_by_node[g.node_id] = nm
+        gates_meta.append({"node_id": g.node_id, "name": nm})
+
+    # レーン数
+    rows = list(event_rows)
+    if n_lanes is None:
+        lanes_seen = [(_row_get(r, "lane")) for r in rows]
+        n_lanes = max(lanes_seen) if lanes_seen else 1
+
+    # 期待回数: SG=(N+1)*L / SE=N*L
+    expected = {}
+    for g in course.gates:
+        if g.node_id is None:
+            continue
+        if g.kind == "SG":
+            expected[g.node_id] = (target_laps + 1) * n_lanes
+        else:
+            expected[g.node_id] = target_laps * n_lanes
+
+    # 物理レーンごとに検出を集める（時刻順）
+    t0 = min((_row_get(r, "t_us") for r in rows), default=0)
+    by_lane = {}
+    for r in rows:
+        lane = _row_get(r, "lane")
+        node = _row_get(r, "src")
+        t_us = _row_get(r, "t_us")
+        seq = _row_get(r, "seq")
+        q = _row_get(r, "quality")
+        by_lane.setdefault(lane, []).append({
+            "gate": name_by_node.get(node, f"n{node}"),
+            "node_id": node,
+            "t_s": round((t_us - t0) / 1_000_000, 3),
+            "seq": seq,
+            "quality": q,
+        })
+
+    # レーンごとに、そのレーンで期待される各ゲート通過回数を出す。
+    # 物理ゲートは全レーンで共有されるため、1レーンあたりの期待は
+    #   SE: target_laps 回 / SG: (target_laps+1) 回
+    per_lane_expected = {}
+    for g in course.gates:
+        if g.node_id is None:
+            continue
+        per_lane_expected[g.node_id] = (
+            (target_laps + 1) if g.kind == "SG" else target_laps
+        )
+
+    lanes_out = []
+    for lane in sorted(by_lane.keys()):
+        dets = by_lane[lane]
+        counts = {}
+        for d in dets:
+            counts[d["node_id"]] = counts.get(d["node_id"], 0) + 1
+        status = {}
+        for node_id, exp in per_lane_expected.items():
+            a = counts.get(node_id, 0)
+            status[node_id] = "ok" if a == exp else ("over" if a > exp else "under")
+        lanes_out.append({
+            "lane": lane,
+            "detections": dets,
+            "counts": counts,
+            "count_status": status,
+            "per_lane_expected": per_lane_expected,
+        })
+
+    return {
+        "gates": gates_meta,
+        "expected": expected,
+        "per_lane_expected": per_lane_expected,
+        "lanes": lanes_out,
+    }
+
+
+def _row_get(row, key):
+    """sqlite Row / dict / tuple のいずれでも値を取れるヘルパー。"""
+    if hasattr(row, "keys"):
+        return row[key]
+    # tuple: SELECT src, lane, t_us, t_us_b, quality, seq の順
+    idx = {"src": 0, "lane": 1, "t_us": 2, "t_us_b": 3, "quality": 4, "seq": 5}[key]
+    return row[idx]

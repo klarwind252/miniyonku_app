@@ -30,7 +30,7 @@ from app.application.timing_sample_irregular import (
     describe_pattern_short as irr_describe,
     summarize_patterns as irr_summary,
 )
-from app.application.timing_chart_service import build_position_chart
+from app.application.timing_chart_service import build_position_chart, build_raw_detections
 from app.application import timing_status_service as status_svc
 from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
@@ -1382,11 +1382,34 @@ async def race_position_chart(
     # レイアウト要素（ゲート順・種別ラベル用）を取得
     from app.domain.rotation import LayoutElement
     lrepo = TimingLayoutRepository(db)
+    repo = TimingRaceRepository(db)
     elem_rows = await lrepo.get_elements(race["layout_id"])
     layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
                     for e in elem_rows]
 
     chart = build_position_chart(race, result, layout_elems)
+
+    # モーダルに「どのパターンで生成したか」を出す（サンプルのみ。実データはNULL）。
+    sample_note = None
+    try:
+        async with db.execute(
+            "SELECT sample_note FROM timing_races WHERE id = ?", (race_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if row is not None:
+            sample_note = row["sample_note"] if hasattr(row, "keys") else row[0]
+    except Exception:
+        sample_note = None
+    chart["sample_note"] = sample_note
+
+    # 生データ（物理レーンごとの全検出）。乗入・欠落を人間が確認するための素材。
+    try:
+        ev_rows = await repo.get_events(race_id)
+        chart["raw"] = build_raw_detections(race, ev_rows, layout_elems, n_lanes=LANES)
+    except Exception as e:
+        print(f"[timing] raw build failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+        chart["raw"] = None
+
     return JSONResponse(chart)
 
 
