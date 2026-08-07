@@ -18,7 +18,9 @@ DB や生イベントには触らない（表示専用・集計に影響しな�
 
 from __future__ import annotations
 
-from app.domain.rotation import build_course, LayoutElement
+from app.domain.rotation import (
+    build_course, LayoutElement, expected_lane, expected_sg_lane,
+)
 
 
 # 周ごとの色（線を周で塗り分ける。多周でも循環）。CSSに直接使える色名/HEX。
@@ -152,6 +154,24 @@ def build_position_chart(race_row, result, layout_elems: list) -> dict:
     # -------------------------------------------------------------------
     # 出力用に整形
     # -------------------------------------------------------------------
+    # gate_index → Gate（rot_to_gate 参照用）
+    gate_by_index = {g.index: g for g in gates}
+    rot_total = course.rot_total
+    # レーン数（回転計算に使う）。物理レーンは 1..n_lanes を循環する。
+    n_lanes = max(result.machines.keys()) if result.machines else 1
+
+    def _phys_lane(start_lane: int, pos: int) -> int | None:
+        """pos 番目の通過の物理レーン番号を返す。pos=0 はスタート。"""
+        if pos == 0:
+            return expected_sg_lane(start_lane, 0, rot_total, n_lanes)
+        lap, gidx, kind = pos_map[pos - 1]
+        if kind == "SG":
+            return expected_sg_lane(start_lane, lap, rot_total, n_lanes)
+        g = gate_by_index.get(gidx)
+        if g is None:
+            return None
+        return expected_lane(start_lane, lap, g.rot_to_gate, rot_total, n_lanes)
+
     lanes_out = []
     for start_lane in sorted(lane_cumul.keys()):
         pts = lane_cumul[start_lane]
@@ -164,6 +184,7 @@ def build_position_chart(race_row, result, layout_elems: list) -> dict:
                 "rank": rank_at.get((start_lane, p)),
                 "lap": xinfo["lap"],
                 "gate": xinfo["gate"],
+                "phys": _phys_lane(start_lane, p),   # 物理レーン番号
             })
         m = result.machines.get(start_lane)
         total_s = None
