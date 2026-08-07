@@ -988,6 +988,9 @@ function renderViz3(){
   svg += '</svg>';
   el.innerHTML = svg + '<div style="font-size:11px;color:#888;margin-top:4px">セル内=レーン番号。赤破線＝期待回数を超えた分（乗入の疑い）。</div>';
 }
+
+// Escでモーダルを閉じる
+document.addEventListener('keydown', e => {
   if(e.key === 'Escape') closePositionChart();
 });
 </script>
