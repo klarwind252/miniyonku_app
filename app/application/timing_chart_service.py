@@ -270,57 +270,44 @@ def build_raw_detections(race_row, event_rows, layout_elems: list,
         else:
             expected[g.node_id] = target_laps * n_lanes
 
-    # 物理レーンごとに検出を集める（時刻順）
+    # 端末（ゲート＝node_id）ごとに検出を集める（時刻順）。
+    # 1端末は全レーンの通過を拾うので、各検出に物理レーンを添える。
     t0 = min((_row_get(r, "t_us") for r in rows), default=0)
-    by_lane = {}
+    by_device = {}
     for r in rows:
         lane = _row_get(r, "lane")
         node = _row_get(r, "src")
         t_us = _row_get(r, "t_us")
         seq = _row_get(r, "seq")
         q = _row_get(r, "quality")
-        by_lane.setdefault(lane, []).append({
-            "gate": name_by_node.get(node, f"n{node}"),
-            "node_id": node,
+        by_device.setdefault(node, []).append({
+            "lane": lane,
             "t_s": round((t_us - t0) / 1_000_000, 3),
             "seq": seq,
             "quality": q,
         })
 
-    # レーンごとに、そのレーンで期待される各ゲート通過回数を出す。
-    # 物理ゲートは全レーンで共有されるため、1レーンあたりの期待は
-    #   SE: target_laps 回 / SG: (target_laps+1) 回
-    per_lane_expected = {}
-    for g in course.gates:
-        if g.node_id is None:
-            continue
-        per_lane_expected[g.node_id] = (
-            (target_laps + 1) if g.kind == "SG" else target_laps
-        )
+    # レイアウトの通過順で端末を並べる（GW, SE0, SE1 ...）。台帳外のnodeは末尾。
+    ordered_nodes = [g["node_id"] for g in gates_meta]
+    for node in by_device:
+        if node not in ordered_nodes:
+            ordered_nodes.append(node)
 
-    lanes_out = []
-    for lane in sorted(by_lane.keys()):
-        dets = by_lane[lane]
-        counts = {}
-        for d in dets:
-            counts[d["node_id"]] = counts.get(d["node_id"], 0) + 1
-        status = {}
-        for node_id, exp in per_lane_expected.items():
-            a = counts.get(node_id, 0)
-            status[node_id] = "ok" if a == exp else ("over" if a > exp else "under")
-        lanes_out.append({
-            "lane": lane,
+    devices_out = []
+    for node in ordered_nodes:
+        dets = by_device.get(node, [])
+        devices_out.append({
+            "node_id": node,
+            "name": name_by_node.get(node, f"n{node}"),
             "detections": dets,
-            "counts": counts,
-            "count_status": status,
-            "per_lane_expected": per_lane_expected,
+            "count": len(dets),
+            "expected": expected.get(node),   # 全レーン合計の期待回数
         })
 
     return {
         "gates": gates_meta,
         "expected": expected,
-        "per_lane_expected": per_lane_expected,
-        "lanes": lanes_out,
+        "devices": devices_out,
     }
 
 

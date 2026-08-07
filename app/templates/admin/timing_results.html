@@ -173,13 +173,16 @@
   .pc-raw-lane{margin-top:10px;padding:8px 10px;background:#fafafa;border-radius:8px}
   .pc-raw-lane-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
   .rl-badge{color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px}
+  .dev-badge{background:#455a64}
   .rl-cnt{font-size:11px;color:#888}
   .pc-raw-tbl{width:100%;border-collapse:collapse;font-size:12px}
   .pc-raw-tbl th{text-align:left;color:#999;font-weight:normal;font-size:11px;
     padding:2px 8px;border-bottom:1px solid #e5e5e5}
   .pc-raw-tbl td{padding:2px 8px;border-bottom:1px solid #f0f0f0}
   .pc-raw-tbl .rw-i{color:#bbb;width:28px}
-  .pc-raw-tbl .rw-g{font-weight:bold;color:#333;width:56px}
+  .pc-raw-tbl .rw-l{width:52px}
+  .rw-lane{display:inline-block;color:#fff;font-weight:bold;font-size:11px;
+    min-width:20px;text-align:center;padding:1px 6px;border-radius:9px}
   .pc-raw-tbl .rw-t{color:#555;width:70px}
   .pc-raw-tbl .rw-q,.pc-raw-tbl .rw-s{color:#999}
   .pc-smpnote{margin-top:12px;font-size:12px;line-height:1.4;color:#8a6d1f;
@@ -648,7 +651,7 @@ async function sendSample(){
         横軸＝通過ゲート（左から時系列）。線が途中で止まる＝その地点でリタイア（CO）。
         凡例をタップで各レーンの表示/非表示。点にカーソルを合わせると詳細。
       </div>
-      <div class="pc-raw-head">生データ（物理レーンごとの全検出）</div>
+      <div class="pc-raw-head">生データ（端末ごとの全受信内容）</div>
       <div id="pcRaw"></div>
     </div>
   </div>
@@ -828,32 +831,33 @@ function renderPositionChart(){
 function renderRawData(){
   const wrap = document.getElementById('pcRaw');
   const raw = pcData && pcData.raw;
-  if(!raw || !raw.lanes || raw.lanes.length === 0){
+  if(!raw || !raw.devices || raw.devices.length === 0){
     wrap.innerHTML = '<div style="color:#999;font-size:12px;padding:8px">生データがありません</div>';
     return;
   }
 
   let html = '';
-  raw.lanes.forEach(lane => {
-    const color = PC_LANE_COLORS[(lane.lane - 1) % PC_LANE_COLORS.length];
-    // 全受信内容を時刻順の表で出す（解釈はしない・そのまま並べる）
+  raw.devices.forEach(dev => {
+    // 端末（ゲート）ごとに、全レーンの検出を時刻順の表で出す
     let rows = '';
-    lane.detections.forEach((d, i) => {
+    dev.detections.forEach((d, i) => {
+      const laneColor = PC_LANE_COLORS[(d.lane - 1) % PC_LANE_COLORS.length];
       rows += '<tr>' +
                 '<td class="rw-i">' + (i + 1) + '</td>' +
-                '<td class="rw-g">' + d.gate + '</td>' +
+                '<td class="rw-l"><span class="rw-lane" style="background:' + laneColor + '">' + d.lane + '</span></td>' +
                 '<td class="rw-t">' + d.t_s + '</td>' +
                 '<td class="rw-q">' + (d.quality != null ? d.quality : '') + '</td>' +
                 '<td class="rw-s">' + (d.seq != null ? d.seq : '') + '</td>' +
               '</tr>';
     });
+    const expStr = (dev.expected != null) ? (' / 期待 ' + dev.expected) : '';
     html += '<div class="pc-raw-lane">' +
               '<div class="pc-raw-lane-h">' +
-                '<span class="rl-badge" style="background:' + color + '">LANE ' + lane.lane + '</span>' +
-                '<span class="rl-cnt">検出 ' + lane.detections.length + ' 件</span>' +
+                '<span class="rl-badge dev-badge">' + dev.name + '</span>' +
+                '<span class="rl-cnt">検出 ' + dev.count + ' 件' + expStr + '</span>' +
               '</div>' +
               '<table class="pc-raw-tbl"><thead><tr>' +
-                '<th>#</th><th>ゲート</th><th>時刻(s)</th><th>quality</th><th>seq</th>' +
+                '<th>#</th><th>LANE</th><th>時刻(s)</th><th>quality</th><th>seq</th>' +
               '</tr></thead><tbody>' + rows + '</tbody></table>' +
             '</div>';
   });
