@@ -168,6 +168,7 @@ class TimingRaceRepository:
         green_t_us: int | None,
         client_key: str | None = None,
         sample_note: str | None = None,
+        layout_json: str | None = None,
     ) -> int:
         # 冪等キー（任意）: GWが (device_id:boot_id:heat_tag) 等を送ってきた場合、
         # 200応答の消失→再送で同一ヒートのレースが二重生成される事故を防ぐ。
@@ -180,9 +181,9 @@ class TimingRaceRepository:
             if row:
                 return row["id"] if hasattr(row, "keys") else row[0]
         cur = await self.db.execute(
-            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note),
+            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, layout_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, layout_json),
         )
         await self.db.commit()
         return cur.lastrowid
@@ -267,6 +268,21 @@ class TimingRaceRepository:
                 (race_id,),
             ) as cur:
                 return await cur.fetchone()
+
+    async def get_layout_json(self, race_id: int) -> str | None:
+        """レース作成時に固定した layout_json（受信時点のレイアウト構成）を返す。
+        列が無い旧DB・未設定の旧レコードは None（呼び出し側が layout_id へ
+        フォールバックする）。"""
+        try:
+            async with self.db.execute(
+                "SELECT layout_json FROM timing_races WHERE id = ?", (race_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                return None
+            return row["layout_json"] if hasattr(row, "keys") else row[0]
+        except Exception:
+            return None
 
     async def list_races(self, limit: int = 50):
         async with self.db.execute(

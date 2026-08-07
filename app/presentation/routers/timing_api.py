@@ -11,6 +11,7 @@ GWからのPOSTは、環境変数 TIMING_TOKEN があれば X-Timing-Token を�
 
 import os
 import time
+import json
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -66,6 +67,25 @@ def _check_token(x_timing_token: str | None):
 # GW受信口（API）
 # ---------------------------------------------------------------------------
 
+
+def _layout_snapshot_json(elem_rows) -> str:
+    """レイアウト要素（get_elements の結果）を、受信時点の構成として固定する
+    JSON 文字列にする。kind と node_id の並びだけを持つ（LC も含める）。
+    レイアウトは後から編集され得るので、レース作成時にこれを焼き付けておく。"""
+    snap = [{"kind": e["kind"], "node_id": e["node_id"]} for e in elem_rows]
+    return json.dumps(snap, ensure_ascii=False)
+
+
+def _layout_elems_from_json(layout_json: str | None):
+    """固定した layout_json から LayoutElement 列を復元する。無効/空なら None。"""
+    if not layout_json:
+        return None
+    try:
+        arr = json.loads(layout_json)
+        return [LayoutElement(kind=e["kind"], node_id=e.get("node_id")) for e in arr]
+    except Exception:
+        return None
+
 @router.post("/api/timing/races")
 async def create_race(
     request: Request,
@@ -87,12 +107,23 @@ async def create_race(
     except Exception:
         raise HTTPException(status_code=400, detail="invalid JSON body")
     repo = TimingRaceRepository(db)
+    # 受信時点のレイアウト構成を固定（layout_json）。以後レイアウトが編集されても
+    # このレースは受信時の構成で解釈される（ゲート列のズレ＝表崩れを防ぐ）。
+    _lid = data.get("layout_id")
+    _layout_json = None
+    if _lid is not None:
+        try:
+            _layout_json = _layout_snapshot_json(
+                await TimingLayoutRepository(db).get_elements(_lid))
+        except Exception:
+            _layout_json = None
     race_id = await repo.create_race(
         heat_tag=data.get("heat_tag"),
-        layout_id=data.get("layout_id"),
+        layout_id=_lid,
         target_laps=int(data.get("target_laps") or 3),
         client_key=(str(data.get("client_key")) if data.get("client_key") else None),
         green_t_us=data.get("green_t_us"),
+        layout_json=_layout_json,
     )
     return JSONResponse({"race_id": race_id})
 
@@ -636,6 +667,7 @@ async def create_sample_race(
             target_laps=laps,
             green_t_us=green_t_us,
             sample_note=sample_note,
+            layout_json=_layout_snapshot_json(elems),
         )
         for ev in events:
             await rrepo.insert_event(race_id, ev)
@@ -1379,13 +1411,17 @@ async def race_position_chart(
         return JSONResponse({"target_laps": 0, "x_axis": [], "lanes": [],
                              "lap_colors": []})
 
-    # レイアウト要素（ゲート順・種別ラベル用）を取得
+    # レイアウト要素（ゲート順・種別ラベル用）。受信時に固定した layout_json を
+    # 最優先で使う（レイアウトが後から編集されても、このレースは受信時の構成で
+    # 描く）。無ければ従来どおり layout_id から引く（旧レコード後方互換）。
     from app.domain.rotation import LayoutElement
     lrepo = TimingLayoutRepository(db)
     repo = TimingRaceRepository(db)
-    elem_rows = await lrepo.get_elements(race["layout_id"])
-    layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
-                    for e in elem_rows]
+    layout_elems = _layout_elems_from_json(await repo.get_layout_json(race_id))
+    if layout_elems is None:
+        elem_rows = await lrepo.get_elements(race["layout_id"])
+        layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
+                        for e in elem_rows]
 
     chart = build_position_chart(race, result, layout_elems)
 

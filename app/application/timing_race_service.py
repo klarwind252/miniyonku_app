@@ -25,14 +25,29 @@ async def build_race_result(db, race_id: int):
         return None, None
 
     # レイアウト要素 → LayoutElement 列
-    layout_id = race["layout_id"]
-    if layout_id is None:
-        return race, None
-    elems = await lrepo.get_elements(layout_id)
-    layout = [
-        LayoutElement(kind=e["kind"], node_id=e["node_id"])
-        for e in elems
-    ]
+    #   受信/作成時に固定した layout_json があれば最優先で使う（レイアウトが後から
+    #   編集されても、そのレースは受信時点の構成で解釈する）。無ければ従来どおり
+    #   layout_id から現在のレイアウトを引く（旧レコード後方互換）。
+    import json as _json
+    layout = None
+    _lj = await rrepo.get_layout_json(race_id)
+    if _lj:
+        try:
+            layout = [
+                LayoutElement(kind=e["kind"], node_id=e.get("node_id"))
+                for e in _json.loads(_lj)
+            ]
+        except Exception:
+            layout = None
+    if layout is None:
+        layout_id = race["layout_id"]
+        if layout_id is None:
+            return race, None
+        elems = await lrepo.get_elements(layout_id)
+        layout = [
+            LayoutElement(kind=e["kind"], node_id=e["node_id"])
+            for e in elems
+        ]
     if not any(e.kind == "SG" for e in layout):
         return race, None  # S/Gが無ければ組み立て不能
 
