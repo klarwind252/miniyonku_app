@@ -165,9 +165,14 @@ def build_position_chart(race_row, result, layout_elems: list) -> dict:
                 "lap": xinfo["lap"],
                 "gate": xinfo["gate"],
             })
+        m = result.machines.get(start_lane)
+        total_s = None
+        if m is not None and m.total_time_us is not None:
+            total_s = round(m.total_time_us / 1_000_000, 3)
         lanes_out.append({
             "start_lane": start_lane,
             "dnf": lane_dnf.get(start_lane, False),
+            "total_s": total_s,   # 完走時のみ。DNF/DNSはNone
             "points": series,
         })
 
