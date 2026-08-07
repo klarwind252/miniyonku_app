@@ -1352,6 +1352,21 @@ async def race_position_chart(
                     for e in elem_rows]
 
     chart = build_position_chart(race, result, layout_elems)
+
+    # モーダルに「どのパターンで生成したか」を出すため、サンプルの注釈も添える。
+    # sample_note は一覧用SELECTにしかないので、ここで単独に読む（実データはNULL）。
+    sample_note = None
+    try:
+        async with db.execute(
+            "SELECT sample_note FROM timing_races WHERE id = ?", (race_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if row is not None:
+            sample_note = row["sample_note"] if hasattr(row, "keys") else row[0]
+    except Exception:
+        sample_note = None
+    chart["sample_note"] = sample_note
+
     return JSONResponse(chart)
 
 

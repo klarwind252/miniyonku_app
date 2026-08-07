@@ -164,6 +164,9 @@
   .pc-legend .lg.off{opacity:.35;text-decoration:line-through}
   .pc-legend .lg .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
   .pc-note{font-size:11px;color:#888;margin-top:8px;line-height:1.5}
+  .pc-smpnote{margin-top:12px;font-size:12px;line-height:1.4;color:#8a6d1f;
+    background:#fff8e1;border:1px solid #f0e0a8;border-radius:8px;
+    padding:8px 12px;word-break:break-word}
   .pc-tip{position:fixed;pointer-events:none;background:#222;color:#fff;font-size:12px;
     padding:6px 9px;border-radius:6px;z-index:1100;display:none;white-space:nowrap;
     box-shadow:0 2px 8px rgba(0,0,0,.3)}
@@ -615,6 +618,7 @@ async function sendSample(){
     <div class="pc-body">
       <div class="pc-legend" id="pcLegend"></div>
       <div id="pcChartWrap"></div>
+      <div class="pc-smpnote" id="pcSmpNote" style="display:none"></div>
       <div class="pc-note">
         縦軸＝各ゲート通過時点の順位（同じ通過数での累積タイム順）。
         横軸＝通過ゲート（左から時系列）。線が途中で止まる＝その地点でリタイア（CO）。
@@ -656,6 +660,18 @@ function closePositionChart(){
 
 function renderPositionChart(){
   const d = pcData;
+
+  // サンプル送信で作ったレースなら、どのパターンで生成したかを表示。
+  // 実データ（sample_note が無い）のときは何も出さない。
+  const smpEl = document.getElementById('pcSmpNote');
+  if(d && d.sample_note){
+    smpEl.textContent = '🧪 ' + d.sample_note;
+    smpEl.style.display = 'block';
+  } else {
+    smpEl.style.display = 'none';
+    smpEl.textContent = '';
+  }
+
   if(!d || !d.lanes || d.lanes.length === 0){
     document.getElementById('pcChartWrap').innerHTML =
       '<div style="padding:40px;text-align:center;color:#999">表示できるデータがありません</div>';
