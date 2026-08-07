@@ -31,6 +31,7 @@ from app.application.timing_sample_irregular import (
     summarize_patterns as irr_summary,
 )
 from app.application.timing_chart_service import build_position_chart
+from app.application import timing_status_service as status_svc
 from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
 from app.domain.race_builder import mode_mismatch  # D7/E6(24.34)：予定/実測モード照合
@@ -185,6 +186,24 @@ async def post_events(
         )
     except Exception as e:
         print(f"[timing] bests update failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+
+    # 二段構えDB（I群 §24.71）: 受信時に status を自動判定して書き込む。
+    #   全車完走 or 全車CO → confirmed / それ以外 → needs_review
+    # 失敗しても受信自体は成功扱い（判定は表示・集計の補助であり、生データは既に保存済み）。
+    try:
+        race2, result2 = await build_race_result(db, race_id)
+        if result2 is not None:
+            lrepo = TimingLayoutRepository(db)
+            elem_rows = await lrepo.get_elements(race2["layout_id"])
+            layout_elems = [{"kind": e["kind"], "node_id": e["node_id"]} for e in elem_rows]
+            ev_rows = await repo.get_events(race_id)
+            status, _detail = status_svc.judge_status(
+                result2, layout_elems, ev_rows,
+                target_laps=race2["target_laps"], n_lanes=LANES,
+            )
+            await repo.update_status(race_id, status)
+    except Exception as e:
+        print(f"[timing] status judge failed race={race_id}: {type(e).__name__}: {e}", flush=True)
 
     return JSONResponse({"inserted": inserted, "duplicate": duplicate,
                          "bests_updated": bests})
@@ -412,6 +431,7 @@ async def results_page(
                     "heat_id": race["heat_id"],
                     "mode": result.mode,               # 'f1'=レース / 'run'=フリー
                     "sample_note": (r["sample_note"] if "sample_note" in r.keys() else None),
+                    "status": (r["status"] if "status" in r.keys() else "confirmed"),
                     "jump_start": m.jump_start,         # G1(24.53)：フライング=JS表示
                     "missing": m.missing,               # E1(24.37)：欠測あり=⚠要確認表示
                     "dnf": m.dnf,                       # E5(24.39)：CO=DNF表示
@@ -632,6 +652,21 @@ async def create_sample_race(
                 db, race_id, build_race_result,
                 *(await _speed_fns_for_race(db, race_id))
             )
+        except Exception:
+            pass
+
+        # 二段構えDB（I群 §24.71）: サンプルも受信口と同じく status を判定。
+        # イレギュラー有のサンプルはここで needs_review に振り分けられる。
+        try:
+            race2, result2 = await build_race_result(db, race_id)
+            if result2 is not None:
+                el2 = await lrepo.get_elements(race2["layout_id"])
+                le2 = [{"kind": e["kind"], "node_id": e["node_id"]} for e in el2]
+                ev2 = await rrepo.get_events(race_id)
+                st, _d = status_svc.judge_status(
+                    result2, le2, ev2,
+                    target_laps=race2["target_laps"], n_lanes=LANES)
+                await rrepo.update_status(race_id, st)
         except Exception:
             pass
         race_ids.append(race_id)
@@ -1352,21 +1387,6 @@ async def race_position_chart(
                     for e in elem_rows]
 
     chart = build_position_chart(race, result, layout_elems)
-
-    # モーダルに「どのパターンで生成したか」を出すため、サンプルの注釈も添える。
-    # sample_note は一覧用SELECTにしかないので、ここで単独に読む（実データはNULL）。
-    sample_note = None
-    try:
-        async with db.execute(
-            "SELECT sample_note FROM timing_races WHERE id = ?", (race_id,)
-        ) as cur:
-            row = await cur.fetchone()
-        if row is not None:
-            sample_note = row["sample_note"] if hasattr(row, "keys") else row[0]
-    except Exception:
-        sample_note = None
-    chart["sample_note"] = sample_note
-
     return JSONResponse(chart)
 
 

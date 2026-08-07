@@ -262,4 +262,19 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             await db.execute("ALTER TABLE timing_races ADD COLUMN sample_note TEXT")
     except Exception:
         pass
+
+    # 既存DBへの追加列（status）: 二段構えDB（I群 §24.70）。
+    #   'confirmed'     … 確定（全車完走 or 全車CO）。表示・集計対象。
+    #   'needs_review'  … 要確認（回数不一致・一部CO・乗入など）。集計から除外。
+    # DEFAULT 'confirmed' で既存レコードは確定扱い（過去表示を壊さない）。
+    # 新規受信は post_events の受信時判定で上書きする（§24.71）。
+    try:
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
+        if "status" not in cols:
+            await db.execute(
+                "ALTER TABLE timing_races ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'")
+    except Exception:
+        pass
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_timing_races_status ON timing_races(status)")
     await db.commit()

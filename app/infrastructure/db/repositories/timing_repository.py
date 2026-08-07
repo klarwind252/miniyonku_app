@@ -237,12 +237,24 @@ class TimingRaceRepository:
         await self.db.commit()
         return cur.rowcount
 
+    async def update_status(self, race_id: int, status: str) -> int:
+        """レースの status（confirmed / needs_review）を更新する（I群 §24.71）。
+
+        受信時判定の結果を書き込む。戻り値: 更新した行数。
+        """
+        cur = await self.db.execute(
+            "UPDATE timing_races SET status = ? WHERE id = ?",
+            (status, race_id),
+        )
+        await self.db.commit()
+        return cur.rowcount
+
     async def get_race(self, race_id: int):
         # applied_ht_group_id はマイグレーション（timing_schema.py）で後から追加された列。
         # PIP の「反映済（ヒート○ …）」表示に必要なので取得するが、未適用の旧DBでも
         # レース取得自体は失敗させない（列なしSELECTへフォールバック）。
         _base = ("id, heat_tag, layout_id, target_laps, green_t_us, heat_id, "
-                 "applied_group_id, created_at")
+                 "applied_group_id, created_at, status")
         try:
             async with self.db.execute(
                 f"SELECT {_base}, applied_ht_group_id FROM timing_races WHERE id = ?",
@@ -258,7 +270,7 @@ class TimingRaceRepository:
 
     async def list_races(self, limit: int = 50):
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note, status "
             "FROM timing_races ORDER BY id DESC LIMIT ?",
             (limit,),
         ) as cur:
@@ -281,7 +293,7 @@ class TimingRaceRepository:
     async def list_races_by_date(self, date: str, limit: int = 500):
         """指定日（YYYY-MM-DD）のレースを新しい順に返す。"""
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note, status "
             "FROM timing_races WHERE substr(created_at,1,10) = ? "
             "ORDER BY id DESC LIMIT ?",
             (date, limit),
@@ -294,7 +306,7 @@ class TimingRaceRepository:
         created_at は "YYYY-MM-DD HH:MM:SS" 形式なので日付部分で比較する。
         """
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note, status "
             "FROM timing_races "
             "WHERE substr(created_at,1,10) >= ? AND substr(created_at,1,10) <= ? "
             "ORDER BY id ASC LIMIT ?",
@@ -310,7 +322,7 @@ class TimingRaceRepository:
         固定長・ゼロ埋めの文字列なので、辞書順の比較で日時の比較になる。
         """
         async with self.db.execute(
-            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note "
+            "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note, status "
             "FROM timing_races WHERE created_at >= ? AND created_at <= ? "
             "ORDER BY id ASC LIMIT ?",
             (ts_from, ts_to, limit),

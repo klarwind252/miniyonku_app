@@ -214,6 +214,9 @@
   .c-act{width:78px;text-align:center;vertical-align:middle}
   .c-act .act-btn{display:block;width:100%;margin:2px 0;padding:4px 6px;font-size:12px}
   .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:11px}
+  .review-badge{background:#fff3e0;color:#e65100;border:1px solid #ffcc80;
+    border-radius:8px;padding:1px 7px;font-size:11px;font-weight:bold;
+    display:inline-block;margin-top:2px}
   .tr-wrap{overflow-x:auto}
   /* その日の上位3傑をハイライト（1位=紫 / 2位=青 / 3位=緑） */
   .r1{background:#f3e8ff !important;color:#6b21a8;font-weight:bold;border-radius:3px}
@@ -337,6 +340,9 @@
                 {% endif %}
                 {% if row.heat_id is not none %}
                 <span class="linked-badge">ヒート{{ row.heat_id }}</span>
+                {% endif %}
+                {% if row.status == 'needs_review' %}
+                <span class="review-badge" title="通過回数が期待と一致しません。人間の確認が必要です（I群 §24.71）">⚠要確認</span>
                 {% endif %}
               </div>
               {% if row.sample_note %}
