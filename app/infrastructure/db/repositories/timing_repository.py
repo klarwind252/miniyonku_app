@@ -376,20 +376,45 @@ class TimingRaceRepository:
         await self.db.commit()
         return cur.rowcount > 0
 
+    async def _ensure_excluded_col(self) -> bool:
+        """timing_events.excluded 列が無ければ足す（既存DBの自己修復）。
+
+        除外ZIPを当ててもマイグレーションが走っていないDBだと、この列を
+        参照する get_events が例外になり、一覧の build_race_result が全レース
+        スキップされて「結果が全部消える」事故になる。読み出しの度に軽く確認し、
+        無ければその場で ADD COLUMN する（データは保持される）。
+        戻り値: 列が使える状態なら True。
+        """
+        try:
+            cols = [r[1] for r in await (await self.db.execute(
+                "PRAGMA table_info(timing_events)")).fetchall()]
+            if "excluded" not in cols:
+                await self.db.execute(
+                    "ALTER TABLE timing_events ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
+                await self.db.commit()
+            return True
+        except Exception:
+            return False
+
     async def get_events(self, race_id: int, include_excluded: bool = False):
         """通過イベントを時刻順で返す。
 
         include_excluded=False（既定）: 除外(excluded=1)を除いた「有効な検出」だけ。
           → 同定・集計（build_race_result）はこちらを使う＝除外が即座に効く。
         include_excluded=True: 除外も含めた全検出（生データ表示・訂正モーダル用）。
-        列に id と excluded を含める（訂正でその通過を特定・表示するため）。
+        excluded 列が無い既存DBでも落ちないよう、列を自己修復してから読む。
         """
-        if include_excluded:
+        has_exc = await self._ensure_excluded_col()
+        if has_exc:
             sql = ("SELECT id, src, lane, t_us, t_us_b, quality, seq, excluded "
-                   "FROM timing_events WHERE race_id = ? ORDER BY t_us")
+                   "FROM timing_events WHERE race_id = ?")
+            if not include_excluded:
+                sql += " AND excluded = 0"
         else:
-            sql = ("SELECT id, src, lane, t_us, t_us_b, quality, seq, excluded "
-                   "FROM timing_events WHERE race_id = ? AND excluded = 0 ORDER BY t_us")
+            # 万一 ALTER も出来ない環境では、全件を有効(excluded=0)として返す。
+            sql = ("SELECT id, src, lane, t_us, t_us_b, quality, seq, 0 AS excluded "
+                   "FROM timing_events WHERE race_id = ?")
+        sql += " ORDER BY t_us"
         async with self.db.execute(sql, (race_id,)) as cur:
             return await cur.fetchall()
 
@@ -400,6 +425,7 @@ class TimingRaceRepository:
         race_id 一致を必須条件にして、他レースのイベントを誤って触らないようにする。
         戻り値: 更新できたら True（該当なしは False）。
         """
+        await self._ensure_excluded_col()
         cur = await self.db.execute(
             "UPDATE timing_events SET excluded = ? WHERE id = ? AND race_id = ?",
             (1 if excluded else 0, int(event_id), int(race_id)),
