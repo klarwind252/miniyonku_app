@@ -706,9 +706,9 @@ function renderPositionChart(){
   });
 
   // SVG レイアウト（文字を大きくしたぶん、間隔・余白も広げる）
-  const W = Math.max(720, nx * 96);
-  const H = 64 + maxRank * 84;
-  const padL = 70, padR = 110, padT = 36, padB = 84;
+  const W = Math.max(560, nx * 64);
+  const H = 74 + maxRank * 96;
+  const padL = 70, padR = 110, padT = 46, padB = 84;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const xAt = p => padL + (nx <= 1 ? plotW/2 : plotW * p / (nx - 1));
@@ -726,18 +726,27 @@ function renderPositionChart(){
     svg += '<text x="' + (padL - 16) + '" y="' + (y + 7) + '" text-anchor="end" ' +
            'font-size="22" fill="#888">' + r + '</text>';
   }
-  // 縦グリッド＋ゲートラベル（周境界は濃く）
+  // 縦グリッド＋ゲートラベル（周境界SGは目立たせる）
   d.x_axis.forEach(x => {
     const xx = xAt(x.pos);
     const strong = x.boundary;
     svg += '<line x1="' + xx + '" y1="' + padT + '" x2="' + xx + '" y2="' + (padT + plotH) +
-           '" stroke="' + (strong ? '#d0d0d0' : '#f2f2f2') + '" stroke-width="1.5"/>';
-    svg += '<text x="' + xx + '" y="' + (padT + plotH + 28) + '" text-anchor="middle" ' +
-           'font-size="19" fill="' + (strong ? '#555' : '#999') + '">' + x.gate + '</text>';
+           '" stroke="' + (strong ? '#94a3b8' : '#f2f2f2') + '" stroke-width="' + (strong ? 2 : 1.5) + '"/>';
+    if(strong){
+      // SG：色付きバッジで強調
+      const bw = 40, bh = 22, by = padT + plotH + 12;
+      svg += '<rect x="' + (xx - bw/2) + '" y="' + by + '" width="' + bw + '" height="' + bh +
+             '" rx="6" fill="#1e3a8a"/>';
+      svg += '<text x="' + xx + '" y="' + (by + 16) + '" text-anchor="middle" ' +
+             'font-size="16" font-weight="bold" fill="#fff">' + x.gate + '</text>';
+    } else {
+      svg += '<text x="' + xx + '" y="' + (padT + plotH + 28) + '" text-anchor="middle" ' +
+             'font-size="19" fill="#999">' + x.gate + '</text>';
+    }
     // 周番号（周境界SGの下に）
     if(strong && x.lap > 0){
       svg += '<text x="' + xx + '" y="' + (padT + plotH + 52) + '" text-anchor="middle" ' +
-             'font-size="16" fill="#bbb">' + x.lap + '周</text>';
+             'font-size="16" font-weight="bold" fill="#1e3a8a">' + x.lap + '周</text>';
     }
   });
   // 軸見出し
@@ -759,19 +768,26 @@ function renderPositionChart(){
              '" x2="' + xAt(b.pos) + '" y2="' + yAt(b.rank) +
              '" stroke="' + seg + '" stroke-width="4" stroke-linecap="round"/>';
     }
-    // 点（小さめ・番号なし。ホバー用データ属性つき）＋累積タイムを表記
-    pts.forEach(p => {
+    // 点（小さめ・番号なし。ホバー用データ属性つき）
+    //   下段（大）＝セクタータイム（前の点との差）／上段（小）＝累積タイム
+    pts.forEach((p, i) => {
       const cx = xAt(p.pos), cy = yAt(p.rank);
       const dotColor = (p.phys != null) ? PC_LANE_COLORS[(p.phys - 1) % PC_LANE_COLORS.length] : color;
       svg += '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="' + dotColor +
              '" stroke="#fff" stroke-width="2" class="pc-pt" ' +
              'data-lane="' + lane.start_lane + '" data-gate="' + p.gate + '" data-lap="' + p.lap +
              '" data-rank="' + p.rank + '" data-t="' + p.t_s + '" data-phys="' + (p.phys != null ? p.phys : '') + '"/>';
-      // その地点の累積タイムを点の上に小さく表示（スタート地点0は省略）
       if(p.t_s != null && p.pos > 0){
-        svg += '<text x="' + cx + '" y="' + (cy - 10) + '" text-anchor="middle" ' +
-               'font-size="11" fill="#555" style="pointer-events:none">' +
+        const prevT = (i > 0) ? pts[i - 1].t_s : 0;
+        const sector = p.t_s - prevT;
+        // 上段：累積タイム（元サイズ・小・薄字）
+        svg += '<text x="' + cx + '" y="' + (cy - 30) + '" text-anchor="middle" ' +
+               'font-size="11" fill="#999" style="pointer-events:none">' +
                p.t_s.toFixed(2) + '</text>';
+        // 下段：セクタータイム（倍サイズ・濃字）
+        svg += '<text x="' + cx + '" y="' + (cy - 12) + '" text-anchor="middle" ' +
+               'font-size="18" font-weight="bold" fill="#333" style="pointer-events:none">' +
+               sector.toFixed(2) + '</text>';
       }
     });
     // CO（DNF）なら最後の点に×
