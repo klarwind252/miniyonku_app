@@ -176,6 +176,29 @@
   .pc-tip{position:fixed;pointer-events:none;background:#222;color:#fff;font-size:12px;
     padding:6px 9px;border-radius:6px;z-index:1100;display:none;white-space:nowrap;
     box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  /* ===== 生データ（通過ログ）表示：モーダル下段 ===== */
+  .pc-rawsec{margin-top:10px;border-top:2px solid #eee;padding-top:8px}
+  .pc-rawsec-h{font-weight:bold;font-size:13px;color:#333;margin-bottom:6px}
+  .pc-rawsec-h small{display:block;font-weight:normal;color:#999;font-size:10px;
+    margin-top:2px;line-height:1.4}
+  .pc-raw-dev{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin-bottom:6px}
+  .pc-raw-dev.over{border-color:#f3b4b4;background:#fdf1f1}
+  .pc-raw-dev.under{border-color:#f0d9a8;background:#fffaef}
+  .pc-raw-devhead{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+  .pc-raw-gate{font-weight:bold;font-size:13px;color:#2c3e50;min-width:42px}
+  .pc-raw-count{font-size:12px;color:#555}
+  .pc-raw-tag{font-size:11px;font-weight:bold;padding:1px 8px;border-radius:10px}
+  .pc-raw-dev.over  .pc-raw-tag{background:#dc2626;color:#fff}
+  .pc-raw-dev.under .pc-raw-tag{background:#f59e0b;color:#fff}
+  .pc-raw-dev.ok    .pc-raw-tag{color:#16a34a}
+  .pc-raw-chips{display:flex;flex-wrap:wrap;gap:4px}
+  .pc-raw-chip{display:inline-flex;align-items:center;gap:3px;font-size:11px;
+    padding:2px 7px;border-radius:10px;background:#f6f8fb;
+    border:1px solid #e2e8f0;border-left:4px solid var(--lc);color:#333;white-space:nowrap}
+  .pc-raw-chip b{color:var(--lc)}
+  .pc-raw-chip .qd{width:7px;height:7px;border-radius:50%;background:var(--qc);display:inline-block}
+  .pc-raw-chip.off{opacity:.28}
+  .pc-raw-none,.pc-raw-empty{font-size:11px;color:#aaa;padding:2px 4px}
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:15px}
   /* 結果フラグ・バッジ（サーバー判定を表示。24.1：値は補完せず事実を示す）*/
   .rflag{display:block;margin-top:2px;font-size:10px;font-weight:bold;line-height:1.25;border-radius:6px;padding:1px 3px;white-space:nowrap}
@@ -630,6 +653,16 @@ async function sendSample(){
         横軸＝通過ゲート（左から時系列）。線が途中で止まる＝その地点でリタイア（CO）。
         凡例をタップで各レーンの表示/非表示。点にカーソルを合わせると詳細。
       </div>
+
+      <!-- ===== 生データ（通過ログ・時刻順）：グラフの下段 ===== -->
+      <div class="pc-rawsec" id="pcRawSec">
+        <div class="pc-rawsec-h">生データ（通過ログ・時刻順）
+          <small>各ゲートの「実回数／期待回数」を対比。
+            赤＝乗入（検出過多）疑い・橙＝欠落（検出過少）疑い。
+            チップ左の色＝走行レーン、右の丸＝受光品質（緑:正常／橙:片ビーム欠／赤:両ビーム欠／灰:未同期）。</small>
+        </div>
+        <div id="pcRawWrap"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -647,6 +680,7 @@ async function openPositionChart(raceId, when){
   document.getElementById('pcTitle').textContent =
     '📈 ポジションチャート　' + (when || '');
   document.getElementById('pcChartWrap').innerHTML = '<div style="padding:40px;text-align:center;color:#999">読み込み中…</div>';
+  document.getElementById('pcRawWrap').innerHTML = '';
   document.getElementById('pcLegend').innerHTML = '';
   pcHidden = {};
   ov.classList.add('open');
@@ -679,6 +713,9 @@ function renderPositionChart(){
     smpEl.style.display = 'none';
     smpEl.textContent = '';
   }
+
+  // 下段：生データ（通過ログ）。レーン凡例の表示/非表示にも追従させるためここで呼ぶ。
+  renderRawDetections();
 
   if(!d || !d.lanes || d.lanes.length === 0){
     document.getElementById('pcChartWrap').innerHTML =
@@ -829,6 +866,61 @@ function renderPositionChart(){
     c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
   });
 
+}
+
+// 受光品質（quality）→ ラベルと色。0:正常 1:片ビーム欠(速度なし=A2) 2:両ビーム欠(A1) 3:未同期
+const PC_Q_LABEL = {0:'正常', 1:'片ビーム欠(速度なし)', 2:'両ビーム欠', 3:'未同期'};
+const PC_Q_COLOR = {0:'#16a34a', 1:'#f59e0b', 2:'#dc2626', 3:'#9ca3af'};
+
+// 下段：生データ（通過ログ）を物理ゲートごとに時刻順で描く。
+// build_raw_detections() が返す pcData.raw を使う。同定は通さず、届いた検出をそのまま出す。
+function renderRawDetections(){
+  const wrap = document.getElementById('pcRawWrap');
+  if(!wrap) return;
+  const raw = pcData && pcData.raw;
+  if(!raw || !raw.devices || raw.devices.length === 0){
+    wrap.innerHTML = '<div class="pc-raw-empty">生データがありません</div>';
+    return;
+  }
+
+  let html = '';
+  raw.devices.forEach(dev => {
+    const cnt = dev.count;
+    const exp = dev.expected;   // 全レーン合計の期待回数（SG=(N+1)*L / SE=N*L）。台帳外ノードは null
+    let cls = 'ok', tag = '✓';
+    if(exp == null){ cls = 'ok'; tag = ''; }
+    else if(cnt > exp){ cls = 'over';  tag = '＋' + (cnt - exp) + ' 乗入疑い'; }
+    else if(cnt < exp){ cls = 'under'; tag = '－' + (exp - cnt) + ' 欠落疑い'; }
+
+    html += '<div class="pc-raw-dev ' + cls + '">';
+    html += '<div class="pc-raw-devhead">';
+    html += '<span class="pc-raw-gate">' + dev.name + '</span>';
+    html += '<span class="pc-raw-count">実' + cnt +
+            (exp != null ? ('／期待' + exp) : '') + '</span>';
+    if(tag) html += '<span class="pc-raw-tag">' + tag + '</span>';
+    html += '</div>';
+
+    html += '<div class="pc-raw-chips">';
+    if(!dev.detections || dev.detections.length === 0){
+      html += '<span class="pc-raw-none">検出なし</span>';
+    } else {
+      dev.detections.forEach(det => {
+        const lane = det.lane;
+        const laneColor = PC_LANE_COLORS[((lane || 1) - 1) % PC_LANE_COLORS.length];
+        const qc = PC_Q_COLOR[det.quality] || '#9ca3af';
+        const off = pcHidden[lane] ? ' off' : '';   // 凡例で隠したレーンは薄く
+        const title = 'LANE ' + lane + ' ／ ' + det.t_s.toFixed(3) + 's ／ seq ' +
+                      det.seq + ' ／ ' + (PC_Q_LABEL[det.quality] || ('q' + det.quality));
+        html += '<span class="pc-raw-chip' + off + '" ' +
+                'style="--lc:' + laneColor + ';--qc:' + qc + '" title="' + title + '">' +
+                '<b>L' + lane + '</b>' + det.t_s.toFixed(2) +
+                '<i class="qd"></i></span>';
+      });
+    }
+    html += '</div></div>';
+  });
+
+  wrap.innerHTML = html;
 }
 
 // Escでモーダルを閉じる
