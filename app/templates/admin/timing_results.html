@@ -158,6 +158,9 @@
     font-size:18px;cursor:pointer;color:#666}
   .pc-close:hover{background:#e6e6e6}
   .pc-body{padding:14px 16px}
+  /* スマホでもグラフを横スクロールで全部見られるように */
+  #pcChartWrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+    padding-bottom:6px}
   .pc-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
   .pc-legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:12px;
     padding:3px 8px;border-radius:14px;border:1px solid #ddd;cursor:pointer;user-select:none}
@@ -343,7 +346,7 @@
               {% endif %}
               <div style="margin-top:4px">
                 <button type="button" class="chart-btn"
-                        onclick="openPositionChart({{ row.race_id }})">📈 グラフ</button>
+                        onclick="openPositionChart({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">📈 グラフ</button>
               </div>
             </td>
             {% endif %}
@@ -635,9 +638,10 @@ const PC_LANE_COLORS = ['#2563eb','#dc2626','#16a34a','#f59e0b','#7c3aed','#0891
 let pcHidden = {};   // start_lane -> true（非表示）
 let pcData = null;
 
-async function openPositionChart(raceId){
+async function openPositionChart(raceId, when){
   const ov = document.getElementById('pcOverlay');
-  document.getElementById('pcTitle').textContent = '📈 ポジションチャート（レース #' + raceId + '）';
+  document.getElementById('pcTitle').textContent =
+    '📈 ポジションチャート　' + (when || '');
   document.getElementById('pcChartWrap').innerHTML = '<div style="padding:40px;text-align:center;color:#999">読み込み中…</div>';
   document.getElementById('pcLegend').innerHTML = '';
   pcHidden = {};
@@ -694,42 +698,43 @@ function renderPositionChart(){
     lg.appendChild(el);
   });
 
-  // SVG レイアウト
-  const W = Math.max(560, nx * 62);
-  const H = 40 + maxRank * 56;
-  const padL = 46, padR = 20, padT = 24, padB = 56;
+  // SVG レイアウト（文字を大きくしたぶん、間隔・余白も広げる）
+  const W = Math.max(720, nx * 96);
+  const H = 64 + maxRank * 84;
+  const padL = 70, padR = 110, padT = 36, padB = 84;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const xAt = p => padL + (nx <= 1 ? plotW/2 : plotW * p / (nx - 1));
   const yAt = r => padT + (maxRank <= 1 ? plotH/2 : plotH * (r - 1) / (maxRank - 1));
 
-  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W +
-            'px;font-family:sans-serif" id="pcSvg">';
+  // width は viewBox実寸で固定（100%にしない）→ 画面より広ければ #pcChartWrap が横スクロール
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H +
+            '" style="font-family:sans-serif;display:block" id="pcSvg">';
 
   // 横グリッド＋順位ラベル（1が上）
   for(let r = 1; r <= maxRank; r++){
     const y = yAt(r);
     svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y +
-           '" stroke="#eee" stroke-width="1"/>';
-    svg += '<text x="' + (padL - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
-           'font-size="12" fill="#888">' + r + '</text>';
+           '" stroke="#eee" stroke-width="1.5"/>';
+    svg += '<text x="' + (padL - 16) + '" y="' + (y + 7) + '" text-anchor="end" ' +
+           'font-size="22" fill="#888">' + r + '</text>';
   }
   // 縦グリッド＋ゲートラベル（周境界は濃く）
   d.x_axis.forEach(x => {
     const xx = xAt(x.pos);
     const strong = x.boundary;
     svg += '<line x1="' + xx + '" y1="' + padT + '" x2="' + xx + '" y2="' + (padT + plotH) +
-           '" stroke="' + (strong ? '#d0d0d0' : '#f2f2f2') + '" stroke-width="1"/>';
-    svg += '<text x="' + xx + '" y="' + (padT + plotH + 16) + '" text-anchor="middle" ' +
-           'font-size="10" fill="' + (strong ? '#555' : '#999') + '">' + x.gate + '</text>';
-    // 周番号（周境界SGの下に小さく）
+           '" stroke="' + (strong ? '#d0d0d0' : '#f2f2f2') + '" stroke-width="1.5"/>';
+    svg += '<text x="' + xx + '" y="' + (padT + plotH + 28) + '" text-anchor="middle" ' +
+           'font-size="19" fill="' + (strong ? '#555' : '#999') + '">' + x.gate + '</text>';
+    // 周番号（周境界SGの下に）
     if(strong && x.lap > 0){
-      svg += '<text x="' + xx + '" y="' + (padT + plotH + 30) + '" text-anchor="middle" ' +
-             'font-size="9" fill="#bbb">' + x.lap + '周</text>';
+      svg += '<text x="' + xx + '" y="' + (padT + plotH + 52) + '" text-anchor="middle" ' +
+             'font-size="16" fill="#bbb">' + x.lap + '周</text>';
     }
   });
   // 軸見出し
-  svg += '<text x="' + (padL - 34) + '" y="' + (padT - 8) + '" font-size="10" fill="#666">順位</text>';
+  svg += '<text x="' + (padL - 50) + '" y="' + (padT - 12) + '" font-size="18" fill="#666">順位</text>';
 
   // 各レーンの折れ線
   d.lanes.forEach(lane => {
@@ -741,11 +746,11 @@ function renderPositionChart(){
     let path = '';
     pts.forEach((p, i) => { path += (i === 0 ? 'M' : 'L') + xAt(p.pos) + ',' + yAt(p.rank); });
     svg += '<path d="' + path + '" fill="none" stroke="' + color +
-           '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+           '" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>';
     // 点（ホバー用データ属性つき）
     pts.forEach(p => {
-      svg += '<circle cx="' + xAt(p.pos) + '" cy="' + yAt(p.rank) + '" r="4.5" fill="' + color +
-             '" stroke="#fff" stroke-width="1.5" class="pc-pt" ' +
+      svg += '<circle cx="' + xAt(p.pos) + '" cy="' + yAt(p.rank) + '" r="7" fill="' + color +
+             '" stroke="#fff" stroke-width="2" class="pc-pt" ' +
              'data-lane="' + lane.start_lane + '" data-gate="' + p.gate + '" data-lap="' + p.lap +
              '" data-rank="' + p.rank + '" data-t="' + p.t_s + '"/>';
     });
@@ -753,8 +758,17 @@ function renderPositionChart(){
     if(lane.dnf && pts.length > 0){
       const last = pts[pts.length - 1];
       const lx = xAt(last.pos), ly = yAt(last.rank);
-      svg += '<text x="' + lx + '" y="' + (ly - 9) + '" text-anchor="middle" font-size="12" ' +
+      svg += '<text x="' + lx + '" y="' + (ly - 14) + '" text-anchor="middle" font-size="22" ' +
              'fill="' + color + '" font-weight="bold">×</text>';
+    }
+    // 右端：各レーンの終点にトータルタイム（完走時）or DNF を表示
+    if(pts.length > 0){
+      const last = pts[pts.length - 1];
+      const tx = xAt(last.pos) + 12;
+      const ty = yAt(last.rank) + 7;
+      const label = (lane.total_s != null) ? (lane.total_s.toFixed(3) + 's') : 'DNF';
+      svg += '<text x="' + tx + '" y="' + ty + '" text-anchor="start" font-size="20" ' +
+             'fill="' + color + '" font-weight="bold">' + label + '</text>';
     }
   });
 
