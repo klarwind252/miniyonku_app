@@ -234,6 +234,7 @@
     <a href="#health" class="settings-menu-item" id="menu-health">🩺 稼働ヘルス</a>
     <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 アクセス統計</a>
     <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 監査ログ</a>
+    <a href="#db-reset" class="settings-menu-item" id="menu-db-reset" style="color:#dc2626">🗑 データ初期化</a>
   </nav>
 
   <!-- 右コンテンツ -->
@@ -1412,6 +1413,60 @@
       </div>
     </div>
 
+    <!-- データ初期化（危険操作：選んだDBを空にする。取り消し不可） -->
+    <div class="settings-section" id="db-reset">
+      <div class="section-title" style="color:#dc2626">🗑 データ初期化（危険）</div>
+      <div class="card" style="border:2px solid #dc2626">
+        <div class="card-header" style="background:#fdecec;color:#b91c1c">
+          ⚠ 選んだデータベースを完全に空にします（取り消せません）
+        </div>
+        <div class="card-body">
+          <div style="background:#fff5f5;border:1px solid #f3b4b4;border-radius:8px;
+                      padding:12px;margin-bottom:14px;color:#b91c1c;font-size:13px;line-height:1.7">
+            <b>この操作は元に戻せません。</b> 実行すると、選んだDBの<b>全レコードが完全に削除</b>されます。<br>
+            必ず事前にバックアップを取ってください。本番環境では原則使わないでください。<br>
+            誤操作防止のため、対象DB名を正確に入力しないと実行できません。
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+            <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+              <input type="radio" name="dbResetGroup" value="races" onchange="onDbResetSel()">
+              <span><b>レースDB</b><br>
+                <small style="color:#636e72">大会・エントリー・予選/決勝・ブラケット・結果の一切を削除</small></span>
+            </label>
+            <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+              <input type="radio" name="dbResetGroup" value="laptime" onchange="onDbResetSel()">
+              <span><b>ラップタイムDB</b><br>
+                <small style="color:#636e72">計測レース・通過イベント・ベスト記録・速度を削除（コースレイアウトと端末台帳は残す）</small></span>
+            </label>
+            <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+              <input type="radio" name="dbResetGroup" value="racers" onchange="onDbResetSel()">
+              <span><b>レーサーDB</b><br>
+                <small style="color:#636e72">登録済みレーサー名簿（レーサーマスタ）を削除</small></span>
+            </label>
+          </div>
+
+          <div style="margin-bottom:12px">
+            <label style="font-size:13px;color:#333">
+              実行するには、選んだDB名を正確に入力してください：
+              <span id="dbResetExpect" style="font-weight:bold;color:#dc2626">（上でDBを選択）</span>
+            </label>
+            <input type="text" id="dbResetConfirm" oninput="onDbResetSel()" disabled
+                   placeholder="対象DB名を入力"
+                   style="display:block;width:100%;max-width:320px;margin-top:6px;
+                          padding:8px;border:1px solid #ccc;border-radius:6px">
+          </div>
+
+          <button type="button" id="dbResetBtn" class="btn" disabled
+                  onclick="doDbReset()"
+                  style="background:#dc2626;color:#fff;opacity:.5;cursor:not-allowed">
+            🗑 初期化を実行
+          </button>
+          <div id="dbResetMsg" style="margin-top:12px;font-size:13px"></div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /右コンテンツ -->
 </div>
 
@@ -1548,7 +1603,7 @@ async function manualPublish() {
 }
 
 /* ---------- サイドメニュー スクロール連動 ---------- */
-const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health', 'access-stats', 'audit-log'];
+const sections = ['defaults', 'store-name', 'cert', 'card', 'post', 'public-html', 'pwa', 'stores', 'health', 'access-stats', 'audit-log', 'db-reset'];
 function updateMenu() {
   let current = sections[0];
   sections.forEach(id => {
@@ -1712,6 +1767,78 @@ async function loadAudit(){
     box.innerHTML = '<div style="color:#e74c3c;font-size:13px">取得に失敗しました。</div>';
   }
   btn.disabled = false; btn.textContent = '🔄 最近のログを表示';
+}
+
+/* ---------- データ初期化（危険操作） ---------- */
+const DB_RESET_LABELS = { races: 'レースDB', laptime: 'ラップタイムDB', racers: 'レーサーDB' };
+
+function _dbResetGroup(){
+  const el = document.querySelector('input[name="dbResetGroup"]:checked');
+  return el ? el.value : null;
+}
+// 選択・入力のたびに、期待文字列の表示とボタンの有効/無効を更新する
+function onDbResetSel(){
+  const g = _dbResetGroup();
+  const expect = document.getElementById('dbResetExpect');
+  const input = document.getElementById('dbResetConfirm');
+  const btn = document.getElementById('dbResetBtn');
+  if(!g){
+    expect.textContent = '（上でDBを選択）';
+    input.value = ''; input.disabled = true;
+    btn.disabled = true; btn.style.opacity = '.5'; btn.style.cursor = 'not-allowed';
+    return;
+  }
+  const label = DB_RESET_LABELS[g];
+  expect.textContent = '「' + label + '」';
+  input.disabled = false;
+  input.placeholder = label + ' と入力';
+  const ok = (input.value.trim() === label);   // 対象DB名の完全一致でのみ実行可
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '1' : '.5';
+  btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+}
+
+async function doDbReset(){
+  const g = _dbResetGroup();
+  if(!g) return;
+  const label = DB_RESET_LABELS[g];
+  const input = document.getElementById('dbResetConfirm');
+  if(input.value.trim() !== label) return;
+  // 二段確認。取り消せない旨を明示する。
+  if(!confirm('本当に「' + label + '」を初期化しますか？\n' +
+              'このDBの全データが完全に削除され、取り消せません。')) return;
+  if(!confirm('最終確認です。「' + label + '」を削除します。よろしいですか？')) return;
+
+  const btn = document.getElementById('dbResetBtn');
+  const msg = document.getElementById('dbResetMsg');
+  btn.disabled = true; btn.style.opacity = '.5';
+  msg.style.color = '#636e72'; msg.textContent = '初期化中…';
+  try{
+    const res = await fetch('/admin/db/reset', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ group: g, confirm: input.value.trim() })
+    });
+    if(res.ok){
+      const d = await res.json();
+      const n = Object.values(d.deleted).reduce((a,v)=> a + (typeof v==='number'?v:0), 0);
+      msg.style.color = '#16a34a';
+      msg.textContent = '「' + d.label + '」を初期化しました（削除 ' + n + ' 件）。';
+      input.value = '';
+      document.querySelectorAll('input[name="dbResetGroup"]').forEach(r=> r.checked=false);
+      onDbResetSel();
+    } else {
+      let detail = '';
+      try { const d = await res.json(); detail = d.detail || ''; } catch(e){}
+      msg.style.color = '#c0392b';
+      msg.textContent = '初期化できませんでした。' + (detail ? '（' + detail + '）' : '');
+      onDbResetSel();
+    }
+  }catch(e){
+    msg.style.color = '#c0392b';
+    msg.textContent = '通信エラー: ' + e;
+    onDbResetSel();
+  }
 }
 </script>
 {% endblock %}

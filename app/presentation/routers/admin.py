@@ -1906,3 +1906,81 @@ async def bgm_file(slot: int, request: Request):
     if not _os.path.exists(path):
         return Response(status_code=404)
     return FileResponse(path, media_type="audio/mpeg", filename=_bgm_slot_name(slot))
+
+
+# ============================================================================
+# データ初期化（危険操作）  §設定 > 🗑 データ初期化
+#   3つの論理DBを選んで空にする。テーブル名は下の固定表のみ（ユーザー入力を
+#   SQLに埋めない＝インジェクション不可）。確認文字列に対象DB名を正確に打たせ、
+#   一致しなければ実行しない。コースレイアウト・端末台帳・各種テンプレ・設定は
+#   ラップタイム初期化では消さない（計測記録・イベント・ベスト・速度のみ）。
+# ============================================================================
+DB_RESET_GROUPS = {
+    "racers": {
+        "label": "レーサーDB",
+        "tables": ["racers"],
+    },
+    "races": {
+        "label": "レースDB",
+        "tables": [
+            "tournaments", "entries", "pre_entries", "entry_form_tokens",
+            "brackets", "bracket_groups", "bracket_rounds", "bracket_slots",
+            "bracket_slot_ranks", "bracket_results",
+            "ht_groups", "ht_rounds", "ht_slots", "ht_slot_ranks",
+            "ht_results", "ht_finalist_seeds",
+            "heats", "heat_lanes", "heat_results", "heat_finals",
+            "match_results", "order_queue",
+            "order_winner_racers", "order_winner_stages",
+            "race_assets",
+        ],
+    },
+    "laptime": {
+        "label": "ラップタイムDB",
+        "tables": ["timing_races", "timing_events", "timing_bests",
+                   "timing_race_speeds"],
+    },
+}
+
+
+@router.post("/db/reset")
+async def db_reset(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """選んだ論理DBを空にする（取り消し不可）。
+
+    body(JSON): {"group": "racers"|"races"|"laptime", "confirm": "<対象DB名>"}
+    confirm が対象DBの正式名（例「ラップタイムDB」）と完全一致しないと 400。
+    """
+    from fastapi.responses import JSONResponse
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+
+    group = str(data.get("group") or "")
+    confirm = str(data.get("confirm") or "").strip()
+    if group not in DB_RESET_GROUPS:
+        raise HTTPException(status_code=400, detail="対象DBが不正です")
+    label = DB_RESET_GROUPS[group]["label"]
+    tables = DB_RESET_GROUPS[group]["tables"]
+    if confirm != label:
+        raise HTTPException(
+            status_code=400,
+            detail=f"確認文字列が一致しません。「{label}」と正確に入力してください。")
+
+    # 外部キー制約でDELETE順に悩まないよう一時OFF。テーブル名は固定表のみ。
+    await db.execute("PRAGMA foreign_keys=OFF")
+    deleted = {}
+    for t in tables:
+        try:
+            cur = await db.execute(f"DELETE FROM {t}")
+            deleted[t] = cur.rowcount
+        except Exception as e:
+            deleted[t] = f"skip({type(e).__name__})"
+        try:
+            # AUTOINCREMENT の採番もリセット（sqlite_sequence が無い環境は無視）
+            await db.execute("DELETE FROM sqlite_sequence WHERE name=?", (t,))
+        except Exception:
+            pass
+    await db.commit()
+    await db.execute("PRAGMA foreign_keys=ON")
+    return JSONResponse({"ok": True, "group": group, "label": label,
+                         "deleted": deleted})
