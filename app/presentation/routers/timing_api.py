@@ -30,6 +30,7 @@ from app.application.timing_sample_irregular import (
     describe_pattern_short as irr_describe,
     summarize_patterns as irr_summary,
 )
+from app.application.timing_chart_service import build_position_chart
 from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
 from app.domain.race_builder import mode_mismatch  # D7/E6(24.34)：予定/実測モード照合
@@ -1323,6 +1324,35 @@ async def _speed_fns_for_race(db, race_id: int):
         return st["lane"].get(lane, {}).get("total_avg")
 
     return speed_fn, lap_avg_fn, total_avg_fn
+
+
+@router.get("/api/timing/races/{race_id}/chart")
+async def race_position_chart(
+    race_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """ポジションチャート（順位変動グラフ）用の JSON を返す。
+
+    横軸=通過ゲートの通し番号、縦軸=その通過時点での順位（同じ通過数の
+    累積タイム順）。CO車は完了周までで線が止まる（timing_chart_service）。
+    """
+    race, result = await build_race_result(db, race_id)
+    if race is None:
+        raise HTTPException(status_code=404, detail="race not found")
+    if result is None:
+        return JSONResponse({"target_laps": 0, "x_axis": [], "lanes": [],
+                             "lap_colors": []})
+
+    # レイアウト要素（ゲート順・種別ラベル用）を取得
+    from app.domain.rotation import LayoutElement
+    lrepo = TimingLayoutRepository(db)
+    elem_rows = await lrepo.get_elements(race["layout_id"])
+    layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
+                    for e in elem_rows]
+
+    chart = build_position_chart(race, result, layout_elems)
+    return JSONResponse(chart)
 
 
 @router.get("/admin/timing/results/{race_id}", response_class=HTMLResponse)

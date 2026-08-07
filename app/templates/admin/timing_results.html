@@ -141,6 +141,32 @@
   .smp-note-tag{margin-top:4px;font-size:10px;line-height:1.35;color:#8a6d1f;
     background:#fff8e1;border:1px solid #f0e0a8;border-radius:6px;
     padding:3px 6px;max-width:150px;word-break:break-word;white-space:normal}
+  /* 📈グラフ ボタン */
+  .chart-btn{font-size:11px;padding:3px 10px;border:1px solid #b7c7e0;
+    background:#eef4fc;color:#2c5aa0;border-radius:6px;cursor:pointer}
+  .chart-btn:hover{background:#dde9f8}
+  /* ポジションチャート モーダル */
+  .pc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;
+    display:none;align-items:center;justify-content:center;padding:12px}
+  .pc-overlay.open{display:flex}
+  .pc-modal{background:#fff;border-radius:12px;max-width:960px;width:100%;
+    max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  .pc-head{display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}
+  .pc-title{font-weight:bold;font-size:15px;color:#333}
+  .pc-close{border:none;background:#f2f2f2;border-radius:8px;width:32px;height:32px;
+    font-size:18px;cursor:pointer;color:#666}
+  .pc-close:hover{background:#e6e6e6}
+  .pc-body{padding:14px 16px}
+  .pc-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .pc-legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:12px;
+    padding:3px 8px;border-radius:14px;border:1px solid #ddd;cursor:pointer;user-select:none}
+  .pc-legend .lg.off{opacity:.35;text-decoration:line-through}
+  .pc-legend .lg .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .pc-note{font-size:11px;color:#888;margin-top:8px;line-height:1.5}
+  .pc-tip{position:fixed;pointer-events:none;background:#222;color:#fff;font-size:12px;
+    padding:6px 9px;border-radius:6px;z-index:1100;display:none;white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.3)}
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:15px}
   /* 結果フラグ・バッジ（サーバー判定を表示。24.1：値は補完せず事実を示す）*/
   .rflag{display:block;margin-top:2px;font-size:10px;font-weight:bold;line-height:1.25;border-radius:6px;padding:1px 3px;white-space:nowrap}
@@ -312,6 +338,10 @@
                 🧪 {{ row.sample_note }}
               </div>
               {% endif %}
+              <div style="margin-top:4px">
+                <button type="button" class="chart-btn"
+                        onclick="openPositionChart({{ row.race_id }})">📈 グラフ</button>
+              </div>
             </td>
             {% endif %}
             {# POS・LANE・TOTAL はレーンごとに1回だけ #}
@@ -575,5 +605,166 @@ async function sendSample(){
 {% endif %}
 
 
+<!-- ============ ポジションチャート（順位変動グラフ）モーダル ============ -->
+<div class="pc-overlay" id="pcOverlay" onclick="if(event.target===this)closePositionChart()">
+  <div class="pc-modal">
+    <div class="pc-head">
+      <div class="pc-title" id="pcTitle">📈 ポジションチャート</div>
+      <button type="button" class="pc-close" onclick="closePositionChart()">×</button>
+    </div>
+    <div class="pc-body">
+      <div class="pc-legend" id="pcLegend"></div>
+      <div id="pcChartWrap"></div>
+      <div class="pc-note">
+        縦軸＝各ゲート通過時点の順位（同じ通過数での累積タイム順）。
+        横軸＝通過ゲート（左から時系列）。線が途中で止まる＝その地点でリタイア（CO）。
+        凡例をタップで各レーンの表示/非表示。点にカーソルを合わせると詳細。
+      </div>
+    </div>
+  </div>
+</div>
+<div class="pc-tip" id="pcTip"></div>
+
+<script>
+// レーンの色（凡例・線）。周の色分けとは別に、レーン識別用の基本色。
+const PC_LANE_COLORS = ['#2563eb','#dc2626','#16a34a','#f59e0b','#7c3aed','#0891b2'];
+let pcHidden = {};   // start_lane -> true（非表示）
+let pcData = null;
+
+async function openPositionChart(raceId){
+  const ov = document.getElementById('pcOverlay');
+  document.getElementById('pcTitle').textContent = '📈 ポジションチャート（レース #' + raceId + '）';
+  document.getElementById('pcChartWrap').innerHTML = '<div style="padding:40px;text-align:center;color:#999">読み込み中…</div>';
+  document.getElementById('pcLegend').innerHTML = '';
+  pcHidden = {};
+  ov.classList.add('open');
+  try{
+    const res = await fetch('/api/timing/races/' + raceId + '/chart');
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    pcData = await res.json();
+    renderPositionChart();
+  }catch(e){
+    document.getElementById('pcChartWrap').innerHTML =
+      '<div style="padding:40px;text-align:center;color:#c0392b">グラフの取得に失敗しました（' + e.message + '）</div>';
+  }
+}
+
+function closePositionChart(){
+  document.getElementById('pcOverlay').classList.remove('open');
+  document.getElementById('pcTip').style.display = 'none';
+}
+
+function renderPositionChart(){
+  const d = pcData;
+  if(!d || !d.lanes || d.lanes.length === 0){
+    document.getElementById('pcChartWrap').innerHTML =
+      '<div style="padding:40px;text-align:center;color:#999">表示できるデータがありません</div>';
+    return;
+  }
+  const nx = d.x_axis.length;                 // X点数
+  const nLane = d.lanes.length;
+  const maxRank = nLane;                       // 最下位＝レーン数
+
+  // 凡例
+  const lg = document.getElementById('pcLegend');
+  lg.innerHTML = '';
+  d.lanes.forEach((lane, i) => {
+    const color = PC_LANE_COLORS[(lane.start_lane - 1) % PC_LANE_COLORS.length];
+    const el = document.createElement('span');
+    el.className = 'lg' + (pcHidden[lane.start_lane] ? ' off' : '');
+    el.innerHTML = '<span class="sw" style="background:' + color + '"></span>LANE ' +
+                   lane.start_lane + (lane.dnf ? ' (DNF)' : '');
+    el.onclick = () => { pcHidden[lane.start_lane] = !pcHidden[lane.start_lane]; renderPositionChart(); };
+    lg.appendChild(el);
+  });
+
+  // SVG レイアウト
+  const W = Math.max(560, nx * 62);
+  const H = 40 + maxRank * 56;
+  const padL = 46, padR = 20, padT = 24, padB = 56;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const xAt = p => padL + (nx <= 1 ? plotW/2 : plotW * p / (nx - 1));
+  const yAt = r => padT + (maxRank <= 1 ? plotH/2 : plotH * (r - 1) / (maxRank - 1));
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W +
+            'px;font-family:sans-serif" id="pcSvg">';
+
+  // 横グリッド＋順位ラベル（1が上）
+  for(let r = 1; r <= maxRank; r++){
+    const y = yAt(r);
+    svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y +
+           '" stroke="#eee" stroke-width="1"/>';
+    svg += '<text x="' + (padL - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
+           'font-size="12" fill="#888">' + r + '</text>';
+  }
+  // 縦グリッド＋ゲートラベル（周境界は濃く）
+  d.x_axis.forEach(x => {
+    const xx = xAt(x.pos);
+    const strong = x.boundary;
+    svg += '<line x1="' + xx + '" y1="' + padT + '" x2="' + xx + '" y2="' + (padT + plotH) +
+           '" stroke="' + (strong ? '#d0d0d0' : '#f2f2f2') + '" stroke-width="1"/>';
+    svg += '<text x="' + xx + '" y="' + (padT + plotH + 16) + '" text-anchor="middle" ' +
+           'font-size="10" fill="' + (strong ? '#555' : '#999') + '">' + x.gate + '</text>';
+    // 周番号（周境界SGの下に小さく）
+    if(strong && x.lap > 0){
+      svg += '<text x="' + xx + '" y="' + (padT + plotH + 30) + '" text-anchor="middle" ' +
+             'font-size="9" fill="#bbb">' + x.lap + '周</text>';
+    }
+  });
+  // 軸見出し
+  svg += '<text x="' + (padL - 34) + '" y="' + (padT - 8) + '" font-size="10" fill="#666">順位</text>';
+
+  // 各レーンの折れ線
+  d.lanes.forEach(lane => {
+    if(pcHidden[lane.start_lane]) return;
+    const color = PC_LANE_COLORS[(lane.start_lane - 1) % PC_LANE_COLORS.length];
+    const pts = lane.points.filter(p => p.rank != null);
+    if(pts.length === 0) return;
+    // 線
+    let path = '';
+    pts.forEach((p, i) => { path += (i === 0 ? 'M' : 'L') + xAt(p.pos) + ',' + yAt(p.rank); });
+    svg += '<path d="' + path + '" fill="none" stroke="' + color +
+           '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    // 点（ホバー用データ属性つき）
+    pts.forEach(p => {
+      svg += '<circle cx="' + xAt(p.pos) + '" cy="' + yAt(p.rank) + '" r="4.5" fill="' + color +
+             '" stroke="#fff" stroke-width="1.5" class="pc-pt" ' +
+             'data-lane="' + lane.start_lane + '" data-gate="' + p.gate + '" data-lap="' + p.lap +
+             '" data-rank="' + p.rank + '" data-t="' + p.t_s + '"/>';
+    });
+    // CO（DNF）なら最後の点に×
+    if(lane.dnf && pts.length > 0){
+      const last = pts[pts.length - 1];
+      const lx = xAt(last.pos), ly = yAt(last.rank);
+      svg += '<text x="' + lx + '" y="' + (ly - 9) + '" text-anchor="middle" font-size="12" ' +
+             'fill="' + color + '" font-weight="bold">×</text>';
+    }
+  });
+
+  svg += '</svg>';
+  document.getElementById('pcChartWrap').innerHTML = svg;
+
+  // ホバーでツールチップ
+  const tip = document.getElementById('pcTip');
+  document.querySelectorAll('#pcSvg .pc-pt').forEach(c => {
+    c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', ev => {
+      tip.innerHTML = 'LANE ' + c.dataset.lane + ' ｜ ' + c.dataset.gate +
+                      '（' + c.dataset.lap + '周目）<br>順位 ' + c.dataset.rank +
+                      '位 ／ 累積 ' + c.dataset.t + ' 秒';
+      tip.style.display = 'block';
+      tip.style.left = (ev.clientX + 12) + 'px';
+      tip.style.top = (ev.clientY + 12) + 'px';
+    });
+    c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  });
+}
+
+// Escでモーダルを閉じる
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') closePositionChart();
+});
+</script>
 
 {% endblock %}
