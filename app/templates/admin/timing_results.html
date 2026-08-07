@@ -178,7 +178,7 @@
   .rflag{display:block;margin-top:2px;font-size:10px;font-weight:bold;line-height:1.25;border-radius:6px;padding:1px 3px;white-space:nowrap}
   .rflag-dnf{background:#7f8c8d;color:#fff}   /* DNF：CO等で規定周回未達（E5・24.39）*/
   .rflag-js{background:#c0392b;color:#fff}    /* JS：フライング（G1・24.53）*/
-  .rflag-warn{background:#f39c12;color:#fff}  /* ⚠要確認：欠測あり（E1・24.37）*/
+  .rflag-warn{display:none}  /* ⚠要確認バッジは廃止 */
   /* LANEはセル全体を塗って白抜き文字にする（POSの素の数字と明確に分ける） */
   .c-lane{width:50px;text-align:center;vertical-align:middle;
     font-size:15px;font-weight:bold;color:#fff}
@@ -214,9 +214,7 @@
   .c-act{width:78px;text-align:center;vertical-align:middle}
   .c-act .act-btn{display:block;width:100%;margin:2px 0;padding:4px 6px;font-size:12px}
   .linked-badge{background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 7px;font-size:11px}
-  .review-badge{background:#fff3e0;color:#e65100;border:1px solid #ffcc80;
-    border-radius:8px;padding:1px 7px;font-size:11px;font-weight:bold;
-    display:inline-block;margin-top:2px}
+  .review-badge{display:none}
   .tr-wrap{overflow-x:auto}
   /* その日の上位3傑をハイライト（1位=紫 / 2位=青 / 3位=緑） */
   .r1{background:#f3e8ff !important;color:#6b21a8;font-weight:bold;border-radius:3px}
@@ -341,9 +339,6 @@
                 {% if row.heat_id is not none %}
                 <span class="linked-badge">ヒート{{ row.heat_id }}</span>
                 {% endif %}
-                {% if row.status == 'needs_review' %}
-                <span class="review-badge" title="通過回数が期待と一致しません。人間の確認が必要です（I群 §24.71）">⚠要確認</span>
-                {% endif %}
               </div>
               {% if row.sample_note %}
               <div class="smp-note-tag" title="サンプル送信で生成したイレギュラーパターン">
@@ -363,7 +358,6 @@
             <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}
               {% if row.dnf %}<span class="rflag rflag-dnf" title="コースアウト等で規定周回に届かず（DNF・24.39）">DNF</span>{% endif %}
               {% if row.jump_start %}<span class="rflag rflag-js" title="フライング：S/G通過が緑より前（JS・24.53）">JS</span>{% endif %}
-              {% if row.missing %}<span class="rflag rflag-warn" title="通過回数に欠測あり。値は補完していません（要確認・24.37）">&#9888;要確認</span>{% endif %}
             </td>
             <td class="c-total gsep{% if row.rank_total %} r{{ row.rank_total }}{% endif %}"
                 rowspan="{{ row.lane_row_count }}"
@@ -731,7 +725,8 @@ function renderPositionChart(){
     const xx = xAt(x.pos);
     const strong = x.boundary;
     svg += '<line x1="' + xx + '" y1="' + padT + '" x2="' + xx + '" y2="' + (padT + plotH) +
-           '" stroke="' + (strong ? '#94a3b8' : '#f2f2f2') + '" stroke-width="' + (strong ? 2 : 1.5) + '"/>';
+           '" stroke="' + (strong ? '#1e3a8a' : '#f2f2f2') + '" stroke-width="' + (strong ? 2.5 : 1.5) + '"' +
+           (strong ? ' stroke-dasharray="5 3"' : '') + '/>';
     if(strong){
       // SG：色付きバッジで強調
       const bw = 40, bh = 22, by = padT + plotH + 12;
@@ -746,7 +741,7 @@ function renderPositionChart(){
     // 周番号（周境界SGの下に）
     if(strong && x.lap > 0){
       svg += '<text x="' + xx + '" y="' + (padT + plotH + 52) + '" text-anchor="middle" ' +
-             'font-size="16" font-weight="bold" fill="#1e3a8a">' + x.lap + '周</text>';
+             'font-size="16" font-weight="bold" fill="#000">' + x.lap + '周</text>';
     }
   });
   // 軸見出し
