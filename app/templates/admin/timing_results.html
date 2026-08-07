@@ -718,7 +718,7 @@ function renderPositionChart(){
     svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y +
            '" stroke="#eee" stroke-width="1.5"/>';
     svg += '<text x="' + (padL - 16) + '" y="' + (y + 7) + '" text-anchor="end" ' +
-           'font-size="22" fill="#888">' + r + '</text>';
+           'font-size="22" fill="#000">' + r + '</text>';
   }
   // 縦グリッド＋ゲートラベル（周境界SGは目立たせる）
   d.x_axis.forEach(x => {
@@ -728,15 +728,15 @@ function renderPositionChart(){
            '" stroke="' + (strong ? '#1e3a8a' : '#f2f2f2') + '" stroke-width="' + (strong ? 2.5 : 1.5) + '"' +
            (strong ? ' stroke-dasharray="5 3"' : '') + '/>';
     if(strong){
-      // SG：色付きバッジで強調
+      // SG：薄い背景でハイライト＋黒文字
       const bw = 40, bh = 22, by = padT + plotH + 12;
       svg += '<rect x="' + (xx - bw/2) + '" y="' + by + '" width="' + bw + '" height="' + bh +
-             '" rx="6" fill="#1e3a8a"/>';
+             '" rx="6" fill="#dbeafe"/>';
       svg += '<text x="' + xx + '" y="' + (by + 16) + '" text-anchor="middle" ' +
-             'font-size="16" font-weight="bold" fill="#fff">' + x.gate + '</text>';
+             'font-size="16" font-weight="bold" fill="#000">' + x.gate + '</text>';
     } else {
       svg += '<text x="' + xx + '" y="' + (padT + plotH + 28) + '" text-anchor="middle" ' +
-             'font-size="19" fill="#999">' + x.gate + '</text>';
+             'font-size="19" fill="#000">' + x.gate + '</text>';
     }
     // 周番号（周境界SGの下に）
     if(strong && x.lap > 0){
@@ -745,7 +745,7 @@ function renderPositionChart(){
     }
   });
   // 軸見出し
-  svg += '<text x="' + (padL - 50) + '" y="' + (padT - 12) + '" font-size="18" fill="#666">順位</text>';
+  svg += '<text x="' + (padL - 50) + '" y="' + (padT - 12) + '" font-size="18" fill="#000">順位</text>';
 
   // 各レーンの折れ線
   d.lanes.forEach(lane => {
@@ -775,13 +775,13 @@ function renderPositionChart(){
       if(p.t_s != null && p.pos > 0){
         const prevT = (i > 0) ? pts[i - 1].t_s : 0;
         const sector = p.t_s - prevT;
-        // 上段：累積タイム（元サイズ・小・薄字）
+        // 上段：累積タイム（元サイズ・小・黒）
         svg += '<text x="' + cx + '" y="' + (cy - 30) + '" text-anchor="middle" ' +
-               'font-size="11" fill="#999" style="pointer-events:none">' +
+               'font-size="11" fill="#000" style="pointer-events:none">' +
                p.t_s.toFixed(2) + '</text>';
-        // 下段：セクタータイム（倍サイズ・濃字）
+        // 下段：セクタータイム（倍サイズ・黒）
         svg += '<text x="' + cx + '" y="' + (cy - 12) + '" text-anchor="middle" ' +
-               'font-size="18" font-weight="bold" fill="#333" style="pointer-events:none">' +
+               'font-size="18" font-weight="bold" fill="#000" style="pointer-events:none">' +
                sector.toFixed(2) + '</text>';
       }
     });
