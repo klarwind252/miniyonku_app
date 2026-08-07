@@ -11,9 +11,8 @@ GWからのPOSTは、環境変数 TIMING_TOKEN があれば X-Timing-Token を�
 
 import os
 import time
-import json
 
-from fastapi import APIRouter, Request, Depends, HTTPException, Header
+from fastapi import APIRouter, Request, Depends, HTTPException, Header, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 import aiosqlite
 
@@ -67,25 +66,6 @@ def _check_token(x_timing_token: str | None):
 # GW受信口（API）
 # ---------------------------------------------------------------------------
 
-
-def _layout_snapshot_json(elem_rows) -> str:
-    """レイアウト要素（get_elements の結果）を、受信時点の構成として固定する
-    JSON 文字列にする。kind と node_id の並びだけを持つ（LC も含める）。
-    レイアウトは後から編集され得るので、レース作成時にこれを焼き付けておく。"""
-    snap = [{"kind": e["kind"], "node_id": e["node_id"]} for e in elem_rows]
-    return json.dumps(snap, ensure_ascii=False)
-
-
-def _layout_elems_from_json(layout_json: str | None):
-    """固定した layout_json から LayoutElement 列を復元する。無効/空なら None。"""
-    if not layout_json:
-        return None
-    try:
-        arr = json.loads(layout_json)
-        return [LayoutElement(kind=e["kind"], node_id=e.get("node_id")) for e in arr]
-    except Exception:
-        return None
-
 @router.post("/api/timing/races")
 async def create_race(
     request: Request,
@@ -107,23 +87,12 @@ async def create_race(
     except Exception:
         raise HTTPException(status_code=400, detail="invalid JSON body")
     repo = TimingRaceRepository(db)
-    # 受信時点のレイアウト構成を固定（layout_json）。以後レイアウトが編集されても
-    # このレースは受信時の構成で解釈される（ゲート列のズレ＝表崩れを防ぐ）。
-    _lid = data.get("layout_id")
-    _layout_json = None
-    if _lid is not None:
-        try:
-            _layout_json = _layout_snapshot_json(
-                await TimingLayoutRepository(db).get_elements(_lid))
-        except Exception:
-            _layout_json = None
     race_id = await repo.create_race(
         heat_tag=data.get("heat_tag"),
-        layout_id=_lid,
+        layout_id=data.get("layout_id"),
         target_laps=int(data.get("target_laps") or 3),
         client_key=(str(data.get("client_key")) if data.get("client_key") else None),
         green_t_us=data.get("green_t_us"),
-        layout_json=_layout_json,
     )
     return JSONResponse({"race_id": race_id})
 
@@ -667,7 +636,6 @@ async def create_sample_race(
             target_laps=laps,
             green_t_us=green_t_us,
             sample_note=sample_note,
-            layout_json=_layout_snapshot_json(elems),
         )
         for ev in events:
             await rrepo.insert_event(race_id, ev)
@@ -1411,17 +1379,13 @@ async def race_position_chart(
         return JSONResponse({"target_laps": 0, "x_axis": [], "lanes": [],
                              "lap_colors": []})
 
-    # レイアウト要素（ゲート順・種別ラベル用）。受信時に固定した layout_json を
-    # 最優先で使う（レイアウトが後から編集されても、このレースは受信時の構成で
-    # 描く）。無ければ従来どおり layout_id から引く（旧レコード後方互換）。
+    # レイアウト要素（ゲート順・種別ラベル用）を取得
     from app.domain.rotation import LayoutElement
     lrepo = TimingLayoutRepository(db)
     repo = TimingRaceRepository(db)
-    layout_elems = _layout_elems_from_json(await repo.get_layout_json(race_id))
-    if layout_elems is None:
-        elem_rows = await lrepo.get_elements(race["layout_id"])
-        layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
-                        for e in elem_rows]
+    elem_rows = await lrepo.get_elements(race["layout_id"])
+    layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
+                    for e in elem_rows]
 
     chart = build_position_chart(race, result, layout_elems)
 
@@ -1439,14 +1403,97 @@ async def race_position_chart(
     chart["sample_note"] = sample_note
 
     # 生データ（物理レーンごとの全検出）。乗入・欠落を人間が確認するための素材。
+    # 訂正モーダルで使うので除外済みも含めて返す（UIで薄字表示・復活も可能に）。
     try:
-        ev_rows = await repo.get_events(race_id)
+        ev_rows = await repo.get_events(race_id, include_excluded=True)
         chart["raw"] = build_raw_detections(race, ev_rows, layout_elems, n_lanes=LANES)
     except Exception as e:
         print(f"[timing] raw build failed race={race_id}: {type(e).__name__}: {e}", flush=True)
         chart["raw"] = None
 
+    # 折れ線の各点に「元になった通過イベントのid」を対応づける。
+    #   race_builder は (物理レーン, ゲート) ごとに時刻順で同定するので、
+    #   「(ゲートnode, 物理レーン)ごとの有効検出を時刻順に並べた列」と
+    #   「そのゲート・物理レーンを通るチャート点を時刻順に並べた列」は 1:1 で対応する。
+    #   これで点タップ→その通過を除外、が一意に決まる（race_builderは無改変）。
+    try:
+        raw = chart.get("raw")
+        if raw and raw.get("devices"):
+            # gateラベル(SG/SEk)→node_id（生データは SG を "GW" と表記）
+            label_to_node = {}
+            # node_id→{物理レーン: [(t_s, event_id), ...]（有効検出のみ・時刻順）}
+            active_by_node = {}
+            for dev in raw["devices"]:
+                lbl = "SG" if dev["name"] == "GW" else dev["name"]
+                label_to_node[lbl] = dev["node_id"]
+                per_lane = {}
+                for det in dev["detections"]:
+                    if det.get("excluded"):
+                        continue
+                    per_lane.setdefault(det["lane"], []).append((det["t_s"], det["id"]))
+                for ln in per_lane:
+                    per_lane[ln].sort()
+                active_by_node[dev["node_id"]] = per_lane
+            # チャート点を (node, phys) 群に集めて時刻順、ordinalで event_id を割り当て
+            groups = {}
+            for lane in chart.get("lanes", []):
+                for p in lane.get("points", []):
+                    node = label_to_node.get(p.get("gate"))
+                    phys = p.get("phys")
+                    if node is None or phys is None:
+                        continue
+                    groups.setdefault((node, phys), []).append(p)
+            for (node, phys), pts in groups.items():
+                pts.sort(key=lambda pp: pp["t_s"])
+                ids = active_by_node.get(node, {}).get(phys, [])
+                for i, pp in enumerate(pts):
+                    if i < len(ids):
+                        pp["event_id"] = ids[i][1]
+    except Exception as e:
+        print(f"[timing] point-id map failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+
     return JSONResponse(chart)
+
+
+@router.post("/api/timing/races/{race_id}/events/{event_id}/exclude")
+async def exclude_event(
+    race_id: int,
+    event_id: int,
+    payload: dict = Body(default=None),
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """通過イベント1件を除外/復活する（訂正モーダルの折れ線・生データから叩く）。
+
+    body: {"excluded": true|false}  省略時は true（除外）。
+    除外は即座に永続化する。同定・集計は get_events(excluded=0) を使うので、
+    次の chart 取得（＝モーダル再描画）で自動的に再判定が反映され、線からその点が消える。
+    「変更したら即座変更」（確定の概念は持たない）方針に沿う。
+    """
+    excluded = True
+    if isinstance(payload, dict) and "excluded" in payload:
+        excluded = bool(payload["excluded"])
+    repo = TimingRaceRepository(db)
+    ok = await repo.set_event_excluded(race_id, event_id, excluded)
+    if not ok:
+        raise HTTPException(status_code=404, detail="event not found in race")
+
+    # 除外を反映して status を再判定（要確認↔確定が即座に切り替わる。§I群 二段構えDB）。
+    try:
+        race2, result2 = await build_race_result(db, race_id)
+        if result2 is not None and race2["layout_id"] is not None:
+            lrepo = TimingLayoutRepository(db)
+            el2 = await lrepo.get_elements(race2["layout_id"])
+            le2 = [{"kind": e["kind"], "node_id": e["node_id"]} for e in el2]
+            ev2 = await repo.get_events(race_id)   # 有効検出のみ
+            st, _d = status_svc.judge_status(
+                result2, le2, ev2, target_laps=race2["target_laps"], n_lanes=LANES)
+            await repo.update_status(race_id, st)
+    except Exception as e:
+        print(f"[timing] status re-judge failed race={race_id}: "
+              f"{type(e).__name__}: {e}", flush=True)
+
+    return JSONResponse({"ok": True, "event_id": event_id, "excluded": excluded})
 
 
 @router.get("/admin/timing/results/{race_id}", response_class=HTMLResponse)

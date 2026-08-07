@@ -275,18 +275,18 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
                 "ALTER TABLE timing_races ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'")
     except Exception:
         pass
-    # 既存DBへの追加列（layout_json）: レース受信/作成時のレイアウト構成
-    #   （ゲート種別と node_id の並び）をJSONで固定保存する。
-    #   コースレイアウトは後から編集され得るため、layout_id 参照だけだと過去レースの
-    #   表示が「今のレイアウト」で解釈され、ゲート列がズレて崩れる（幻のSEが出る等）。
-    #   受信時点の構成をここに焼き付け、チャート/生データ/同定はこれを優先して使う。
-    #   旧レコードは NULL（layout_id からのフォールバックで従来どおり表示）。
-    try:
-        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
-        if "layout_json" not in cols:
-            await db.execute("ALTER TABLE timing_races ADD COLUMN layout_json TEXT")
-    except Exception:
-        pass
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_timing_races_status ON timing_races(status)")
+
+    # 既存DBへの追加列（timing_events.excluded）: 訂正モーダルでの「通過の除外」。
+    #   0=有効（既定） / 1=除外。除外した検出は同定・集計（build_race）から外れるが、
+    #   生データ表示には薄字で残す（消さずに「無かったこと」にできる＝復活も可能）。
+    try:
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_events)")).fetchall()]
+        if "excluded" not in cols:
+            await db.execute(
+                "ALTER TABLE timing_events ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
     await db.commit()

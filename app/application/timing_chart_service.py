@@ -280,11 +280,15 @@ def build_raw_detections(race_row, event_rows, layout_elems: list,
         t_us = _row_get(r, "t_us")
         seq = _row_get(r, "seq")
         q = _row_get(r, "quality")
+        eid = _row_get(r, "id")
+        exc = bool(_row_get(r, "excluded"))
         by_device.setdefault(node, []).append({
+            "id": eid,
             "lane": lane,
             "t_s": round((t_us - t0) / 1_000_000, 3),
             "seq": seq,
             "quality": q,
+            "excluded": exc,
         })
 
     # レイアウトの通過順で端末を並べる（GW, SE0, SE1 ...）。台帳外のnodeは末尾。
@@ -296,12 +300,14 @@ def build_raw_detections(race_row, event_rows, layout_elems: list,
     devices_out = []
     for node in ordered_nodes:
         dets = by_device.get(node, [])
+        # 期待回数との対比は「有効な検出」で行う（除外した乗入は数から外れる）。
+        active = [d for d in dets if not d["excluded"]]
         devices_out.append({
             "node_id": node,
             "name": name_by_node.get(node, f"n{node}"),
-            "detections": dets,
-            "count": len(dets),
-            "expected": expected.get(node),   # 全レーン合計の期待回数
+            "detections": dets,                 # 除外も含む全件（UIで薄字表示）
+            "count": len(active),               # 有効検出のみの回数
+            "expected": expected.get(node),     # 全レーン合計の期待回数
         })
 
     return {
@@ -315,6 +321,7 @@ def _row_get(row, key):
     """sqlite Row / dict / tuple のいずれでも値を取れるヘルパー。"""
     if hasattr(row, "keys"):
         return row[key]
-    # tuple: SELECT src, lane, t_us, t_us_b, quality, seq の順
-    idx = {"src": 0, "lane": 1, "t_us": 2, "t_us_b": 3, "quality": 4, "seq": 5}[key]
+    # tuple: SELECT id, src, lane, t_us, t_us_b, quality, seq, excluded の順
+    idx = {"id": 0, "src": 1, "lane": 2, "t_us": 3, "t_us_b": 4,
+           "quality": 5, "seq": 6, "excluded": 7}[key]
     return row[idx]
