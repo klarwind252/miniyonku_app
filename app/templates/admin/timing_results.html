@@ -707,15 +707,16 @@ function renderPositionChart(){
   // SVG レイアウト（文字を大きくしたぶん、間隔・余白も広げる）
   const W = Math.max(560, nx * 64);
   const H = 74 + maxRank * 96;
-  const padL = 52, padR = 60, padT = 40, padB = 66;
+  const padL = 52, padR = 90, padT = 40, padB = 66;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const xAt = p => padL + (nx <= 1 ? plotW/2 : plotW * p / (nx - 1));
   const yAt = r => padT + (maxRank <= 1 ? plotH/2 : plotH * (r - 1) / (maxRank - 1));
 
-  // width は viewBox実寸で固定（100%にしない）→ 画面より広ければ #pcChartWrap が横スクロール
-  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H +
-            '" style="font-family:sans-serif;display:block" id="pcSvg">';
+  // width=100%＋viewBoxで枠いっぱいに拡縮（右の余白をなくす／狭い画面でも収める）
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" ' +
+            'preserveAspectRatio="xMidYMid meet" ' +
+            'style="font-family:sans-serif;display:block" id="pcSvg">';
 
   // 横グリッド＋順位ラベル（1が上）
   for(let r = 1; r <= maxRank; r++){
