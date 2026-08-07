@@ -150,7 +150,7 @@
   .pc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;
     display:none;align-items:center;justify-content:center;padding:4px}
   .pc-overlay.open{display:flex}
-  .pc-modal{background:#fff;border-radius:10px;max-width:98vw;width:100%;
+  .pc-modal{background:#fff;border-radius:10px;width:fit-content;max-width:98vw;
     max-height:97vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}
   .pc-head{display:flex;align-items:center;justify-content:space-between;
     padding:8px 10px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}
@@ -713,10 +713,9 @@ function renderPositionChart(){
   const xAt = p => padL + (nx <= 1 ? plotW/2 : plotW * p / (nx - 1));
   const yAt = r => padT + (maxRank <= 1 ? plotH/2 : plotH * (r - 1) / (maxRank - 1));
 
-  // width=100%＋viewBoxで枠いっぱいに拡縮（右の余白をなくす／狭い画面でも収める）
-  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" ' +
-            'preserveAspectRatio="xMidYMid meet" ' +
-            'style="font-family:sans-serif;display:block" id="pcSvg">';
+  // width は viewBox実寸で固定。モーダルがこの幅に合わせて縮む（必要時のみ広がる）
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H +
+            '" style="font-family:sans-serif;display:block" id="pcSvg">';
 
   // 横グリッド＋順位ラベル（1が上）
   for(let r = 1; r <= maxRank; r++){
