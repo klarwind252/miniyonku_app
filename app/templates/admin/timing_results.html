@@ -142,9 +142,10 @@
     background:#fff8e1;border:1px solid #f0e0a8;border-radius:6px;
     padding:3px 6px;max-width:150px;word-break:break-word;white-space:normal}
   /* 📈グラフ ボタン */
-  .chart-btn{font-size:11px;padding:3px 10px;border:1px solid #b7c7e0;
-    background:#eef4fc;color:#2c5aa0;border-radius:6px;cursor:pointer}
-  .chart-btn:hover{background:#dde9f8}
+  .chart-btn{background:#2c7be5;color:#fff;border:1px solid #2c7be5;
+    font-size:14px;font-weight:bold;padding:8px 10px;width:100%;
+    border-radius:6px;cursor:pointer}
+  .chart-btn:hover{background:#1a68d1;border-color:#1a68d1}
   /* ポジションチャート モーダル */
   .pc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;
     display:none;align-items:center;justify-content:center;padding:4px}
@@ -346,8 +347,8 @@
               </div>
               {% endif %}
               <div style="margin-top:4px">
-                <button type="button" class="chart-btn"
-                        onclick="openPositionChart({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">📈 グラフ</button>
+                <button type="button" class="btn btn-sm act-btn chart-btn"
+                        onclick="openPositionChart({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">📈 訂正</button>
               </div>
             </td>
             {% endif %}
