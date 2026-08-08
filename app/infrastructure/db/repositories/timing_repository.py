@@ -268,6 +268,26 @@ class TimingRaceRepository:
             ) as cur:
                 return await cur.fetchone()
 
+    async def get_layout_json(self, race_id: int):
+        """レース受信/作成時に固定したレイアウトのJSONスナップショットを返す。
+
+        新しい build_race_result はこれを最優先で使う（後からレイアウトを編集しても
+        そのレースは受信時点の構成で解釈する）。timing_races.layout_json 列が無い旧DBや
+        未設定レースでは None を返し、呼び出し側は layout_id フォールバックに回る。
+        （このメソッド欠落で build_race_result が全レース例外になり、計測結果が空になる事故を修正）
+        """
+        try:
+            async with self.db.execute(
+                "SELECT layout_json FROM timing_races WHERE id = ?", (race_id,)
+            ) as cur:
+                row = await cur.fetchone()
+        except Exception:
+            return None
+        if not row:
+            return None
+        val = row["layout_json"] if hasattr(row, "keys") else row[0]
+        return val or None
+
     async def list_races(self, limit: int = 50):
         async with self.db.execute(
             "SELECT id, heat_tag, layout_id, target_laps, green_t_us, applied_group_id, created_at, sample_note, status "
