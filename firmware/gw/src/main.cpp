@@ -92,6 +92,24 @@ static constexpr uint32_t RESET_HOLD_MS = 600;   // RESETは600ms長押し（doc
 //   既存操作と衝突しない。データはスプールに残るのでD1で後日後送り可能）。
 static constexpr uint32_t OVERRIDE_HOLD_MS = 3000;  // 灰3秒超で封じ強制解除
 
+// ---- ブザー（29章／GPIO12・自励式109800・実機確定 20260811）--------------
+//  待機中(ST_IDLE)にGW自身のS/Gを車が通過した瞬間だけ 60ms「ピッ」。自励式ゆえHIGH/LOWのみ。
+//  ⚠非ブロッキング：loopをdelayで止めない（millis管理で消灯）。計測中・エラー面では鳴らさない。
+static constexpr int      PIN_BUZZER = 12;   // ストラップだが実機で書込み/起動OK確認済(20260811)
+static constexpr uint32_t BUZZER_MS  = 60;   // 鳴動長（80→40→20→60で実機比較し確定）
+static uint32_t s_buzz_off_ms = 0;           // 0=消灯中／非0=この millis で消灯予定
+static inline void buzzer_beep() {           // S/G通過の瞬間に呼ぶ（非ブロッキング開始）
+  digitalWrite(PIN_BUZZER, HIGH);
+  s_buzz_off_ms = millis() + BUZZER_MS;
+  if (s_buzz_off_ms == 0) s_buzz_off_ms = 1; // millis境界で0になる稀ケースを回避
+}
+static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来たら消灯）
+  if (s_buzz_off_ms && (int32_t)(millis() - s_buzz_off_ms) >= 0) {
+    digitalWrite(PIN_BUZZER, LOW);
+    s_buzz_off_ms = 0;
+  }
+}
+
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
 enum GwState { ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
 static GwState s_state = ST_IDLE;
@@ -723,6 +741,8 @@ void setup() {
   load_config();   // NVS "m4cfg" を読む（無ければ secrets.h 既定）。以後は g_* を使用
   pinMode(PIN_BTN_RED,  INPUT_PULLUP);
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
+  pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);   // 起動直後は必ず消灯
   if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
   Serial.printf("PSRAM=%u (VE normal: approx 4MB mapped of 8MB)\n", (unsigned)ESP.getPsramSize());
   if (!mesh::begin(NODE_ID, g_channel, on_recv)) {
@@ -816,6 +836,7 @@ static void tick_display() {
 
 void loop() {
   tick_buttons();
+  buzzer_tick();              // ブザー非ブロッキング消灯（29章）
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_sequence();
   tick_race_registration();   // #20: レース作成/green後付けをloop文脈で非同期実行
@@ -829,6 +850,7 @@ void loop() {
     spool_append(e);
     note_quality(hit.quality, (uint8_t)NODE_ID);   // 自機S/GのA1/A2も拾う（27章）
     Serial.printf("[SG] lane=%u q=%u\n", hit.lane, hit.quality);
+    if (s_state == ST_IDLE) buzzer_beep();   // 待機中のS/G通過のみ 60ms「ピッ」（29章）
   }
 
   // 24.3：3秒ごとの機械的POSTは廃止。送信は灰ボタン(on_reset_pressed)起点のみ。
