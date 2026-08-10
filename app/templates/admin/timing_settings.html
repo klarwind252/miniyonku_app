@@ -2,8 +2,8 @@
 {% block title %}機材設定{% endblock %}
 {% block content %}
 <div class="page-title">
-  <h1>⚙ 機材設定（GW接続情報）</h1>
-  <p>GWのWiFi接続先・サーバー情報を変更し、USB接続した1台に書き込みます（PC・Chrome/Edge限定）。</p>
+  <h1>⚙ 機材設定</h1>
+  <p>各機材の設定（ch。GWはWiFi・サーバーも）を変更し、USBで1台ずつ書き込みます（PC・Chrome/Edge限定）。</p>
 </div>
 
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
@@ -13,6 +13,35 @@
   <a href="/admin/timing/bests" class="btn btn-secondary btn-sm">🏆 ベスト集計</a>
   <a href="/admin/timing/settings" class="btn btn-primary btn-sm">⚙ 設定</a>
 </div>
+
+<details class="howto" open>
+  <summary>❓ 使い方（クリックで開閉）</summary>
+  <div class="howto-grid">
+    <div class="howto-col howto-first">
+      <h4>🔰 初回だけ（最初の1回）</h4>
+      <p class="howto-lead">これが済むまでは、書き込んでも反映されません。</p>
+      <ol>
+        <li>サーバーに <code>pip install esp-idf-nvs-partition-gen</code> → 再起動。</li>
+        <li>各機材に「NVS対応版ファーム」を一度だけ <code>pio run -e &lt;env&gt; -t upload</code> で焼く。</li>
+        <li>この画面を <strong>Ctrl+F5</strong> で開き直す。</li>
+      </ol>
+      <p class="howto-note">詳しくは資料「30_初回セットアップ」。</p>
+    </div>
+    <div class="howto-col howto-usual">
+      <h4>🔁 いつもの操作（設定を変える）</h4>
+      <ol>
+        <li><strong>対象機材</strong>を選ぶ（GWはWiFi欄も出る／SE・RC・SGは<strong>ch だけ</strong>）。</li>
+        <li>値を入力（空欄の項目は「今のまま」）。<br>必要なら「💾保存」で記憶。</li>
+        <li>機材を<strong>USB接続</strong>（1台・バッテリー外す）→「🔌接続してMAC確認」。</li>
+        <li>判定が合っていたら「⬇設定を書き込む」。ログに <code>[CFG] src=NVS</code> が出れば成功。</li>
+      </ol>
+      <p class="howto-note">
+        <strong>💾保存</strong>＝アプリに覚えさせるだけ／<strong>⬇書き込む</strong>＝機材に反映。両方必要。<br>
+        プログラム自体を入れ替えるとき（②ファーム本体）は資料「31_更新」を参照。
+      </p>
+    </div>
+  </div>
+</details>
 
 <div id="serial-support" class="warn-banner"></div>
 
@@ -50,7 +79,7 @@
 
     <!-- ESP-NOWチャンネル：全機材共通の環境設定 -->
     <div class="fg"><label>ESP-NOW チャンネル（1〜13）</label>
-      <input id="f-ch" type="number" min="1" max="13" placeholder="（空欄なら既定を維持）" style="max-width:120px" />
+      <input id="f-ch" type="number" min="1" max="13" placeholder="空欄で維持" style="max-width:160px" />
       <span class="muted" style="font-size:11px">
         ⚠ 全機材で同じ値に揃えること（GWの接続先AP・全ノードで同一）。バラバラだと計測が全滅します。
       </span>
@@ -189,6 +218,19 @@ esptool --chip esp32c3 merge_bin -o factory.bin \
   .fw-list{margin-top:10px;font-size:12px}
   .fw-list .row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dashed #eee}
   .hint{background:#f4f6f7;border-radius:6px;padding:8px;font-size:11px;white-space:pre-wrap}
+  .howto{background:#eef6ff;border:1px solid #bcdcff;border-radius:10px;padding:10px 14px;margin-bottom:14px}
+  .howto>summary{cursor:pointer;font-weight:bold;color:#1565c0;font-size:14px}
+  .howto-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  @media(max-width:900px){.howto-grid{grid-template-columns:1fr}}
+  .howto-col{background:#fff;border-radius:8px;padding:10px 12px}
+  .howto-first{border-left:4px solid #f0a020}
+  .howto-usual{border-left:4px solid #2e7d32}
+  .howto-col h4{margin:0 0 6px;font-size:13px}
+  .howto-col ol{margin:6px 0 0 18px;padding:0}
+  .howto-col li{margin:5px 0;font-size:13px;line-height:1.5}
+  .howto-lead{margin:0;color:#c0392b;font-size:12px;font-weight:bold}
+  .howto-note{margin:8px 0 0;font-size:11px;color:#607d8b}
+  .howto code{background:#f4f6f7;border-radius:4px;padding:1px 5px;font-size:12px}
 </style>
 
 <script type="module" src="/static/js/timing_settings_flasher.js"></script>
