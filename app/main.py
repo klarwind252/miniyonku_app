@@ -69,6 +69,48 @@ async def _audit_mw(request, call_next):
     return response
 
 
+# 参加者向けHTML配信（横断フック）：予選・決勝など「観覧ページに載る変更」を伴う
+# 更新系リクエストが成功したら、その店舗のHTML書き出しを1か所で予約する。各
+# エンドポイントでの schedule_publish() 呼び忘れによる『配信が更新されない』不具合を
+# 横断的に防ぐ。デバウンス＋シングルフライトのため多重予約は安全。店舗コンテキストは
+# 外周ミドルウェアでは ContextVar がリセット済みのため request.state.store から復元する。
+import re as _re_pub
+_PUB_TL_RE = _re_pub.compile(r"/tournaments/\d+/(status|edit|edit-final|delete)$")
+_PUB_RENAME_RE = _re_pub.compile(r"/tournaments/\d+/entries/\d+/rename-racer$")
+
+def _needs_publish(path: str) -> bool:
+    if "/qualifying/" in path or "/bracket/" in path or "/api/timing/apply/" in path:
+        return True
+    if _PUB_TL_RE.search(path) or _PUB_RENAME_RE.search(path):
+        return True
+    # 参加者向けHTMLの見た目・待機画面に影響する設定変更（スライドショー・背景・
+    # PWAアイコン/manifest・店名・配信設定）。/telop は /api/telop の動的取得のため対象外。
+    if "/admin/settings/pwa/" in path or "/admin/settings/store-name/" in path \
+       or "/admin/settings/public-html/" in path:
+        return True
+    if path.endswith("/admin/db/reset"):
+        return True
+    return False
+
+@app.middleware("http")
+async def _publish_mw(request, call_next):
+    response = await call_next(request)
+    try:
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") \
+           and response.status_code < 400 and _needs_publish(request.url.path):
+            from app.services.publish_scheduler import schedule_publish
+            from app.core.store_context import current_store
+            store = getattr(request.state, "store", None)
+            tok = current_store.set(store)
+            try:
+                schedule_publish()   # 予約時に現在店舗IDをキャプチャ
+            finally:
+                current_store.reset(tok)
+    except Exception:
+        pass
+    return response
+
+
 BASE_DIR = os.path.dirname(__file__)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 

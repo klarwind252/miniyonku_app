@@ -1223,6 +1223,18 @@ window.addEventListener('load', function(){
 
     patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + racer_stats_js + '</body>', 1)
 
+    # スラッグ店舗: 公開HTMLは内部レンダリング（StoreResolver の応答書き換えを通らない）
+    # で生成されるため、本文に残るクォート直後の絶対パス（例: /api/race-asset の画像、
+    # 保持スクリプト内の fetch 先）がスラッグ無しのまま＝既定店舗向けになってしまう。
+    # 通常応答と同一の規則で "/{slug}" を前置し、ライブ画面と公開HTMLの動作を一致させる。
+    # 既定店舗（slug=""）は無加工＝従来どおり。既に "/{slug}/..." のURLは
+    # クォート直後が "/{slug}" のため二重前置されない（resolver と同じ性質）。
+    if slug:
+        patched = _re.sub(
+            r"([\"'`])(/(?:admin|view|static|logo|health|api|enter)\b)",
+            lambda m: f"{m.group(1)}/{slug}{m.group(2)}",
+            patched,
+        )
     return patched
 
 

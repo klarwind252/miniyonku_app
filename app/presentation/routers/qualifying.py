@@ -3574,10 +3574,14 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         all_standings.append({**s, "rank": rank})
         prev_pts = pts
 
-    # M4LAPS（ラップタイマー）反映ボタンの表示可否。決勝管理と同じ基準（大会の use_m4laps）。
+    # M4LAPS（ラップタイマー）反映ボタンの表示可否。決勝管理・予選管理と完全に同一基準。
+    #   クラウド版 かつ ライセンス登録済み かつ 大会の「M4LAPSを使用する」がON のときだけ表示する。
+    #   （以前は use_m4laps のみ判定で、未ライセンス／オンプレでも反映ボタンが出ていた）
+    from app.core.config import IS_CLOUD as _IS_CLOUD_M4ON
     async with db.execute("SELECT use_m4laps FROM tournaments WHERE id=?", (tid,)) as cur:
         _m4row = await cur.fetchone()
-    m4_on = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
+    _use_m4 = (dict(_m4row).get("use_m4laps", 1) != 0) if _m4row else True
+    m4_on = bool(_IS_CLOUD_M4ON and getattr(request.state, "m4laps_licensed", False) and _use_m4)
 
     # ── ⚡M4LAPS ベスト表（最終ヒートの下に表示。予選内の記録のみで集計）──
     # 観覧の予選ポイント制と同じ列構成（順位/レーサー/TOTAL BEST TIME/GAP/Av./MAX/LAP BEST TIME/Av.）。
@@ -4152,6 +4156,14 @@ async def ht_reset(tid: int, heat_no: int, db: aiosqlite.Connection = Depends(ge
         await db.execute("DELETE FROM ht_groups WHERE round_id=?", (rid,))
     await db.execute("DELETE FROM ht_rounds WHERE tournament_id=? AND heat_no=?", (tid, heat_no))
     await db.commit()
+
+    # 参加者向けHTML配信（自動更新）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
     return JSONResponse({"ok": True})
 
 
@@ -4217,6 +4229,14 @@ async def heat_final_tournament_generate(
     await _ht_build_heat_final_rounds(tid, heat_no, group_count, group_advance, heat_final_advance, db)
     await _ht_fill_heat_final(tid, heat_no, db)
     await _ht_update_advanced(tid, db)
+
+    # 参加者向けHTML配信（自動更新）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
     return JSONResponse({"ok": True})
 
 
@@ -4245,6 +4265,14 @@ async def heat_final_tournament_reset(
             "DELETE FROM ht_rounds WHERE tournament_id=? AND heat_no=? AND section_no=0",
             (tid, heat_no),
         )
+
+    # 参加者向けHTML配信（自動更新）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
     return JSONResponse({"ok": True})
 
 
@@ -4491,6 +4519,14 @@ async def ht_generate(tid: int, heat_no: int, request: Request, db: aiosqlite.Co
                     await db.execute("INSERT INTO ht_slots (group_id, slot_no, entry_id) VALUES (?,?,?)", (gid, sno, eid))
 
     await db.commit()
+
+    # 参加者向けHTML配信（自動更新）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying/heat-tournament/{heat_no}", status_code=303)
 
 
@@ -4606,9 +4642,16 @@ async def ht_save_result(tid: int, heat_no: int, group_id: int, request: Request
 
     # 保存後の共通処理（進出・次ラウンド生成・ロック判定）は _ht_finalize_group に集約。
     # 手入力保存・PIP反映・取消 のいずれからも同じ経路を通す。
-    return JSONResponse(
-        await _ht_finalize_group(tid, heat_no, group_id, dict(rnd), winner_slot_id, db)
-    )
+    result = await _ht_finalize_group(tid, heat_no, group_id, dict(rnd), winner_slot_id, db)
+
+    # 参加者向けHTML配信（自動更新）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
+    return JSONResponse(result)
 
 
 async def _ht_finalize_group(tid: int, heat_no: int, group_id: int,

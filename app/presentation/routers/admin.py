@@ -195,7 +195,10 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
 
     # 参加者向けURL（クラウド=VPSライブ配信 / オンプレ=GCS）
     if IS_CLOUD:
-        participant_url = f"{PUBLIC_BASE_URL}/enter" if PUBLIC_BASE_URL else ""
+        # スラッグ店舗では店舗prefixを前置（既定店舗は空＝従来どおり）
+        _st_pu = getattr(request.state, "store", None)
+        _pfx_pu = ("/" + _st_pu.slug) if (_st_pu is not None and getattr(_st_pu, "slug", "")) else ""
+        participant_url = f"{PUBLIC_BASE_URL}{_pfx_pu}/enter" if PUBLIC_BASE_URL else ""
     else:
         participant_url = (
             f"https://storage.googleapis.com/{public_html_gcs_bucket}/index.html"
@@ -1353,6 +1356,20 @@ async def upload_pwa_icon_for_store(request: Request, db: aiosqlite.Connection =
             _pwa.write_static_html_manifest(target.public_dir, settings, target.slug)
         except Exception as e:
             print(f"[admin] per-store pwa manifest refresh skipped: {e}", flush=True)
+
+        # 対象店舗の参加者向けHTMLを再書き出し（manifest/アイコン参照を反映）。
+        # 横断publishミドルウェアは操作元（既定店舗）を対象にするため、
+        # 別店舗を更新する本エンドポイントでは対象店舗の文脈を張って予約する。
+        try:
+            from app.services.publish_scheduler import schedule_publish
+            from app.core.store_context import current_store
+            _tok = current_store.set(target)
+            try:
+                schedule_publish()
+            finally:
+                current_store.reset(_tok)
+        except Exception:
+            pass
 
     except Exception as e:
         import traceback

@@ -481,7 +481,7 @@ setInterval(pollHostState, 2000);
     }
   }
   function poll(){
-    fetch(slugPrefix() + '/api/telop', {cache:'no-store'})
+    fetch(slugPrefix() + '\x2Fapi/telop', {cache:'no-store'})  /* \x2F=…/: 応答書き換えの前置対象外にし、slugPrefix() との二重前置を防ぐ */
       .then(function(r){ return r.json(); })
       .then(apply)
       .catch(function(){});
