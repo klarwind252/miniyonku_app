@@ -264,34 +264,22 @@ async def layout_delete(
 #    店舗ごとに自然に分離される。store_id 列は不要）。
 # ===========================================================================
 
-# 焼く直前のA/Bセット判定に使うMAC台帳（機体台帳_20260730基準）。
-# ⚠ 20260805でSE1/GW6/SG10のA/Bに訂正あり。実機のテプラを正として、ここは要照合。
-AB_MAC_LEDGER = {
-    "GW6":  {"A": "8c:94:df:9c:77:b0", "B": "8c:94:df:9c:78:50"},
-    "GW7":  {"A": None, "B": None},
-    "RC8":  {"A": "e8:f6:0a:16:c0:94", "B": "e8:f6:0a:14:d8:68"},
-    "SG10": {"A": "e8:f6:0a:16:c2:74", "B": "e8:f6:0a:16:d3:08"},
-    "SE0":  {"A": "8c:94:df:52:c5:f4", "B": "8c:94:df:54:15:34"},
-    "SE1":  {"A": "8c:94:df:52:b2:f0", "B": "8c:94:df:54:1f:30"},
-    "SE2":  {"A": "8c:94:df:52:c4:e0", "B": "8c:94:df:52:b3:08"},
-}
-
 # 機材カタログ。unit=表示単位, kind=種別, env=PlatformIO env, chip=マージimageの別なし,
 # has_wifi=WiFi/サーバー設定(NVS)を持つか（GWのみTrue）。
 #   ファーム本体(案A)は全機材で書込み可。設定(NVS)はGWのみ。
 DEVICES = [
-    {"unit": "GW6",  "kind": "GW", "env": "gw",   "chip": "esp32",   "has_wifi": True},
-    {"unit": "GW7",  "kind": "GW", "env": "gw7",  "chip": "esp32",   "has_wifi": True},
-    {"unit": "SE0",  "kind": "SE", "env": "sq0",  "chip": "esp32",   "has_wifi": False},
-    {"unit": "SE1",  "kind": "SE", "env": "sq1",  "chip": "esp32",   "has_wifi": False},
-    {"unit": "SE2",  "kind": "SE", "env": "sq2",  "chip": "esp32",   "has_wifi": False},
-    {"unit": "SE3",  "kind": "SE", "env": "sq3",  "chip": "esp32",   "has_wifi": False},
-    {"unit": "SE4",  "kind": "SE", "env": "sq4",  "chip": "esp32",   "has_wifi": False},
-    {"unit": "SE5",  "kind": "SE", "env": "sq5",  "chip": "esp32",   "has_wifi": False},
-    {"unit": "RC8",  "kind": "RC", "env": "rc8",  "chip": "esp32c3", "has_wifi": False},
-    {"unit": "RC9",  "kind": "RC", "env": "rc9",  "chip": "esp32c3", "has_wifi": False},
-    {"unit": "SG10", "kind": "SG", "env": "sg10", "chip": "esp32c3", "has_wifi": False},
-    {"unit": "SG11", "kind": "SG", "env": "sg11", "chip": "esp32c3", "has_wifi": False},
+    {"unit": "GW6",  "node": 6,  "kind": "GW", "env": "gw",   "chip": "esp32",   "has_wifi": True},
+    {"unit": "GW7",  "node": 7,  "kind": "GW", "env": "gw7",  "chip": "esp32",   "has_wifi": True},
+    {"unit": "SE0",  "node": 0,  "kind": "SE", "env": "sq0",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE1",  "node": 1,  "kind": "SE", "env": "sq1",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE2",  "node": 2,  "kind": "SE", "env": "sq2",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE3",  "node": 3,  "kind": "SE", "env": "sq3",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE4",  "node": 4,  "kind": "SE", "env": "sq4",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE5",  "node": 5,  "kind": "SE", "env": "sq5",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "RC8",  "node": 8,  "kind": "RC", "env": "rc8",  "chip": "esp32c3", "has_wifi": False},
+    {"unit": "RC9",  "node": 9,  "kind": "RC", "env": "rc9",  "chip": "esp32c3", "has_wifi": False},
+    {"unit": "SG10", "node": 10, "kind": "SG", "env": "sg10", "chip": "esp32c3", "has_wifi": False},
+    {"unit": "SG11", "node": 11, "kind": "SG", "env": "sg11", "chip": "esp32c3", "has_wifi": False},
 ]
 SETTINGS_TARGETS = [d["unit"] for d in DEVICES if d["has_wifi"]]   # WiFi欄を出す対象=GW
 ALL_UNITS = {d["unit"] for d in DEVICES}                            # 設定(ch)は全機材
@@ -389,26 +377,24 @@ async def settings_page(request: Request, db: aiosqlite.Connection = Depends(get
     )
 
 
-@router.get("/settings/ab-ledger")
-async def settings_ab_ledger(db: aiosqlite.Connection = Depends(get_db)):
-    """MAC→判定用の台帳（ブラウザのフラッシャが読む）。
+@router.get("/settings/device-macs")
+async def settings_device_macs(db: aiosqlite.Connection = Depends(get_db)):
+    """MAC→機材の対応（端末台帳 timing_devices 1本）。フラッシャが読む。
 
-    2系統を返す：
-      ledger  … 機体台帳(20260730)のA/B（ハードコード。訂正が出たらここを更新）
-      current … アプリの端末台帳(timing_devices)の登録MAC（編集可能＝現用機の正）
-    フラッシャは current 一致を最優先で表示する。
+    返り値 devices: { "<mac小文字>": {node_id, label} }
+    フラッシャは「接続したMACがこの表にあり、かつ選択中の機材と node_id が一致するか」で判定する。
     """
-    current = {}
+    devices = {}
     try:
         async with db.execute(
             "SELECT node_id, label, mac FROM timing_devices "
             "WHERE mac IS NOT NULL AND mac != ''"
         ) as cur:
             for node_id, label, mac in await cur.fetchall():
-                current[mac.strip().lower()] = {"node_id": node_id, "label": label}
+                devices[mac.strip().lower()] = {"node_id": node_id, "label": label}
     except Exception:
-        pass  # 端末台帳が読めなくてもA/B台帳だけで動く
-    return JSONResponse({"ledger": AB_MAC_LEDGER, "current": current})
+        pass
+    return JSONResponse({"devices": devices})
 
 
 @router.get("/settings/profiles")

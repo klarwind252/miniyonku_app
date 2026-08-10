@@ -33,7 +33,7 @@
         <li><strong>対象機材</strong>を選ぶ（GWはWiFi欄も出る／SE・RC・SGは<strong>ch だけ</strong>）。</li>
         <li>値を入力（空欄の項目は「今のまま」）。<br>必要なら「💾保存」で記憶。</li>
         <li>機材を<strong>USB接続</strong>（1台・バッテリー外す）→「🔌接続してMAC確認」。</li>
-        <li>判定が合っていたら「⬇設定を書き込む」。ログに <code>[CFG] src=NVS</code> が出れば成功。</li>
+        <li>表示された機材名が選んだ機材と合っていたら「⬇設定を書き込む」。ログに <code>[CFG] src=NVS</code> が出れば成功。</li>
       </ol>
       <p class="howto-note">
         <strong>💾保存</strong>＝アプリに覚えさせるだけ／<strong>⬇書き込む</strong>＝機材に反映。両方必要。<br>
@@ -69,7 +69,7 @@
         {% for kind, devs in grouped_devices %}
         <optgroup label="{{ kind }}">
           {% for d in devs %}<option value="{{ d.unit }}"
-              data-env="{{ d.env }}" data-chip="{{ d.chip }}"
+              data-node="{{ d.node }}" data-env="{{ d.env }}" data-chip="{{ d.chip }}"
               data-wifi="{{ 1 if d.has_wifi else 0 }}">{{ d.unit }}</option>{% endfor %}
         </optgroup>
         {% endfor %}
@@ -117,7 +117,7 @@
       <li>機材をUSBでこのPCへ接続（1台のみ・バッテリーは外す）。</li>
       <li><button type="button" id="btn-connect" class="btn btn-primary btn-sm">🔌 接続してMAC確認</button>
           <button type="button" id="btn-disconnect" class="btn btn-secondary btn-sm" disabled>切断</button></li>
-      <li>下のA/B判定と対象が合っているか確認。</li>
+      <li>表示された<strong>MAC・機材名が、焼きたい機材と一致</strong>しているか確認（別の機材・予備機を焼かないため）。</li>
     </ol>
 
     <div class="readout">

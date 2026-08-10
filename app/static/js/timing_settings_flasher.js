@@ -2,7 +2,7 @@
 // ============================================================================
 //  M4LAPS 機材設定フラッシャ（PC/Chrome限定・USB1台ずつ）
 //  - サーバーが生成した nvs.bin(0x5000) を、nvs領域 0x9000 に焼くだけ。
-//  - 焼く前に MAC を読み、A/Bセットを判定表示（誤書込み防止）。
+//  - 焼く前に MAC を読み、端末台帳と照合して機材を判定表示（誤書込み防止）。
 //  - 焼いた後は再起動して、シリアルの [CFG] 行を best-effort で拾って検証。
 //  esptool-js は app/static へ vendor 済み（CDN非依存）。
 // ============================================================================
@@ -14,7 +14,7 @@ const NVS_ADDR = 0x9000; // partitions_8mb.csv の nvs パーティション先�
 const BASE = location.pathname.replace(/\/+$/, "");
 const URL_NVS      = `${BASE}/nvs.bin`;
 const URL_PROFILES = `${BASE}/profiles`;
-const URL_LEDGER   = `${BASE}/ab-ledger`;
+const URL_DEVMAC   = `${BASE}/device-macs`;
 const URL_FW       = `${BASE}/firmware`;
 
 const $ = (id) => document.getElementById(id);
@@ -36,8 +36,7 @@ function setStatus(id, text, cls) {
 let port = null;
 let transport = null;
 let esploader = null;
-let ledger = {};
-let currentReg = {};   // 端末台帳(timing_devices)の登録MAC
+let devMacs = {};   // 端末台帳(timing_devices) { mac: {node_id,label} }
 let connected = false;
 let fwReg = {};   // { env: {version,size,sha256,...} }
 
@@ -49,22 +48,12 @@ const term = {
 
 function normMac(m) { return (m || "").toLowerCase().replace(/-/g, ":").trim(); }
 
-function judgeAB(mac) {
-  const m = normMac(mac);
-  for (const [label, ab] of Object.entries(ledger)) {
-    if (ab.A && normMac(ab.A) === m) return { label, set: "A" };
-    if (ab.B && normMac(ab.B) === m) return { label, set: "B" };
-  }
-  return null;
-}
-
-async function loadLedger() {
+async function loadDeviceMacs() {
   try {
-    const r = await fetch(URL_LEDGER);
+    const r = await fetch(URL_DEVMAC);
     const j = await r.json();
-    ledger = j.ledger || {};
-    currentReg = j.current || {};
-  } catch (e) { log("A/B台帳の取得に失敗: " + e); }
+    devMacs = j.devices || {};
+  } catch (e) { log("端末台帳の取得に失敗: " + e); }
 }
 
 // --- USB接続 & MAC読み出し --------------------------------------------------
@@ -89,16 +78,16 @@ async function connect() {
     setStatus("chip-info", `チップ: ${chip}`, "ok");
     setStatus("mac-info", `MAC: ${mac}`, "ok");
 
-    const cur = currentReg[normMac(mac)] || null;   // 端末台帳（現用機）一致を最優先
-    const j = judgeAB(mac);
-    if (cur && j) {
-      setStatus("ab-info", `→ ${cur.label}（現用機・${j.set}セット）`, "ok-strong");
-    } else if (cur) {
-      setStatus("ab-info", `→ ${cur.label}（端末台帳に登録の現用機）`, "ok-strong");
-    } else if (j) {
-      setStatus("ab-info", `→ ${j.label} / ${j.set}セット（※端末台帳には未登録＝予備機の可能性）`, "warn");
+    const info = devMacs[normMac(mac)] || null;   // 端末台帳の登録MAC
+    const sel = currentDev();
+    if (info && info.node_id === sel.node) {
+      setStatus("ab-info", `✓ ${info.label}（台帳一致・選択どおり）`, "ok-strong");
+    } else if (info) {
+      setStatus("ab-info",
+        `⚠ 挿さっているのは ${info.label}。選択(${sel.unit})と違う機材です！焼くとその機材を書き換えます`, "err");
     } else {
-      setStatus("ab-info", "→ どの台帳にも無いMAC（テプラと要照合）", "warn");
+      setStatus("ab-info",
+        "台帳に無いMAC（別個体/予備機かも）。焼く相手か確認し、必要なら端末台帳へ登録を", "warn");
     }
     connected = true;
     $("btn-connect").disabled = true;
@@ -123,9 +112,9 @@ async function safeDisconnect() {
 // 選択中の機材メタ（option の data-* から）
 function currentDev() {
   const o = $("f-target").selectedOptions[0];
-  if (!o) return { unit: "", env: "", chip: "", wifi: false };
-  return { unit: o.value, env: o.dataset.env || "", chip: o.dataset.chip || "",
-           wifi: o.dataset.wifi === "1" };
+  if (!o) return { unit: "", node: -1, env: "", chip: "", wifi: false };
+  return { unit: o.value, node: parseInt(o.dataset.node), env: o.dataset.env || "",
+           chip: o.dataset.chip || "", wifi: o.dataset.wifi === "1" };
 }
 
 // ボタンの活殺（接続状態＋機材種別＋ファーム登録有無で決める）
@@ -442,7 +431,7 @@ function init() {
   $("f-target").addEventListener("change", onTargetChange);
   $("btn-save-profile").addEventListener("click", saveProfile);
   $("btn-delete-profile").addEventListener("click", deleteProfile);
-  loadLedger();
+  loadDeviceMacs();
   loadProfiles();
   loadFirmwareRegistry();
   onTargetChange();
