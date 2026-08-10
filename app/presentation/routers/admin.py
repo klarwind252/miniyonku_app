@@ -528,6 +528,27 @@ async def update_ping(request: Request):
         return JSONResponse({"ok": True, "boot": ""})
 
 
+@router.post("/restart")
+async def restart_run(request: Request):
+    """サーバーを再起動する（gitは触らない。更新と同じ再起動機構を使う）。
+
+    応答を返してから再起動されるよう、実処理は少し遅らせて別タスクで走らせる。
+    再起動検知は既存の /admin/update/ping（BOOT_ID）を流用する。
+    """
+    from fastapi.responses import JSONResponse
+    if not IS_CLOUD:
+        return JSONResponse({"ok": False, "error": "クラウド版でのみ利用できます"})
+    import asyncio
+    from app.services import auto_update
+
+    async def _later():
+        await asyncio.sleep(1.0)
+        await auto_update._run_blocking(auto_update._restart_service)
+
+    asyncio.create_task(_later())
+    return JSONResponse({"ok": True, "willRestart": True})
+
+
 @router.post("/settings/store-name/save", response_class=HTMLResponse)
 async def save_store_name(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """店舗1の店舗名を保存（オンプレ版設定画面用。app_settings 'store_name'）"""

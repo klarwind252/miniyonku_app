@@ -235,6 +235,9 @@
     <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 アクセス統計</a>
     <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 監査ログ</a>
     <a href="#db-reset" class="settings-menu-item" id="menu-db-reset" style="color:#dc2626">🗑 データ初期化</a>
+    {% if IS_CLOUD %}
+    <a href="#" class="settings-menu-item" id="menu-restart" style="color:#dc2626">🔄 再起動</a>
+    {% endif %}
   </nav>
 
   <!-- 右コンテンツ -->
@@ -1841,4 +1844,60 @@ async function doDbReset(){
   }
 }
 </script>
+
+{% if IS_CLOUD %}
+<script>
+/* 🔄 再起動：git更新と同じ要領（確認→POST /admin/restart→ping で BOOT_ID 変化を検知→自動リロード）*/
+(function(){
+  var item = document.getElementById('menu-restart');
+  if (!item) return;
+  var overlay = document.getElementById('updOverlay');
+  var overlayMsg = document.getElementById('updOverlayMsg');
+  function showOverlay(html){
+    if (overlay) overlay.style.display = 'flex';
+    if (overlayMsg && html) overlayMsg.innerHTML = html;
+  }
+  function hideOverlay(){ if (overlay) overlay.style.display = 'none'; }
+
+  item.addEventListener('click', function(ev){
+    ev.preventDefault();
+    if (!confirm('サーバーを再起動します。数十秒つながらなくなります。よろしいですか？')) return;
+    showOverlay('サーバーを再起動しています。<br>数十秒お待ちください（自動で元の画面に戻ります）。');
+    var bootBefore = '';
+    fetch('/admin/update/ping', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(p){ bootBefore = (p && p.boot) || ''; })
+      .catch(function(){})
+      .then(function(){ return fetch('/admin/restart', {method:'POST'}); })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.ok) {
+          showOverlay('❌ 再起動に失敗しました。' + ((d && d.error) ? ('<br>' + d.error) : ''));
+          setTimeout(hideOverlay, 4000);
+          return;
+        }
+        waitForRestart(bootBefore);
+      })
+      .catch(function(){ waitForRestart(bootBefore); });
+  });
+
+  function waitForRestart(bootBefore){
+    var tries = 0, MAX = 40;
+    setTimeout(poll, 4000);
+    function poll(){
+      tries++;
+      fetch('/admin/update/ping', {cache:'no-store'})
+        .then(function(r){ return r.json(); })
+        .then(function(p){
+          if (p && p.boot && p.boot !== bootBefore) { location.reload(); return; }
+          if (tries < MAX) setTimeout(poll, 2500); else fb();
+        })
+        .catch(function(){ if (tries < MAX) setTimeout(poll, 2500); else fb(); });
+    }
+    function fb(){ showOverlay('再起動の確認に時間がかかっています。<br>手動で再読み込みしてください。'); }
+  }
+})();
+</script>
+{% endif %}
+
 {% endblock %}
