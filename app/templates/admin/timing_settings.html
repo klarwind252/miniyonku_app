@@ -1,0 +1,130 @@
+{% extends "admin/base.html" %}
+{% block title %}機材設定{% endblock %}
+{% block content %}
+<div class="page-title">
+  <h1>⚙ 機材設定（GW接続情報）</h1>
+  <p>GWのWiFi接続先・サーバー情報を変更し、USB接続した1台に書き込みます（PC・Chrome/Edge限定）。</p>
+</div>
+
+<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+  <a href="/admin/timing/layouts" class="btn btn-secondary btn-sm">🗺️ コースレイアウト</a>
+  <a href="/admin/timing/devices" class="btn btn-secondary btn-sm">📟 計測端末台帳</a>
+  <a href="/admin/timing/results" class="btn btn-secondary btn-sm">🏁 計測結果</a>
+  <a href="/admin/timing/bests" class="btn btn-secondary btn-sm">🏆 ベスト集計</a>
+  <a href="/admin/timing/settings" class="btn btn-primary btn-sm">⚙ 設定</a>
+</div>
+
+<div id="serial-support" class="warn-banner"></div>
+
+<div class="warn-box">
+  <strong>⚠ 書き込み前に必ず確認</strong>
+  <ul>
+    <li>接続するGWは<strong>1台だけ</strong>にしてください（複数同時接続は不可）。</li>
+    <li><strong>モバイルバッテリーを外してから</strong>USBを接続（USB給電と競合します）。</li>
+    <li>書き込み中はUSBを抜かない／電源を切らない。</li>
+    <li>対応ブラウザは <strong>Chrome / Edge</strong> のみ（Web Serial）。</li>
+    <li>WiFiの<strong>チャンネル</strong>はAP側で決まります。ノード(SE/SG/RC)はch固定のため、
+        <strong>接続先はノードと同じチャンネルのAP</strong>にしてください（変えると計測が全滅します）。</li>
+  </ul>
+</div>
+
+<div class="store-line">現在の店舗：<strong>{{ store_name }}</strong>　
+  <span class="muted">（設定プロファイルは店舗ごとに保存されます）</span></div>
+
+<div class="two-col">
+  <!-- 左：設定フォーム -->
+  <div class="card">
+    <h3>設定内容</h3>
+    <div class="fg">
+      <label>保存済みプロファイル（店舗オリジナル設定）</label>
+      <div style="display:flex;gap:6px">
+        <select id="profile-select" style="flex:1"></select>
+        <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">削除</button>
+      </div>
+    </div>
+
+    <input type="hidden" id="f-id" />
+    <div class="grid2">
+      <div class="fg"><label>プロファイル名</label><input id="f-name" placeholder="店舗A 通常" /></div>
+      <div class="fg"><label>対象機材</label>
+        <select id="f-target">
+          {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="fg"><label>WiFi SSID <span class="req">必須</span></label>
+      <input id="f-ssid" placeholder="接続先SSID" /></div>
+    <div class="fg"><label>WiFi パスワード</label>
+      <input id="f-pass" type="text" placeholder="（空欄なら現在の既定を維持）" /></div>
+    <div class="grid2">
+      <div class="fg"><label>サーバーホスト名</label>
+        <input id="f-host" placeholder="{{ defaults.host }}" /></div>
+      <div class="fg"><label>サーバーIP（DNS不調時の直結用）</label>
+        <input id="f-ip" placeholder="{{ defaults.ip }}" /></div>
+    </div>
+    <div class="fg"><label>タイミングトークン（任意）</label>
+      <input id="f-token" type="text" placeholder="（サーバー未設定なら空でOK）" /></div>
+
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 プロファイル保存</button>
+    </div>
+    <p class="muted" style="margin-top:6px">
+      空欄のキーは書き込まれず、GW側は secrets.h の既定値で動きます（後方互換）。
+    </p>
+  </div>
+
+  <!-- 右：書き込み -->
+  <div class="card">
+    <h3>USB書き込み</h3>
+    <ol class="steps">
+      <li>GWをUSBでこのPCへ接続（1台のみ・バッテリーは外す）。</li>
+      <li><button type="button" id="btn-connect" class="btn btn-primary btn-sm">🔌 接続してMAC確認</button></li>
+      <li>下のA/B判定と対象が合っているか確認。</li>
+      <li><button type="button" id="btn-flash" class="btn btn-danger btn-sm" disabled>⬇ 設定を書き込む</button>
+          <button type="button" id="btn-disconnect" class="btn btn-secondary btn-sm" disabled>切断</button></li>
+    </ol>
+
+    <div class="readout">
+      <div id="chip-info" class="muted">未接続</div>
+      <div id="mac-info" class="muted"></div>
+      <div id="ab-info" class="muted"></div>
+      <div id="flash-progress" class="muted"></div>
+      <div id="verify-info" class="muted"></div>
+    </div>
+
+    <label style="font-size:12px;color:#7f8c8d">ログ</label>
+    <pre id="log" class="log"></pre>
+  </div>
+</div>
+
+<style>
+  .warn-banner{color:#c0392b;font-weight:bold;margin:8px 0}
+  .warn-box{background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px 16px;margin-bottom:14px}
+  .warn-box ul{margin:8px 0 0 18px}
+  .warn-box li{margin:3px 0}
+  .store-line{margin-bottom:12px}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  @media(max-width:900px){.two-col{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:16px}
+  .card h3{margin:0 0 12px}
+  .fg{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .fg label{font-size:12px;color:#7f8c8d;font-weight:normal;margin:0}
+  .fg input,.fg select{font-size:14px;padding:7px 10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .req{color:#c0392b;font-size:11px}
+  .steps{margin:0 0 12px 18px}
+  .steps li{margin:8px 0}
+  .readout{background:#f7f9fa;border-radius:8px;padding:10px;margin:8px 0;line-height:1.7}
+  .readout .ok{color:#2e7d32}
+  .readout .ok-strong{color:#1b5e20;font-weight:bold}
+  .readout .warn{color:#e67e22;font-weight:bold}
+  .readout .err{color:#c0392b;font-weight:bold}
+  .readout .muted{color:#95a5a6}
+  .log{background:#1e272e;color:#d2dae2;font-size:12px;padding:10px;border-radius:8px;
+       height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .btn-danger{background:#e74c3c;color:#fff;border:none}
+  .btn-danger:disabled{opacity:.5}
+</style>
+
+<script type="module" src="/static/js/timing_settings_flasher.js"></script>
+{% endblock %}

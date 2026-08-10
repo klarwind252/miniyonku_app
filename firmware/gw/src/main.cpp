@@ -22,6 +22,7 @@
 #include "beam.h"
 #include "display.h"
 #include "secrets.h"
+#include <Preferences.h>   // NVS：アプリからUSBで焼く設定の読み込み用（ESP32コア標準）
 
 #ifndef NODE_ID
 #define NODE_ID 6
@@ -47,24 +48,32 @@ static int      s_target_laps = DEFAULT_TARGET_LAPS;  // 現在の周回数（fe
 //    #9保険（docs/21・残#9）：起動時にDNS解決を試し、通ればホスト名運用へ。
 //    ダメなら従来のIP直＋Hostへフォールバック。会場でDNSが直っても再書込み不要。
 //    ⚠IPが変わったらここ1箇所を直す（残課題#9・会場WiFiで要再確認）。
-static const char* SERVER_IP   = "133.117.77.69";
-static const char* SERVER_HOST = "v133-117-77-69.sefs.static.cnode.jp";
+// 既定値（NVSに設定が無ければこれ＝従来と同じ挙動）。
+static const char* DEF_SERVER_IP   = "133.117.77.69";
+static const char* DEF_SERVER_HOST = "v133-117-77-69.sefs.static.cnode.jp";
+
+// 実行時の設定（NVS "m4cfg" が上書き。無ければ既定 / secrets.h）。load_config()で確定。
+static String g_ssid  = WIFI_SSID;
+static String g_pass  = WIFI_PASS;
+static String g_host  = DEF_SERVER_HOST;
+static String g_ip    = DEF_SERVER_IP;
+static String g_token = TIMING_TOKEN;
 
 // DNS解決可否。true＝ホスト名でつなぐ / false＝IP直＋Hostヘッダ（暫定）。
 static bool s_dns_ok = false;
 
 // つなぎ先ベースURL。DNS可ならホスト名、不可ならIP直。
 static inline String server_base() {
-  return s_dns_ok ? (String("https://") + SERVER_HOST)
-                  : (String("https://") + SERVER_IP);
+  return s_dns_ok ? (String("https://") + g_host)
+                  : (String("https://") + g_ip);
 }
 // Hostヘッダを付けるべきか（IP直のときだけ必要。ホスト名運用時は不要）。
 static inline bool need_host_header() { return !s_dns_ok; }
 
 // http.begin後に共通ヘッダを付ける（Host＋任意トークン）。IP直時のみHost付与。
 static void add_common_headers(HTTPClient& http) {
-  if (need_host_header()) http.addHeader("Host", SERVER_HOST);
-  if (strlen(TIMING_TOKEN)) http.addHeader("X-Timing-Token", TIMING_TOKEN);
+  if (need_host_header()) http.addHeader("Host", g_host);
+  if (g_token.length())   http.addHeader("X-Timing-Token", g_token);
 }
 
 // ---- fetch_layout の再取得間隔（残課題#14：成功=60s / 失敗=5s のバックオフ）--
@@ -174,10 +183,10 @@ static void probe_dns() {
   // 既にDNS運用中なら再判定しない（毎回のhostByNameは無駄＆遅延源）。
   if (s_dns_ok) return;
   IPAddress ip;
-  if (WiFi.hostByName(SERVER_HOST, ip) == 1 && ip != IPAddress(0,0,0,0)) {
+  if (WiFi.hostByName(g_host.c_str(), ip) == 1 && ip != IPAddress(0,0,0,0)) {
     s_dns_ok = true;
     Serial.printf("[DNS] OK %s -> %s（ホスト名運用へ）\n",
-                  SERVER_HOST, ip.toString().c_str());
+                  g_host.c_str(), ip.toString().c_str());
   } else {
     s_dns_ok = false;
     Serial.println("[DNS] NG（IP直＋Hostヘッダにフォールバック）");
@@ -190,7 +199,7 @@ static bool wifi_up() {
   //  IP等は0で自動（DHCP）、DNSだけ固定にする。
   WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0),
               IPAddress(8,8,8,8), IPAddress(1,1,1,1));
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(g_ssid.c_str(), g_pass.c_str());
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) delay(100);
   bool up = (WiFi.status() == WL_CONNECTED);
@@ -681,10 +690,34 @@ static void tick_gw_presence() {
   mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, nullptr, 0);
 }
 
+// ---- 設定の読み込み（NVS "m4cfg" → 無ければ secrets.h / 既定）---------------
+//  アプリが nvs_partition_gen で作った nvs.bin を USB(Web Serial) で 0x9000 に焼くと、
+//  ここが拾って上書きする。キーが無ければ従来どおり secrets.h の値で動く（後方互換）。
+static void load_config() {
+  Preferences p;
+  bool from_nvs = false;
+  if (p.begin("m4cfg", /*readOnly=*/true)) {
+    if (p.isKey("ssid"))  { g_ssid  = p.getString("ssid",  g_ssid);  from_nvs = true; }
+    if (p.isKey("pass"))  { g_pass  = p.getString("pass",  g_pass);  from_nvs = true; }
+    if (p.isKey("host"))  { g_host  = p.getString("host",  g_host);  from_nvs = true; }
+    if (p.isKey("ip"))    { g_ip    = p.getString("ip",    g_ip);    from_nvs = true; }
+    if (p.isKey("token")) { g_token = p.getString("token", g_token); from_nvs = true; }
+    p.end();
+  }
+  // 空を焼いた時の保険（ssid/host/ipは空なら既定へ。pass/tokenは空を許容）。
+  if (g_ssid.isEmpty()) g_ssid = WIFI_SSID;
+  if (g_host.isEmpty()) g_host = DEF_SERVER_HOST;
+  if (g_ip.isEmpty())   g_ip   = DEF_SERVER_IP;
+  Serial.printf("[CFG] src=%s ssid=\"%s\" host=%s ip=%s token=%dB\n",
+                from_nvs ? "NVS" : "default",
+                g_ssid.c_str(), g_host.c_str(), g_ip.c_str(), (int)g_token.length());
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
   Serial.printf("\n=== M4LAPS Gateway GW%d (VE) ===\n", NODE_ID);
+  load_config();   // NVS "m4cfg" を読む（無ければ secrets.h 既定）。以後は g_* を使用
   pinMode(PIN_BTN_RED,  INPUT_PULLUP);
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
   if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
