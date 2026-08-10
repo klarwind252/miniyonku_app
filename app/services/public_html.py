@@ -202,12 +202,34 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 
   function issued(){ try { return parseInt(localStorage.getItem(KEY)||"0",10)||0; } catch(e){ return 0; } }
   function expired(){ var t=issued(); return (!t) || (Date.now()-t > TTL); }
+  function isStandalone(){
+    try {
+      return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+             || window.navigator.standalone === true;
+    } catch(e){ return false; }
+  }
   function showOverlay(){
     if(document.getElementById("m4-expired")) return;
     var ov=document.createElement("div");
     ov.id="m4-expired";
     ov.style.cssText="position:fixed;inset:0;z-index:99999;background:rgba(20,24,33,.96);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;";
-    ov.innerHTML='<div style="font-size:22px;font-weight:bold;margin-bottom:14px">観覧の有効期限が切れました</div>'
+    var head='<div style="font-size:22px;font-weight:bold;margin-bottom:14px">観覧の有効期限が切れました</div>';
+    if(isStandalone()){
+      // PWA（ホーム画面アイコン）は独立ストレージのため、カメラでQRを読み直しても
+      // ブラウザ側にしか記録されずアプリ内には反映されない。アプリ内ナビゲーションで
+      // /enter?src=rescan を踏み直し、このPWA自身のstorageに発行時刻を書き直す。
+      ov.innerHTML=head
+        +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">続けて観覧するには<br>下のボタンを押してください。</div>'
+        +'<button id="m4-renew" type="button" style="border:0;cursor:pointer;background:#2c3e50;color:#fff;padding:14px 26px;border-radius:8px;font-size:16px;font-weight:bold;line-height:1.6">最新の観覧画面に更新</button>';
+      document.body.appendChild(ov);
+      var btn=document.getElementById("m4-renew");
+      if(btn){ btn.addEventListener("click", function(){
+        try { location.assign(ENTER + (ENTER.indexOf("?")>=0?"&":"?") + "src=rescan"); }
+        catch(e){ location.href = ENTER; }
+      }); }
+      return;
+    }
+    ov.innerHTML=head
       +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">お手元のQRコードを<br>もう一度スキャンしてください。</div>'
       +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>最新の観覧画面を表示できます</div>';
     document.body.appendChild(ov);
@@ -1222,6 +1244,13 @@ async def _render_page(view_url: str, store=None) -> str | None:
             # 店舗別Cookie＋内部レンダリングヘッダ（resolver が店舗を確定）
             _cookies = {_acn(store.id): store.admin_token} if store.admin_token else {}
             _headers["x-internal-store-id"] = str(store.id)
+            # INTERNAL_RENDER_SECRET 設定時は resolver が署名一致を要求する。
+            # 未送信だとバイパス不成立→既定店舗として解決され、スラッグ店舗の
+            # 配信HTMLが誤った内容（別店舗DB／ログイン画面）で書き出される。
+            import os as _os_sec
+            _sec = _os_sec.environ.get("INTERNAL_RENDER_SECRET", "")
+            if _sec:
+                _headers["x-internal-render-secret"] = _sec
         else:
             _cookies = {_ADMIN_COOKIE: _ADMIN_TOKEN} if (_IS_CLOUD and _ADMIN_TOKEN) else {}
         async with httpx.AsyncClient(app=app, base_url="http://localhost", follow_redirects=True, cookies=_cookies, headers=_headers) as client:
@@ -1276,6 +1305,11 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     if _IS_CLOUD2 and store is not None:
         _cookies2 = {_acn2(store.id): store.admin_token} if store.admin_token else {}
         _headers2["x-internal-store-id"] = str(store.id)
+        # INTERNAL_RENDER_SECRET 設定時は resolver が署名一致を要求する（_render_page と同様）。
+        import os as _os_sec2
+        _sec2 = _os_sec2.environ.get("INTERNAL_RENDER_SECRET", "")
+        if _sec2:
+            _headers2["x-internal-render-secret"] = _sec2
     else:
         _cookies2 = {_ADMIN_COOKIE2: _ADMIN_TOKEN2} if (_IS_CLOUD2 and _ADMIN_TOKEN2) else {}
 
