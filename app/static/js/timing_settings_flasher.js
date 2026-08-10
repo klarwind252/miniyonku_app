@@ -37,6 +37,7 @@ let port = null;
 let transport = null;
 let esploader = null;
 let ledger = {};
+let currentReg = {};   // 端末台帳(timing_devices)の登録MAC
 let connected = false;
 let fwReg = {};   // { env: {version,size,sha256,...} }
 
@@ -62,6 +63,7 @@ async function loadLedger() {
     const r = await fetch(URL_LEDGER);
     const j = await r.json();
     ledger = j.ledger || {};
+    currentReg = j.current || {};
   } catch (e) { log("A/B台帳の取得に失敗: " + e); }
 }
 
@@ -87,11 +89,16 @@ async function connect() {
     setStatus("chip-info", `チップ: ${chip}`, "ok");
     setStatus("mac-info", `MAC: ${mac}`, "ok");
 
+    const cur = currentReg[normMac(mac)] || null;   // 端末台帳（現用機）一致を最優先
     const j = judgeAB(mac);
-    if (j) {
-      setStatus("ab-info", `→ ${j.label} / ${j.set}セット`, "ok-strong");
+    if (cur && j) {
+      setStatus("ab-info", `→ ${cur.label}（現用機・${j.set}セット）`, "ok-strong");
+    } else if (cur) {
+      setStatus("ab-info", `→ ${cur.label}（端末台帳に登録の現用機）`, "ok-strong");
+    } else if (j) {
+      setStatus("ab-info", `→ ${j.label} / ${j.set}セット（※端末台帳には未登録＝予備機の可能性）`, "warn");
     } else {
-      setStatus("ab-info", "→ 台帳に無いMAC（テプラと要照合）", "warn");
+      setStatus("ab-info", "→ どの台帳にも無いMAC（テプラと要照合）", "warn");
     }
     connected = true;
     $("btn-connect").disabled = true;
@@ -124,13 +131,14 @@ function currentDev() {
 // ボタンの活殺（接続状態＋機材種別＋ファーム登録有無で決める）
 function updateButtons() {
   const d = currentDev();
-  $("btn-flash").disabled    = !(connected && d.wifi);          // 設定NVSはGWのみ
+  $("btn-flash").disabled    = !connected;                       // 設定(ch)は全機材
   $("btn-flash-fw").disabled = !(connected && !!fwReg[d.env]);  // 本体は登録があれば全機材
 }
 
 // --- 設定NVSを生成して焼く --------------------------------------------------
 function formValues() {
   return {
+    ch:    $("f-ch").value,
     ssid:  $("f-ssid").value,
     pass:  $("f-pass").value,
     host:  $("f-host").value,
@@ -154,18 +162,24 @@ async function fetchNvsBin() {
 }
 
 function u8ToBinStr(u8) {
-  let s = "";
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  return s;
+  // 大きなfactory.bin(1〜2MB)でも固まらないよう32KBずつ変換。
+  const CHUNK = 32768;
+  const parts = [];
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    parts.push(String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK)));
+  }
+  return parts.join("");
 }
 
 async function flash() {
   if (!esploader) { alert("先に接続してください"); return; }
-  if (!$("f-ssid").value.trim()) { alert("SSIDは必須です"); return; }
-  const target = $("f-target").value || "GW";
+  const target = $("f-target").value || "";
+  const ch = $("f-ch").value.trim();
+  const ssid = $("f-ssid").value.trim();
+  if (!ssid && !ch) { alert("chかSSIDのどちらかを入力してください"); return; }
   if (!confirm(
       `この1台に設定を書き込みます。\n` +
-      `対象=${target} / SSID=${$("f-ssid").value}\n\n` +
+      `対象=${target}` + (ch ? ` / ch=${ch}` : "") + (ssid ? ` / SSID=${ssid}` : "") + `\n\n` +
       `⚠ 接続は1台だけ・バッテリーは外した状態で。よろしいですか？`)) return;
 
   $("btn-flash").disabled = true;
@@ -265,6 +279,7 @@ async function loadProfiles() {
 
 function fillFormForTarget(target) {
   const p = profileCache[target] || null;
+  $("f-ch").value    = (p && p.ch != null) ? p.ch : "";
   $("f-ssid").value  = p ? p.ssid : "";
   $("f-pass").value  = p ? p.wifi_pass : "";
   $("f-host").value  = p ? p.host : "";
@@ -274,14 +289,12 @@ function fillFormForTarget(target) {
 
 function onTargetChange() {
   const d = currentDev();
-  // WiFi設定ブロックの表示切替（不要な機材では丸ごと隠す）
-  $("settings-block").style.display       = d.wifi ? "" : "none";
-  $("no-settings-note").style.display     = d.wifi ? "none" : "";
-  $("settings-write-block").style.display = d.wifi ? "" : "none";
+  // WiFi/サーバー欄はGWのみ表示。ch欄と保存/削除・①は全機材で常時。
+  $("wifi-block").style.display = d.wifi ? "" : "none";
   $("target-note").textContent = d.wifi
-    ? "機材を選ぶと、その機材の保存済み設定を読み込みます（1機材につき1件）。"
-    : "この機材はESP-NOW専用。設定は無く、ファーム本体の書込みのみ可能です。";
-  if (d.wifi) fillFormForTarget(d.unit);
+    ? "GW：ch＋WiFi/サーバーを設定できます（1機材につき1件保存）。"
+    : "ESP-NOW専用機：chのみ設定できます（1機材につき1件保存）。";
+  fillFormForTarget(d.unit);
   refreshFwAvail();
   updateButtons();
 }
@@ -297,14 +310,20 @@ function refreshFwAvail() {
 
 async function saveProfile() {
   const target = $("f-target").value;
-  const fd = new FormData();
-  fd.append("target", target);
-  fd.append("ssid",   $("f-ssid").value.trim());
-  fd.append("wifi_pass", $("f-pass").value);
-  fd.append("host",   $("f-host").value.trim());
-  fd.append("ip",     $("f-ip").value.trim());
-  fd.append("token",  $("f-token").value);
-  const r = await fetch(URL_PROFILES, { method: "POST", body: fd });
+  const body = {
+    target,
+    ch:        $("f-ch").value.trim(),
+    ssid:      $("f-ssid").value.trim(),
+    wifi_pass: $("f-pass").value,
+    host:      $("f-host").value.trim(),
+    ip:        $("f-ip").value.trim(),
+    token:     $("f-token").value,
+  };
+  const r = await fetch(URL_PROFILES, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   const j = await r.json().catch(() => ({}));
   if (r.ok && j.ok) { await loadProfiles(); alert(`${target} の設定を保存しました`); }
   else alert("保存に失敗: " + (j.detail || r.status));
@@ -392,12 +411,16 @@ async function uploadFirmware() {
   const env = $("fw-env").value;
   const file = $("fw-file").files[0];
   if (!file) { alert("factory.bin を選んでください"); return; }
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("version", $("fw-version").value);
+  const version = $("fw-version").value.trim();
+  const url = `${URL_FW}/${encodeURIComponent(env)}` +
+              (version ? `?version=${encodeURIComponent(version)}` : "");
   $("btn-fw-upload").disabled = true;
   try {
-    const r = await fetch(`${URL_FW}/${encodeURIComponent(env)}`, { method: "POST", body: fd });
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,                     // 生バイナリ（multipart非依存）
+    });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.ok) { $("fw-file").value = ""; await loadFirmwareRegistry(); alert(`${env} を登録しました`); }
     else alert("登録に失敗: " + (j.detail || r.status));

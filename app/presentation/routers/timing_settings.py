@@ -16,11 +16,10 @@ from app.infrastructure.db.repositories.timing_repository import (
 from app.presentation.templates import templates
 from app.domain.rotation import LayoutElement, validate_layout, build_course
 from app.presentation.routers.m4laps_guard import require_m4laps
-from fastapi import Response, Form
+from fastapi import Response
 import subprocess, sys, tempfile, os, csv
 from app.core.store_context import get_current_store
 import hashlib, json, time
-from fastapi import UploadFile, File
 from fastapi.responses import FileResponse
 
 router = APIRouter(dependencies=[Depends(require_m4laps)])
@@ -294,7 +293,8 @@ DEVICES = [
     {"unit": "SG10", "kind": "SG", "env": "sg10", "chip": "esp32c3", "has_wifi": False},
     {"unit": "SG11", "kind": "SG", "env": "sg11", "chip": "esp32c3", "has_wifi": False},
 ]
-SETTINGS_TARGETS = [d["unit"] for d in DEVICES if d["has_wifi"]]   # NVS設定はGWのみ
+SETTINGS_TARGETS = [d["unit"] for d in DEVICES if d["has_wifi"]]   # WiFi欄を出す対象=GW
+ALL_UNITS = {d["unit"] for d in DEVICES}                            # 設定(ch)は全機材
 ALL_ENVS = {d["env"] for d in DEVICES}
 
 # ファーム本体（マージ済みfactoryイメージ）の保管先。店舗横断（機材ファームは共通）。
@@ -342,21 +342,27 @@ async def _ensure_profile_table(db: aiosqlite.Connection) -> None:
             host       TEXT NOT NULL DEFAULT '',
             ip         TEXT NOT NULL DEFAULT '',
             token      TEXT NOT NULL DEFAULT '',
+            ch         INTEGER,
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )
         """
     )
+    # 既存(target主キー)だが ch 列が無い場合は追加。
+    async with db.execute("PRAGMA table_info(timing_gw_profile)") as cur:
+        cols2 = {row[1] for row in await cur.fetchall()}
+    if "ch" not in cols2:
+        await db.execute("ALTER TABLE timing_gw_profile ADD COLUMN ch INTEGER")
     await db.commit()
 
 
 async def _list_profiles(db: aiosqlite.Connection):
     await _ensure_profile_table(db)
     async with db.execute(
-        "SELECT target,ssid,wifi_pass,host,ip,token,updated_at "
+        "SELECT target,ssid,wifi_pass,host,ip,token,ch,updated_at "
         "FROM timing_gw_profile ORDER BY target"
     ) as cur:
         rows = await cur.fetchall()
-    keys = ["target","ssid","wifi_pass","host","ip","token","updated_at"]
+    keys = ["target","ssid","wifi_pass","host","ip","token","ch","updated_at"]
     return [dict(zip(keys, r)) for r in rows]
 
 
@@ -384,9 +390,25 @@ async def settings_page(request: Request, db: aiosqlite.Connection = Depends(get
 
 
 @router.get("/settings/ab-ledger")
-async def settings_ab_ledger():
-    """MAC→A/B判定用の台帳（ブラウザのフラッシャが読む）。"""
-    return JSONResponse({"ledger": AB_MAC_LEDGER})
+async def settings_ab_ledger(db: aiosqlite.Connection = Depends(get_db)):
+    """MAC→判定用の台帳（ブラウザのフラッシャが読む）。
+
+    2系統を返す：
+      ledger  … 機体台帳(20260730)のA/B（ハードコード。訂正が出たらここを更新）
+      current … アプリの端末台帳(timing_devices)の登録MAC（編集可能＝現用機の正）
+    フラッシャは current 一致を最優先で表示する。
+    """
+    current = {}
+    try:
+        async with db.execute(
+            "SELECT node_id, label, mac FROM timing_devices "
+            "WHERE mac IS NOT NULL AND mac != ''"
+        ) as cur:
+            for node_id, label, mac in await cur.fetchall():
+                current[mac.strip().lower()] = {"node_id": node_id, "label": label}
+    except Exception:
+        pass  # 端末台帳が読めなくてもA/B台帳だけで動く
+    return JSONResponse({"ledger": AB_MAC_LEDGER, "current": current})
 
 
 @router.get("/settings/profiles")
@@ -400,19 +422,27 @@ async def settings_profiles_save(
 ):
     """対象機材ごとに1件だけ保存（存在すれば上書き）。"""
     await _ensure_profile_table(db)
-    form = await request.form()
-    def g(k): return (form.get(k) or "").strip()
+    try:
+        form = await request.json()          # JSONで受ける（multipart非依存）
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+    def g(k): return str(form.get(k) or "").strip()
     target = g("target")
-    if target not in SETTINGS_TARGETS:
+    if target not in ALL_UNITS:
         raise HTTPException(status_code=400, detail="対象機材が不正です")
+    ch_raw = g("ch")
+    ch = int(ch_raw) if ch_raw.isdigit() else None
+    if ch is not None and not (1 <= ch <= 13):
+        raise HTTPException(status_code=400, detail="chは1〜13です")
     await db.execute(
-        "INSERT INTO timing_gw_profile (target,ssid,wifi_pass,host,ip,token) "
-        "VALUES (?,?,?,?,?,?) "
+        "INSERT INTO timing_gw_profile (target,ssid,wifi_pass,host,ip,token,ch) "
+        "VALUES (?,?,?,?,?,?,?) "
         "ON CONFLICT(target) DO UPDATE SET "
         "ssid=excluded.ssid,wifi_pass=excluded.wifi_pass,host=excluded.host,"
-        "ip=excluded.ip,token=excluded.token,updated_at=datetime('now','localtime')",
-        (target, g("ssid"), (form.get("wifi_pass") or ""),  # passは trim しない
-         g("host"), g("ip"), (form.get("token") or "")),
+        "ip=excluded.ip,token=excluded.token,ch=excluded.ch,"
+        "updated_at=datetime('now','localtime')",
+        (target, g("ssid"), str(form.get("wifi_pass") or ""),  # passは trim しない
+         g("host"), g("ip"), str(form.get("token") or ""), ch),
     )
     await db.commit()
     return JSONResponse({"ok": True, "target": target})
@@ -445,14 +475,20 @@ async def settings_generate_nvs(request: Request):
     host  = str(data.get("host")  or "")
     ip    = str(data.get("ip")    or "")
     token = str(data.get("token") or "")
-    if not ssid:
-        raise HTTPException(status_code=400, detail="SSIDは必須です")
+    ch_raw = str(data.get("ch") or "").strip()
+    ch = int(ch_raw) if ch_raw.isdigit() else None
+    if ch is not None and not (1 <= ch <= 13):
+        raise HTTPException(status_code=400, detail="chは1〜13です")
+    if not any([ssid, passwd, host, ip, token]) and ch is None:
+        raise HTTPException(status_code=400, detail="書き込む設定が1つもありません")
 
     # NVS生成用CSV（csvモジュールで正しくクオート＝パスワードにカンマ等が入っても安全）。
     rows = [["key","type","encoding","value"], [NVS_NAMESPACE,"namespace","",""]]
     for k, v in (("ssid",ssid),("pass",passwd),("host",host),("ip",ip),("token",token)):
         if v != "":                       # 空は書かない → ファーム側で secrets.h 既定へ
             rows.append([k,"data","string",v])
+    if ch is not None:
+        rows.append(["ch","data","u8",str(ch)])
 
     with tempfile.TemporaryDirectory() as d:
         csv_path = os.path.join(d, "m4cfg.csv")
@@ -492,26 +528,25 @@ async def settings_firmware_list():
 
 
 @router.post("/settings/firmware/{env}")
-async def settings_firmware_upload(
-    env: str, file: UploadFile = File(...), version: str = Form("")
-):
+async def settings_firmware_upload(env: str, request: Request):
+    """factory.bin の登録。ボディ＝生バイナリ（multipart非依存）。version はクエリで受ける。"""
     if env not in ALL_ENVS:
         raise HTTPException(status_code=400, detail=f"未知のenv: {env}")
-    blob = await file.read()
+    blob = await request.body()
     if not blob:
         raise HTTPException(status_code=400, detail="空のファイルです")
     if len(blob) > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="8MBを超えています")
+    version = (request.query_params.get("version") or "").strip()
     d, binp, metap = _fw_paths(env)
     os.makedirs(d, exist_ok=True)
     with open(binp, "wb") as f:
         f.write(blob)
     meta = {
         "env": env,
-        "version": (version or "").strip() or time.strftime("%Y%m%d-%H%M"),
+        "version": version or time.strftime("%Y%m%d-%H%M"),
         "size": len(blob),
         "sha256": hashlib.sha256(blob).hexdigest(),
-        "filename": file.filename or "factory.bin",
         "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     json.dump(meta, open(metap, "w", encoding="utf-8"), ensure_ascii=False, indent=2)

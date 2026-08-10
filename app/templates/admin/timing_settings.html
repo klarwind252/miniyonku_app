@@ -23,8 +23,8 @@
     <li><strong>モバイルバッテリーを外してから</strong>USBを接続（USB給電と競合します）。</li>
     <li>書き込み中はUSBを抜かない／電源を切らない。</li>
     <li>対応ブラウザは <strong>Chrome / Edge</strong> のみ（Web Serial）。</li>
-    <li>WiFiの<strong>チャンネル</strong>はAP側で決まります。ノード(SE/SG/RC)はch固定のため、
-        <strong>接続先はノードと同じチャンネルのAP</strong>にしてください（変えると計測が全滅します）。</li>
+    <li><strong>chは全機材で同一</strong>が絶対条件（GWの接続先APのchとも一致）。chを変えるときは
+        <strong>GW＋全ノードを同じ値で焼き直し</strong>、APも同じchに合わせてください（1台でもズレると計測が全滅します）。</li>
   </ul>
 </div>
 
@@ -48,9 +48,17 @@
       <span class="muted" style="font-size:11px" id="target-note"></span>
     </div>
 
+    <!-- ESP-NOWチャンネル：全機材共通の環境設定 -->
+    <div class="fg"><label>ESP-NOW チャンネル（1〜13）</label>
+      <input id="f-ch" type="number" min="1" max="13" placeholder="（空欄なら既定を維持）" style="max-width:120px" />
+      <span class="muted" style="font-size:11px">
+        ⚠ 全機材で同じ値に揃えること（GWの接続先AP・全ノードで同一）。バラバラだと計測が全滅します。
+      </span>
+    </div>
+
     <!-- WiFi/サーバー設定（GWのみ表示）。不要な機材では丸ごと隠す。 -->
-    <div id="settings-block">
-      <div class="fg"><label>WiFi SSID <span class="req">必須</span></label>
+    <div id="wifi-block">
+      <div class="fg"><label>WiFi SSID</label>
         <input id="f-ssid" placeholder="接続先SSID" /></div>
       <div class="fg"><label>WiFi パスワード</label>
         <input id="f-pass" type="text" placeholder="（空欄なら現在の既定を維持）" /></div>
@@ -62,20 +70,15 @@
       </div>
       <div class="fg"><label>タイミングトークン（任意）</label>
         <input id="f-token" type="text" placeholder="（サーバー未設定なら空でOK）" /></div>
-
-      <div style="margin-top:10px;display:flex;gap:8px">
-        <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 この機材の設定を保存</button>
-        <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">🗑 削除</button>
-      </div>
-      <p class="muted" style="margin-top:6px">
-        空欄のキーは書き込まれず、GW側は secrets.h の既定値で動きます（後方互換）。
-      </p>
     </div>
 
-    <!-- 設定を持たない機材（SE/RC/SG）向けの案内 -->
-    <div id="no-settings-note" class="muted" style="display:none;padding:8px 0">
-      この機材はESP-NOW専用で、変更できる設定はありません。右の「ファーム本体の書込み」だけ使えます。
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 この機材の設定を保存</button>
+      <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">🗑 削除</button>
     </div>
+    <p class="muted" style="margin-top:6px">
+      空欄のキーは書き込まれず、機材側は既定値（ch=ビルド値／GWは secrets.h）で動きます（後方互換）。
+    </p>
   </div>
 
   <!-- 右：書き込み -->
@@ -97,9 +100,9 @@
     </div>
 
     <div class="action-block" id="settings-write-block">
-      <h4>① 設定を書き込む（GWのみ・NVSのみ）</h4>
+      <h4>① 設定を書き込む（全機材・NVSのみ）</h4>
       <button type="button" id="btn-flash" class="btn btn-danger btn-sm" disabled>⬇ 設定を書き込む</button>
-      <span class="muted" style="font-size:11px">WiFi/サーバー設定だけを更新（本体は消えない）。</span>
+      <span class="muted" style="font-size:11px">ch（GWはWiFi/サーバーも）を更新。本体は消えません。</span>
     </div>
 
     <div class="action-block">

@@ -58,6 +58,7 @@ static String g_pass  = WIFI_PASS;
 static String g_host  = DEF_SERVER_HOST;
 static String g_ip    = DEF_SERVER_IP;
 static String g_token = TIMING_TOKEN;
+static uint8_t g_channel = ESPNOW_CHANNEL;
 
 // DNS解決可否。true＝ホスト名でつなぐ / false＝IP直＋Hostヘッダ（暫定）。
 static bool s_dns_ok = false;
@@ -392,7 +393,7 @@ static void forward_join(const proto::JoinBody& jb) {
         proto::JoinAckBody ack = {};
         memcpy(ack.mac, jb.mac, 6);
         ack.node_id = (uint8_t)nid;
-        ack.channel = ESPNOW_CHANNEL;
+        ack.channel = g_channel;
         mesh::send(proto::PT_JOIN_ACK, (uint8_t)nid, &ack, sizeof(ack));
       }
     }
@@ -702,14 +703,16 @@ static void load_config() {
     if (p.isKey("host"))  { g_host  = p.getString("host",  g_host);  from_nvs = true; }
     if (p.isKey("ip"))    { g_ip    = p.getString("ip",    g_ip);    from_nvs = true; }
     if (p.isKey("token")) { g_token = p.getString("token", g_token); from_nvs = true; }
+    if (p.isKey("ch"))    { uint8_t c = p.getUChar("ch", g_channel);
+                            if (c >= 1 && c <= 13) { g_channel = c; from_nvs = true; } }
     p.end();
   }
   // 空を焼いた時の保険（ssid/host/ipは空なら既定へ。pass/tokenは空を許容）。
   if (g_ssid.isEmpty()) g_ssid = WIFI_SSID;
   if (g_host.isEmpty()) g_host = DEF_SERVER_HOST;
   if (g_ip.isEmpty())   g_ip   = DEF_SERVER_IP;
-  Serial.printf("[CFG] src=%s ssid=\"%s\" host=%s ip=%s token=%dB\n",
-                from_nvs ? "NVS" : "default",
+  Serial.printf("[CFG] src=%s ch=%d ssid=\"%s\" host=%s ip=%s token=%dB\n",
+                from_nvs ? "NVS" : "default", (int)g_channel,
                 g_ssid.c_str(), g_host.c_str(), g_ip.c_str(), (int)g_token.length());
 }
 
@@ -722,13 +725,13 @@ void setup() {
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
   if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
   Serial.printf("PSRAM=%u (VE normal: approx 4MB mapped of 8MB)\n", (unsigned)ESP.getPsramSize());
-  if (!mesh::begin(NODE_ID, ESPNOW_CHANNEL, on_recv)) {
+  if (!mesh::begin(NODE_ID, g_channel, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
   }
   beam::begin();
   disp::begin();                       // TFT初期化（PSRAMスプライト確保）
   disp::g_status.gw_id = NODE_ID;
-  disp::g_status.ch    = ESPNOW_CHANNEL;
+  disp::g_status.ch    = g_channel;
   wifi_up();
   Serial.println("稼働開始。赤=スタート / 灰長押し=RESET。");
 }
@@ -744,7 +747,7 @@ static void tick_display() {
 
   // ステータス更新（NODE充足は残課題#8で実数へ。今はJOIN実数の反映口のみ用意）
   disp::g_status.wifi_ok = (WiFi.status() == WL_CONNECTED);
-  disp::g_status.ch      = ESPNOW_CHANNEL;
+  disp::g_status.ch      = g_channel;
   // beam_ok / node_have / node_need / unsent は各機能側から順次代入予定。
 
   // Sync集約（B1/24.11・27章）：自機未同期 or 直近q=3受信 で Sync×（自動復帰型）。
