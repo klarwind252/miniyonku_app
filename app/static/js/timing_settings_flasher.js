@@ -231,27 +231,21 @@ async function verifyBoot() {
   }
 }
 
-// --- プロファイル（店舗オリジナル設定） -------------------------------------
+// --- プロファイル（機材ごとに1件） -----------------------------------------
+let profileCache = {};   // { target: {ssid,wifi_pass,host,ip,token,...} }
+
 async function loadProfiles() {
   try {
     const r = await fetch(URL_PROFILES);
     const j = await r.json();
-    const sel = $("profile-select");
-    sel.innerHTML = '<option value="">（新規）</option>';
-    for (const p of j.profiles) {
-      const o = document.createElement("option");
-      o.value = String(p.id);
-      o.textContent = `${p.target} / ${p.name}`;
-      o.dataset.profile = JSON.stringify(p);
-      sel.appendChild(o);
-    }
-  } catch (e) { log("プロファイル取得に失敗: " + e); }
+    profileCache = {};
+    for (const p of (j.profiles || [])) profileCache[p.target] = p;
+  } catch (e) { log("設定の取得に失敗: " + e); }
+  fillFormForTarget($("f-target").value);
 }
 
-function applyProfileToForm(p) {
-  $("f-id").value    = p ? p.id : "";
-  $("f-name").value  = p ? p.name : "";
-  $("f-target").value= p ? p.target : "GW6";
+function fillFormForTarget(target) {
+  const p = profileCache[target] || null;
   $("f-ssid").value  = p ? p.ssid : "";
   $("f-pass").value  = p ? p.wifi_pass : "";
   $("f-host").value  = p ? p.host : "";
@@ -259,42 +253,29 @@ function applyProfileToForm(p) {
   $("f-token").value = p ? p.token : "";
 }
 
-function onSelectProfile() {
-  const opt = $("profile-select").selectedOptions[0];
-  if (!opt || !opt.value) { applyProfileToForm(null); return; }
-  applyProfileToForm(JSON.parse(opt.dataset.profile));
-}
+function onTargetChange() { fillFormForTarget($("f-target").value); }
 
 async function saveProfile() {
+  const target = $("f-target").value;
   const fd = new FormData();
-  const id = $("f-id").value;
-  if (id) fd.append("id", id);
-  fd.append("name",   $("f-name").value.trim());
-  fd.append("target", $("f-target").value);
+  fd.append("target", target);
   fd.append("ssid",   $("f-ssid").value.trim());
   fd.append("wifi_pass", $("f-pass").value);
   fd.append("host",   $("f-host").value.trim());
   fd.append("ip",     $("f-ip").value.trim());
   fd.append("token",  $("f-token").value);
-  if (!fd.get("name")) { alert("プロファイル名を入れてください"); return; }
   const r = await fetch(URL_PROFILES, { method: "POST", body: fd });
   const j = await r.json().catch(() => ({}));
-  if (r.ok && j.ok) {
-    if (j.id) $("f-id").value = j.id;
-    await loadProfiles();
-    $("profile-select").value = String(j.id || "");
-    alert("保存しました");
-  } else {
-    alert("保存に失敗: " + (j.detail || r.status));
-  }
+  if (r.ok && j.ok) { await loadProfiles(); alert(`${target} の設定を保存しました`); }
+  else alert("保存に失敗: " + (j.detail || r.status));
 }
 
 async function deleteProfile() {
-  const id = $("f-id").value;
-  if (!id) { alert("保存済みプロファイルを選んでください"); return; }
-  if (!confirm("このプロファイルを削除しますか？")) return;
-  const r = await fetch(`${URL_PROFILES}/${id}/delete`, { method: "POST" });
-  if (r.ok) { applyProfileToForm(null); await loadProfiles(); alert("削除しました"); }
+  const target = $("f-target").value;
+  if (!profileCache[target]) { alert("この機材の保存済み設定はありません"); return; }
+  if (!confirm(`${target} の保存済み設定を削除しますか？`)) return;
+  const r = await fetch(`${URL_PROFILES}/${encodeURIComponent(target)}/delete`, { method: "POST" });
+  if (r.ok) { await loadProfiles(); alert("削除しました"); }
   else alert("削除に失敗しました");
 }
 
@@ -308,7 +289,7 @@ function init() {
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", safeDisconnect);
   $("btn-flash").addEventListener("click", flash);
-  $("profile-select").addEventListener("change", onSelectProfile);
+  $("f-target").addEventListener("change", onTargetChange);
   $("btn-save-profile").addEventListener("click", saveProfile);
   $("btn-delete-profile").addEventListener("click", deleteProfile);
   loadLedger();

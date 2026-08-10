@@ -35,22 +35,11 @@
   <!-- 左：設定フォーム -->
   <div class="card">
     <h3>設定内容</h3>
-    <div class="fg">
-      <label>保存済みプロファイル（店舗オリジナル設定）</label>
-      <div style="display:flex;gap:6px">
-        <select id="profile-select" style="flex:1"></select>
-        <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">削除</button>
-      </div>
-    </div>
-
-    <input type="hidden" id="f-id" />
-    <div class="grid2">
-      <div class="fg"><label>プロファイル名</label><input id="f-name" placeholder="店舗A 通常" /></div>
-      <div class="fg"><label>対象機材</label>
-        <select id="f-target">
-          {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-        </select>
-      </div>
+    <div class="fg"><label>対象機材</label>
+      <select id="f-target">
+        {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+      <span class="muted" style="font-size:11px">機材を選ぶと、その機材の保存済み設定を読み込みます（1機材につき1件）。</span>
     </div>
     <div class="fg"><label>WiFi SSID <span class="req">必須</span></label>
       <input id="f-ssid" placeholder="接続先SSID" /></div>
@@ -58,15 +47,16 @@
       <input id="f-pass" type="text" placeholder="（空欄なら現在の既定を維持）" /></div>
     <div class="grid2">
       <div class="fg"><label>サーバーホスト名</label>
-        <input id="f-host" placeholder="{{ defaults.host }}" /></div>
+        <input id="f-host" placeholder="（変更する場合のみ）" /></div>
       <div class="fg"><label>サーバーIP（DNS不調時の直結用）</label>
-        <input id="f-ip" placeholder="{{ defaults.ip }}" /></div>
+        <input id="f-ip" placeholder="（変更する場合のみ）" /></div>
     </div>
     <div class="fg"><label>タイミングトークン（任意）</label>
       <input id="f-token" type="text" placeholder="（サーバー未設定なら空でOK）" /></div>
 
     <div style="margin-top:10px;display:flex;gap:8px">
-      <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 プロファイル保存</button>
+      <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 この機材の設定を保存</button>
+      <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">🗑 削除</button>
     </div>
     <p class="muted" style="margin-top:6px">
       空欄のキーは書き込まれず、GW側は secrets.h の既定値で動きます（後方互換）。

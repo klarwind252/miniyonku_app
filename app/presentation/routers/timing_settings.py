@@ -274,31 +274,33 @@ AB_MAC_LEDGER = {
     "SE2":  {"A": "8c:94:df:52:c4:e0", "B": "8c:94:df:52:b3:08"},
 }
 
-# GWで設定できる既定値（フォームのプレースホルダ用。ファーム secrets.h の既定と合わせる）。
-GW_DEFAULTS = {
-    "host": "v133-117-77-69.sefs.static.cnode.jp",
-    "ip":   "133.117.77.69",
-}
+# WiFi/サーバー設定を実際に読むのはGWのみ（SE/SG/RCはESP-NOW専用でNVS未読み）。
+# よって設定対象はGWに限定。A/B判定(AB_MAC_LEDGER)は全機材ぶん保持する。
+SETTINGS_TARGETS = ["GW6", "GW7"]
 
 NVS_NAMESPACE = "m4cfg"
 NVS_SIZE = "0x5000"   # partitions_8mb.csv の nvs パーティションサイズ
 
 
 async def _ensure_profile_table(db: aiosqlite.Connection) -> None:
-    """設定プロファイル表（店舗別DBに作る＝店舗ごとに分離）。冪等。"""
+    """設定プロファイル表（店舗別DBに作る＝店舗ごとに分離）。target を主キーに1機材1件。冪等。
+
+    旧スキーマ（id/name付き・複数可）が残っていれば作り直す。設定は使い捨て前提のため実害なし。
+    """
+    async with db.execute("PRAGMA table_info(timing_gw_profile)") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    if cols and ("name" in cols or "id" in cols):
+        await db.execute("DROP TABLE IF EXISTS timing_gw_profile")
     await db.execute(
         """
         CREATE TABLE IF NOT EXISTS timing_gw_profile (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            name       TEXT NOT NULL,
-            target     TEXT NOT NULL DEFAULT 'GW6',
+            target     TEXT PRIMARY KEY,
             ssid       TEXT NOT NULL DEFAULT '',
             wifi_pass  TEXT NOT NULL DEFAULT '',
             host       TEXT NOT NULL DEFAULT '',
             ip         TEXT NOT NULL DEFAULT '',
             token      TEXT NOT NULL DEFAULT '',
-            updated_at TEXT DEFAULT (datetime('now','localtime')),
-            UNIQUE(name, target)
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
         )
         """
     )
@@ -308,11 +310,11 @@ async def _ensure_profile_table(db: aiosqlite.Connection) -> None:
 async def _list_profiles(db: aiosqlite.Connection):
     await _ensure_profile_table(db)
     async with db.execute(
-        "SELECT id,name,target,ssid,wifi_pass,host,ip,token,updated_at "
-        "FROM timing_gw_profile ORDER BY target, name"
+        "SELECT target,ssid,wifi_pass,host,ip,token,updated_at "
+        "FROM timing_gw_profile ORDER BY target"
     ) as cur:
         rows = await cur.fetchall()
-    keys = ["id","name","target","ssid","wifi_pass","host","ip","token","updated_at"]
+    keys = ["target","ssid","wifi_pass","host","ip","token","updated_at"]
     return [dict(zip(keys, r)) for r in rows]
 
 
@@ -327,8 +329,7 @@ async def settings_page(request: Request, db: aiosqlite.Connection = Depends(get
             "request": request,
             "profiles": profiles,
             "store_name": store_name,
-            "defaults": GW_DEFAULTS,
-            "targets": list(AB_MAC_LEDGER.keys()),
+            "targets": SETTINGS_TARGETS,
         },
     )
 
@@ -348,53 +349,32 @@ async def settings_profiles_list(db: aiosqlite.Connection = Depends(get_db)):
 async def settings_profiles_save(
     request: Request, db: aiosqlite.Connection = Depends(get_db)
 ):
+    """対象機材ごとに1件だけ保存（存在すれば上書き）。"""
     await _ensure_profile_table(db)
     form = await request.form()
     def g(k): return (form.get(k) or "").strip()
-    name = g("name")
-    target = g("target") or "GW6"
-    if not name:
-        raise HTTPException(status_code=400, detail="プロファイル名は必須です")
-    pid = form.get("id")
-    fields = dict(
-        name=name, target=target,
-        ssid=g("ssid"), wifi_pass=(form.get("wifi_pass") or ""),  # passは trim しない
-        host=g("host"), ip=g("ip"), token=(form.get("token") or ""),
+    target = g("target")
+    if target not in SETTINGS_TARGETS:
+        raise HTTPException(status_code=400, detail="対象機材が不正です")
+    await db.execute(
+        "INSERT INTO timing_gw_profile (target,ssid,wifi_pass,host,ip,token) "
+        "VALUES (?,?,?,?,?,?) "
+        "ON CONFLICT(target) DO UPDATE SET "
+        "ssid=excluded.ssid,wifi_pass=excluded.wifi_pass,host=excluded.host,"
+        "ip=excluded.ip,token=excluded.token,updated_at=datetime('now','localtime')",
+        (target, g("ssid"), (form.get("wifi_pass") or ""),  # passは trim しない
+         g("host"), g("ip"), (form.get("token") or "")),
     )
-    if pid:
-        await db.execute(
-            "UPDATE timing_gw_profile SET name=?,target=?,ssid=?,wifi_pass=?,host=?,ip=?,"
-            "token=?,updated_at=datetime('now','localtime') WHERE id=?",
-            (fields["name"],fields["target"],fields["ssid"],fields["wifi_pass"],
-             fields["host"],fields["ip"],fields["token"], int(pid)),
-        )
-        new_id = int(pid)
-    else:
-        # UNIQUE(name,target) 衝突なら上書き
-        await db.execute(
-            "INSERT INTO timing_gw_profile (name,target,ssid,wifi_pass,host,ip,token) "
-            "VALUES (?,?,?,?,?,?,?) "
-            "ON CONFLICT(name,target) DO UPDATE SET "
-            "ssid=excluded.ssid,wifi_pass=excluded.wifi_pass,host=excluded.host,"
-            "ip=excluded.ip,token=excluded.token,updated_at=datetime('now','localtime')",
-            (fields["name"],fields["target"],fields["ssid"],fields["wifi_pass"],
-             fields["host"],fields["ip"],fields["token"]),
-        )
-        async with db.execute(
-            "SELECT id FROM timing_gw_profile WHERE name=? AND target=?",
-            (fields["name"],fields["target"])) as cur:
-            row = await cur.fetchone()
-        new_id = row[0] if row else None
     await db.commit()
-    return JSONResponse({"ok": True, "id": new_id})
+    return JSONResponse({"ok": True, "target": target})
 
 
-@router.post("/settings/profiles/{pid}/delete")
+@router.post("/settings/profiles/{target}/delete")
 async def settings_profiles_delete(
-    pid: int, db: aiosqlite.Connection = Depends(get_db)
+    target: str, db: aiosqlite.Connection = Depends(get_db)
 ):
     await _ensure_profile_table(db)
-    await db.execute("DELETE FROM timing_gw_profile WHERE id=?", (pid,))
+    await db.execute("DELETE FROM timing_gw_profile WHERE target=?", (target,))
     await db.commit()
     return JSONResponse({"ok": True})
 
