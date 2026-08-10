@@ -37,41 +37,55 @@
     <h3>設定内容</h3>
     <div class="fg"><label>対象機材</label>
       <select id="f-target">
-        {% for t in targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        {% for kind, devs in grouped_devices %}
+        <optgroup label="{{ kind }}">
+          {% for d in devs %}<option value="{{ d.unit }}"
+              data-env="{{ d.env }}" data-chip="{{ d.chip }}"
+              data-wifi="{{ 1 if d.has_wifi else 0 }}">{{ d.unit }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
       </select>
-      <span class="muted" style="font-size:11px">機材を選ぶと、その機材の保存済み設定を読み込みます（1機材につき1件）。</span>
+      <span class="muted" style="font-size:11px" id="target-note"></span>
     </div>
-    <div class="fg"><label>WiFi SSID <span class="req">必須</span></label>
-      <input id="f-ssid" placeholder="接続先SSID" /></div>
-    <div class="fg"><label>WiFi パスワード</label>
-      <input id="f-pass" type="text" placeholder="（空欄なら現在の既定を維持）" /></div>
-    <div class="grid2">
-      <div class="fg"><label>サーバーホスト名</label>
-        <input id="f-host" placeholder="（変更する場合のみ）" /></div>
-      <div class="fg"><label>サーバーIP（DNS不調時の直結用）</label>
-        <input id="f-ip" placeholder="（変更する場合のみ）" /></div>
-    </div>
-    <div class="fg"><label>タイミングトークン（任意）</label>
-      <input id="f-token" type="text" placeholder="（サーバー未設定なら空でOK）" /></div>
 
-    <div style="margin-top:10px;display:flex;gap:8px">
-      <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 この機材の設定を保存</button>
-      <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">🗑 削除</button>
+    <!-- WiFi/サーバー設定（GWのみ表示）。不要な機材では丸ごと隠す。 -->
+    <div id="settings-block">
+      <div class="fg"><label>WiFi SSID <span class="req">必須</span></label>
+        <input id="f-ssid" placeholder="接続先SSID" /></div>
+      <div class="fg"><label>WiFi パスワード</label>
+        <input id="f-pass" type="text" placeholder="（空欄なら現在の既定を維持）" /></div>
+      <div class="grid2">
+        <div class="fg"><label>サーバーホスト名</label>
+          <input id="f-host" placeholder="（変更する場合のみ）" /></div>
+        <div class="fg"><label>サーバーIP（DNS不調時の直結用）</label>
+          <input id="f-ip" placeholder="（変更する場合のみ）" /></div>
+      </div>
+      <div class="fg"><label>タイミングトークン（任意）</label>
+        <input id="f-token" type="text" placeholder="（サーバー未設定なら空でOK）" /></div>
+
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button type="button" id="btn-save-profile" class="btn btn-secondary btn-sm">💾 この機材の設定を保存</button>
+        <button type="button" id="btn-delete-profile" class="btn btn-danger btn-sm">🗑 削除</button>
+      </div>
+      <p class="muted" style="margin-top:6px">
+        空欄のキーは書き込まれず、GW側は secrets.h の既定値で動きます（後方互換）。
+      </p>
     </div>
-    <p class="muted" style="margin-top:6px">
-      空欄のキーは書き込まれず、GW側は secrets.h の既定値で動きます（後方互換）。
-    </p>
+
+    <!-- 設定を持たない機材（SE/RC/SG）向けの案内 -->
+    <div id="no-settings-note" class="muted" style="display:none;padding:8px 0">
+      この機材はESP-NOW専用で、変更できる設定はありません。右の「ファーム本体の書込み」だけ使えます。
+    </div>
   </div>
 
   <!-- 右：書き込み -->
   <div class="card">
     <h3>USB書き込み</h3>
     <ol class="steps">
-      <li>GWをUSBでこのPCへ接続（1台のみ・バッテリーは外す）。</li>
-      <li><button type="button" id="btn-connect" class="btn btn-primary btn-sm">🔌 接続してMAC確認</button></li>
-      <li>下のA/B判定と対象が合っているか確認。</li>
-      <li><button type="button" id="btn-flash" class="btn btn-danger btn-sm" disabled>⬇ 設定を書き込む</button>
+      <li>機材をUSBでこのPCへ接続（1台のみ・バッテリーは外す）。</li>
+      <li><button type="button" id="btn-connect" class="btn btn-primary btn-sm">🔌 接続してMAC確認</button>
           <button type="button" id="btn-disconnect" class="btn btn-secondary btn-sm" disabled>切断</button></li>
+      <li>下のA/B判定と対象が合っているか確認。</li>
     </ol>
 
     <div class="readout">
@@ -82,11 +96,64 @@
       <div id="verify-info" class="muted"></div>
     </div>
 
+    <div class="action-block" id="settings-write-block">
+      <h4>① 設定を書き込む（GWのみ・NVSのみ）</h4>
+      <button type="button" id="btn-flash" class="btn btn-danger btn-sm" disabled>⬇ 設定を書き込む</button>
+      <span class="muted" style="font-size:11px">WiFi/サーバー設定だけを更新（本体は消えない）。</span>
+    </div>
+
+    <div class="action-block">
+      <h4>② ファーム本体を書き込む（全機材）</h4>
+      <div id="fw-avail" class="muted" style="font-size:12px">対象機材を選ぶと登録状況を表示。</div>
+      <button type="button" id="btn-flash-fw" class="btn btn-danger btn-sm" disabled>⬇ ファーム本体を書き込む</button>
+      <p class="muted" style="font-size:11px;margin:6px 0 0">
+        ⚠ これは<strong>全消去のfactory書込み</strong>（NVS含め消えます）。GWは書込み後に①で設定を焼き直してください。
+        まず予備機（B/GW7）で試すこと。
+      </p>
+    </div>
+
     <label style="font-size:12px;color:#7f8c8d">ログ</label>
     <pre id="log" class="log"></pre>
   </div>
 </div>
 
+<div class="card" style="margin-top:16px">
+  <h3>🛠 ファーム登録（開発用）</h3>
+  <p class="muted" style="font-size:12px;margin-top:0">
+    開発PCでビルド→マージした <code>factory.bin</code> を機材(env)ごとに登録します。書き込みPCはここから取得して焼くだけ。
+  </p>
+  <div class="grid2">
+    <div class="fg"><label>対象env</label>
+      <select id="fw-env">
+        {% for kind, devs in grouped_devices %}
+        <optgroup label="{{ kind }}">
+          {% for d in devs %}<option value="{{ d.env }}">{{ d.unit }}（{{ d.env }} / {{ d.chip }}）</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="fg"><label>バージョン表記（任意）</label>
+      <input id="fw-version" placeholder="例: 2026-08-10 a" /></div>
+  </div>
+  <div class="fg"><label>factory.bin</label>
+    <input id="fw-file" type="file" accept=".bin" /></div>
+  <div style="display:flex;gap:8px">
+    <button type="button" id="btn-fw-upload" class="btn btn-secondary btn-sm">⬆ アップロード登録</button>
+  </div>
+  <div id="fw-list" class="fw-list"></div>
+  <details style="margin-top:8px">
+    <summary class="muted" style="font-size:12px">factory.bin の作り方</summary>
+    <pre class="hint">ESP32 (gw/gw7/sq0..5):
+esptool --chip esp32 merge_bin -o factory.bin \
+  0x1000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin
+
+ESP32-C3 (rc8/rc9/sg10/sg11):
+esptool --chip esp32c3 merge_bin -o factory.bin \
+  0x0 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin
+
+各ファイルは .pio/build/&lt;env&gt;/ にあります。</pre>
+  </details>
+</div>
 <style>
   .warn-banner{color:#c0392b;font-weight:bold;margin:8px 0}
   .warn-box{background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px 16px;margin-bottom:14px}
@@ -114,6 +181,11 @@
        height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all}
   .btn-danger{background:#e74c3c;color:#fff;border:none}
   .btn-danger:disabled{opacity:.5}
+  .action-block{border-top:1px solid #eee;margin-top:12px;padding-top:10px}
+  .action-block h4{margin:0 0 6px;font-size:13px;color:#34495e}
+  .fw-list{margin-top:10px;font-size:12px}
+  .fw-list .row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dashed #eee}
+  .hint{background:#f4f6f7;border-radius:6px;padding:8px;font-size:11px;white-space:pre-wrap}
 </style>
 
 <script type="module" src="/static/js/timing_settings_flasher.js"></script>

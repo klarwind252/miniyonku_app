@@ -19,6 +19,9 @@ from app.presentation.routers.m4laps_guard import require_m4laps
 from fastapi import Response, Form
 import subprocess, sys, tempfile, os, csv
 from app.core.store_context import get_current_store
+import hashlib, json, time
+from fastapi import UploadFile, File
+from fastapi.responses import FileResponse
 
 router = APIRouter(dependencies=[Depends(require_m4laps)])
 
@@ -274,9 +277,48 @@ AB_MAC_LEDGER = {
     "SE2":  {"A": "8c:94:df:52:c4:e0", "B": "8c:94:df:52:b3:08"},
 }
 
-# WiFi/サーバー設定を実際に読むのはGWのみ（SE/SG/RCはESP-NOW専用でNVS未読み）。
-# よって設定対象はGWに限定。A/B判定(AB_MAC_LEDGER)は全機材ぶん保持する。
-SETTINGS_TARGETS = ["GW6", "GW7"]
+# 機材カタログ。unit=表示単位, kind=種別, env=PlatformIO env, chip=マージimageの別なし,
+# has_wifi=WiFi/サーバー設定(NVS)を持つか（GWのみTrue）。
+#   ファーム本体(案A)は全機材で書込み可。設定(NVS)はGWのみ。
+DEVICES = [
+    {"unit": "GW6",  "kind": "GW", "env": "gw",   "chip": "esp32",   "has_wifi": True},
+    {"unit": "GW7",  "kind": "GW", "env": "gw7",  "chip": "esp32",   "has_wifi": True},
+    {"unit": "SE0",  "kind": "SE", "env": "sq0",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE1",  "kind": "SE", "env": "sq1",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE2",  "kind": "SE", "env": "sq2",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE3",  "kind": "SE", "env": "sq3",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE4",  "kind": "SE", "env": "sq4",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "SE5",  "kind": "SE", "env": "sq5",  "chip": "esp32",   "has_wifi": False},
+    {"unit": "RC8",  "kind": "RC", "env": "rc8",  "chip": "esp32c3", "has_wifi": False},
+    {"unit": "RC9",  "kind": "RC", "env": "rc9",  "chip": "esp32c3", "has_wifi": False},
+    {"unit": "SG10", "kind": "SG", "env": "sg10", "chip": "esp32c3", "has_wifi": False},
+    {"unit": "SG11", "kind": "SG", "env": "sg11", "chip": "esp32c3", "has_wifi": False},
+]
+SETTINGS_TARGETS = [d["unit"] for d in DEVICES if d["has_wifi"]]   # NVS設定はGWのみ
+ALL_ENVS = {d["env"] for d in DEVICES}
+
+# ファーム本体（マージ済みfactoryイメージ）の保管先。店舗横断（機材ファームは共通）。
+_APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+FIRMWARE_DIR = os.path.join(_APP_DIR, "data", "firmware")
+
+
+def _fw_paths(env: str):
+    d = os.path.join(FIRMWARE_DIR, env)
+    return d, os.path.join(d, "factory.bin"), os.path.join(d, "meta.json")
+
+
+def _fw_registry() -> dict:
+    """登録済みファーム一覧 { env: {version,size,sha256,uploaded_at} }。"""
+    out = {}
+    for env in sorted(ALL_ENVS):
+        _, binp, metap = _fw_paths(env)
+        if os.path.exists(binp) and os.path.exists(metap):
+            try:
+                out[env] = json.load(open(metap, encoding="utf-8"))
+            except Exception:
+                out[env] = {"version": "?", "size": os.path.getsize(binp),
+                            "sha256": "", "uploaded_at": ""}
+    return out
 
 NVS_NAMESPACE = "m4cfg"
 NVS_SIZE = "0x5000"   # partitions_8mb.csv の nvs パーティションサイズ
@@ -323,13 +365,20 @@ async def settings_page(request: Request, db: aiosqlite.Connection = Depends(get
     profiles = await _list_profiles(db)
     store = get_current_store()
     store_name = store.name if store else "（オンプレ/既定）"
+    # kindの並び順
+    order = {"GW": 0, "SE": 1, "RC": 2, "SG": 3}
+    groups = {}
+    for d in DEVICES:
+        groups.setdefault(d["kind"], []).append(d)
+    grouped = [(k, groups[k]) for k in sorted(groups, key=lambda x: order.get(x, 9))]
     return templates.TemplateResponse(
         "admin/timing_settings.html",
         {
             "request": request,
             "profiles": profiles,
             "store_name": store_name,
-            "targets": SETTINGS_TARGETS,
+            "grouped_devices": grouped,
+            "firmware": _fw_registry(),
         },
     )
 
@@ -429,3 +478,63 @@ async def settings_generate_nvs(request: Request):
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="m4cfg_nvs.bin"'},
     )
+
+
+# --- ファーム本体レジストリ（案A：マージ済みfactoryイメージを 0x0 に焼く）--------
+#  開発PCでビルド→マージ→ここへアップロード。書き込みPCはブラウザで取得して焼くだけ。
+#   マージ例(ESP32): esptool --chip esp32 merge_bin -o factory.bin \
+#       0x1000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin
+#   （C3は 0x0 bootloader.bin。PlatformIOの .pio/build/<env>/ 一式から作成）
+
+@router.get("/settings/firmware")
+async def settings_firmware_list():
+    return JSONResponse({"firmware": _fw_registry()})
+
+
+@router.post("/settings/firmware/{env}")
+async def settings_firmware_upload(
+    env: str, file: UploadFile = File(...), version: str = Form("")
+):
+    if env not in ALL_ENVS:
+        raise HTTPException(status_code=400, detail=f"未知のenv: {env}")
+    blob = await file.read()
+    if not blob:
+        raise HTTPException(status_code=400, detail="空のファイルです")
+    if len(blob) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="8MBを超えています")
+    d, binp, metap = _fw_paths(env)
+    os.makedirs(d, exist_ok=True)
+    with open(binp, "wb") as f:
+        f.write(blob)
+    meta = {
+        "env": env,
+        "version": (version or "").strip() or time.strftime("%Y%m%d-%H%M"),
+        "size": len(blob),
+        "sha256": hashlib.sha256(blob).hexdigest(),
+        "filename": file.filename or "factory.bin",
+        "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    json.dump(meta, open(metap, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    return JSONResponse({"ok": True, "meta": meta})
+
+
+@router.get("/settings/firmware/{env}/blob")
+async def settings_firmware_blob(env: str):
+    if env not in ALL_ENVS:
+        raise HTTPException(status_code=400, detail=f"未知のenv: {env}")
+    _, binp, _ = _fw_paths(env)
+    if not os.path.exists(binp):
+        raise HTTPException(status_code=404, detail="未登録")
+    return FileResponse(binp, media_type="application/octet-stream",
+                        filename=f"{env}_factory.bin")
+
+
+@router.post("/settings/firmware/{env}/delete")
+async def settings_firmware_delete(env: str):
+    if env not in ALL_ENVS:
+        raise HTTPException(status_code=400, detail=f"未知のenv: {env}")
+    d, binp, metap = _fw_paths(env)
+    for p in (binp, metap):
+        try: os.remove(p)
+        except FileNotFoundError: pass
+    return JSONResponse({"ok": True})

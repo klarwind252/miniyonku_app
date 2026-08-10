@@ -15,6 +15,7 @@ const BASE = location.pathname.replace(/\/+$/, "");
 const URL_NVS      = `${BASE}/nvs.bin`;
 const URL_PROFILES = `${BASE}/profiles`;
 const URL_LEDGER   = `${BASE}/ab-ledger`;
+const URL_FW       = `${BASE}/firmware`;
 
 const $ = (id) => document.getElementById(id);
 const logEl = () => $("log");
@@ -36,6 +37,8 @@ let port = null;
 let transport = null;
 let esploader = null;
 let ledger = {};
+let connected = false;
+let fwReg = {};   // { env: {version,size,sha256,...} }
 
 const term = {
   clean() {},
@@ -90,9 +93,10 @@ async function connect() {
     } else {
       setStatus("ab-info", "→ 台帳に無いMAC（テプラと要照合）", "warn");
     }
-    $("btn-flash").disabled = false;
+    connected = true;
     $("btn-connect").disabled = true;
     $("btn-disconnect").disabled = false;
+    updateButtons();
     log(`[接続] ${chip} / ${mac}`);
   } catch (e) {
     log("[接続失敗] " + e);
@@ -103,10 +107,25 @@ async function connect() {
 
 async function safeDisconnect() {
   try { if (transport) await transport.disconnect(); } catch (_) {}
-  transport = null; esploader = null;
+  transport = null; esploader = null; connected = false;
   $("btn-connect").disabled = false;
-  $("btn-flash").disabled = true;
   $("btn-disconnect").disabled = true;
+  updateButtons();
+}
+
+// 選択中の機材メタ（option の data-* から）
+function currentDev() {
+  const o = $("f-target").selectedOptions[0];
+  if (!o) return { unit: "", env: "", chip: "", wifi: false };
+  return { unit: o.value, env: o.dataset.env || "", chip: o.dataset.chip || "",
+           wifi: o.dataset.wifi === "1" };
+}
+
+// ボタンの活殺（接続状態＋機材種別＋ファーム登録有無で決める）
+function updateButtons() {
+  const d = currentDev();
+  $("btn-flash").disabled    = !(connected && d.wifi);          // 設定NVSはGWのみ
+  $("btn-flash-fw").disabled = !(connected && !!fwReg[d.env]);  // 本体は登録があれば全機材
 }
 
 // --- 設定NVSを生成して焼く --------------------------------------------------
@@ -253,7 +272,28 @@ function fillFormForTarget(target) {
   $("f-token").value = p ? p.token : "";
 }
 
-function onTargetChange() { fillFormForTarget($("f-target").value); }
+function onTargetChange() {
+  const d = currentDev();
+  // WiFi設定ブロックの表示切替（不要な機材では丸ごと隠す）
+  $("settings-block").style.display       = d.wifi ? "" : "none";
+  $("no-settings-note").style.display     = d.wifi ? "none" : "";
+  $("settings-write-block").style.display = d.wifi ? "" : "none";
+  $("target-note").textContent = d.wifi
+    ? "機材を選ぶと、その機材の保存済み設定を読み込みます（1機材につき1件）。"
+    : "この機材はESP-NOW専用。設定は無く、ファーム本体の書込みのみ可能です。";
+  if (d.wifi) fillFormForTarget(d.unit);
+  refreshFwAvail();
+  updateButtons();
+}
+
+function refreshFwAvail() {
+  const d = currentDev();
+  const m = fwReg[d.env];
+  const el = $("fw-avail");
+  if (!el) return;
+  if (m) el.innerHTML = `登録済み: <strong>${m.version}</strong>（${m.size} bytes・env ${d.env}）`;
+  else   el.innerHTML = `env <strong>${d.env}</strong> のファーム未登録（下の「ファーム登録」でアップロード）`;
+}
 
 async function saveProfile() {
   const target = $("f-target").value;
@@ -279,6 +319,91 @@ async function deleteProfile() {
   else alert("削除に失敗しました");
 }
 
+// --- ファーム本体（案A：factoryイメージを 0x0 へ全消去書込み）---------------
+async function flashFirmware() {
+  if (!esploader) { alert("先に接続してください"); return; }
+  const d = currentDev();
+  if (!fwReg[d.env]) { alert("この機材のファームは未登録です"); return; }
+  if (!confirm(
+      `⚠ ${d.unit}（env ${d.env}）にファーム本体を書き込みます。\n` +
+      `これは全消去の factory 書込みで、NVS設定も消えます。\n` +
+      `接続は1台だけ・バッテリーは外した状態か確認してください。\n\n続行しますか？`)) return;
+  $("btn-flash-fw").disabled = true;
+  try {
+    log(`[本体] ${d.env} の factory.bin を取得中…`);
+    const r = await fetch(`${URL_FW}/${encodeURIComponent(d.env)}/blob`);
+    if (!r.ok) throw new Error(`取得失敗 HTTP ${r.status}`);
+    const bin = new Uint8Array(await r.arrayBuffer());
+    log(`[本体] ${bin.length} bytes を 0x0 に書込み（全消去）…`);
+    await esploader.writeFlash({
+      fileArray: [{ data: u8ToBinStr(bin), address: 0x0 }],
+      flashSize: "keep", flashMode: "keep", flashFreq: "keep",
+      eraseAll: true, compress: true,
+      reportProgress: (i, w, t) =>
+        setStatus("flash-progress", `本体書込 ${Math.round((w / t) * 100)}%`, "muted"),
+    });
+    log("[本体] 完了。再起動します…");
+    try { await esploader.hardReset(); } catch (_) { try { await esploader.after("hard_reset"); } catch (_) {} }
+    setStatus("flash-progress", "本体書込 完了 ✓", "ok-strong");
+    alert(d.wifi
+      ? "本体書込み完了。NVSが消えたので、①で設定を焼き直してください。"
+      : "本体書込み完了。");
+  } catch (e) {
+    log("[本体書込失敗] " + e);
+    setStatus("flash-progress", "本体書込 失敗", "err");
+    alert("ファーム書込みに失敗しました。ログを確認してください。");
+  } finally {
+    await safeDisconnect();
+  }
+}
+
+// --- ファームレジストリ（開発用アップロード・一覧） ------------------------
+async function loadFirmwareRegistry() {
+  try {
+    const r = await fetch(URL_FW);
+    const j = await r.json();
+    fwReg = j.firmware || {};
+  } catch (e) { log("ファーム一覧の取得に失敗: " + e); fwReg = {}; }
+  renderFwList();
+  refreshFwAvail();
+  updateButtons();
+}
+
+function renderFwList() {
+  const el = $("fw-list"); if (!el) return;
+  const envs = Object.keys(fwReg).sort();
+  if (!envs.length) { el.innerHTML = '<div class="muted">登録なし</div>'; return; }
+  el.innerHTML = envs.map((env) => {
+    const m = fwReg[env];
+    return `<div class="row"><span><strong>${env}</strong> — ${m.version}（${m.size}B）</span>` +
+      `<button type="button" class="btn btn-secondary btn-sm" data-del-env="${env}">削除</button></div>`;
+  }).join("");
+  el.querySelectorAll("[data-del-env]").forEach((b) =>
+    b.addEventListener("click", () => deleteFirmware(b.dataset.delEnv)));
+}
+
+async function deleteFirmware(env) {
+  if (!confirm(`env ${env} の登録ファームを削除しますか？`)) return;
+  const r = await fetch(`${URL_FW}/${encodeURIComponent(env)}/delete`, { method: "POST" });
+  if (r.ok) await loadFirmwareRegistry();
+}
+
+async function uploadFirmware() {
+  const env = $("fw-env").value;
+  const file = $("fw-file").files[0];
+  if (!file) { alert("factory.bin を選んでください"); return; }
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("version", $("fw-version").value);
+  $("btn-fw-upload").disabled = true;
+  try {
+    const r = await fetch(`${URL_FW}/${encodeURIComponent(env)}`, { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) { $("fw-file").value = ""; await loadFirmwareRegistry(); alert(`${env} を登録しました`); }
+    else alert("登録に失敗: " + (j.detail || r.status));
+  } finally { $("btn-fw-upload").disabled = false; }
+}
+
 // --- 初期化 -----------------------------------------------------------------
 function init() {
   if (!("serial" in navigator)) {
@@ -289,11 +414,15 @@ function init() {
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", safeDisconnect);
   $("btn-flash").addEventListener("click", flash);
+  $("btn-flash-fw").addEventListener("click", flashFirmware);
+  $("btn-fw-upload").addEventListener("click", uploadFirmware);
   $("f-target").addEventListener("change", onTargetChange);
   $("btn-save-profile").addEventListener("click", saveProfile);
   $("btn-delete-profile").addEventListener("click", deleteProfile);
   loadLedger();
   loadProfiles();
+  loadFirmwareRegistry();
+  onTargetChange();
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
