@@ -312,13 +312,15 @@ static void on_reset_pressed() {
   //   送信 → 表示リセット → IDLE の順。送信失敗しても RESET 自体は進める
   //   （灰ボタンは再送手段として残す設計・24.3）。WiFi不通時は flush_spool 内で
   //   送信せず return し、データはスプールに残る（消えない）。
+  bool was_idle = (s_state == ST_IDLE);   // F-1：この灰が「走行終了」か「待機での確認」かを区別
   if (spool_has_data()) flush_spool();
 
   // 24.4⑤：待機画面に入った直後、3秒間だけA1/A2エラーを表示する窓を開く。
   s_post_err_until = millis() + 3000;
-  // C1(24.14)：Lostは灰リセットで解除（自動復帰しない出しっぱなし型なので手動clear）。
-  disp::g_status.lost = false;
-  s_lost_src = 0;
+  // C1(24.14/F-1)：Lostは待機画面で一度見せてから灰で解除する。
+  //   走行を止めた灰(was_idle=false)では消さない＝走行中に届いたLostが
+  //   未表示のまま消えるのを防ぐ。待機で見えている状態の灰(was_idle=true)が「確認＝解除」。
+  if (was_idle) { disp::g_status.lost = false; s_lost_src = 0; }
 
   s_state = ST_IDLE;
   s_green_t_us = 0;
@@ -798,17 +800,18 @@ static void tick_display() {
     bool a2 = show_post && s_race_q1;
     if (disp::g_status.lost || a1 || a2) {
       disp::ErrItem errs[3]; int cnt = 0;
-      if (disp::g_status.lost) {
-        errs[cnt].kind = disp::ERR_SECTOR_COMM;                       // C1（最後尾・出しっぱなし）
-        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_lost_src); cnt++;
-      }
-      if (a1 && cnt < 3) {
+      // F-2：描画は配列順。enumの「最後尾」意図どおり A1→A2→Lost の順に積む。
+      if (a1) {
         errs[cnt].kind = disp::ERR_SENSOR_BOTH;                       // A1 両ビーム欠
         snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_race_q2_src); cnt++;
       }
       if (a2 && cnt < 3) {
         errs[cnt].kind = disp::ERR_SPEED_ONLY;                        // A2 片ビーム欠
         snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_race_q1_src); cnt++;
+      }
+      if (disp::g_status.lost && cnt < 3) {
+        errs[cnt].kind = disp::ERR_SECTOR_COMM;                       // C1（最後尾・出しっぱなし）
+        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_lost_src); cnt++;
       }
       disp::draw_error(errs, cnt);
       disp::commit();
