@@ -1,7 +1,7 @@
 // firmware/common/display.h
 // ============================================================================
 //  M4LAPS GW TFT表示モジュール（docs/20・20章追記＝文言確定 準拠）
-//  パネル：ILI9341 320x240 横向き（setRotation(1)）。PSRAMスプライトで裏描き→転送。
+//  パネル：ILI9341 320x240 横向き（setRotation(3)）。PSRAMスプライトで裏描き→転送。
 //  画面：待機(IDLE) / 計測中(ON TRACK) / 計測終了(FINISH) / エラー。
 //  共通：最下部28pxステータスバー。×が1つでもあればバー全体を赤。
 //
@@ -86,7 +86,7 @@ static bool s_ok = false;
 
 static void begin() {
   s_tft.init();
-  s_tft.setRotation(1);           // 横向き 320x240
+  s_tft.setRotation(3);           // 横向き 320x240
   s_tft.fillScreen(C_BLACK);
   // PSRAMに 320x240x16bit(=150KB) スプライト確保（docs/02・20.6）
   s_spr.setColorDepth(16);
