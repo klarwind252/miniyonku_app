@@ -17,15 +17,16 @@
   <div class="card-body">
     <form method="post" action="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit">
       {% set lc = ['#2980b9','#e74c3c','#27ae60'] %}
-      {% for lane in lanes %}
+      {# ポイント/着順は 1..lane_count の全コースを常時表示（空き含む）。総当たり系は既存コースのみ。 #}
+      {% for c in courses %}
       <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-        <span style="width:60px;font-weight:bold;color:{{ lc[lane.lane_no-1] }}">
-          {{ lane.lane_no }}コース
+        <span style="width:60px;font-weight:bold;color:{{ lc[(c.lane_no-1) % (lc|length)] }}">
+          {{ c.lane_no }}コース
         </span>
-        <select name="entry_{{ lane.lane_no }}" style="flex:1;padding:8px;border:1px solid #dee2e6;border-radius:6px">
+        <select name="entry_{{ c.lane_no }}" style="flex:1;padding:8px;border:1px solid #dee2e6;border-radius:6px">
           <option value="">（空き）</option>
           {% for e in all_entries %}
-          <option value="{{ e.id }}" {% if e.id == lane.entry_id %}selected{% endif %}>
+          <option value="{{ e.id }}" {% if e.id == c.entry_id %}selected{% endif %}>
             {{ e.name }}
           </option>
           {% endfor %}

@@ -1459,8 +1459,24 @@ async def heat_edit_form(tid: int, heat_id: int, request: Request, db: aiosqlite
     #   __file__ 基準で "../templates" を組み立てたままになっており、
     #   app/presentation/templates という存在しない場所を指して
     #   TemplateNotFound（500エラー）になっていた）
+    # 既存レーン（コース）を lane_no で引けるよう辞書化
+    existing_lanes = {ln["lane_no"]: ln for ln in lanes}
+    qual_type = dict(t).get("qualifying_type", "")
+    is_rr_family = is_roundrobin(t) or qual_type in ("heat_roundrobin", "none_roundrobin")
+    lane_count = int(t["lane_count"] if t["lane_count"] else 3)
+    if is_rr_family:
+        # 総当たり系（ペア戦）：コース配置を壊さないため従来どおり「存在するコースのみ」表示
+        course_nos = sorted(existing_lanes.keys())
+    else:
+        # ポイント/着順：常に 1..lane_count の全コースを表示（空きコースも指定可能に）。
+        # 万一 lane_count を超える既存レーンがあっても隠さない。
+        course_nos = list(range(1, max(lane_count, max(existing_lanes.keys(), default=0)) + 1))
+    courses = [{"lane_no": ln,
+                "entry_id": existing_lanes[ln]["entry_id"] if ln in existing_lanes else None}
+               for ln in course_nos]
+
     return templates.TemplateResponse("admin/heat_edit.html", {
-        "request": request, "t": t, "heat": heat, "lanes": lanes, "all_entries": all_entries,
+        "request": request, "t": t, "heat": heat, "courses": courses, "all_entries": all_entries,
     })
 
 
@@ -1473,21 +1489,45 @@ async def heat_edit_save(tid: int, heat_id: int, request: Request, db: aiosqlite
         return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
 
     form = await request.form()
-    async with db.execute("SELECT id as lane_id, lane_no FROM heat_lanes WHERE heat_id=? ORDER BY lane_no", (heat_id,)) as cur:
-        lanes = [dict(r) for r in await cur.fetchall()]
+    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
+        t = await cur.fetchone()
 
-    for lane in lanes:
-        eid_str = form.get(f"entry_{lane['lane_no']}", "")
+    async with db.execute("SELECT id as lane_id, lane_no FROM heat_lanes WHERE heat_id=? ORDER BY lane_no", (heat_id,)) as cur:
+        existing_lanes = {r["lane_no"]: dict(r) for r in await cur.fetchall()}
+
+    qual_type = dict(t).get("qualifying_type", "")
+    is_rr_family = is_roundrobin(t) or qual_type in ("heat_roundrobin", "none_roundrobin")
+    lane_count = int(t["lane_count"] if t["lane_count"] else 3)
+    if is_rr_family:
+        # 総当たり系（ペア戦）：従来どおり存在するコースのみ対象（配置を壊さない）
+        course_nos = sorted(existing_lanes.keys())
+    else:
+        # ポイント/着順：1..lane_count 全コースを対象（空きコースへの新規割り当ても可能に）
+        course_nos = list(range(1, max(lane_count, max(existing_lanes.keys(), default=0)) + 1))
+
+    seen_entries = set()
+    for ln in course_nos:
+        eid_str = form.get(f"entry_{ln}", "")
         eid = int(eid_str) if eid_str else None
+        # 同一レース内で同じレーサーの重複指定は不可（先に現れたコースを優先し、以降は空き扱い）
+        if eid is not None and eid in seen_entries:
+            eid = None
+        if eid is not None:
+            seen_entries.add(eid)
+
+        ex = existing_lanes.get(ln)
         if eid is None:
-            # （空き）に変更：レーン行自体を削除する。
-            # heat_lanes.entry_id は NOT NULL のため NULL 更新は不可。
-            # また「空きレーン＝行が存在しない」が生成時の表現と一致する。
-            # 紐づく結果（heat_results）も合わせて削除する。
-            await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lane["lane_id"],))
-            await db.execute("DELETE FROM heat_lanes WHERE id=?", (lane["lane_id"],))
+            # （空き）：既存レーン行があれば削除（結果も一緒に）。
+            # heat_lanes.entry_id は NOT NULL のため「空きレーン＝行なし」で表現する。
+            if ex:
+                await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (ex["lane_id"],))
+                await db.execute("DELETE FROM heat_lanes WHERE id=?", (ex["lane_id"],))
         else:
-            await db.execute("UPDATE heat_lanes SET entry_id=? WHERE id=?", (eid, lane["lane_id"]))
+            if ex:
+                await db.execute("UPDATE heat_lanes SET entry_id=? WHERE id=?", (eid, ex["lane_id"]))
+            else:
+                # 空きコースへの新規割り当て：レーン行を新規作成
+                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, ln, eid))
 
     await db.commit()
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
