@@ -106,6 +106,9 @@
 {% endblock %}
 
 {% block content %}
+{# M4LAPS OFF判定：レース設定「M4LAPS（ラップタイマー）を使用する」がOFF（use_m4laps=0）。 #}
+{# ONのときは従来どおり全カード表示。OFFのとき、図（トーナメント表）から入力できる組のカードを隠す。 #}
+{% set m4_off = (t.use_m4laps is defined and t.use_m4laps == 0) %}
 {# ヒート決勝あり設定のとき、全ヒートのヒート決勝が完了しているか #}
 {% set hf_ns = namespace(all_done=true) %}
 {% for heat in all_heats %}
@@ -361,9 +364,11 @@
   </div>
   <div id="ht-cards-{{ hno }}-{{ sec.section_no }}" style="padding:0 16px 12px">
     {% set sec_rounds = sec.rounds %}
-    {% set sorted_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list)
+    {# M4LAPS OFF時：図から勝者入力できる通常ラウンドのカードは非表示。決勝(final)と3位決定戦(third=予選図に出ずカード入力)のカードだけ残す。図の描画は別divなので不変。 #}
+    {% set _normal_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
+    {% set sorted_rounds = (([] if m4_off else _normal_rounds)
                          + (sec_rounds | selectattr('round_type','equalto','third') | list)
-                         + (sec_rounds | selectattr('round_type','equalto','final') | list) %}
+                         + (sec_rounds | selectattr('round_type','equalto','final') | list)) %}
     {% for rnd in sorted_rounds %}
     {% set is_final_rnd = rnd.round_type == 'final' %}
     {% set is_third_rnd = rnd.round_type == 'third' %}
@@ -489,9 +494,11 @@
   </div>
   <div id="ht-cards-{{ hno }}-0" style="padding:0 16px 12px">
     {% set sec_rounds = sec.rounds %}
-    {% set sorted_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list)
+    {# M4LAPS OFF時：図から勝者入力できる通常ラウンドのカードは非表示。決勝(final)と3位決定戦(third)のカードだけ残す。図の描画は別divなので不変。 #}
+    {% set _normal_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
+    {% set sorted_rounds = (([] if m4_off else _normal_rounds)
                          + (sec_rounds | selectattr('round_type','equalto','third') | list)
-                         + (sec_rounds | selectattr('round_type','equalto','final') | list) %}
+                         + (sec_rounds | selectattr('round_type','equalto','final') | list)) %}
     {% for rnd in sorted_rounds %}
     {% set is_final_rnd = rnd.round_type == 'final' %}
     {% set is_third_rnd = rnd.round_type == 'third' %}
@@ -573,9 +580,11 @@
   </div>
 
   <div id="ht-cards-{{ hno }}" style="padding:8px 16px 4px">
-  {% set sorted_rounds = (rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list)
+  {# M4LAPS OFF時：図から勝者入力できる通常ラウンドのカードは非表示。final/third のカードだけ残す。図の描画は別divなので不変。 #}
+  {% set _normal_rounds = (rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
+  {% set sorted_rounds = (([] if m4_off else _normal_rounds)
                        + (rounds | selectattr('round_type','equalto','third') | list)
-                       + (rounds | selectattr('round_type','equalto','final') | list) %}
+                       + (rounds | selectattr('round_type','equalto','final') | list)) %}
   {% for rnd in sorted_rounds %}
   {% set is_final_rnd = rnd.round_type == 'final' %}
   {% set is_third_rnd = rnd.round_type == 'third' %}
