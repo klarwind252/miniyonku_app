@@ -1194,6 +1194,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         "record_holders": record_holders,
         "point_leader": point_leader,
         "achievements": achievements,
+        "ach_labels": qrec.labels_from_cfg(_ach_cfg),
         "max_sector_no": max_sector_no,
         "heats": heats,
         "heat_lanes_map": heat_lanes_map,

@@ -1189,17 +1189,19 @@ window.initBracketConnectors = initBracketConnectors;
 {% endif %}
 
 <div id="admin-input-cards">
-{% if normal_groups and not m4_off %}
+{% if normal_groups %}
 {% set rounds_list = normal_groups | map(attribute='round.round_no') | unique | list %}
 {% for rno in rounds_list | sort %}
 {% set rg = normal_groups | selectattr("round.round_no", "equalto", rno) | list %}
 {% set rnd_label = rg[0].round.label if rg and rg[0].round.label is defined else "ラウンド" ~ rno %}
-<div style="margin-bottom:3px">
+{# 図の番号バッジで反映/取消できる通常ラウンドのカードは非表示（DOMには残しバッジ経由で押下可）。決勝カードは手動順位入力の逃げ道として残す。 #}
+{% set _hide_card = m4_on and rnd_label != '決勝' %}
+<div style="margin-bottom:3px{% if _hide_card %};display:none{% endif %}">
   <span class="round-header {% if rnd_label == '決勝' %}rh-final{% else %}rh-normal{% endif %}">
     {{ rnd_label }}
   </span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-bottom:10px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-bottom:10px{% if _hide_card %};display:none{% endif %}">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
@@ -1265,7 +1267,7 @@ window.initBracketConnectors = initBracketConnectors;
 {% endfor %}
 {% endif %}
 
-{% if third_groups and not m4_off %}
+{% if third_groups %}
 {% set third_round_nos = third_groups | map(attribute='round.round_no') | unique | list %}
 {% for rno in third_round_nos | sort %}
 {% set rg = third_groups | selectattr('round.round_no', 'equalto', rno) | list %}
@@ -1331,7 +1333,7 @@ window.initBracketConnectors = initBracketConnectors;
 {% endif %}
 
 {# 裏トーナメント（敗者復活 / ルーザーズブラケット）：3位決定戦と同じ入力カード＋反映/取消 #}
-{% if losers_groups_data and not m4_off %}
+{% if losers_groups_data %}
 {% set losers_round_nos = losers_groups_data | map(attribute='round.round_no') | unique | list %}
 {% for rno in losers_round_nos | sort %}
 {% set rg = losers_groups_data | selectattr('round.round_no', 'equalto', rno) | list %}
@@ -1519,7 +1521,7 @@ window.initBracketConnectors = initBracketConnectors;
         <div class="card-body" style="padding-top:8px">
         {% if record_holders and record_holders.overall %}
         <div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">OVERALL</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">{{ ach_labels.overall }}</span></span>
           <span class="m4rec-val">{{ record_holders.overall.value_str }}</span>
           <span class="m4rec-gap">{{ record_holders.overall.gap_str or "" }}</span>
           <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
@@ -1527,7 +1529,7 @@ window.initBracketConnectors = initBracketConnectors;
         {% endif %}
         {% if record_holders and record_holders.fastest_lap %}
         <div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">FASTEST LAP</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">{{ ach_labels.fastest_lap }}</span></span>
           <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
           <span class="m4rec-gap">{{ record_holders.fastest_lap.gap_str or "" }}</span>
           <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
@@ -1535,7 +1537,7 @@ window.initBracketConnectors = initBracketConnectors;
         {% endif %}
         {% if record_holders and record_holders.top_speed %}
         <div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">TOP SPEED</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">{{ ach_labels.top_speed }}</span></span>
           <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span>
           <span class="m4rec-gap">{{ record_holders.top_speed.gap_str or "" }}</span>
           <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
@@ -1543,7 +1545,7 @@ window.initBracketConnectors = initBracketConnectors;
         {% endif %}
         {% if point_leader %}
         <div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">POINT LEADER</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">{{ ach_labels.point_leader }}</span></span>
           <span class="m4rec-val">{{ point_leader.points }} points</span>
           <span class="m4rec-gap"></span>
           <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}{% if point_leader.full_score %}<span class="m4rec-full">FULL SCORE</span>{% endif %}</span>
@@ -1552,22 +1554,22 @@ window.initBracketConnectors = initBracketConnectors;
         {# ===== 称号：SWEEP / GRAND SLAM / SPEED STAR / SPRINTER。該当なしは「該当なし」 ===== #}
         {% if achievements %}
         {% if achievements.sweep is not none %}<div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">💯</span><span class="m4rec-tx">SWEEP</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">💯</span><span class="m4rec-tx">{{ ach_labels.sweep }}</span></span>
           <span class="m4rec-cond">予選 全レース1位（○のみ）</span>
           <span class="m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
         </div>{% endif %}
         {% if achievements.grand_slam is not none %}<div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">👑</span><span class="m4rec-tx">GRAND SLAM</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">👑</span><span class="m4rec-tx">{{ ach_labels.grand_slam }}</span></span>
           <span class="m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span>
           <span class="m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
         </div>{% endif %}
         {% if achievements.speed_star is not none %}<div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">⭐</span><span class="m4rec-tx">SPEED STAR</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">⭐</span><span class="m4rec-tx">{{ ach_labels.speed_star }}</span></span>
           <span class="m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span>
           <span class="m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
         </div>{% endif %}
         {% if achievements.sprinter is not none %}<div class="m4rec-row">
-          <span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">SPRINTER</span></span>
+          <span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">{{ ach_labels.sprinter }}</span></span>
           <span class="m4rec-cond">各セクターの1位</span>
           <span class="m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
         </div>{% endif %}

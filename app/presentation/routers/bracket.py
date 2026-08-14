@@ -1496,6 +1496,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
             point_leader = None
             achievements = None
     # 設定（予選/決勝ON/OFF）を反映：OFF項目はパネルから隠す
+    _ach_cfg_b = None
     try:
         from app.application import qualifying_records as _qrcfg
         _ach_cfg_b = await _qrcfg.get_ach_config(db)
@@ -1503,6 +1504,9 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
             record_holders, point_leader, achievements, _ach_cfg_b)
     except Exception:
         pass
+    # RECORD HOLDERS 見出しの表示名（設定で変更可・未設定は既定名）
+    from app.application import qualifying_records as _qrlbl
+    _ach_labels_b = _qrlbl.labels_from_cfg(_ach_cfg_b)
 
     return templates.TemplateResponse("admin/bracket.html", {
         "request": request,
@@ -1510,6 +1514,7 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
         "record_holders": record_holders,
         "point_leader": point_leader,
         "achievements": achievements,
+        "ach_labels": _ach_labels_b,
         "finalists": finalists,
         "finalist_n": finalist_n,
         "target_n": target_n,
@@ -5178,19 +5183,31 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
           e.preventDefault(); e.stopPropagation();   // is-final のスクロール等を抑止
           var card = document.getElementById('group-' + m[1]); if (!card) return;
           // 反映ボタンがあれば反映（＝未入力）。無ければ取消（＝入力済み）。
+          // どちらも M4LAPS用ボタン(.m4-apply-btn/.m4-reset-btn)に限定する。
+          // ＝「レース情報でM4LAPS使用がON」のときだけ有効。OFF時は両ボタンとも存在
+          //    しない（素の取消ボタンには反応させない）ので、番号クリックは無効になる。
           var ap = card.querySelector('.m4-apply-btn');
           if (ap) { ap.click(); return; }
           var rs = card.querySelector('.m4-reset-btn');
-          if (!rs) {   // M4LAPS無効時の素の取消ボタンにフォールバック
-            var bs = card.querySelectorAll('button');
-            for (var i = 0; i < bs.length; i++) {
-              var oc = bs[i].getAttribute('onclick') || '';
-              if (/reset|取消/.test(oc) || (bs[i].textContent || '').indexOf('取消') >= 0) { rs = bs[i]; break; }
-            }
-          }
           if (rs) { rs.click(); }
         }, true);
       }
+      // 各フラグメント読込ごとに実行：対応カードに M4LAPS用ボタンが無いバッジ
+      //   （＝レース情報でM4LAPS使用がOFF）は、押せそうな見た目とクリックを無効化する。
+      //   結果カードは初期ページに常在するので、この時点で参照できる。
+      (function disableInactiveBadges(){
+        document.querySelectorAll('.br-grp-no').forEach(function(no){
+          var grp = no.closest('.br-group'); if (!grp) return;
+          var mm = (grp.id || '').match(/^vg-(\\d+)$/);
+          var card = mm ? document.getElementById('group-' + mm[1]) : null;
+          var actionable = card && (card.querySelector('.m4-apply-btn') || card.querySelector('.m4-reset-btn'));
+          if (!actionable) {
+            no.style.cursor = '';
+            no.removeAttribute('title');
+            no.classList.remove('br-grp-no');   // ハンドラが拾わなくなる＝クリック無効
+          }
+        });
+      })();
       // グループの高さを取得するユーティリティ
       function getGroupH(g) {
         // offsetHeightをクローンで測定

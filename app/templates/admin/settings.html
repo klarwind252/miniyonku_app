@@ -1342,7 +1342,12 @@
             <tbody>
               {% for it in ach_items %}
               <tr style="border-bottom:1px solid #edf0f2">
-                <td style="padding:8px 10px;font-weight:bold;color:#2c3e50;white-space:nowrap">{{ it.ic }} {{ it.name }}</td>
+                <td style="padding:8px 10px;white-space:nowrap">
+                  <span style="margin-right:5px">{{ it.ic }}</span>
+                  <input type="text" name="{{ it.id }}_label" value="{{ m4laps_ach[it.id].label }}"
+                         placeholder="{{ it.name }}" maxlength="40"
+                         style="width:160px;padding:4px 8px;border:1px solid #ced4da;border-radius:6px;font-size:13px;font-weight:bold;color:#2c3e50">
+                </td>
                 <td style="padding:8px 10px;color:#636e72">{{ it.detail }}</td>
                 <td style="text-align:center;padding:8px 10px"><input type="checkbox" name="{{ it.id }}_panel" style="width:18px;height:18px;accent-color:#2980b9;cursor:pointer" {% if m4laps_ach[it.id].panel %}checked{% endif %}></td>
                 <td style="text-align:center;padding:8px 10px"><input type="checkbox" name="{{ it.id }}_bracket" style="width:18px;height:18px;accent-color:#2980b9;cursor:pointer" {% if m4laps_ach[it.id].bracket %}checked{% endif %}></td>
@@ -1356,6 +1361,7 @@
             {% if request.query_params.get('ach') == 'ok' %}<span style="color:#27ae60;font-size:13px;margin-left:10px">✓ 保存しました</span>{% endif %}
           </div>
           <p style="color:#95a5a6;font-size:12px;margin-top:10px">
+            ※「項目名」は 予選管理・決勝管理 と 公開ページ の「⚡ M4LAPS RECORD HOLDERS」の見出しに反映されます（アイコンは固定）。空欄で保存すると既定名に戻ります。<br>
             ※「トーナメント表」「賞状」は項目の保存のみで、実際の表示は今後の対応です。
           </p>
           </form>

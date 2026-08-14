@@ -1245,6 +1245,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         "record_holders": record_holders,
         "point_leader": point_leader,
         "achievements": achievements,
+        "ach_labels": _qrec.labels_from_cfg(_ach_cfg),
         "entries": entries,
         "qualifying_type": qt,
         "ht_rounds_data": ht_rounds_data,
@@ -1585,6 +1586,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             point_leader = None
             achievements = None
     # 設定（予選/決勝ON/OFF）を反映：OFF項目はパネルから隠す
+    _ach_cfg_b = None
     try:
         from app.application import qualifying_records as _qrcfg
         _ach_cfg_b = await _qrcfg.get_ach_config(db)
@@ -1596,6 +1598,8 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             achievements = None
     except Exception:
         pass
+    from app.application import qualifying_records as _qrlbl
+    _ach_labels_bv = _qrlbl.labels_from_cfg(_ach_cfg_b)
 
     # ── M4LAPS ベスト表（観覧：決勝トーナメント表の下に表示）────────────────
     # 予選ページ（viewer/qualifying）と同一ロジック。TOTAL BEST(TIME/GAP/Av./MAX)・
@@ -1691,4 +1695,5 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         "record_holders": record_holders,
         "point_leader": point_leader,
         "achievements": achievements,
+        "ach_labels": _ach_labels_bv,
     })

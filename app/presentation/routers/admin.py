@@ -352,7 +352,13 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     import json as _json_ach
     _ach_keys = ("overall", "fastest_lap", "top_speed", "point_leader",
                  "sweep", "grand_slam", "speed_star", "sprinter")
-    m4laps_ach = {k: {"panel": True, "bracket": False, "cert": False} for k in _ach_keys}
+    _ach_default_labels = {
+        "overall": "OVERALL", "fastest_lap": "FASTEST LAP", "top_speed": "TOP SPEED",
+        "point_leader": "POINT LEADER", "sweep": "SWEEP", "grand_slam": "GRAND SLAM",
+        "speed_star": "SPEED STAR", "sprinter": "SPRINTER",
+    }
+    m4laps_ach = {k: {"panel": True, "bracket": False, "cert": False,
+                      "label": _ach_default_labels[k]} for k in _ach_keys}
     async with db.execute(
         "SELECT value FROM app_settings WHERE key='m4laps_ach_config'") as cur:
         _ach_row = await cur.fetchone()
@@ -361,10 +367,13 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
             _ach_saved = _json_ach.loads(_ach_row[0])
             for k in _ach_keys:
                 if isinstance(_ach_saved.get(k), dict):
+                    _lb = _ach_saved[k].get("label")
                     m4laps_ach[k] = {
                         "panel": bool(_ach_saved[k].get("panel", True)),
                         "bracket": bool(_ach_saved[k].get("bracket", False)),
                         "cert": bool(_ach_saved[k].get("cert", False)),
+                        "label": (_lb.strip() if isinstance(_lb, str) and _lb.strip()
+                                  else _ach_default_labels[k]),
                     }
         except Exception:
             pass
@@ -455,12 +464,20 @@ async def m4laps_achievements_save(request: Request, db: aiosqlite.Connection = 
     form = await request.form()
     _keys = ("overall", "fastest_lap", "top_speed", "point_leader",
              "sweep", "grand_slam", "speed_star", "sprinter")
+    _default_labels = {
+        "overall": "OVERALL", "fastest_lap": "FASTEST LAP", "top_speed": "TOP SPEED",
+        "point_leader": "POINT LEADER", "sweep": "SWEEP", "grand_slam": "GRAND SLAM",
+        "speed_star": "SPEED STAR", "sprinter": "SPRINTER",
+    }
     cfg = {}
     for k in _keys:
+        _lb = (form.get(k + "_label") or "").strip()
         cfg[k] = {
             "panel":   form.get(k + "_panel") is not None,
             "bracket": form.get(k + "_bracket") is not None,
             "cert":    form.get(k + "_cert") is not None,
+            # 空欄は既定名に戻す。長すぎる入力は 40 文字で切る。
+            "label":   (_lb[:40] if _lb else _default_labels[k]),
         }
     await db.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('m4laps_ach_config', ?)",

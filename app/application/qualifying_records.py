@@ -197,12 +197,25 @@ def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) ->
 _ACH_KEYS = ("overall", "fastest_lap", "top_speed", "point_leader",
              "sweep", "grand_slam", "speed_star", "sprinter")
 
+# 各項目の既定の表示名（設定で自由に変更可能。未設定時はこれを使う）。
+_ACH_DEFAULT_LABELS = {
+    "overall":      "OVERALL",
+    "fastest_lap":  "FASTEST LAP",
+    "top_speed":    "TOP SPEED",
+    "point_leader": "POINT LEADER",
+    "sweep":        "SWEEP",
+    "grand_slam":   "GRAND SLAM",
+    "speed_star":   "SPEED STAR",
+    "sprinter":     "SPRINTER",
+}
+
 
 async def get_ach_config(db) -> dict:
-    """各項目の panel(予選/決勝) / bracket(トーナメント表) / cert(賞状) のON/OFF。
-    未設定は panel=True（従来どおり全表示）。"""
+    """各項目の panel(予選/決勝) / bracket(トーナメント表) / cert(賞状) のON/OFF＋label(表示名)。
+    未設定は panel=True（従来どおり全表示）、label は既定名。"""
     import json as _j
-    cfg = {k: {"panel": True, "bracket": False, "cert": False} for k in _ACH_KEYS}
+    cfg = {k: {"panel": True, "bracket": False, "cert": False,
+               "label": _ACH_DEFAULT_LABELS[k]} for k in _ACH_KEYS}
     try:
         async with db.execute(
             "SELECT value FROM app_settings WHERE key='m4laps_ach_config'") as cur:
@@ -214,9 +227,23 @@ async def get_ach_config(db) -> dict:
                     cfg[k]["panel"] = bool(saved[k].get("panel", True))
                     cfg[k]["bracket"] = bool(saved[k].get("bracket", False))
                     cfg[k]["cert"] = bool(saved[k].get("cert", False))
+                    _lb = saved[k].get("label")
+                    if isinstance(_lb, str) and _lb.strip():
+                        cfg[k]["label"] = _lb.strip()
     except Exception:
         pass
     return cfg
+
+
+def labels_from_cfg(cfg: dict) -> dict:
+    """get_ach_config の結果から {key: 表示名} を取り出す（テンプレへ渡す用）。"""
+    cfg = cfg or {}
+    return {k: (cfg.get(k, {}).get("label") or _ACH_DEFAULT_LABELS[k]) for k in _ACH_KEYS}
+
+
+async def get_ach_labels(db) -> dict:
+    """{key: 表示名} を返す簡易ヘルパー（RECORD HOLDERS 見出しの差し替え用）。"""
+    return labels_from_cfg(await get_ach_config(db))
 
 
 def apply_panel_config(record_holders, point_leader, achievements, cfg):
