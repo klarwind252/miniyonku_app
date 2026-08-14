@@ -97,17 +97,29 @@ static constexpr uint32_t OVERRIDE_HOLD_MS = 3000;  // 灰3秒超で封じ強制
 //  ⚠非ブロッキング：loopをdelayで止めない（millis管理で消灯）。計測中・エラー面では鳴らさない。
 static constexpr int      PIN_BUZZER = 12;   // ストラップだが実機で書込み/起動OK確認済(20260811)
 static constexpr uint32_t BUZZER_MS  = 60;   // 鳴動長（80→40→20→60で実機比較し確定）
+static constexpr uint32_t BUZZER_ERR_MS = 1000;  // エラー発生時の「ピー」（1秒・1回だけ）
 static uint32_t s_buzz_off_ms = 0;           // 0=消灯中／非0=この millis で消灯予定
-static inline void buzzer_beep() {           // S/G通過の瞬間に呼ぶ（非ブロッキング開始）
+static inline void buzzer_start(uint32_t ms) {   // 非ブロッキング開始（ms鳴らす）
   digitalWrite(PIN_BUZZER, HIGH);
-  s_buzz_off_ms = millis() + BUZZER_MS;
+  s_buzz_off_ms = millis() + ms;
   if (s_buzz_off_ms == 0) s_buzz_off_ms = 1; // millis境界で0になる稀ケースを回避
+}
+static inline void buzzer_beep() {           // S/G通過の瞬間に呼ぶ（60ms「ピッ」）
+  buzzer_start(BUZZER_MS);
 }
 static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来たら消灯）
   if (s_buzz_off_ms && (int32_t)(millis() - s_buzz_off_ms) >= 0) {
     digitalWrite(PIN_BUZZER, LOW);
     s_buzz_off_ms = 0;
   }
+}
+// エラー表示の立ち上がり（無→有）でだけ 1秒「ピー」を1回鳴らす。
+//  err_now=エラー面を出しているか。出し続けている間は再鳴動しない（1回だけ）。
+//  エラーが一旦消えて再発したら、また1回鳴る。tick_display（約4fps）から呼ぶ。
+static inline void buzzer_error_edge(bool err_now) {
+  static bool prev = false;
+  if (err_now && !prev) buzzer_start(BUZZER_ERR_MS);
+  prev = err_now;
 }
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
@@ -758,6 +770,24 @@ void setup() {
   Serial.println("稼働開始。赤=スタート / 灰長押し=RESET。");
 }
 
+// 経過秒フィールド（案B）の設定。
+//  s_show_ontrack：いまフルフレーム層にON TRACK画面が出ているか（tick_displayが4fpsで更新）。
+//   これがtrueのときだけ経過秒フィールドを上に重ねる（エラー面の上に重ねない保険）。
+static bool s_show_ontrack = false;
+static constexpr uint32_t TIME_FIELD_MS = 33;   // 約30fps（1000/30≒33）
+
+// 経過秒フィールドだけを高頻度で部分更新する（案B）。loop()から毎周回呼ぶ。
+//  tick_displayの250msゲートに縛られず、ON TRACK表示中のみ経過秒を機敏に動かす。
+//  ⚠打刻はISR/tsync由来なので、この描画頻度は計測精度に一切影響しない。
+static void tick_time_field() {
+  if (!s_show_ontrack) return;                        // ON TRACK表示中のみ
+  static uint32_t last_t = 0;
+  if (millis() - last_t < TIME_FIELD_MS) return;      // 約30fpsに間引き
+  last_t = millis();
+  uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
+  disp::draw_time_field(elapsed, /*hundredths=*/true);   // 1/100秒（ストップウォッチ的）
+}
+
 // ---- TFT描画：状態機械に同期して画面を切り替える（docs/20・12.3）----------
 //  ステータスバーの○×はここで g_status に反映してから各画面を描く。
 static void tick_display() {
@@ -788,6 +818,8 @@ static void tick_display() {
     if (disp::g_status.rc_dup) errs[cnt++].kind = disp::ERR_RC_DUP;
     disp::draw_error(errs, cnt);
     disp::commit();               // ステータスバーを重ねて転送
+    s_show_ontrack = false;       // エラー面の上に経過秒を重ねない
+    buzzer_error_edge(true);      // エラー発生の立ち上がりで1秒1回
     return;
   }
 
@@ -815,6 +847,8 @@ static void tick_display() {
       }
       disp::draw_error(errs, cnt);
       disp::commit();
+      s_show_ontrack = false;     // エラー面の上に経過秒を重ねない
+      buzzer_error_edge(true);    // エラー発生の立ち上がりで1秒1回
       return;
     }
   }
@@ -822,18 +856,22 @@ static void tick_display() {
   switch (s_state) {
     case ST_IDLE:
       disp::draw_idle();
+      s_show_ontrack = false;
       break;
     case ST_ARMED:
       // ARMED画面はTFTでは持たない（docs/20.6・シグナル機が担当）。待機表示を維持。
       disp::draw_idle();
+      s_show_ontrack = false;
       break;
     case ST_GREEN:
     case ST_RACE: {
       uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
       disp::draw_ontrack(elapsed, blink, s_target_laps);
+      s_show_ontrack = true;      // 以降、経過秒フィールドを約30fpsで重ねる
       break;
     }
   }
+  buzzer_error_edge(false);              // エラー無し＝立ち上がり検出をリセット（再発時にまた1回鳴る）
   disp::commit();                        // ステータスバーを重ねて一括転送
 }
 
@@ -860,5 +898,6 @@ void loop() {
   //   （旧: static uint32_t last=0; if (millis()-last>3000){ last=millis(); flush_spool(); }）
 
   tick_fetch_layout();   // #14：成功60s/失敗5sのバックオフで /for_gw を取得
-  tick_display();        // TFT描画（状態機械に同期・約4fps）
+  tick_display();        // TFT描画：全画面フル更新（状態機械に同期・約4fps）
+  tick_time_field();     // 案B：ON TRACK経過秒だけ約30fpsで部分更新（機敏に動かす）
 }

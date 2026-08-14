@@ -142,6 +142,7 @@
   .smp-note-tag{margin-top:4px;font-size:10px;line-height:1.35;color:#8a6d1f;
     background:#fff8e1;border:1px solid #f0e0a8;border-radius:6px;
     padding:3px 6px;max-width:150px;word-break:break-word;white-space:normal}
+  .smp-note-tag .smp-note-line{white-space:nowrap}
   /* 📈グラフ ボタン */
   .chart-btn{background:#2c7be5;color:#fff;border:1px solid #2c7be5;
     font-size:14px;font-weight:bold;padding:8px 10px;width:100%;
@@ -369,13 +370,11 @@
               </div>
               {% if row.sample_note %}
               <div class="smp-note-tag" title="サンプル送信で生成したイレギュラーパターン">
-                🧪 {{ row.sample_note }}
+                {% if row.sample_note_lines %}
+                  {% for ln in row.sample_note_lines %}<div class="smp-note-line">{{ ln }}</div>{% endfor %}
+                {% else %}🧪 {{ row.sample_note }}{% endif %}
               </div>
               {% endif %}
-              <div style="margin-top:4px">
-                <button type="button" class="btn btn-sm act-btn chart-btn"
-                        onclick="openPositionChart({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">📈 訂正</button>
-              </div>
             </td>
             {% endif %}
             {# POS・LANE・TOTAL はレーンごとに1回だけ #}
@@ -430,6 +429,9 @@
               <button type="button" class="btn btn-secondary btn-sm act-btn"
                       title="この計測結果の平均速度・通過速度を、現在の設定で計算し直します"
                       onclick="recalcRaceSpeeds({{ row.race_id }})">🔄 Av.再計算</button>
+              <button type="button" class="btn btn-sm act-btn chart-btn"
+                      title="順位変動グラフ・通過ログを表示します"
+                      onclick="openPositionChart({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">📈 グラフ</button>
               <button type="button" class="btn btn-danger btn-sm act-btn"
                       onclick="deleteRace({{ row.race_id }}, '{{ row.date_part }} {{ row.time_part }}')">🗑 削除</button>
             </td>

@@ -84,6 +84,16 @@ static TFT_eSprite s_spr = TFT_eSprite(&s_tft);   // PSRAMフルフレーム裏�
 
 static bool s_ok = false;
 
+// ---- 経過秒フィールド（案B：この矩形だけ高頻度で部分転送）------------------
+//  ON TRACKの経過秒を、フル画面(約4fps)とは別に約30fpsで小領域だけ書き換える。
+//  この小スプライトの位置/フォント/右揃えは draw_ontrack の経過秒描画と同一に
+//  合わせてある（screen(312,8)基準）。フルフレームが下地、これを上に重ねる。
+//  ⚠経過秒は「見せかけの表示」で、公式タイムはS/GのISR打刻(µs)で確定するため、
+//    ここの描画頻度は計測精度に一切影響しない。
+static constexpr int TIME_X = 186, TIME_Y = 2, TIME_W = 130, TIME_H = 38;
+static TFT_eSprite s_time_spr = TFT_eSprite(&s_tft);
+static bool s_time_ok = false;
+
 static void begin() {
   s_tft.init();
   s_tft.setRotation(3);           // 横向き 320x240
@@ -93,6 +103,12 @@ static void begin() {
   void* p = s_spr.createSprite(W, H);
   s_ok = (p != nullptr);
   if (!s_ok) { Serial.println("[TFT] sprite確保失敗（PSRAM未有効？）"); }
+  // 経過秒フィールド用の小スプライト（約10KB）。確保失敗時はフルフレームの
+  // 4fps描画にフォールバックするだけなので致命ではない。
+  s_time_spr.setColorDepth(16);
+  void* pt = s_time_spr.createSprite(TIME_W, TIME_H);
+  s_time_ok = (pt != nullptr);
+  if (!s_time_ok) { Serial.println("[TFT] timeスプライト確保失敗（4fpsで継続）"); }
 }
 static inline bool ready() { return s_ok; }
 
@@ -188,10 +204,12 @@ static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
   s_spr.setTextColor(C_ONTRK, C_BLACK);
   s_spr.setTextFont(4);
   s_spr.drawString("ON TRACK", 28, 16);
-  // 経過秒（右上・大きく）
+  // 経過秒（右上・大きく）。1/100秒表示（案B：フィールド側と解像度を一致）。
+  //  この描画はフルフレーム(約4fps)の下地。実際に機敏に動くのは下の
+  //  draw_time_field()による約30fpsの部分更新（同じ位置・同じ書式に重なる）。
   s_spr.setTextDatum(TR_DATUM);
   s_spr.setTextColor(C_WHITE, C_BLACK);
-  char t[16]; snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
+  char t[16]; snprintf(t, sizeof(t), "%.2f", elapsed_ms / 1000.0);
   s_spr.drawString(t, W - 8, 8);
 
   // 3レーン枠（枠線＝レーン色）。中身のラップは実データ流し込みで拡張。
@@ -357,6 +375,25 @@ static void draw_error(const ErrItem* errs, int cnt) {
 }
 
 // ===== 画面確定→転送 ========================================================
+// ===== 経過秒フィールドの部分更新（案B）====================================
+//  ON TRACK中に高頻度で呼ぶ。小スプライトへ経過秒だけ描いて小領域転送する。
+//  位置/フォント/右揃えは draw_ontrack の経過秒と同一なので、フルフレームの
+//  上にぴったり重なる。転送量は約10KB(≒3ms/回)でSPI負荷は軽い。
+//  hundredths=true で 1/100秒（ストップウォッチ的）、false で 1/10秒。
+static void draw_time_field(uint32_t elapsed_ms, bool hundredths) {
+  if (!s_time_ok) return;
+  s_time_spr.fillSprite(C_BLACK);
+  s_time_spr.setTextDatum(TR_DATUM);
+  s_time_spr.setTextColor(C_WHITE, C_BLACK);
+  s_time_spr.setTextFont(4);
+  char t[16];
+  if (hundredths) snprintf(t, sizeof(t), "%.2f", elapsed_ms / 1000.0);
+  else            snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
+  // ローカル(126,6)=screen(312,8)=draw_ontrackの(W-8,8)に一致。
+  s_time_spr.drawString(t, TIME_W - 4, 6);
+  s_time_spr.pushSprite(TIME_X, TIME_Y);
+}
+
 //  各draw_*の後に呼ぶ。ステータスバーを重ねてから一括push（ちらつき無し）。
 static void commit() {
   if (!s_ok) return;

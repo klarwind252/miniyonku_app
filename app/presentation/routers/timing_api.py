@@ -431,6 +431,8 @@ async def results_page(
                     "heat_id": race["heat_id"],
                     "mode": result.mode,               # 'f1'=レース / 'run'=フリー
                     "sample_note": (r["sample_note"] if "sample_note" in r.keys() else None),
+                    "sample_note_lines": _format_sample_note_lines(
+                        r["sample_note"] if "sample_note" in r.keys() else None),
                     "status": (r["status"] if "status" in r.keys() else "confirmed"),
                     "jump_start": m.jump_start,         # G1(24.53)：フライング=JS表示
                     "missing": m.missing,               # E1(24.37)：欠測あり=⚠要確認表示
@@ -1288,6 +1290,33 @@ def _best_rank(value, tops, tol: float = 1e-6) -> int:
         if t is not None and abs(value - t) < tol:
             return i
     return 0
+
+
+def _format_sample_note_lines(note: str | None) -> list[str] | None:
+    """一覧セル用に sample_note を1レーン=1行へ整形する（モーダルは生文字列のまま）。
+
+    入力例:  "完走1／CO2 ｜ L1:CO(2周目：SQ0-SQ1) L2:完走 L3:CO(1周目：GW-SQ0)"
+    出力例:  ["L1：CO　[2周目SQ0-SQ1]", "L2：完走", "L3：CO　[1周目GW-SQ0]"]
+
+    - 先頭のサマリ（"完走1／CO2 ｜ "）は落とす。
+    - 各レーンは "L{n}：{種別}"。区間があれば全角スペース＋"[…]"で続ける。
+      区間内の全角コロン "：" は詰める（"2周目：SQ0-SQ1" → "2周目SQ0-SQ1"）。
+    """
+    if not note:
+        return None
+    body = note.split(" ｜ ", 1)[1] if " ｜ " in note else note
+    lines: list[str] = []
+    for token in body.split(" "):
+        if ":" not in token:
+            continue
+        label, rest = token.split(":", 1)          # "L1", "CO(2周目：SQ0-SQ1)"
+        if "(" in rest and rest.endswith(")"):
+            kind, inner = rest[:-1].split("(", 1)   # "CO", "2周目：SQ0-SQ1"
+            inner = inner.replace("：", "")
+            lines.append(f"{label}：{kind}　[{inner}]")
+        else:
+            lines.append(f"{label}：{rest}")
+    return lines or None
 
 
 def _split_ts(ts) -> tuple[str, str]:
