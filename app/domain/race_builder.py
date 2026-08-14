@@ -393,8 +393,13 @@ def build_race(
             lap_time = cur_t - prev_t
             lapres = LapResult(lap=lap, lap_time_us=lap_time)
 
-            # セクター: この周の各ゲート通過時刻の差
-            lapres.sectors = _build_sectors(course, gates_map, lap, sg_gate, prev_t, cur_t)
+            # セクター: この周の各ゲート通過時刻の差。
+            #   提案B(24.1)：その周の区間ゲートが全て揃った「きれいな周」だけ区間を出す。
+            #   1つでも欠けた／曖昧な周は無理に集計せず、S/Gだけで確定する1周タイムのみ残す
+            #   （セクター・速度は挿入しない）。完全データ（通常レース）は常に全周揃うので不変。
+            if _lap_sectors_clean(course, gates_map, lap):
+                lapres.sectors = _build_sectors(course, gates_map, lap, sg_gate, prev_t, cur_t)
+            # else: lapres.sectors は空のまま（1周タイムのみ）
 
             mres.laps.append(lapres)
             prev_t = cur_t
@@ -459,6 +464,23 @@ def n2g_index(course: CourseModel, gate_index: int) -> Gate:
         if g.index == gate_index:
             return g
     raise KeyError(gate_index)
+
+
+def _lap_sectors_clean(
+    course: CourseModel,
+    gates_map: dict[int, dict[int, tuple[int, PassEvent]]],
+    lap: int,
+) -> bool:
+    """提案B：その周(lap)の区間ゲート(SQ)が全て揃っているか。
+
+    1つでもこの周の通過が無ければ False＝その周はセクターを出さない（1周タイムのみ）。
+    S/Gは必ず通る前提なので、判定対象はSQゲートのみ。完全データ（通常レース）は
+    全周・全SQが揃うので常に True＝従来どおり全セクターを出す（無回帰）。
+    """
+    for g in course.gates:
+        if g.kind == "SQ" and lap not in gates_map.get(g.index, {}):
+            return False
+    return True
 
 
 def _build_sectors(
