@@ -145,6 +145,139 @@ def _node_to_gate(course: CourseModel) -> dict[int, Gate]:
     return {g.node_id: g for g in course.gates if g.node_id is not None}
 
 
+def _events_complete(
+    grouped: dict[tuple[int, int], list],
+    course: CourseModel,
+    sg_gate: Gate,
+    target_laps: int,
+    lanes: int,
+) -> bool:
+    """データが「全車完走・欠測なし」で完全かを判定する。
+
+    完全なら各ゲートの通過総数は
+      S/G  = lanes * (target_laps + 1)
+      各SQ = lanes * target_laps
+    と一致する。CO/DNS/スキップ/剥奪(E3/E4)が1つでもあれば総数が減るので False。
+    完全なときだけ現行の出現順同定（厳密・無回帰）を使う。
+    """
+    def cnt(gate_index: int) -> int:
+        return sum(len(v) for (ln, gi), v in grouped.items() if gi == gate_index)
+
+    if cnt(sg_gate.index) != lanes * (target_laps + 1):
+        return False
+    for g in course.gates:
+        if g.kind == "SQ" and cnt(g.index) != lanes * target_laps:
+            return False
+    return True
+
+
+def _reconstruct_incomplete(
+    grouped: dict[tuple[int, int], list],
+    course: CourseModel,
+    sg_gate: Gate,
+    target_laps: int,
+    lanes: int,
+    green_t_us: int | None,
+    mode: StartMode,
+) -> dict[int, dict[int, dict[int, tuple[int, PassEvent]]]]:
+    """欠測あり（CO/DNS/スキップ）向けの再構成。
+
+    出現順の前提が崩れるため、マシンごとに「自分の開始時刻と1周ペースで次周を予測し、
+    その時間窓内で予測に最も近いS/G通過だけを自分のものとして拾う」。脱落したマシンが
+    他車の後続打刻を横取りしないので誤同定を避けられる（22章・R系検証で確定）。
+
+    出力は現行と同じ machine_passings 構造:
+      machine_passings[start_lane][gate_index][lap_key] = (t_us, event)
+      S/G は lap_key=passing(0=スタート,1..=周完了)、SQ は lap_key=lap(1..)。
+    これをそのまま既存の下流（ラップ/セクター/total/dnf/missing 組立）に渡す。
+    """
+    from app.domain.rotation import expected_lane, expected_sg_lane
+
+    rot = course.rot_total
+    sg_index = sg_gate.index
+    n_gates = len(course.gates)
+
+    # 消費フラグ付きの可変在庫（grouped は時刻昇順済み）: (phys, gate_index) -> [[t, ev, used], ...]
+    avail: dict[tuple[int, int], list] = {}
+    for (ln, gi), lst in grouped.items():
+        avail[(ln, gi)] = [[t, ev, False] for (t, ev, _g) in lst]
+
+    sg_all = [it[0] for (ph, gi), l in avail.items() if gi == sg_index for it in l]
+    if not sg_all:
+        return {}
+    # t0: F1式は緑、走行式はS/G最初の打刻。avg: 1周のおおよその長さ（窓推定用）。
+    t0 = green_t_us if (mode == "f1" and green_t_us is not None) else min(sg_all)
+    span = max(sg_all) - t0
+    avg = max(span / target_laps, 1) if target_laps > 0 else max(span, 1)
+
+    def claim(phys: int, gi: int, lo: float, hi: float, pred: float):
+        """(phys, gi) の未消費イベントのうち (lo, hi] 内で pred に最も近い1件を消費して返す。"""
+        lst = avail.get((phys, gi))
+        if not lst:
+            return None
+        best = None
+        for it in lst:
+            if it[2]:
+                continue
+            if lo < it[0] <= hi:
+                d = abs(it[0] - pred)
+                if best is None or d < best[1]:
+                    best = (it, d)
+        if best is None:
+            return None
+        best[0][2] = True
+        return (best[0][0], best[0][1])  # (t_us, ev)
+
+    machine_passings: dict[int, dict[int, dict[int, tuple[int, PassEvent]]]] = {}
+
+    for s in range(1, lanes + 1):
+        # スタート打刻（緑直後・物理レーン=s）
+        L0 = expected_sg_lane(s, 0, rot, lanes)
+        st = claim(L0, sg_index, t0 - 1, t0 + 0.6 * avg, t0)
+        if st is None:
+            continue  # スタート打刻なし＝このレーンはデータなし（DNS等）。枠は作らない。
+        sgmap: dict[int, tuple[int, PassEvent]] = {0: st}
+
+        # 1周目（自ペース未知→globalの avg で窓）
+        L1 = expected_sg_lane(s, 1, rot, lanes)
+        p1 = claim(L1, sg_index, st[0] + 0.35 * avg, st[0] + 1.7 * avg, st[0] + avg)
+        comp = 0
+        if p1 is not None:
+            sgmap[1] = p1
+            lap_s = max(p1[0] - st[0], 1)
+            last = p1[0]
+            comp = 1
+            # 2周目以降は自分の1周ペースで窓を絞る（横取り=約1周ズレは窓外で棄却）
+            for p in range(2, target_laps + 1):
+                Lp = expected_sg_lane(s, p, rot, lanes)
+                cp = claim(Lp, sg_index, last + 0.45 * lap_s, last + 1.55 * lap_s, last + lap_s)
+                if cp is None:
+                    break
+                sgmap[p] = cp
+                last = cp[0]
+                comp = p
+
+        gates_map: dict[int, dict[int, tuple[int, PassEvent]]] = {sg_index: sgmap}
+
+        # 各完了周のSQを、期待物理レーン＋周内時間窓（予測最近）で付与
+        for k in range(1, comp + 1):
+            lo = sgmap[k - 1][0]
+            hi = sgmap[k][0]
+            lap_len = max(hi - lo, 1)
+            for g in course.gates:
+                if g.kind != "SQ":
+                    continue
+                phys = expected_lane(s, k, g.rot_to_gate, rot, lanes)
+                pred = lo + (g.index / n_gates) * lap_len
+                got = claim(phys, g.index, lo, hi, pred)
+                if got is not None:
+                    gates_map.setdefault(g.index, {})[k] = got
+
+        machine_passings[s] = gates_map
+
+    return machine_passings
+
+
 def build_race(
     layout: list[LayoutElement],
     events: list[PassEvent],
@@ -208,26 +341,36 @@ def build_race(
     # machine_passings[start_lane][gate_index] = { lap: (t_us, event) }
     machine_passings: dict[int, dict[int, dict[int, tuple[int, PassEvent]]]] = {}
 
-    for (phys_lane, gate_index), lst in grouped.items():
-        gate = n2g_index(course, gate_index)
-        for occurrence, (t_us, ev, _g) in enumerate(lst):
-            # S/Gは passing=0 がスタート、passing=k が k周目完了。
-            # セクションゲートは occurrence 0 が 1周目。
-            if gate.kind == "SG":
-                passing = occurrence           # 0=スタート, 1..=周回完了
-                lap_for_identify = passing     # S/Gの同定は passing をそのまま lap 相当に
-                # start_lane 同定（S/Gは rot_to_gate=0・passing周ぶんずれる）
-                start_lane = _identify_from_sg(phys_lane, passing, course.rot_total, lanes)
-                lap_key = passing              # 0=スタート打刻
-            else:
-                lap = occurrence + 1           # 1周目=1
-                start_lane = identify_start_lane(
-                    phys_lane, lap, gate.rot_to_gate, course.rot_total, lanes
-                )
-                lap_key = lap
+    if _events_complete(grouped, course, sg_gate, target_laps, lanes):
+        # 完全データ（全車完走・欠測なし）＝通常のレース。
+        #   各 (レーン, ゲート) の n 回目が n 周目、という出現順の前提が厳密に成り立つので
+        #   現行ロジックのまま同定する（本番の通常レースは一切挙動を変えない・無回帰）。
+        for (phys_lane, gate_index), lst in grouped.items():
+            gate = n2g_index(course, gate_index)
+            for occurrence, (t_us, ev, _g) in enumerate(lst):
+                # S/Gは passing=0 がスタート、passing=k が k周目完了。
+                # セクションゲートは occurrence 0 が 1周目。
+                if gate.kind == "SG":
+                    passing = occurrence           # 0=スタート, 1..=周回完了
+                    # start_lane 同定（S/Gは rot_to_gate=0・passing周ぶんずれる）
+                    start_lane = _identify_from_sg(phys_lane, passing, course.rot_total, lanes)
+                    lap_key = passing              # 0=スタート打刻
+                else:
+                    lap = occurrence + 1           # 1周目=1
+                    start_lane = identify_start_lane(
+                        phys_lane, lap, gate.rot_to_gate, course.rot_total, lanes
+                    )
+                    lap_key = lap
 
-            machine_passings.setdefault(start_lane, {}) \
-                            .setdefault(gate_index, {})[lap_key] = (t_us, ev)
+                machine_passings.setdefault(start_lane, {}) \
+                                .setdefault(gate_index, {})[lap_key] = (t_us, ev)
+    else:
+        # 欠測あり（CO/DNS/スキップ/剥奪）＝出現順の前提が崩れる。
+        #   マシンごとに自ペースで次周を同定する再構成に切り替える（横取りを防ぐ）。
+        #   完全データ時の挙動には一切影響しない。
+        machine_passings = _reconstruct_incomplete(
+            grouped, course, sg_gate, target_laps, lanes, green_t_us, mode
+        )
 
     # --- スタートレーンごとに結果を組む ---
     for start_lane, gates_map in machine_passings.items():
