@@ -1194,8 +1194,8 @@ window.initBracketConnectors = initBracketConnectors;
 {% for rno in rounds_list | sort %}
 {% set rg = normal_groups | selectattr("round.round_no", "equalto", rno) | list %}
 {% set rnd_label = rg[0].round.label if rg and rg[0].round.label is defined else "ラウンド" ~ rno %}
-{# 図の番号バッジで反映/取消できる通常ラウンドのカードは非表示（DOMには残しバッジ経由で押下可）。決勝カードは手動順位入力の逃げ道として残す。 #}
-{% set _hide_card = m4_on and rnd_label != '決勝' %}
+{# 結果入力カードの要否（M4LAPS ON/OFF で統一）：図から入力できる通常ラウンドは非表示（DOMには残す＝ON時は番号バッジ・OFF時は図の名前クリックで入力）。決勝カードは手動順位入力の逃げ道として残す。3位決定戦・敗者復活戦は別セクションで常時表示。 #}
+{% set _hide_card = rnd_label != '決勝' %}
 <div style="margin-bottom:3px{% if _hide_card %};display:none{% endif %}">
   <span class="round-header {% if rnd_label == '決勝' %}rh-final{% else %}rh-normal{% endif %}">
     {{ rnd_label }}

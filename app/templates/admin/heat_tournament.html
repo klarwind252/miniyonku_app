@@ -364,7 +364,7 @@
   </div>
   <div id="ht-cards-{{ hno }}-{{ sec.section_no }}" style="padding:0 16px 12px">
     {% set sec_rounds = sec.rounds %}
-    {# 結果入力カードの要否：M4LAPS ON時は通常ラウンド(準決勝等)は図の番号バッジで反映/取消できるためカードを非表示(display:none／DOMには残しバッジ経由で押下可)。決勝・3位決定戦・敗者復活戦は表示。OFFは全表示。図の描画は別divなので不変。 #}
+    {# 結果入力カードの要否（M4LAPS ON/OFF で統一）：図（トーナメント表）から入力できる通常ラウンド(準々決勝・準決勝・ラウンドN)はカードを非表示(display:none／DOMには残す＝ON時は番号バッジで反映/取消・OFF時は図の名前クリックで入力)。決勝・3位決定戦・敗者復活戦は表示。図の描画は別divなので不変。 #}
     {% set _normal_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
     {% set sorted_rounds = (_normal_rounds
                          + (sec_rounds | selectattr('round_type','equalto','third') | list)
@@ -384,7 +384,7 @@
       {% else %}{% set rlabel='ラウンド' ~ rnd.round_no %}{% endif %}
       {% set rbg='rh-normal' %}
     {% endif %}
-    {% set _hide_card = m4_on and not is_rank_rnd and rnd.round_type != 'revival' %}
+    {% set _hide_card = not is_rank_rnd and rnd.round_type != 'revival' %}
     <span class="round-header {{ rbg }}"{% if _hide_card %} style="display:none"{% endif %}>{{ rlabel }}</span>
     <div class="grp-grid"{% if _hide_card %} style="display:none"{% endif %}>
     {% for gd in sec.groups_data if gd.round.id == rnd.id %}
@@ -495,7 +495,7 @@
   </div>
   <div id="ht-cards-{{ hno }}-0" style="padding:0 16px 12px">
     {% set sec_rounds = sec.rounds %}
-    {# 結果入力カードの要否：M4LAPS ON時は通常ラウンドを非表示(display:none)・決勝/3位/敗者復活は表示。OFFは全表示。 #}
+    {# 結果入力カードの要否（M4LAPS ON/OFF で統一）：図から入力できる通常ラウンドは非表示(display:none)・決勝/3位/敗者復活は表示。 #}
     {% set _normal_rounds = (sec_rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
     {% set sorted_rounds = (_normal_rounds
                          + (sec_rounds | selectattr('round_type','equalto','third') | list)
@@ -506,7 +506,7 @@
     {% set is_rank_rnd = is_final_rnd or is_third_rnd %}
     {% set rlabel = '決勝' if is_final_rnd else '3位決定戦' if is_third_rnd else 'ラウンド' ~ rnd.round_no %}
     {% set rbg = 'rh-final' if is_final_rnd else 'rh-third' if is_third_rnd else 'rh-normal' %}
-    {% set _hide_card = m4_on and not is_rank_rnd and rnd.round_type != 'revival' %}
+    {% set _hide_card = not is_rank_rnd and rnd.round_type != 'revival' %}
     <div style="margin:8px 0 4px{% if _hide_card %};display:none{% endif %}">
       <span class="round-header {{ rbg }}" style="margin:0">{{ rlabel }}</span>
     </div>
@@ -582,7 +582,7 @@
   </div>
 
   <div id="ht-cards-{{ hno }}" style="padding:8px 16px 4px">
-  {# 結果入力カードの要否：M4LAPS ON時は通常ラウンドを非表示(display:none)・決勝/3位/敗者復活は表示。OFFは全表示。 #}
+  {# 結果入力カードの要否（M4LAPS ON/OFF で統一）：図から入力できる通常ラウンドは非表示(display:none)・決勝/3位/敗者復活は表示。 #}
   {% set _normal_rounds = (rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
   {% set sorted_rounds = (_normal_rounds
                        + (rounds | selectattr('round_type','equalto','third') | list)
@@ -602,7 +602,7 @@
     {% else %}{% set rlabel='ラウンド' ~ rnd.round_no %}{% endif %}
     {% set rbg='rh-normal' %}
   {% endif %}
-  {% set _hide_card = m4_on and not is_rank_rnd and rnd.round_type != 'revival' %}
+  {% set _hide_card = not is_rank_rnd and rnd.round_type != 'revival' %}
   <span class="round-header {{ rbg }}"{% if _hide_card %} style="display:none"{% endif %}>{{ rlabel }}</span>
   <div class="grp-grid"{% if _hide_card %} style="display:none"{% endif %}>
   {% for gd in groups_data if gd.round.id == rnd.id %}
