@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include "protocol.h"
 #include "espnow_link.h"
+#include "chfollow.h"
 
 #ifndef NODE_ID
 #define NODE_ID 8
@@ -56,7 +57,17 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
   if (h.type == proto::PT_JOIN_ACK && body_len >= (int)sizeof(proto::JoinAckBody)) {
     proto::JoinAckBody b; memcpy(&b, body, sizeof(b));
     if (b.node_id == NODE_ID) s_assigned = true;
+    if (b.channel >= 1 && b.channel <= 13) mesh::set_channel(b.channel);  // 状態B：GWのchへ
   }
+}
+
+static void send_join() {
+  proto::JoinBody jb = {};
+  WiFi.macAddress(jb.mac);
+  jb.kind = proto::KIND_RC;
+  jb.fw_major = FW_MAJOR; jb.fw_minor = FW_MINOR;
+  jb.nvs_node_id = NODE_ID;
+  mesh::send(proto::PT_JOIN, 6, &jb, sizeof(jb));
 }
 
 static void tick_presence() {
@@ -65,16 +76,8 @@ static void tick_presence() {
   uint32_t interval = s_assigned ? 3000 : 1000;
   if (nowm - last < interval) return;
   last = nowm;
-  if (!s_assigned) {
-    proto::JoinBody jb = {};
-    WiFi.macAddress(jb.mac);
-    jb.kind = proto::KIND_RC;
-    jb.fw_major = FW_MAJOR; jb.fw_minor = FW_MINOR;
-    jb.nvs_node_id = NODE_ID;
-    mesh::send(proto::PT_JOIN, 6, &jb, sizeof(jb));
-  } else {
-    mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
-  }
+  if (!s_assigned) send_join();
+  else             mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
 }
 
 void setup() {
@@ -83,13 +86,15 @@ void setup() {
   Serial.printf("\n=== M4LAPS Remote RC%d ===\n", NODE_ID);
   pinMode(PIN_RED,  INPUT_PULLUP);
   pinMode(PIN_GRAY, INPUT_PULLUP);
-  if (!mesh::begin(NODE_ID, ESPNOW_CHANNEL, on_recv)) {
+  uint8_t ch0 = chfollow::initial_channel(ESPNOW_CHANNEL);
+  if (!mesh::begin(NODE_ID, ch0, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
   }
-  Serial.println("稼働開始。赤=SIGNAL / 灰=RESET。");
+  Serial.printf("稼働開始（ch=%d・GWへ自動追従）。赤=SIGNAL / 灰=RESET。\n", ch0);
 }
 
 void loop() {
+  chfollow::tick(send_join);   // GWのchへ追従（在圏切れで1..13走査）
   tick_presence();
   if (s_red.pressed())  { send_command(proto::CMD_SIGNAL); Serial.println("[BTN] SIGNAL"); }
   if (s_gray.pressed()) { send_command(proto::CMD_RESET);  Serial.println("[BTN] RESET");  }

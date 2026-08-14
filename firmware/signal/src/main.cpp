@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include "protocol.h"
 #include "espnow_link.h"
+#include "chfollow.h"
 
 #ifndef NODE_ID
 #define NODE_ID 10
@@ -55,6 +56,7 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
       if (body_len >= (int)sizeof(proto::JoinAckBody)) {
         proto::JoinAckBody b; memcpy(&b, body, sizeof(b));
         if (b.node_id == NODE_ID) s_assigned = true;
+        if (b.channel >= 1 && b.channel <= 13) mesh::set_channel(b.channel);  // 状態B：GWのchへ
       }
     } break;
     case proto::PT_COMMAND: {
@@ -72,22 +74,23 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
   }
 }
 
+static void send_join() {
+  proto::JoinBody jb = {};
+  WiFi.macAddress(jb.mac);
+  jb.kind = proto::KIND_SG;
+  jb.fw_major = FW_MAJOR; jb.fw_minor = FW_MINOR;
+  jb.nvs_node_id = NODE_ID;
+  mesh::send(proto::PT_JOIN, 6, &jb, sizeof(jb));
+}
+
 static void tick_presence() {
   static uint32_t last = 0;
   uint32_t nowm = millis();
   uint32_t interval = s_assigned ? 3000 : 1000;
   if (nowm - last < interval) return;
   last = nowm;
-  if (!s_assigned) {
-    proto::JoinBody jb = {};
-    WiFi.macAddress(jb.mac);
-    jb.kind = proto::KIND_SG;
-    jb.fw_major = FW_MAJOR; jb.fw_minor = FW_MINOR;
-    jb.nvs_node_id = NODE_ID;
-    mesh::send(proto::PT_JOIN, 6, &jb, sizeof(jb));
-  } else {
-    mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
-  }
+  if (!s_assigned) send_join();
+  else             mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
 }
 
 void setup() {
@@ -98,13 +101,15 @@ void setup() {
   pinMode(PIN_GREEN_LED, OUTPUT);
   pinMode(PIN_BUTTON,    INPUT_PULLUP);
   all_off();
-  if (!mesh::begin(NODE_ID, ESPNOW_CHANNEL, on_recv)) {
+  uint8_t ch0 = chfollow::initial_channel(ESPNOW_CHANNEL);
+  if (!mesh::begin(NODE_ID, ch0, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
   }
-  Serial.println("稼働開始。GW連動 or 単独ボタンで緑。");
+  Serial.printf("稼働開始（ch=%d・GWへ自動追従）。GW連動 or 単独ボタンで緑。\n", ch0);
 }
 
 void loop() {
+  chfollow::tick(send_join);   // GWのchへ追従（在圏切れで1..13走査）
   tick_presence();
   if (s_btn.pressed()) {                      // (2) 単独：即・緑（DA12）
     set_red(false); set_green(true);

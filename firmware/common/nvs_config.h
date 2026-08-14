@@ -26,4 +26,15 @@ inline uint8_t load_channel(uint8_t def, bool* from_nvs = nullptr) {
   return ch;
 }
 
+// NVS "m4cfg" / キー "ch"(u8) を書く（ノードがGWのchを学習したとき保存＝次回起動の初手を速く）。
+//  ⚠ 31章のアプリ手動書込みと同じキー。学習値で上書きするが各機体のNVSは独立なので影響は自機のみ。
+//  ⚠ 現在値と同じなら書かない（フラッシュ摩耗回避）。妥当域外は無視。
+inline void save_channel(uint8_t ch) {
+  if (ch < 1 || ch > 13) return;
+  Preferences p;
+  if (!p.begin("m4cfg", /*readOnly=*/false)) return;
+  if (!p.isKey("ch") || p.getUChar("ch", 0xFF) != ch) p.putUChar("ch", ch);
+  p.end();
+}
+
 }  // namespace cfg

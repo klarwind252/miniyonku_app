@@ -29,6 +29,8 @@ static uint8_t     s_my_id   = proto::NODE_UNASSIGNED;
 static uint32_t    s_boot_id = 0;
 static uint32_t    s_seq     = 0;
 static RecvHandler s_handler = nullptr;
+static uint8_t     s_cur_ch  = 0;        // 現在の運用ch（begin/ set_channel で更新）
+static uint32_t    s_last_gw_rx_ms = 0;  // GW由来パケットを最後に受けた時刻（ch追従の在圏判定）
 
 // 重複排除リング（直近64件）: src / boot_id / seq の3点で同定（docs/12 S2）
 struct SeenKey { uint8_t src; uint32_t boot; uint32_t seq; };
@@ -89,6 +91,10 @@ static void on_recv_raw(const uint8_t* mac, const uint8_t* data, int len) {
   memcpy(&h, data, sizeof(h));
   if (h.version != proto::PROTO_VERSION) return;
 
+  // ch追従の在圏判定：GW由来（GW6/GW7）のパケットを受けたら“今のchでGWに届く”証拠。
+  //   HEARTBEAT含め種別を問わず記録する（重複排除の前に見る：跳ね返り前でも在圏は真）。
+  if (proto::kind_of(h.src) == proto::KIND_GW) s_last_gw_rx_ms = millis();
+
   // 重複（往復・多重中継）は捨てる
   if (seen_before(h.src, h.boot_id, h.seq)) return;
 
@@ -110,6 +116,7 @@ static bool begin(uint8_t my_id, uint8_t channel, RecvHandler handler) {
   s_handler = handler;
   s_boot_id = esp_random();              // 起動ごと（docs/12.1）
   s_seq     = 0;
+  s_cur_ch  = channel;
 
   WiFi.mode(WIFI_STA);
   esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
@@ -124,6 +131,27 @@ static bool begin(uint8_t my_id, uint8_t channel, RecvHandler handler) {
   esp_now_register_recv_cb(on_recv_raw);
   return true;
 }
+
+// 運用chを切り替える（ノードの追従／GWのWiFi実ch採用で使う）。
+//  ⚠ ブロードキャストpeerはchを持つため、set直後にpeerを貼り直さないと esp_now_send が
+//    ESP_ERR_ESPNOW_CHAN で失敗する。del→add で作り直す。
+//  ・ノード（未接続STA）：esp_wifi_set_channel が実際にchを動かす。
+//  ・GW（AP接続STA）    ：STAはAPのchに固定されるため set_channel は実質“peerのch合わせ”。
+//                         必ずWiFi実ch（esp_wifi_get_channel）と同じ値を渡すこと。
+static void set_channel(uint8_t ch) {
+  if (ch < 1 || ch > 13) return;
+  if (ch == s_cur_ch) return;
+  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  esp_now_del_peer(BCAST);
+  esp_now_peer_info_t peer = {};
+  memcpy(peer.peer_addr, BCAST, 6);
+  peer.channel = ch;
+  peer.encrypt = false;
+  esp_now_add_peer(&peer);
+  s_cur_ch = ch;
+}
+static inline uint8_t  channel()        { return s_cur_ch; }
+static inline uint32_t last_gw_rx_ms()  { return s_last_gw_rx_ms; }
 
 // 割当確定後にIDを差し替える（未割当→確定node_idへ）
 static inline void set_node_id(uint8_t id) { s_my_id = id; }

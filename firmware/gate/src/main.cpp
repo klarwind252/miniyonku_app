@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include "protocol.h"
 #include "espnow_link.h"
+#include "chfollow.h"
 #include "timesync.h"
 #include "beam.h"
 
@@ -53,6 +54,9 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
       if (body_len >= (int)sizeof(proto::JoinAckBody)) {
         proto::JoinAckBody b; memcpy(&b, body, sizeof(b));
         if (b.node_id == NODE_ID) s_assigned = true;   // IDはenv固定・上書きしない
+        // ch追従（状態B）：GWが載せた運用ch（=WiFi実ch）へ念のため合わせる。通常は
+        //   走査で既に同chに居るが、GWのch移動直後などのズレをここでも吸収する。
+        if (b.channel >= 1 && b.channel <= 13) mesh::set_channel(b.channel);
       }
     } break;
 
@@ -115,6 +119,17 @@ static void service_pending() {
   }
 }
 
+// 現chでJOINを1本撒く（ch追従の走査からも呼ぶ）
+static void send_join() {
+  proto::JoinBody jb = {};
+  WiFi.macAddress(jb.mac);
+  jb.kind = proto::KIND_SQ;
+  jb.fw_major = FW_MAJOR;
+  jb.fw_minor = FW_MINOR;
+  jb.nvs_node_id = NODE_ID;        // 解釈X：自分のIDを知っている
+  mesh::send(proto::PT_JOIN, 6, &jb, sizeof(jb));
+}
+
 // JOIN/HEARTBEAT を定期送信（MAC台帳登録・死活）
 static void tick_presence() {
   static uint32_t last = 0;
@@ -123,17 +138,8 @@ static void tick_presence() {
   if (nowm - last < interval) return;
   last = nowm;
 
-  if (!s_assigned) {
-    proto::JoinBody jb = {};
-    WiFi.macAddress(jb.mac);
-    jb.kind = proto::KIND_SQ;
-    jb.fw_major = FW_MAJOR;
-    jb.fw_minor = FW_MINOR;
-    jb.nvs_node_id = NODE_ID;      // 解釈X：自分のIDを知っている
-    mesh::send(proto::PT_JOIN, 6, &jb, sizeof(jb));
-  } else {
-    mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
-  }
+  if (!s_assigned) send_join();
+  else             mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
 }
 
 void setup() {
@@ -142,15 +148,17 @@ void setup() {
   Serial.printf("\n=== M4LAPS Sector SQ%d ===\n", NODE_ID);
   memset(s_pending, 0, sizeof(s_pending));
 
-  if (!mesh::begin(NODE_ID, ESPNOW_CHANNEL, on_recv)) {
+  uint8_t ch0 = chfollow::initial_channel(ESPNOW_CHANNEL);   // 前回学習ch→無ければ既定
+  if (!mesh::begin(NODE_ID, ch0, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
   }
   beam::begin();
-  Serial.printf("ch=%d で稼働。SYNCとビーム待受け開始。\n", ESPNOW_CHANNEL);
+  Serial.printf("ch=%d で稼働（GWのchへ自動追従）。SYNCとビーム待受け開始。\n", ch0);
 }
 
 void loop() {
-  tsync::tick_request(500);   // 0.5秒ごとにSYNC
+  chfollow::tick(send_join);   // GWのchへ追従（在圏切れで1..13走査）
+  tsync::tick_request(500);    // 0.5秒ごとにSYNC
   tick_presence();
 
   beam::Hit hit;

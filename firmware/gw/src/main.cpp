@@ -58,6 +58,8 @@ static String g_pass  = WIFI_PASS;
 static String g_host  = DEF_SERVER_HOST;
 static String g_ip    = DEF_SERVER_IP;
 static String g_token = TIMING_TOKEN;
+// g_channel：起動時の初期ch（ブートストラップ／オフライン集合用）。WiFi接続後は
+//   gw_adopt_wifi_channel() が“スマホAPの実ch”で上書きし、以後はそれが運用ch（状態B）。
 static uint8_t g_channel = ESPNOW_CHANNEL;
 
 // DNS解決可否。true＝ホスト名でつなぐ / false＝IP直＋Hostヘッダ（暫定）。
@@ -224,8 +226,25 @@ static void probe_dns() {
   }
 }
 
+// ---- WiFi実chの採用（状態B・docs/21 段階1）--------------------------------
+//  GWのSTAは接続したAP（＝スマホのホットスポット）のchに自動で乗る。そのchを読み、
+//  ESP-NOW側（peer/表示/JOIN_ACKで配る値）を実chに一致させる。固定chは持たない。
+//  ・接続後にAP側のchが変わった場合もここで拾い直して追従する（ノードは各自で再走査）。
+//  ・未接続時は呼ばれない＝g_channel はブートストラップchのまま（オフライン集合用）。
+static void gw_adopt_wifi_channel() {
+  uint8_t primary = 0;
+  wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+  if (esp_wifi_get_channel(&primary, &second) != ESP_OK) return;
+  if (primary < 1 || primary > 13) return;
+  if (primary == g_channel) return;                 // 変化なし
+  Serial.printf("[CH] adopt WiFi ch=%u (was %u)\n", primary, g_channel);
+  g_channel = primary;
+  mesh::set_channel(primary);                       // ESP-NOW peer を実chへ合わせる
+  disp::g_status.ch = g_channel;                    // TFT表示も更新
+}
+
 static bool wifi_up() {
-  if (WiFi.status() == WL_CONNECTED) return true;
+  if (WiFi.status() == WL_CONNECTED) { gw_adopt_wifi_channel(); return true; }
   // DNSを明示（ルーターがDNS未配布でも解決を試せるように）。SSID接続前に設定。
   //  IP等は0で自動（DHCP）、DNSだけ固定にする。
   WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0),
@@ -234,7 +253,7 @@ static bool wifi_up() {
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) delay(100);
   bool up = (WiFi.status() == WL_CONNECTED);
-  if (up) probe_dns();   // 接続できたらDNS解決を試す（s_dns_ok確定）
+  if (up) { probe_dns(); gw_adopt_wifi_channel(); }  // 接続直後にDNS判定＋実ch採用
   return up;
 }
 
@@ -484,6 +503,10 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
     case proto::PT_JOIN: {
       if (body_len >= (int)sizeof(proto::JoinBody)) {
         proto::JoinBody jb; memcpy(&jb, body, sizeof(jb));
+        // ch追従（状態B）：JOINを受けたら即・在席ビーコンを撒き返す。走査中のノードが
+        //   正chに乗った瞬間に在圏を検知でき、ロックが速い（HTTPS転送は下で従来どおり）。
+        //   これはESP-NOWのみ・非スロットル（サーバー連打抑止=join_rate_okとは別経路）。
+        mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, nullptr, 0);
         forward_join(jb);
       }
     } break;
