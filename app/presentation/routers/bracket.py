@@ -5140,7 +5140,13 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             # ri=None（3位決定戦・裏トーナメント）ではリンク描画は使わない
             _adv_tgi = _adv_group_of.get((ri, gi)) if ri is not None else None
             adv_attr = f' data-advance-to-group="{_adv_tgi}"' if _adv_tgi is not None else ""
-            grp_no = (f'<span style="position:absolute;top:-8px;left:-8px;width:22px;height:22px;border-radius:50%;background:#ffffff;color:#333333;font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center;line-height:1;pointer-events:none;z-index:2;">{gi+1}</span>')
+            # 番号バッジ：クリックで同一グループの結果カードの「反映／取消」を押す（JS側で委譲処理）。
+            # group_id があるグループのみ操作対象（無いものは従来どおり見た目だけ）。
+            _no_click = ' br-grp-no' if group_id else ''
+            _no_pe = 'auto' if group_id else 'none'
+            _no_cursor = 'cursor:pointer;' if group_id else ''
+            _no_title = ' title="クリックで反映／取消"' if group_id else ''
+            grp_no = (f'<span class="br-grp-badge{_no_click}"{_no_title} style="position:absolute;top:-8px;left:-8px;width:22px;height:22px;border-radius:50%;background:#ffffff;color:#333333;font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center;line-height:1;pointer-events:{_no_pe};{_no_cursor}z-index:3;">{gi+1}</span>')
             groups_html.append(
                 f'<div class="{grp_cls}" data-group-idx="{gi}"{data_winner}{gid_attr}{adv_attr}>{grp_no}{slots_html}</div>'
             )
@@ -5159,6 +5165,32 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     connector_js = """
     <script>
     (function() {
+      // 番号バッジ クリック → 同一グループ(id=vg-<gid>)の結果カード(id=group-<gid>)の
+      // 「反映」(未入力時) or 「取消」(入力済み) ボタンを押下したのと同義にする。
+      // document への委譲を1回だけ束ねる（フラグメント再読込のたびに多重bindしない）。
+      if (!window._brGrpNoBound) {
+        window._brGrpNoBound = true;
+        document.addEventListener('click', function(e){
+          var no = (e.target && e.target.closest) ? e.target.closest('.br-grp-no') : null;
+          if (!no) return;
+          var grp = no.closest('.br-group'); if (!grp) return;
+          var m = (grp.id || '').match(/^vg-(\\d+)$/); if (!m) return;
+          e.preventDefault(); e.stopPropagation();   // is-final のスクロール等を抑止
+          var card = document.getElementById('group-' + m[1]); if (!card) return;
+          // 反映ボタンがあれば反映（＝未入力）。無ければ取消（＝入力済み）。
+          var ap = card.querySelector('.m4-apply-btn');
+          if (ap) { ap.click(); return; }
+          var rs = card.querySelector('.m4-reset-btn');
+          if (!rs) {   // M4LAPS無効時の素の取消ボタンにフォールバック
+            var bs = card.querySelectorAll('button');
+            for (var i = 0; i < bs.length; i++) {
+              var oc = bs[i].getAttribute('onclick') || '';
+              if (/reset|取消/.test(oc) || (bs[i].textContent || '').indexOf('取消') >= 0) { rs = bs[i]; break; }
+            }
+          }
+          if (rs) { rs.click(); }
+        }, true);
+      }
       // グループの高さを取得するユーティリティ
       function getGroupH(g) {
         // offsetHeightをクローンで測定
