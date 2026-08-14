@@ -1159,6 +1159,7 @@ window.addEventListener('load', function(){
     var _lift = (barH + 8) + 'px';
     var _tb = document.getElementById('m4-top-btn'); if(_tb){ _tb.style.bottom = _lift; }
     var _hb = document.getElementById('m4-history-btn'); if(_hb){ _hb.style.bottom = _lift; }
+    var _hm = document.getElementById('m4-history-menu'); if(_hm){ _hm.style.bottom = 'calc(' + _lift + ' + 46px)'; }
   }
 })();
 </script>"""

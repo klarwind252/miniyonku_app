@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>過去成績</title>
+<title>レーサー成績</title>
 <style>
 :root{ color-scheme: dark; }
 *{ box-sizing:border-box; }
@@ -16,10 +16,12 @@ body{
 .top{ display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
 h1{ font-size:22px; margin:0; letter-spacing:1px; }
 .back{
-  color:#cfe0f0; text-decoration:none; font-size:14px;
-  border:1px solid #35506e; border-radius:18px; padding:6px 14px; background:rgba(255,255,255,.04);
+  margin-left:auto;                 /* .top は flex。右寄せにする */
+  color:#fff; text-decoration:none; font-size:15px; font-weight:bold;
+  border:1px solid #1f6feb; border-radius:20px; padding:10px 20px; background:#1f6feb;
+  box-shadow:0 3px 10px rgba(31,111,235,.45);
 }
-.back:active{ transform:translateY(1px); }
+.back:active{ transform:translateY(1px); box-shadow:0 2px 6px rgba(31,111,235,.4); }
 .note{ color:#9fb3c8; font-size:13px; margin:0 0 12px; }
 .controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
 #q{
@@ -108,7 +110,7 @@ tr.r:active{ background:#13273b; }
 <body>
 <div class="wrap">
   <div class="top">
-    <h1>過去成績</h1>
+    <h1>レーサー成績</h1>
     <a class="back" href="{{ back_href }}">← 観覧に戻る</a>
   </div>
   <p class="note">確定した大会（{{ race_total }}大会：オープン {{ open_total }} ／ 限定 {{ ltd_total }}）をもとに集計しています。カッコ内は参加数に対する割合です。名前をタップすると大会ごとの結果が開きます。</p>
