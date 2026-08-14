@@ -405,10 +405,10 @@
       {% set use_rank = is_rank_rnd and n_slots >= 3 %}
       {% for slot in slots %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
-      {% set cr = ranks.get(slot.slot_id) %}
+      {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       <div class="slot-row">
-        <div class="slot-no" style="background:{% if cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}">
-          {% if cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
+        <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
+          {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
         </div>
         <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
           {{ slot.name or '—' }}
@@ -528,11 +528,11 @@
       </div>
       {% endif %}
       {% for slot in slots %}
-      {% set cr = ranks.get(slot.slot_id) %}
+      {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       <div class="slot-row">
-        <div class="slot-no" style="background:{% if cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}">
-          {% if cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
+        <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
+          {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
         </div>
         <div class="slot-name">{{ slot.name or '—' }}</div>
         {% if m4_on and slot.total_time is not none %}
@@ -623,10 +623,10 @@
     {% set use_rank = is_rank_rnd and n_slots >= 3 %}
     {% for slot in slots %}
     {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
-    {% set cr = ranks.get(slot.slot_id) %}
+    {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
     <div class="slot-row">
-      <div class="slot-no" style="background:{% if cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}">
-        {% if cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
+      <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
+        {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
       </div>
       <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
         {{ slot.name or '—' }}

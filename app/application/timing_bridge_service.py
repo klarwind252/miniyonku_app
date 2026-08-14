@@ -70,6 +70,7 @@ def match_ranking_to_lanes(ranking: list[dict], lanes: list[dict]) -> dict:
             "best_time": m.get("best_s"),
             "total_time": m.get("total_s"),
             "completed_laps": m.get("completed_laps") or 0,
+            "dnf": bool(m.get("dnf")),   # E5(24.39)：CO=規定周回未達。予選で「CO」表示に使う
         })
 
     unmatched_lanes = [
@@ -91,8 +92,11 @@ def build_result_rows(matched: list[dict], calc_points=default_calc_points) -> l
         「1位が不在で誰も勝者にならない」状態になるため。
         例）2レーン対戦に3レーン計測を反映 → 計測1位が対象外なら
             残り2人は元のまま2位・3位となり、勝者が決まらない。
-    - win は（振り直した）1位のみ 1
-    - points は既存の配点ルール
+    - win は（振り直した）1位のみ 1。ただし CO(未完走)は勝者にしない。
+    - points は既存の配点ルール。CO(未完走)は 0 点。
+    - is_co は E5(24.39)：規定周回未達=CO。予選画面は is_co の枠を「CO」表示にする
+      （順位数字は出さない）。ranking() は完走者→未完走者の順なので、連番の
+      後半（＝完走者の後ろ）が CO になり、完走者の順位は乱れない。
     - best_time はベストラップ（秒）。無ければ None
     - total_time はFINISHタイム（合計・秒）。無ければ None
     - lap_count は完走周回数
@@ -101,17 +105,18 @@ def build_result_rows(matched: list[dict], calc_points=default_calc_points) -> l
     ordered = sorted(matched, key=lambda m: int(m["rank"]))
     rows = []
     for i, m in enumerate(ordered, start=1):
+        co = bool(m.get("dnf"))
         rows.append({
             "lane_id": m["lane_id"],
-            "win": 1 if i == 1 else 0,
+            "win": 1 if (i == 1 and not co) else 0,
             "best_time": m.get("best_time"),
             # FINISHタイム（合計）。予選画面に出すため保存する。
             # 手入力では埋まらない項目なので、未反映のヒートは NULL のまま。
             "total_time": m.get("total_time"),
             "lap_count": int(m.get("completed_laps") or 0),
             "rank": i,
-            "points": calc_points(i),
-            "is_co": 0,   # 現段階は全員完走前提
+            "points": 0 if co else calc_points(i),
+            "is_co": 1 if co else 0,   # 未完走(CO/DNF)は CO 表示・0点・非勝者
         })
     return rows
 
@@ -153,18 +158,40 @@ async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
                 "unmatched_slots": m["unmatched_lanes"],
                 "unmatched_records": m["unmatched_records"]}
 
+    # 順位決定が必要なラウンドか（決勝=final / 3位決定戦=third は 1-2-3 を確定させる）。
+    # それ以外（通常ラウンド・敗者復活/裏トーナメント）は勝者を決めるだけ＝順位決定不要。
+    #   → 順位不要のラウンドでは CO(未完走) に順位を付けない。カードは「順位なし＝CO」と
+    #     判定して CO 表示する（22章・24.39）。final/third は従来どおり全員に順位を付ける。
+    _rank_needed = True
+    try:
+        async with db.execute(
+            "SELECT r.round_type FROM bracket_groups g "
+            "JOIN bracket_rounds r ON g.round_id = r.id WHERE g.id = ?",
+            (group_id,),
+        ) as cur:
+            _rt = await cur.fetchone()
+        if _rt is not None:
+            _rank_needed = (_rt[0] in ("final", "third"))
+    except Exception:
+        _rank_needed = True  # 判定不能時は安全側（従来どおり全員に順位）
+
     # 順位を入れ直す（再反映しても重複しないよう一度消す）
     # ⚠ 予選と同じく、突き合わせできた枠の中で1位から振り直す。
     #    計測順位をそのまま使うと、対象外の枠が上位にいた場合に勝者が決まらない。
     await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id = ?", (group_id,))
     winner_slot_id = None
-    for i, x in enumerate(sorted(matched, key=lambda m: int(m["rank"])), start=1):
+    i = 0
+    for x in sorted(matched, key=lambda m: int(m["rank"])):
+        co = bool(x.get("dnf"))
+        if co and not _rank_needed:
+            continue  # 順位決定不要のラウンド：CO には順位を付けない（画面で「CO」表示）
+        i += 1
         await db.execute(
             "INSERT INTO bracket_slot_ranks "
             "(group_id, slot_id, rank, total_time, best_time) VALUES (?,?,?,?,?)",
             (group_id, x["lane_id"], i, x.get("total_time"), x.get("best_time")),
         )
-        if i == 1:
+        if i == 1 and not co:
             winner_slot_id = x["lane_id"]
 
     # 勝者を確定（既にあれば上書き）
@@ -229,13 +256,33 @@ async def apply_race_to_ht_group(db, *, race_id: int, group_id: int,
                 "unmatched_slots": m["unmatched_lanes"],
                 "unmatched_records": m["unmatched_records"]}
 
+    # 順位決定が必要なラウンドか（決勝=final / 3位決定戦=third）。それ以外（通常・敗者復活）は
+    # 勝者を決めるだけ＝順位決定不要 → CO(未完走)には順位を付けない（カードで「CO」表示）。
+    _rank_needed = True
+    try:
+        async with db.execute(
+            "SELECT r.round_type FROM ht_groups g "
+            "JOIN ht_rounds r ON g.round_id = r.id WHERE g.id = ?",
+            (group_id,),
+        ) as cur:
+            _rt = await cur.fetchone()
+        if _rt is not None:
+            _rank_needed = (_rt[0] in ("final", "third"))
+    except Exception:
+        _rank_needed = True
+
     # 突き合わせできた枠の中で1位から順位を振り直す（決勝ブラケットと同じ流儀）。
     # タイム（total_time/best_time）も保存して、決勝と同様に画面へ表示できるようにする。
     # ※ total_time/best_time 列はマイグレーション（schema.py）で追加される。
     #   未適用の旧DBでは列なしINSERTへフォールバックし、反映自体は必ず成立させる。
     await db.execute("DELETE FROM ht_slot_ranks WHERE group_id = ?", (group_id,))
     winner_slot_id = None
-    for i, x in enumerate(sorted(matched, key=lambda mm: int(mm["rank"])), start=1):
+    i = 0
+    for x in sorted(matched, key=lambda mm: int(mm["rank"])):
+        co = bool(x.get("dnf"))
+        if co and not _rank_needed:
+            continue  # 順位決定不要のラウンド：CO には順位を付けない（画面で「CO」表示）
+        i += 1
         try:
             await db.execute(
                 "INSERT INTO ht_slot_ranks (group_id, slot_id, rank, total_time, best_time) VALUES (?,?,?,?,?)",
@@ -246,7 +293,7 @@ async def apply_race_to_ht_group(db, *, race_id: int, group_id: int,
                 "INSERT INTO ht_slot_ranks (group_id, slot_id, rank) VALUES (?,?,?)",
                 (group_id, x["lane_id"], i),
             )
-        if i == 1:
+        if i == 1 and not co:
             winner_slot_id = x["lane_id"]
 
     # 勝者を確定（DELETE→INSERT。ht_results は group_id にユニーク制約が無いため）
