@@ -1761,6 +1761,83 @@ async def bracket_set_rank(
     return JSONResponse({"ok": True, "advanced": False, "finalized": bool(finalized)})
 
 
+@router.post("/{tid}/bracket/group/{group_id}/reorder-slots")
+async def bracket_reorder_slots(
+    tid: int,
+    group_id: int,
+    slot_ids: str = Form(...),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """決勝グループの出走レーン（コース）並び替え。
+
+    受け取った slot_id の並び順（上→下）を、そのまま slot_no（＝レーン番号）1..N に
+    書き換える。反映は slot_no ↔ レーンで照合されるため、この並びが出走レーンになる。
+
+    安全のため:
+      - 対象グループが決勝(final)ラウンドで、この大会(tid)に属することを確認。
+      - すでに結果が入っている組は拒否（並びを変えると記録とレーンの対応が崩れるため）。
+      - 受け取った slot_id が、その組のスロット集合と完全一致することを確認。
+    """
+    # グループが tid の決勝ラウンドに属するか
+    async with db.execute(
+        """SELECT br.round_type
+             FROM bracket_groups bg
+             JOIN bracket_rounds br ON br.id = bg.round_id
+            WHERE bg.id = ? AND br.tournament_id = ?""",
+        (group_id, tid),
+    ) as cur:
+        rnd = await cur.fetchone()
+    if not rnd:
+        return JSONResponse({"ok": False, "error": "対象の組が見つかりません。"}, status_code=404)
+    if rnd["round_type"] != "final":
+        return JSONResponse({"ok": False, "error": "並び替えは決勝の組だけ可能です。"}, status_code=400)
+
+    # 結果確定済みは拒否
+    async with db.execute(
+        "SELECT 1 FROM bracket_results WHERE group_id = ?", (group_id,)
+    ) as cur:
+        if await cur.fetchone():
+            return JSONResponse(
+                {"ok": False, "error": "結果が確定済みのため並び替えできません。先に結果を取り消してください。"},
+                status_code=409,
+            )
+
+    # 入力 slot_id を整数化
+    try:
+        want = [int(x) for x in slot_ids.split(",") if x.strip() != ""]
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "並び順の指定が不正です。"}, status_code=400)
+
+    # その組の実スロット集合
+    async with db.execute(
+        "SELECT id FROM bracket_slots WHERE group_id = ?", (group_id,)
+    ) as cur:
+        have = [r["id"] for r in await cur.fetchall()]
+
+    if sorted(want) != sorted(have) or not want:
+        return JSONResponse(
+            {"ok": False, "error": "並び順の対象スロットが一致しません。画面を更新してからやり直してください。"},
+            status_code=400,
+        )
+
+    # 並び順を slot_no 1..N に反映（bracket_slots に UNIQUE(group_id,slot_no) は無いので直接更新でよい）
+    for idx, sid in enumerate(want, start=1):
+        await db.execute(
+            "UPDATE bracket_slots SET slot_no = ? WHERE id = ? AND group_id = ?",
+            (idx, sid, group_id),
+        )
+    await db.commit()
+
+    # 観覧側の再配信（トーナメント図の並びも更新される）
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
+    return JSONResponse({"ok": True, "order": want})
+
+
 @router.post("/{tid}/bracket/set-seeded/{entry_id}")
 async def set_seeded(
     tid: int,

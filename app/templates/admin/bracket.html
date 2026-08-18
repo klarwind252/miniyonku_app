@@ -81,6 +81,13 @@
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
 .slot-row { display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+/* 出走レーン（コース）並び替え：決勝カードのみ */
+.lane-handle{ cursor:grab; color:#95a5a6; font-size:16px; line-height:1; padding:0 2px; user-select:none; touch-action:none; flex-shrink:0; }
+.lane-handle:active{ cursor:grabbing; }
+.bracket-group.lane-sortable .slot-row{ background:#fff; border-radius:6px; }
+.slot-row.lane-dragging{ opacity:.55; background:#eef5ff; box-shadow:0 2px 8px rgba(10,132,255,.25); }
+.bracket-group.lane-sortable.lane-drop-active{ outline:2px dashed #0a84ff; outline-offset:2px; }
+.lane-sort-hint{ font-size:11px; color:#8e44ad; background:#f5eeff; border:1px solid #e0d0f5; border-radius:8px; padding:0 6px; }
 /* 結果入力カードの順位バッジ（1/2/3/CO）。
    名前の頭を揃えるため、順位が無い行にも非表示の同サイズ枠を置く。 */
 .rank-badge{ display:inline-flex; align-items:center; justify-content:center;
@@ -1204,9 +1211,12 @@ window.initBracketConnectors = initBracketConnectors;
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-bottom:10px{% if _hide_card %};display:none{% endif %}">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
-  <div class="bracket-group {% if result %}done{% endif %}" id="group-{{ g.id }}">
+  {# 決勝ラウンドだけ：結果未確定のあいだ、レーサー行をドラッグして出走レーン（コース）を入れ替え可能にする #}
+  {% set _lane_sortable = (rnd_label == '決勝') and not result %}
+  <div class="bracket-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
     <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span>グループ{{ g.group_no }}</span>
+      {% if _lane_sortable %}<span class="lane-sort-hint" title="行の ⠿ をドラッグして出走レーン（コース）を入れ替えます">⠿ 並び替え可</span>{% endif %}
       {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if m4_on %}
       <span style="flex:1"></span>
@@ -1228,7 +1238,8 @@ window.initBracketConnectors = initBracketConnectors;
        勝者クリックだけの組（ranks が1件）は「1」だけ出し、他は空欄のままにする。 #}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
     {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
-    <div class="slot-row">
+    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
+      {% if _lane_sortable %}<span class="lane-handle" title="ドラッグで出走レーン（コース）を入れ替え">⠿</span>{% endif %}
       <div class="slot-no">{{ slot.slot_no }}</div>
       {% if m4_on %}
       {% if cur_rank %}
@@ -1733,9 +1744,99 @@ function refreshInputCards(tid) {
       if (fresh && cur) {
         cur.innerHTML = fresh.innerHTML;
         requestAnimationFrame(function() { window.scrollTo(0, curY); });
+        if (window.initLaneSort) window.initLaneSort();
       }
     }).catch(()=>{});
 }
+
+// ============ 出走レーン（コース）並び替え：決勝カードのみ ============
+// 各行の ⠿ ハンドルをドラッグして .slot-row を上下入れ替え → 新しい並び順を
+// slot_no（＝レーン番号）として保存する。反映は slot_no ↔ レーンで照合されるため、
+// ここで並びを変えるとそのまま出走レーンの割り当てが変わる。
+(function(){
+  function rowsOf(card){
+    return Array.prototype.slice.call(card.querySelectorAll('.slot-row'));
+  }
+  function afterElement(card, y){
+    var rows = rowsOf(card).filter(function(r){ return !r.classList.contains('lane-dragging'); });
+    var closest = { off: -Infinity, el: null };
+    rows.forEach(function(r){
+      var box = r.getBoundingClientRect();
+      var off = y - box.top - box.height/2;
+      if(off < 0 && off > closest.off){ closest = { off: off, el: r }; }
+    });
+    return closest.el;
+  }
+  function renumber(card){
+    rowsOf(card).forEach(function(r,i){
+      var n = r.querySelector('.slot-no');
+      if(n) n.textContent = (i+1);
+    });
+  }
+  function saveOrder(card){
+    var ids = rowsOf(card).map(function(r){ return r.dataset.slotId; }).filter(Boolean);
+    if(!ids.length) return;
+    renumber(card);
+    var tid = card.dataset.tid, gid = card.dataset.groupId;
+    var fd = new FormData();
+    fd.append('slot_ids', ids.join(','));
+    fetch('/admin/tournaments/'+tid+'/bracket/group/'+gid+'/reorder-slots', { method:'POST', body:fd })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.ok){
+          alert('出走レーンの並びを保存できませんでした。' + (d && d.error ? '\n'+d.error : ''));
+          if (window.refreshInputCards) refreshInputCards(tid);   // サーバーの正しい並びに戻す
+          return;
+        }
+        // トーナメント図側にも新しいレーン順を反映
+        if (window.reloadSvg) reloadSvg(tid);
+      })
+      .catch(function(){
+        alert('出走レーンの並びを保存できませんでした（通信エラー）。');
+        if (window.refreshInputCards) refreshInputCards(tid);
+      });
+  }
+  function wireCard(card){
+    if(card.dataset.laneSortWired === '1') return;   // 二重登録防止
+    card.dataset.laneSortWired = '1';
+    rowsOf(card).forEach(function(row){
+      var handle = row.querySelector('.lane-handle');
+      if(!handle) return;
+      // ハンドルを押している間だけ行をドラッグ可能にする（名前クリック＝勝者選択と競合させない）
+      handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
+      handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
+      row.addEventListener('dragstart', function(e){
+        row.classList.add('lane-dragging');
+        card.classList.add('lane-drop-active');
+        if(e.dataTransfer){ e.dataTransfer.effectAllowed = 'move';
+          try{ e.dataTransfer.setData('text/plain', row.dataset.slotId||''); }catch(_){} }
+      });
+      row.addEventListener('dragend', function(){
+        row.classList.remove('lane-dragging');
+        row.removeAttribute('draggable');
+        card.classList.remove('lane-drop-active');
+        saveOrder(card);
+      });
+    });
+    card.addEventListener('dragover', function(e){
+      var dragging = card.querySelector('.slot-row.lane-dragging');
+      if(!dragging) return;
+      e.preventDefault();
+      if(e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      var after = afterElement(card, e.clientY);
+      if(after == null) card.appendChild(dragging);
+      else card.insertBefore(dragging, after);
+    });
+  }
+  window.initLaneSort = function(){
+    document.querySelectorAll('.bracket-group.lane-sortable').forEach(wireCard);
+  };
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', window.initLaneSort);
+  } else {
+    window.initLaneSort();
+  }
+})();
 
 function reloadSvg(tid) {
   const img = document.getElementById('bracket-svg-img');
