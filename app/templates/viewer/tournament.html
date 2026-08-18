@@ -22,6 +22,19 @@
 .entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:140px}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .entry-yomi{font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+/* スマホ幅（〜600px）で本文を読みやすく詰める。広幅（プロジェクター）は不変。 */
+@media(max-width:600px){
+  .info-grid{grid-template-columns:repeat(2,1fr)}
+  .info-cell{padding:7px 10px}
+  .info-cell:first-child{grid-column:1 / -1}          /* レース名は横いっぱい */
+  .info-cell:nth-child(3n){border-right:1px solid #2c3e50}  /* 3列前提の指定を打消し */
+  .info-cell:nth-child(2n){border-right:none}
+  .info-value{font-size:15px}
+  .info-value.large{font-size:20px}
+  .entry-grid{grid-template-columns:repeat(2,1fr);gap:6px}
+  .entry-card{min-width:0;padding:8px 10px}
+  .entry-name{font-size:18px}
+}
 {% endblock %}
 
 {% block content %}
@@ -174,7 +187,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     .vt-holder-list{font-size:13px;font-weight:bold;color:#16324f;margin-top:3px;line-height:1.5}
     .vt-holder-list>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .vt-holder-none{font-size:12px;color:#525b66;margin-top:4px}
-    @media (max-width:600px){.vt-holders{grid-template-columns:repeat(3,1fr)}}
+    @media (max-width:600px){.vt-holders{grid-template-columns:repeat(2,1fr)}}
   </style>
   <div class="vt-holders">
     {% for b in holder_boxes %}

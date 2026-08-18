@@ -20,10 +20,7 @@
     window._pollTimers = [];
   };
   // 追従状態は sessionStorage で保持（reload / ページ遷移をまたいで維持）
-  // ?ro=1（読み取り専用・過去レース閲覧）は追従を無効化し、現在ライブへ飛ばさない
-  var _m4ro=false; try{ _m4ro = new URLSearchParams(location.search).get('ro')==='1'; }catch(e){}
-  window.viewReadOnly = _m4ro;
-  window.syncEnabled = !_m4ro && (sessionStorage.getItem('viewSyncEnabled') !== '0');
+  window.syncEnabled = (sessionStorage.getItem('viewSyncEnabled') !== '0');
 })();
 </script>
 <style>
@@ -127,35 +124,14 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   .v-clock-time{font-size:44px}
 }
 
-/* 過去結果ボタン＋メニュー（公開HTMLはJS全除去のため checkbox hack。JS不要） */
-.m4-history-toggle{ position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
 #m4-history-btn{
   position:fixed; left:12px; bottom:12px; z-index:97;
   background:rgba(15,25,35,.86); color:#ffe08a; text-decoration:none;
   border:1px solid #6b5a2e; border-radius:22px;
-  padding:9px 17px; font-size:14px; font-weight:bold; cursor:pointer;
-  -webkit-user-select:none; user-select:none;
+  padding:9px 17px; font-size:14px; font-weight:bold;
   box-shadow:0 2px 8px rgba(0,0,0,.45);
 }
 #m4-history-btn:active{ transform:translateY(1px); }
-/* メニュー本体・背景（チェックONで表示） */
-.m4-history-backdrop{ display:none; position:fixed; inset:0; z-index:98; background:rgba(0,0,0,.35); }
-.m4-history-menu{
-  display:none; position:fixed; left:12px; bottom:60px; z-index:99;
-  min-width:210px; background:#141d29; border:1px solid #35506e;
-  border-radius:12px; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,.6);
-}
-.m4-history-menu .m4-history-item{
-  display:block; padding:14px 18px; color:#eaf2fb; text-decoration:none;
-  font-size:15px; font-weight:bold; cursor:pointer; text-align:left;
-  -webkit-user-select:none; user-select:none;
-  border-bottom:1px solid rgba(255,255,255,.08);
-}
-.m4-history-menu .m4-history-item:last-child{ border-bottom:0; }
-.m4-history-menu .m4-history-item:active{ background:rgba(255,255,255,.12); }
-.m4-history-menu .m4-history-close{ color:#9fb3c8; }
-#m4-history-toggle:checked ~ .m4-history-backdrop{ display:block; }
-#m4-history-toggle:checked ~ .m4-history-menu{ display:block; }
 /* ページ上部へ移動ボタン（公開HTML用）。過去成績ボタン（左下）と被らないよう右下に配置。 */
 #m4-top-btn{
   position:fixed; right:12px; bottom:12px; z-index:97;
@@ -168,7 +144,6 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
 @media(max-width:600px){
   #m4-history-btn{ left:8px; bottom:8px; padding:8px 14px; font-size:13px }
   #m4-top-btn{ right:8px; bottom:8px; padding:8px 14px; font-size:13px }
-  .m4-history-menu{ left:8px; bottom:54px; }
 }
 
 
@@ -227,29 +202,25 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
   </div>
   {% if is_public_html %}<div id="m4-picker-slot" style="margin-left:auto;display:flex;align-items:center;min-width:0;max-width:62%"></div>{% endif %}
 
-  {% set ro = request.query_params.get('ro') == '1' %}
   {% if t %}
-  <a href="/view/tournament/{{ t.id }}{% if ro %}?ro=1{% endif %}" class="v-nav-btn {% if request.url.path == '/view/tournament/'~t.id %}active{% endif %}">
+  <a href="/view/tournament/{{ t.id }}" class="v-nav-btn {% if request.url.path == '/view/tournament/'~t.id %}active{% endif %}">
     📋 レース情報
   </a>
   {% if t.qualifying_type != 'none_roundrobin' %}
-  <a href="/view/tournament/{{ t.id }}/qualifying{% if ro %}?ro=1{% endif %}" class="v-nav-btn {% if 'qualifying' in request.url.path %}active{% endif %}">
+  <a href="/view/tournament/{{ t.id }}/qualifying" class="v-nav-btn {% if 'qualifying' in request.url.path %}active{% endif %}">
     🏁 予選
   </a>
-  <a href="/view/tournament/{{ t.id }}/bracket{% if ro %}?ro=1{% endif %}" class="v-nav-btn {% if 'bracket' in request.url.path %}active{% endif %}">
+  <a href="/view/tournament/{{ t.id }}/bracket" class="v-nav-btn {% if 'bracket' in request.url.path %}active{% endif %}">
     🏆 決勝
   </a>
   {% else %}
-  <a href="/view/tournament/{{ t.id }}/qualifying{% if ro %}?ro=1{% endif %}" class="v-nav-btn active">
+  <a href="/view/tournament/{{ t.id }}/qualifying" class="v-nav-btn active">
     🏆 決勝
   </a>
   {% endif %}
   {% endif %}
 
-  {% if ro %}
-  <a class="v-nav-btn" href="/api/races" title="レース一覧へ戻る" style="margin-left:auto">← レース一覧</a>
-  {% endif %}
-  <button class="v-nav-btn sync-on" id="sync-btn" onclick="toggleSync()" title="ホスト画面に追従"{% if ro %} style="display:none"{% endif %}>
+  <button class="v-nav-btn sync-on" id="sync-btn" onclick="toggleSync()" title="ホスト画面に追従">
     <span class="v-sync-dot"></span>追従中
   </button>
 </nav>
@@ -263,15 +234,7 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 {% if is_public_html %}
 <!-- 過去成績ページへの常時表示ボタン（.v-container の外＝部分更新で消えない）。
      href は参加者html生成時に店舗別URL（/api/history または /{slug}/api/history）へ置換する。 -->
-<!-- 過去結果メニュー（JS全除去環境のため checkbox hack。checkbox→label→backdrop→menu の隣接兄弟順を厳守） -->
-<input type="checkbox" id="m4-history-toggle" class="m4-history-toggle" aria-hidden="true">
-<label id="m4-history-btn" for="m4-history-toggle">🏆 過去結果</label>
-<label class="m4-history-backdrop" for="m4-history-toggle" aria-hidden="true"></label>
-<div class="m4-history-menu" role="menu" aria-label="過去結果メニュー">
-  <a class="m4-history-item" href="__RACESURL__" role="menuitem">レースの結果</a>
-  <a class="m4-history-item" href="__HISTORYURL__" role="menuitem">レーサー成績</a>
-  <label class="m4-history-item m4-history-close" for="m4-history-toggle" role="menuitem">閉じる</label>
-</div>
+<a id="m4-history-btn" href="__HISTORYURL__">🏆 過去成績</a>
 <!-- ページ上部（決勝進出レーサー）へ移動するボタン。公開HTMLはスクリプトが全除去されるため
      JSを使わずアンカーリンク（#pagetop）で実装。.v-container の外＝部分更新で消えない。 -->
 <a id="m4-top-btn" href="#pagetop" aria-label="ページ上部へ移動">↑ 上へ</a>
