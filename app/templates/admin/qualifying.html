@@ -405,18 +405,24 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
     {# 未確定の組（1着入力対象） #}
     {% if ow_open_heats %}
-    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#2c3e50">走行中の組（1着を入力）</div>
+    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#2c3e50">走行中の組（1着を入力）<span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">⠿ をドラッグでコース（出走レーン）を入れ替え</span></div>
     <div style="display:flex;flex-direction:column;gap:10px">
       {% for h in ow_open_heats %}
       <div style="border:2px solid #8e44ad;border-radius:10px;padding:12px 14px;background:#fff">
         <div style="font-size:13px;color:#8e44ad;font-weight:bold;margin-bottom:8px">第{{ h.heat_no }}レース</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <div class="ow-lane-group" data-heat-id="{{ h.heat_id }}" data-tid="{{ t.id }}"
+             style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           {% for m in h.members %}
-          <button type="button" class="ow-win-btn"
-                  onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})"
-                  style="padding:8px 16px;border:2px solid #27ae60;border-radius:8px;background:#fff;color:#1e8449;font-size:15px;font-weight:bold;cursor:pointer">
-            🏁 {{ m.name }}
-          </button>
+          <div class="ow-lane" data-entry-id="{{ m.entry_id }}" data-lane-no="{{ m.lane_no }}"
+               style="display:inline-flex;align-items:center;gap:4px;border:2px solid #27ae60;border-radius:8px;background:#fff;padding:0 4px 0 6px">
+            <span class="ow-lane-handle" title="ドラッグでコース（出走レーン）を入れ替え"
+                  style="cursor:grab;color:#9aa3ad;font-size:15px;line-height:1;user-select:none;touch-action:none">&#10303;</span>
+            <button type="button" class="ow-win-btn"
+                    onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})"
+                    style="padding:8px 12px;border:none;background:transparent;color:#1e8449;font-size:15px;font-weight:bold;cursor:pointer">
+              🏁 {{ m.name }}
+            </button>
+          </div>
           {% endfor %}
           <button type="button"
                   onclick="owSetWin({{ h.heat_id }}, 0)"
@@ -997,8 +1003,9 @@ document.addEventListener('DOMContentLoaded', function(){
 
     {% macro race_row(heat, no=None) %}
     {% set lanes = heat_lanes_map.get(heat.id, []) %}
-    {# 総当たり系（総当たり／即決勝総当たり／ヒート総当たり）＋ポイント制：結果未入力の行だけコース（レーン）をドラッグ入替可能にする #}
-    {% set nr_sortable = (is_roundrobin or is_none_roundrobin or is_heat_roundrobin or (t.qualifying_type == 'point')) and (not is_confirmed_nr) and (not is_finalized) and (heat.id not in done_heat_ids) %}
+    {# 総当たり系＋ポイント制＋並び順（ポイント制）：結果未入力の行だけコース（レーン）をドラッグ入替可能にする。
+       並び順(order)は「組が確定した分だけ」= 表示される組は3人揃って確定済み。予選終了(closed)後は不可。 #}
+    {% set nr_sortable = (is_roundrobin or is_none_roundrobin or is_heat_roundrobin or is_order or (t.qualifying_type == 'point')) and (not is_confirmed_nr) and (not is_finalized) and (heat.id not in done_heat_ids) and not (is_order and order_status == 'closed') %}
     <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
       {# 状態（取消／反映）は左端。結果の有無は順位枠とFINISHで分かるので状態バッジは置かない。
          結果ありのときは「反映」を隠して「取消」だけを出す（誤って上書きしないため）。 #}
@@ -2637,8 +2644,8 @@ async function applyTimingToHeat(heatId, btn, force){
 </script>
 {% endif %}
 
-{# ===== 総当たり系（総当たり／即決勝総当たり／ヒート総当たり）＋ポイント制：コース（出走レーン）の入れ替え（ドラッグ） ===== #}
-{% if is_roundrobin or is_none_roundrobin or is_heat_roundrobin or (t.qualifying_type == 'point') %}
+{# ===== 総当たり系＋ポイント制＋並び順（ポイント制/勝ち抜け）：コース（出走レーン）の入れ替え（ドラッグ） ===== #}
+{% if is_roundrobin or is_none_roundrobin or is_heat_roundrobin or is_order or is_order_winner or (t.qualifying_type == 'point') %}
 <style>
   .nr-lane-handle{ cursor:grab; color:#95a5a6; font-size:15px; line-height:1; padding:0 2px; user-select:none; touch-action:none; flex-shrink:0; }
   .nr-lane-handle:active{ cursor:grabbing; }
@@ -2763,8 +2770,63 @@ async function applyTimingToHeat(heatId, btn, force){
     });
   }
 
-  if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', wire); }
-  else { wire(); }
+  // ===== 並び順（勝ち抜け）order_winner：組内のメンバー（.ow-lane）を並び替えて
+  //       lane_no（コース）を 1..N に付け直す。組内のみ・確定した組(走行中の組)だけが対象。 =====
+  function owLanesOf(grp){ return Array.prototype.slice.call(grp.querySelectorAll('.ow-lane')); }
+  function owTargetFromEvent(e){
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    return (el && el.closest) ? el.closest('.ow-lane') : null;
+  }
+  function owSave(grp){
+    var pairs = [], heatId = grp.getAttribute('data-heat-id'), tid = grp.getAttribute('data-tid');
+    owLanesOf(grp).forEach(function(el, i){
+      var lane = i + 1;                 // 表示順（左→右）＝コース1..N
+      el.setAttribute('data-lane-no', lane);
+      var eid = el.getAttribute('data-entry-id');
+      if(eid) pairs.push(eid + ':' + lane);
+    });
+    if(!heatId || !pairs.length) return;
+    var fd = new FormData(); fd.append('pairs', pairs.join(','));
+    fetch('/admin/tournaments/'+tid+'/qualifying/heat/'+heatId+'/reorder-lanes', { method:'POST', body:fd })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ if(!d || !d.ok){ alert('コースの入れ替えを保存できませんでした。' + (d && d.error ? '\n'+d.error : '')); location.reload(); } })
+      .catch(function(){ alert('コースの入れ替えを保存できませんでした（通信エラー）。'); location.reload(); });
+  }
+  var owSrc = null;
+  function wireOw(){
+    document.querySelectorAll('.ow-lane-group .ow-lane-handle').forEach(function(handle){
+      if(handle.dataset.wired === '1') return; handle.dataset.wired = '1';
+      var el = handle.closest('.ow-lane'); if(!el) return;
+      handle.addEventListener('click', function(e){ e.stopPropagation(); });
+      handle.addEventListener('mousedown', function(e){ e.stopPropagation(); el.setAttribute('draggable','true'); });
+      handle.addEventListener('touchstart', function(e){ e.stopPropagation(); el.setAttribute('draggable','true'); }, {passive:true});
+      el.addEventListener('dragstart', function(e){ owSrc = el; el.style.opacity='.55';
+        if(e.dataTransfer){ e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain', el.getAttribute('data-entry-id')||''); }catch(_){} } });
+      el.addEventListener('dragend', function(){ el.style.opacity=''; el.removeAttribute('draggable'); owSrc=null; });
+    });
+    document.querySelectorAll('.ow-lane-group').forEach(function(grp){
+      if(grp.dataset.dropWired === '1') return; grp.dataset.dropWired = '1';
+      grp.addEventListener('dragover', function(e){
+        if(!owSrc || owSrc.closest('.ow-lane-group') !== grp) return;   // 同じ組内のみ
+        e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+      });
+      grp.addEventListener('drop', function(e){
+        if(!owSrc || owSrc.closest('.ow-lane-group') !== grp) return;
+        e.preventDefault();
+        var tgt = owTargetFromEvent(e);
+        if(tgt && tgt !== owSrc && tgt.closest('.ow-lane-group') === grp){
+          // ドロップ位置の前後で挿入（左右入れ替え相当）
+          var rect = tgt.getBoundingClientRect();
+          if(e.clientX < rect.left + rect.width/2) grp.insertBefore(owSrc, tgt);
+          else grp.insertBefore(owSrc, tgt.nextSibling);
+        }
+        owSave(grp);
+      });
+    });
+  }
+
+  if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', function(){ wire(); wireOw(); }); }
+  else { wire(); wireOw(); }
 })();
 </script>
 {% endif %}

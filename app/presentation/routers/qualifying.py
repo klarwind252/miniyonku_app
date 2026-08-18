@@ -994,7 +994,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             if h["status"] == "done":
                 continue
             async with db.execute(
-                """SELECT hl.entry_id, r.name
+                """SELECT hl.entry_id, hl.lane_no, r.name
                    FROM heat_lanes hl JOIN entries e ON e.id=hl.entry_id
                    JOIN racers r ON r.id=e.racer_id
                    WHERE hl.heat_id=? ORDER BY hl.lane_no""",
