@@ -1,0 +1,52 @@
+{% for r in races %}
+<a class="rcard" href="{{ prefix }}/view/tournament/{{ r.id }}?ro=1">
+  <div class="rhead">
+    <span class="rdate">{{ r.date }}</span>
+    <span class="rname">{{ r.name }}</span>
+    {% if r.is_open %}
+      <span class="reg reg-open">オープン</span>
+    {% else %}
+      <span class="reg reg-ltd">限定</span>
+    {% endif %}
+    <span class="rcount">参加 <b>{{ r.entries }}</b> 名</span>
+  </div>
+
+  <div class="podium">
+    <div class="pod p1"><span class="pmark">1</span>
+      {% if r.podium[1] %}<span class="pname">{{ r.podium[1] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
+    </div>
+    <div class="pod p2"><span class="pmark">2</span>
+      {% if r.podium[2] %}<span class="pname">{{ r.podium[2] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
+    </div>
+    <div class="pod p3"><span class="pmark">3</span>
+      {% if r.podium[3] %}<span class="pname">{{ r.podium[3] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
+    </div>
+  </div>
+
+  {% if m4laps and r.record %}
+    <div class="record">
+      <div class="record-hd">⚡ RECORD HOLDER</div>
+      {% if r.record.overall %}
+      <div class="rec-row"><span class="rec-cat">総合ベスト</span>
+        <span class="rec-val">{{ r.record.overall.value_str }}</span>
+        <span class="rec-name">{% for h in r.record.overall.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+      </div>
+      {% endif %}
+      {% if r.record.fastest_lap %}
+      <div class="rec-row"><span class="rec-cat">最速ラップ</span>
+        <span class="rec-val">{{ r.record.fastest_lap.value_str }}</span>
+        <span class="rec-name">{% for h in r.record.fastest_lap.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+      </div>
+      {% endif %}
+      {% if r.record.top_speed %}
+      <div class="rec-row"><span class="rec-cat">最高速</span>
+        <span class="rec-val">{{ r.record.top_speed.value_str }}</span>
+        <span class="rec-name">{% for h in r.record.top_speed.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="detail">予選〜決勝の詳細を見る ›</div>
+</a>
+{% endfor %}

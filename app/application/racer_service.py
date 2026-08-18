@@ -442,13 +442,13 @@ class RacerService:
 
     async def race_results_list(self, *, date_from: str | None = None,
                                 date_to: str | None = None, reg: str | None = None,
-                                limit: int | None = None):
+                                offset: int = 0, limit: int | None = None):
         """確定済み大会を開催日順（新しい順）にレース結果一覧として返す。
 
         絞り込み: date_from/date_to（'YYYY-MM-DD' 文字列比較）、reg（'open'/'ltd'/None）。
-        limit を指定すると、絞り込み後の先頭（＝直近）から limit 件だけに切り詰める。
-        レコード計算（M4LAPS）は重いので、切り詰めた後の件数ぶんだけ HTTP 層で付与する。
-        戻り値: {"races":[...], "total": 絞り込み後の総数, "shown": 実際に返した件数}
+        ページング: offset から limit 件（limit=None は offset 以降すべて）。
+        レコード（M4LAPS）は重いので HTTP 層で、返した件数ぶんだけ付与する。
+        戻り値: {"races":[...], "total": 絞り込み後の総数, "offset": offset, "shown": 返した件数}
         """
         async with self.db.execute(
             "SELECT id, name, date, qualifying_type, regulation "
@@ -461,36 +461,31 @@ class RacerService:
             if await self.results.is_result_finalized(t["id"]):
                 finalized.append(t)
 
-        # レギュレーション絞り込み
         if reg == "open":
             finalized = [t for t in finalized if is_open_regulation(t["regulation"])]
         elif reg == "ltd":
             finalized = [t for t in finalized if not is_open_regulation(t["regulation"])]
-
-        # 開催日絞り込み（ISO 'YYYY-MM-DD' なので文字列比較で順序が一致する）
         if date_from:
             finalized = [t for t in finalized if (t["date"] or "") >= date_from]
         if date_to:
             finalized = [t for t in finalized if (t["date"] or "") <= date_to]
 
         total = len(finalized)
-        if limit is not None and limit >= 0:
-            finalized = finalized[:limit]
+        if offset < 0:
+            offset = 0
+        page = finalized[offset:] if limit is None else finalized[offset:offset + max(limit, 0)]
 
-        if not finalized:
-            return {"races": [], "total": total, "shown": 0}
+        if not page:
+            return {"races": [], "total": total, "offset": offset, "shown": 0}
 
-        ftids = [t["id"] for t in finalized]
-
-        # 参加人数（大会ごとの重複しないレーサー数）
+        ftids = [t["id"] for t in page]
         entry_count = {tid: set() for tid in ftids}
         for row in await self.entries.list_entries_in(ftids):
             entry_count.setdefault(row["tournament_id"], set()).add(row["racer_id"])
 
-        # 各大会の表彰台（racer_id）
         podium_ids = {}
         need_name_ids = set()
-        for t in finalized:
+        for t in page:
             pod = await self.results.race_podium_racer_ids(t["id"], t["qualifying_type"])
             podium_ids[t["id"]] = pod
             for rid in pod.values():
@@ -508,21 +503,17 @@ class RacerService:
                     name_by_rid[row["id"]] = row["name"]
 
         races = []
-        for t in finalized:
+        for t in page:
             tid = t["id"]
             pod = podium_ids.get(tid, {})
             races.append({
-                "id": tid,
-                "name": t["name"],
-                "date": t["date"],
+                "id": tid, "name": t["name"], "date": t["date"],
                 "regulation": t["regulation"] or "",
                 "is_open": is_open_regulation(t["regulation"]),
                 "entries": len(entry_count.get(tid, set())),
-                "podium": {
-                    1: name_by_rid.get(pod.get(1)),
-                    2: name_by_rid.get(pod.get(2)),
-                    3: name_by_rid.get(pod.get(3)),
-                },
-                "record": None,  # HTTP層（M4LAPSライセンス時）で付与
+                "podium": {1: name_by_rid.get(pod.get(1)),
+                           2: name_by_rid.get(pod.get(2)),
+                           3: name_by_rid.get(pod.get(3))},
+                "record": None,
             })
-        return {"races": races, "total": total, "shown": len(races)}
+        return {"races": races, "total": total, "offset": offset, "shown": len(races)}

@@ -24,7 +24,6 @@ h1{ font-size:22px; margin:0; letter-spacing:1px; }
 .back:active{ transform:translateY(1px); box-shadow:0 2px 6px rgba(31,111,235,.4); }
 .note{ color:#9fb3c8; font-size:13px; margin:0 0 12px; }
 
-/* 絞り込みパネル（JS不要の details/summary） */
 .filter{ margin:0 0 14px; border:1px solid #22384f; border-radius:10px; background:#101f31; overflow:hidden; }
 .filter>summary{
   list-style:none; cursor:pointer; padding:11px 14px; font-size:14px; font-weight:bold;
@@ -91,6 +90,10 @@ a.rcard:active{ transform:translateY(1px); }
 .rec-name{ color:#e8eef4; font-weight:bold; }
 
 .detail{ margin-top:10px; text-align:right; color:#7fb2e8; font-size:13px; font-weight:bold; }
+
+.sentinel{ height:1px; }
+.loading{ text-align:center; color:#9fb3c8; font-size:13px; padding:14px 0; display:none; }
+.loading.on{ display:block; }
 .more{
   display:block; text-align:center; text-decoration:none; margin:6px 0 0;
   padding:12px; border:1px solid #35506e; border-radius:10px; color:#cfe0f2;
@@ -142,72 +145,105 @@ a.rcard:active{ transform:translateY(1px); }
     </form>
   </details>
 
+  {% if active_filter %}
+    <p class="note">絞り込み結果：{{ total }} 件</p>
+  {% endif %}
+
   {% if races %}
-    {% if active_filter %}
-      <p class="note">絞り込み結果：{{ total }} 件</p>
-    {% endif %}
+    <div id="races-list">
+      {% include "viewer/_race_cards.html" %}
 
-    {% for r in races %}
-    <a class="rcard" href="{{ prefix }}/view/tournament/{{ r.id }}?ro=1">
-      <div class="rhead">
-        <span class="rdate">{{ r.date }}</span>
-        <span class="rname">{{ r.name }}</span>
-        {% if r.is_open %}
-          <span class="reg reg-open">オープン</span>
-        {% else %}
-          <span class="reg reg-ltd">限定</span>
-        {% endif %}
-        <span class="rcount">参加 <b>{{ r.entries }}</b> 名</span>
-      </div>
-
-      <div class="podium">
-        <div class="pod p1"><span class="pmark">1</span>
-          {% if r.podium[1] %}<span class="pname">{{ r.podium[1] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
-        </div>
-        <div class="pod p2"><span class="pmark">2</span>
-          {% if r.podium[2] %}<span class="pname">{{ r.podium[2] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
-        </div>
-        <div class="pod p3"><span class="pmark">3</span>
-          {% if r.podium[3] %}<span class="pname">{{ r.podium[3] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
-        </div>
-      </div>
-
-      {% if m4laps and r.record %}
-        <div class="record">
-          <div class="record-hd">⚡ RECORD HOLDER</div>
-          {% if r.record.overall %}
-          <div class="rec-row"><span class="rec-cat">総合ベスト</span>
-            <span class="rec-val">{{ r.record.overall.value_str }}</span>
-            <span class="rec-name">{% for h in r.record.overall.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
-          </div>
-          {% endif %}
-          {% if r.record.fastest_lap %}
-          <div class="rec-row"><span class="rec-cat">最速ラップ</span>
-            <span class="rec-val">{{ r.record.fastest_lap.value_str }}</span>
-            <span class="rec-name">{% for h in r.record.fastest_lap.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
-          </div>
-          {% endif %}
-          {% if r.record.top_speed %}
-          <div class="rec-row"><span class="rec-cat">最高速</span>
-            <span class="rec-val">{{ r.record.top_speed.value_str }}</span>
-            <span class="rec-name">{% for h in r.record.top_speed.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
-          </div>
-          {% endif %}
-        </div>
+      {% if has_more %}
+        {# スクロール追記の目印。JSがここより手前に次バッチを差し込む #}
+        <div id="races-sentinel" class="sentinel"
+             data-url="{{ prefix }}/api/races/fragment"
+             data-offset="{{ next_offset }}"
+             data-page="{{ page_size }}"
+             data-total="{{ total }}"
+             data-from="{{ f_from }}" data-to="{{ f_to }}" data-reg="{{ f_reg }}"></div>
+        <div id="races-loading" class="loading">読み込み中…</div>
+        {# JS無効時のフォールバック（全件表示に切替） #}
+        <noscript>
+          <a class="more" href="{{ prefix }}/api/races?all=1{% if f_from %}&from={{ f_from }}{% endif %}{% if f_to %}&to={{ f_to }}{% endif %}{% if f_reg %}&reg={{ f_reg }}{% endif %}">すべて表示（他 {{ total - shown }} 件）</a>
+        </noscript>
       {% endif %}
-
-      <div class="detail">予選〜決勝の詳細を見る ›</div>
-    </a>
-    {% endfor %}
-
-    {% if limit and not active_filter and total > shown %}
-      <a class="more" href="{{ prefix }}/api/races?all=1">すべて表示（他 {{ total - shown }} 件）</a>
-    {% endif %}
+    </div>
   {% else %}
     <div class="empty">
       {% if active_filter %}条件に合うレースがありません。{% else %}確定したレース結果はまだありません。{% endif %}
     </div>
   {% endif %}
 </div>
+
+<script>
+(function(){
+  var s = document.getElementById('races-sentinel');
+  if(!s) return;
+  var list = document.getElementById('races-list');
+  var loadingEl = document.getElementById('races-loading');
+  var offset = parseInt(s.getAttribute('data-offset'), 10) || 0;
+  var page   = parseInt(s.getAttribute('data-page'), 10) || 8;
+  var total  = parseInt(s.getAttribute('data-total'), 10) || 0;
+  var url    = s.getAttribute('data-url');
+  var loading = false, done = false;
+
+  function buildQuery(){
+    var p = [];
+    p.push('offset=' + encodeURIComponent(offset));
+    p.push('limit=' + encodeURIComponent(page));
+    var f = s.getAttribute('data-from'); if(f) p.push('from=' + encodeURIComponent(f));
+    var t = s.getAttribute('data-to');   if(t) p.push('to=' + encodeURIComponent(t));
+    var r = s.getAttribute('data-reg');  if(r) p.push('reg=' + encodeURIComponent(r));
+    return p.join('&');
+  }
+
+  function finish(){
+    done = true;
+    if(loadingEl){ loadingEl.classList.remove('on'); }
+    if(s && s.parentNode){ s.parentNode.removeChild(s); }
+  }
+
+  function load(){
+    if(loading || done) return;
+    loading = true;
+    if(loadingEl){ loadingEl.classList.add('on'); }
+    fetch(url + '?' + buildQuery(), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function(res){ if(!res.ok) throw new Error('http'); return res.text(); })
+      .then(function(html){
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html.trim();
+        var cards = tmp.querySelectorAll('.rcard');
+        for(var i=0; i<cards.length; i++){ list.insertBefore(cards[i], s); }
+        offset += cards.length;
+        loading = false;
+        if(loadingEl){ loadingEl.classList.remove('on'); }
+        if(cards.length < page || (total && offset >= total)){ finish(); }
+        else { setTimeout(maybeLoad, 0); } // 画面が埋まらない場合は続けて読む
+      })
+      .catch(function(){
+        loading = false;
+        if(loadingEl){ loadingEl.classList.remove('on'); }
+      });
+  }
+
+  function inView(){
+    var rect = s.getBoundingClientRect();
+    return rect.top < (window.innerHeight || document.documentElement.clientHeight) + 400;
+  }
+  function maybeLoad(){ if(!done && inView()) load(); }
+
+  if('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      for(var i=0;i<entries.length;i++){ if(entries[i].isIntersecting){ load(); } }
+    }, { rootMargin: '400px 0px' });
+    io.observe(s);
+  } else {
+    window.addEventListener('scroll', maybeLoad, { passive: true });
+    window.addEventListener('resize', maybeLoad);
+  }
+  // 初回、画面が既に底に近いときの保険
+  setTimeout(maybeLoad, 0);
+})();
+</script>
 </body>
 </html>

@@ -186,10 +186,10 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
     })
 
 
-# ---- 過去レース結果一覧（「レースの結果」ボタンから開く）----
-_races_cache = {}        # store_id -> (monotonic_ts, races)  ※既定表示(絞り込みなし)のみキャッシュ
+# ---- 過去レース結果一覧（「レースの結果」ボタン）。無限スクロールで順次読み込み ----
+_races_cache = {}        # (store_id, licensed) -> (ts, (races,total))  ※初回ページ(絞込なし)のみ
 _RACES_TTL = 60
-_RACES_DEFAULT_LIMIT = 5
+_RACES_PAGE = 8          # 1バッチの件数（初回・追記とも）
 
 
 async def _m4laps_licensed(request, db) -> bool:
@@ -218,9 +218,8 @@ async def _record_holder_for(db, tid: int):
     name_by_eid = {}
     try:
         async with db.execute(
-            "SELECT e.id AS eid, r.name AS name "
-            "FROM entries e JOIN racers r ON r.id = e.racer_id "
-            "WHERE e.tournament_id = ?", (tid,)
+            "SELECT e.id AS eid, r.name AS name FROM entries e "
+            "JOIN racers r ON r.id = e.racer_id WHERE e.tournament_id = ?", (tid,)
         ) as cur:
             for row in await cur.fetchall():
                 name_by_eid[row["eid"]] = row["name"]
@@ -232,67 +231,96 @@ async def _record_holder_for(db, tid: int):
         return None
 
 
-@router.get("/api/races", response_class=HTMLResponse)
-async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """確定済み大会のレース結果一覧（開催日順）。既定は直近数件のみ、絞り込み対応。"""
-    import time as _time
-    store = getattr(request.state, "store", None)
-    slug = (getattr(store, "slug", "") or "")
-    sid = getattr(store, "id", 0)
-
-    qp = request.query_params
+def _races_filters(qp):
     f_from = (qp.get("from") or "").strip()
     f_to = (qp.get("to") or "").strip()
     f_reg = (qp.get("reg") or "").strip()
     if f_reg not in ("open", "ltd"):
         f_reg = ""
-    show_all = (qp.get("all") == "1")
+    return f_from, f_to, f_reg
+
+
+async def _races_batch(db, licensed, *, f_from, f_to, f_reg, offset, limit):
+    data = await _RacerService(db).race_results_list(
+        date_from=f_from or None, date_to=f_to or None,
+        reg=f_reg or None, offset=offset, limit=limit,
+    )
+    races = data.get("races", [])
+    if licensed:
+        for r in races:
+            try:
+                r["record"] = await _record_holder_for(db, r["id"])
+            except Exception:
+                r["record"] = None
+    return races, data.get("total", len(races))
+
+
+@router.get("/api/races", response_class=HTMLResponse)
+async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """レース結果一覧の初回ページ。以降はスクロールで /api/races/fragment を読む。"""
+    import time as _time
+    store = getattr(request.state, "store", None)
+    slug = (getattr(store, "slug", "") or "")
+    sid = getattr(store, "id", 0)
+    prefix = (f"/{slug}" if slug else "")
+
+    f_from, f_to, f_reg = _races_filters(request.query_params)
     active_filter = bool(f_from or f_to or f_reg)
-
-    # 既定（絞り込みなし・全件でない）は直近 N 件に制限し、レコード計算も N 件に抑える
-    limit = None if (active_filter or show_all) else _RACES_DEFAULT_LIMIT
-
+    show_all = (request.query_params.get("all") == "1")   # JS無効時のフォールバック
     licensed = await _m4laps_licensed(request, db)
 
-    async def _compute():
-        data = await _RacerService(db).race_results_list(
-            date_from=f_from or None, date_to=f_to or None,
-            reg=f_reg or None, limit=limit,
-        )
-        races = data.get("races", [])
-        if licensed:
-            for r in races:
-                try:
-                    r["record"] = await _record_holder_for(db, r["id"])
-                except Exception:
-                    r["record"] = None
-        return races, data.get("total", len(races))
+    limit = None if show_all else _RACES_PAGE
 
-    # ホットパス（既定表示）だけキャッシュする。絞り込み/全件は都度計算。
-    if limit is not None and not active_filter and not show_all:
+    if (not active_filter) and (not show_all):
         now = _time.monotonic()
         ck = (sid, bool(licensed))
         cached = _races_cache.get(ck)
         if cached and (now - cached[0]) < _RACES_TTL:
             races, total = cached[1]
         else:
-            races, total = await _compute()
+            races, total = await _races_batch(db, licensed, f_from=f_from, f_to=f_to,
+                                              f_reg=f_reg, offset=0, limit=limit)
             _races_cache[ck] = (now, (races, total))
     else:
-        races, total = await _compute()
+        races, total = await _races_batch(db, licensed, f_from=f_from, f_to=f_to,
+                                          f_reg=f_reg, offset=0, limit=limit)
 
+    shown = len(races)
     return _templates.TemplateResponse("viewer/races.html", {
-        "request": request,
-        "prefix": (f"/{slug}" if slug else ""),
+        "request": request, "prefix": prefix,
         "back_href": (f"/{slug}/" if slug else "/"),
         "m4laps": bool(licensed),
-        "races": races,
-        "total": total,
-        "shown": len(races),
-        "limit": limit,                 # None＝全件/絞り込み表示、数値＝既定の制限件数
-        "active_filter": active_filter,
-        "show_all": show_all,
+        "races": races, "total": total, "shown": shown,
+        "page_size": _RACES_PAGE, "next_offset": shown,
+        "has_more": (not show_all) and (shown < total),
+        "active_filter": active_filter, "show_all": show_all,
         "f_from": f_from, "f_to": f_to, "f_reg": f_reg,
+    })
+
+
+@router.get("/api/races/fragment", response_class=HTMLResponse)
+async def public_races_fragment(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """スクロール追記用のカード断片（cardのHTMLのみ）を返す。"""
+    store = getattr(request.state, "store", None)
+    slug = (getattr(store, "slug", "") or "")
+    prefix = (f"/{slug}" if slug else "")
+    qp = request.query_params
+    f_from, f_to, f_reg = _races_filters(qp)
+    try:
+        offset = int(qp.get("offset") or 0)
+    except ValueError:
+        offset = 0
+    try:
+        limit = int(qp.get("limit") or _RACES_PAGE)
+    except ValueError:
+        limit = _RACES_PAGE
+    limit = max(1, min(limit, 30))
+    licensed = await _m4laps_licensed(request, db)
+    races, _total = await _races_batch(db, licensed, f_from=f_from, f_to=f_to,
+                                       f_reg=f_reg, offset=offset, limit=limit)
+    return _templates.TemplateResponse("viewer/_race_cards.html", {
+        "request": request, "prefix": prefix, "m4laps": bool(licensed),
+        "races": races,
     })
 
 
