@@ -240,10 +240,9 @@
 function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
 </script>
 {% endraw %}
-{# 表示するコース列。plain roundrobin は 1vs1 のため 1・2コースの2列。
-   ヒート総当たり(heat_roundrobin)・即決勝総当たり(none_roundrobin)は 3コースも使えるよう3列
-   （既定は 1・2 のみ使用）。通常ヒート・ポイント制も3列。 #}
-{% set course_cols = [1, 2] if is_roundrobin else [1, 2, 3] %}
+{# 表示するコース列。総当たり系（roundrobin/heat_roundrobin/none_roundrobin）も 3コースを
+   使えるよう全形式3列に統一（既定の割り当ては従来どおり 1・2 のみ使用）。 #}
+{% set course_cols = [1, 2, 3] %}
 <div class="detail-actionbar">
   {% if is_heat_roundrobin %}
   {# ヒート（総当たり）：ヒート（トーナメント）と同じアクションバー・表示ルール #}
@@ -998,8 +997,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
     {% macro race_row(heat, no=None) %}
     {% set lanes = heat_lanes_map.get(heat.id, []) %}
-    {# 総当たり系（即決勝総当たり／ヒート総当たり）：結果未入力の行だけコース（レーン）をドラッグ入替可能にする #}
-    {% set nr_sortable = (is_none_roundrobin or is_heat_roundrobin) and (not is_confirmed_nr) and (not is_finalized) and (heat.id not in done_heat_ids) %}
+    {# 総当たり系（総当たり／即決勝総当たり／ヒート総当たり）＋ポイント制：結果未入力の行だけコース（レーン）をドラッグ入替可能にする #}
+    {% set nr_sortable = (is_roundrobin or is_none_roundrobin or is_heat_roundrobin or (t.qualifying_type == 'point')) and (not is_confirmed_nr) and (not is_finalized) and (heat.id not in done_heat_ids) %}
     <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
       {# 状態（取消／反映）は左端。結果の有無は順位枠とFINISHで分かるので状態バッジは置かない。
          結果ありのときは「反映」を隠して「取消」だけを出す（誤って上書きしないため）。 #}
@@ -2638,8 +2637,8 @@ async function applyTimingToHeat(heatId, btn, force){
 </script>
 {% endif %}
 
-{# ===== 総当たり系（即決勝総当たり／ヒート総当たり）：コース（出走レーン）の左右入れ替え（ドラッグ） ===== #}
-{% if is_none_roundrobin or is_heat_roundrobin %}
+{# ===== 総当たり系（総当たり／即決勝総当たり／ヒート総当たり）＋ポイント制：コース（出走レーン）の入れ替え（ドラッグ） ===== #}
+{% if is_roundrobin or is_none_roundrobin or is_heat_roundrobin or (t.qualifying_type == 'point') %}
 <style>
   .nr-lane-handle{ cursor:grab; color:#95a5a6; font-size:15px; line-height:1; padding:0 2px; user-select:none; touch-action:none; flex-shrink:0; }
   .nr-lane-handle:active{ cursor:grabbing; }

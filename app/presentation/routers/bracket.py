@@ -5105,7 +5105,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-slot.br-lane-dragging { opacity:.55; box-shadow:0 2px 10px rgba(10,132,255,.35); }
     .br-group.lane-sortable.br-lane-drop { outline:2px dashed #0a84ff; outline-offset:2px; }
     /* 緑テーマ（ヒート制トーナメント図）：ドロップ先の点線を緑にする */
-    .br-group.lane-sortable.lane-drop-green.br-lane-drop { outline-color:#27ae60; background:rgba(39,174,96,.06); }
+    /* 組（グループ）の枠は出さない（ドラッグ中スロットの緑枠だけで示す） */
+    .br-group.lane-sortable.lane-drop-green.br-lane-drop { outline:none; background:transparent; }
     .lane-drop-green .br-slot.br-lane-dragging { box-shadow:0 2px 10px rgba(39,174,96,.4); outline:2px dashed #27ae60; outline-offset:2px; opacity:.7; }
     .br-slot-mark { font-size:20px; }
     /* 1位：濃い緑・白文字・強調 */
