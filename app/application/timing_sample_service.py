@@ -196,6 +196,10 @@ def build_sample_events(
             rnd=rnd,
         )
 
+    # ⚠ 回転の法（レーン入替）は物理レーン数=LANES(=3固定)で計算する。
+    #    引数 lanes は"何台走るか"（=埋まる開始レーン数）に過ぎない。
+    #    実機の少数台ヒートと同じく、開始レーン 1..lanes だけイベントを出す。
+    #    こうすると同定側 build_race(lanes=LANES) と物理レーンが一致する。
     for start_lane in range(1, lanes + 1):
         pat = lane_patterns[start_lane - 1] if lane_patterns else None
 
@@ -216,7 +220,7 @@ def build_sample_events(
             # 走行式は思い思いのタイミングでS/Gを通る（FINISHはS/G間の合計）
             t_cross0 = base + int(rnd.uniform(0.0, 1.5) * 1_000_000)
             run_s = target
-        _emit(sg, expected_sg_lane(start_lane, 0, rot_total, lanes), t_cross0)
+        _emit(sg, expected_sg_lane(start_lane, 0, rot_total, LANES), t_cross0)
 
         lap_times = split_evenly(run_s, target_laps, rnd, spread=0.06)
         t_lap_start = t_cross0
@@ -236,7 +240,7 @@ def build_sample_events(
                     continue
                 _emit(
                     g,
-                    expected_lane(start_lane, lap, g.rot_to_gate, rot_total, lanes),
+                    expected_lane(start_lane, lap, g.rot_to_gate, rot_total, LANES),
                     t_lap_start + int(acc * 1_000_000),
                 )
 
@@ -244,7 +248,7 @@ def build_sample_events(
             t_lap_start += lap_us
             # gate_idx=0 が「周回完了S/G」。COで周を締められない場合は出さない。
             if not (pat and not should_emit(pat, lap, 0)):
-                _emit(sg, expected_sg_lane(start_lane, lap, rot_total, lanes),
+                _emit(sg, expected_sg_lane(start_lane, lap, rot_total, LANES),
                       t_lap_start)
 
     events.sort(key=lambda e: e["t_us"])
