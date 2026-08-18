@@ -240,9 +240,10 @@
 function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_',Date.now());location.replace(u.toString());}catch(e){location.reload();}}
 </script>
 {% endraw %}
-{# 表示するコース列。総当たり系（roundrobin/heat_roundrobin/none_roundrobin）は
-   1vs1 のため常に 1コース・2コースの2列。それ以外（通常ヒート・ポイント制）は3列。 #}
-{% set course_cols = [1, 2] if (is_roundrobin or is_heat_roundrobin or is_none_roundrobin) else [1, 2, 3] %}
+{# 表示するコース列。roundrobin/heat_roundrobin は 1vs1 のため 1・2コースの2列。
+   即決勝総当たり(none_roundrobin)は 3コースも使えるよう 3列にする（既定は 1・2 のみ使用）。
+   通常ヒート・ポイント制も3列。 #}
+{% set course_cols = [1, 2] if (is_roundrobin or is_heat_roundrobin) else [1, 2, 3] %}
 <div class="detail-actionbar">
   {% if is_heat_roundrobin %}
   {# ヒート（総当たり）：ヒート（トーナメント）と同じアクションバー・表示ルール #}
@@ -997,6 +998,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
     {% macro race_row(heat, no=None) %}
     {% set lanes = heat_lanes_map.get(heat.id, []) %}
+    {# 即決勝総当たり：結果未確定・未確定大会のときだけコース（レーン）をドラッグ入替可能にする #}
+    {% set nr_sortable = is_none_roundrobin and (not is_confirmed_nr) and (not is_finalized) and (heat.id not in done_heat_ids) %}
     <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
       {# 状態（取消／反映）は左端。結果の有無は順位枠とFINISHで分かるので状態バッジは置かない。
          結果ありのときは「反映」を隠して「取消」だけを出す（誤って上書きしないため）。 #}
@@ -1021,8 +1024,9 @@ document.addEventListener('DOMContentLoaded', function(){
       {% for col in course_cols %}
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
         {% if ld %}{% set lane = ld[0] %}{% set lc = ["#2980b9","#e74c3c","#27ae60"] %}
-        <td>
+        <td{% if nr_sortable %} class="nr-lane" data-heat-id="{{ heat.id }}" data-lane-no="{{ col }}" data-entry-id="{{ lane.entry_id }}"{% endif %}>
           <div class="rc" style="display:flex;align-items:center;gap:6px">
+            {% if nr_sortable %}<span class="nr-lane-handle" title="ドラッグでコース（出走レーン）を入れ替え">&#10303;</span>{% endif %}
             {% if is_roundrobin or is_heat_roundrobin or is_none_roundrobin %}
             {# 総当たり系：○×ボタンを名前の左に配置 #}
             {% set _win_val = inline_results.get((heat.id, lane.entry_id), {}).get('win') %}
@@ -1094,7 +1098,11 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
         </td>
         {% else %}
+        {% if nr_sortable %}
+        <td class="nr-lane nr-empty-cell" data-heat-id="{{ heat.id }}" data-lane-no="{{ col }}" style="text-align:center"><span class="nr-empty" style="color:#bdc3c7">ー</span></td>
+        {% else %}
         <td style="color:#bdc3c7;text-align:center">ー</td>
+        {% endif %}
         {% endif %}
       {% endfor %}
       {# 編集はめったに使わないので右端。結果が入っている行では出さない #}
@@ -2627,6 +2635,112 @@ async function applyTimingToHeat(heatId, btn, force){
   btn.disabled = false; btn.textContent = orig;
 }
 
+</script>
+{% endif %}
+
+{# ===== 即決勝総当たり：コース（出走レーン）の左右入れ替え（ドラッグ） ===== #}
+{% if is_none_roundrobin %}
+<style>
+  .nr-lane-handle{ cursor:grab; color:#95a5a6; font-size:15px; line-height:1; padding:0 2px; user-select:none; touch-action:none; flex-shrink:0; }
+  .nr-lane-handle:active{ cursor:grabbing; }
+  td.nr-lane .rc.nr-dragging{ opacity:.55; }
+  td.nr-lane.nr-drop-hover{ outline:2px dashed #0a84ff; outline-offset:-2px; background:#f4f9ff; }
+</style>
+<script>
+(function(){
+  var TID = {{ t.id }};
+  var dragEl = null;     // ドラッグ中の .rc
+  var srcTd  = null;     // ドラッグ元の td.nr-lane
+
+  function rowOf(td){ return td.closest('tr.race-row'); }
+  function lanesInRow(row){ return Array.prototype.slice.call(row.querySelectorAll('td.nr-lane')); }
+
+  function saveRow(row){
+    var heatId = null, pairs = [];
+    lanesInRow(row).forEach(function(td){
+      if(td.dataset.heatId) heatId = td.dataset.heatId;
+      var eid = td.dataset.entryId;
+      if(eid){ pairs.push(eid + ':' + td.dataset.laneNo); }
+    });
+    if(heatId === null) return;
+    var fd = new FormData();
+    fd.append('pairs', pairs.join(','));
+    fetch('/admin/tournaments/'+TID+'/qualifying/heat/'+heatId+'/reorder-lanes', { method:'POST', body:fd })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.ok){
+          alert('コースの入れ替えを保存できませんでした。' + (d && d.error ? '\n'+d.error : ''));
+          location.reload();
+        }
+      })
+      .catch(function(){
+        alert('コースの入れ替えを保存できませんでした（通信エラー）。');
+        location.reload();
+      });
+  }
+
+  // src td と tgt td の中身（.rc / .nr-empty）と data-entry-id を入れ替える
+  function swapCells(a, b){
+    if(a === b) return;
+    var ca = a.firstElementChild, cb = b.firstElementChild;
+    // 子要素を入れ替え
+    b.appendChild(ca);
+    a.appendChild(cb);
+    // entry_id を入れ替え
+    var ea = a.dataset.entryId || '', eb = b.dataset.entryId || '';
+    if(eb){ a.dataset.entryId = eb; } else { delete a.dataset.entryId; a.removeAttribute('data-entry-id'); }
+    if(ea){ b.dataset.entryId = ea; } else { delete b.dataset.entryId; b.removeAttribute('data-entry-id'); }
+    // 空セルの見た目クラスを更新
+    a.classList.toggle('nr-empty-cell', !a.dataset.entryId);
+    b.classList.toggle('nr-empty-cell', !b.dataset.entryId);
+  }
+
+  function wire(){
+    document.querySelectorAll('td.nr-lane .nr-lane-handle').forEach(function(handle){
+      if(handle.dataset.wired === '1') return;
+      handle.dataset.wired = '1';
+      var rc = handle.closest('.rc');
+      var td = handle.closest('td.nr-lane');
+      if(!rc || !td) return;
+      handle.addEventListener('click', function(e){ e.stopPropagation(); });
+      handle.addEventListener('mousedown', function(e){ e.stopPropagation(); rc.setAttribute('draggable','true'); });
+      handle.addEventListener('touchstart', function(e){ e.stopPropagation(); rc.setAttribute('draggable','true'); }, {passive:true});
+      rc.addEventListener('dragstart', function(e){
+        dragEl = rc; srcTd = td; rc.classList.add('nr-dragging');
+        if(e.dataTransfer){ e.dataTransfer.effectAllowed='move';
+          try{ e.dataTransfer.setData('text/plain', td.dataset.entryId||''); }catch(_){} }
+      });
+      rc.addEventListener('dragend', function(){
+        rc.classList.remove('nr-dragging'); rc.removeAttribute('draggable');
+        document.querySelectorAll('td.nr-lane.nr-drop-hover').forEach(function(x){ x.classList.remove('nr-drop-hover'); });
+        dragEl = null; srcTd = null;
+      });
+    });
+
+    document.querySelectorAll('td.nr-lane').forEach(function(td){
+      if(td.dataset.dropWired === '1') return;
+      td.dataset.dropWired = '1';
+      td.addEventListener('dragover', function(e){
+        if(!srcTd || rowOf(td) !== rowOf(srcTd)) return;   // 同じレース内だけ
+        e.preventDefault();
+        if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+        if(td !== srcTd) td.classList.add('nr-drop-hover');
+      });
+      td.addEventListener('dragleave', function(){ td.classList.remove('nr-drop-hover'); });
+      td.addEventListener('drop', function(e){
+        e.preventDefault();
+        td.classList.remove('nr-drop-hover');
+        if(!srcTd || td === srcTd || rowOf(td) !== rowOf(srcTd)) return;
+        var row = rowOf(td);
+        swapCells(srcTd, td);
+        saveRow(row);
+      });
+    });
+  }
+
+  if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', wire); }
+  else { wire(); }
+})();
 </script>
 {% endif %}
 {% endblock %}

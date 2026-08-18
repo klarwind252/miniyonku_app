@@ -4972,7 +4972,7 @@ async def bracket_html(tid: int, lane_drag: int = 0, db: aiosqlite.Connection = 
     return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes, enable_lane_drag=bool(lane_drag)))
 
 
-def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False) -> str:
+def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None) -> str:
     """flexboxベースのHTML/CSSトーナメント表（コネクタ線・勝ち上がり強調付き）
 
     compact=True のとき、表彰台（br-podium）を約半分の高さに縮小する（admin画面用）。
@@ -5229,8 +5229,14 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                         break
             data_winner = f' data-winner-name="{winner_name}"' if winner_name else ""
             gid_attr = f' id="vg-{group_id}"' if group_id else ""
-            # 並び替え可能な組には group_id / tid を持たせる（保存先の解決に使う）
-            sort_attr = f' data-group-id="{group_id}" data-tid="{tid}"' if sortable_group else ""
+            # 並び替え可能な組には group_id / tid / 保存先URL を持たせる。
+            # URLは呼び出し元がテンプレートで差し替え可能（決勝＝bracket、予選＝ht 等）。
+            if sortable_group:
+                _tmpl = lane_reorder_url_tmpl or f"/admin/tournaments/{tid}/bracket/group/{{gid}}/reorder-slots"
+                _lane_url = _tmpl.format(gid=group_id)
+                sort_attr = f' data-group-id="{group_id}" data-tid="{tid}" data-lane-url="{_lane_url}"'
+            else:
+                sort_attr = ""
             # 固定リンクによる「勝者の進む先グループ番号」（存在すれば）をJSへ渡す
             # ri=None（3位決定戦・裏トーナメント）ではリンク描画は使わない
             _adv_tgi = _adv_group_of.get((ri, gi)) if ri is not None else None

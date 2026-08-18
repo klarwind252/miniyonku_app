@@ -1093,6 +1093,86 @@ function _showPubToast(msg) {
 </script>
 
 {% if IS_CLOUD and request.state.m4laps_licensed and (t is not defined or not t or t.use_m4laps != 0) %}
+<!-- ============ 出走レーン（コース）並び替え：トーナメント図共通（全admin画面） ============ -->
+{# _render_html_bracket 図（?lane_drag=1）で .br-group.lane-sortable が出る組だけ有効。
+   各組の data-lane-url が保存先（決勝=bracket / 予選ヒート=ht 等）。公開図には付かない。 #}
+<script>
+(function(){
+  function slotsOf(grp){ return Array.prototype.slice.call(grp.querySelectorAll('.br-slot')); }
+  function afterElement(grp, y){
+    var rows = slotsOf(grp).filter(function(r){ return !r.classList.contains('br-lane-dragging'); });
+    var closest = { off: -Infinity, el: null };
+    rows.forEach(function(r){
+      var box = r.getBoundingClientRect();
+      var off = y - box.top - box.height/2;
+      if(off < 0 && off > closest.off){ closest = { off: off, el: r }; }
+    });
+    return closest.el;
+  }
+  function saveOrder(grp){
+    var ids = slotsOf(grp).map(function(r){ return r.dataset.slotId; }).filter(Boolean);
+    if(!ids.length) return;
+    var url = grp.dataset.laneUrl;
+    var tid = grp.dataset.tid;
+    if(!url){ return; }
+    var fd = new FormData();
+    fd.append('slot_ids', ids.join(','));
+    fetch(url, { method:'POST', body:fd })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.ok){
+          alert('出走レーンの並びを保存できませんでした。' + (d && d.error ? '\n'+d.error : ''));
+          if(window.reloadBracketHtml && tid){ reloadBracketHtml(tid); } else { location.reload(); }
+        }
+      })
+      .catch(function(){
+        alert('出走レーンの並びを保存できませんでした（通信エラー）。');
+        if(window.reloadBracketHtml && tid){ reloadBracketHtml(tid); } else { location.reload(); }
+      });
+  }
+  function wireGroup(grp){
+    if(grp.dataset.laneSortWired === '1') return;
+    grp.dataset.laneSortWired = '1';
+    slotsOf(grp).forEach(function(row){
+      var handle = row.querySelector('.br-lane-handle');
+      if(!handle) return;
+      handle.addEventListener('click', function(e){ e.stopPropagation(); });
+      handle.addEventListener('mousedown', function(e){ e.stopPropagation(); row.setAttribute('draggable','true'); });
+      handle.addEventListener('touchstart', function(e){ e.stopPropagation(); row.setAttribute('draggable','true'); }, {passive:true});
+      row.addEventListener('dragstart', function(e){
+        row.classList.add('br-lane-dragging');
+        grp.classList.add('br-lane-drop');
+        if(e.dataTransfer){ e.dataTransfer.effectAllowed='move';
+          try{ e.dataTransfer.setData('text/plain', row.dataset.slotId||''); }catch(_){} }
+      });
+      row.addEventListener('dragend', function(){
+        row.classList.remove('br-lane-dragging');
+        row.removeAttribute('draggable');
+        grp.classList.remove('br-lane-drop');
+        saveOrder(grp);
+      });
+    });
+    grp.addEventListener('dragover', function(e){
+      var dragging = grp.querySelector('.br-slot.br-lane-dragging');
+      if(!dragging) return;
+      e.preventDefault();
+      if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+      var after = afterElement(grp, e.clientY);
+      if(after == null) grp.appendChild(dragging);
+      else grp.insertBefore(dragging, after);
+    });
+  }
+  window.initBracketLaneSort = function(){
+    document.querySelectorAll('.br-group.lane-sortable').forEach(wireGroup);
+  };
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', window.initBracketLaneSort);
+  } else {
+    window.initBracketLaneSort();
+  }
+})();
+</script>
+
 <!-- ============ M4LAPS PIP（ラップタイマー受信・全admin画面共通／PC） ============ -->
 <style>
   #m4pip{

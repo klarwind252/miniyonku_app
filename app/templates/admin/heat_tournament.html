@@ -834,7 +834,7 @@ function _htEnsureBracketScript(c) {
 function loadHtBracket(tid, hno) {
   var c=document.getElementById('ht-bracket-'+hno);
   if(!c) return;
-  fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html')
+  fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?lane_drag=1')
     .then(function(r){return r.text();})
     .then(function(html){
       // 差し替え中に高さが潰れてページが動く（スクロールしたような動作）のを防ぐ：
@@ -852,6 +852,7 @@ function loadHtBracket(tid, hno) {
             if(typeof drawBracketConnectors==='function')drawBracketConnectors(el);
           });
         }
+        if(window.initBracketLaneSort) window.initBracketLaneSort();
         setTimeout(function(){ c.style.visibility=''; setTimeout(function(){ c.style.minHeight=''; },60); }, 60);
       },120);
     }).catch(function(){ c.style.visibility=''; c.style.minHeight=''; });
@@ -860,7 +861,7 @@ function loadHtBracketSection(tid, hno, sec_no) {
   var cid = 'ht-bracket-' + hno + '-' + sec_no;
   var c = document.getElementById(cid);
   if(!c) return;
-  var url = '/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?section_no='+sec_no;
+  var url = '/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/bracket/html?section_no='+sec_no+'&lane_drag=1';
   fetch(url).then(function(r){return r.text();}).then(function(html){
     var prevH = c.offsetHeight;
     if(prevH > 0) c.style.minHeight = prevH + 'px';
@@ -875,6 +876,7 @@ function loadHtBracketSection(tid, hno, sec_no) {
           if(typeof drawBracketConnectors==='function')drawBracketConnectors(el);
         });
       }
+      if(window.initBracketLaneSort) window.initBracketLaneSort();
       setTimeout(function(){ c.style.visibility=''; setTimeout(function(){ c.style.minHeight=''; },60); }, 60);
     },120);
   }).catch(function(){ c.style.visibility=''; c.style.minHeight=''; });

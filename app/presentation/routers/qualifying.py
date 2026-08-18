@@ -2056,6 +2056,89 @@ async def heat_result_reset(tid: int, heat_id: int, db: aiosqlite.Connection = D
     return JSONResponse({"ok": True})
 
 
+@router.post("/{tid}/qualifying/heat/{heat_id}/reorder-lanes")
+async def heat_reorder_lanes(tid: int, heat_id: int, pairs: str = Form(...), db: aiosqlite.Connection = Depends(get_db)):
+    """レース（ヒート）内のコース（出走レーン）割り当てを変更する。
+
+    即決勝総当たり等の 1v1 スケジュールで、レーサーを 1/2/3 コースへ入れ替える。
+    受け取る pairs は "entry_id:lane_no,entry_id:lane_no,..."（コースに入る割り当て）。
+    反映はレーン番号で照合されるため、この割り当てがそのまま出走レーンになる。
+
+    安全のため:
+      - ヒートがこの大会(tid)に属することを確認。
+      - すでに結果があるヒートは拒否（レーンを変えると記録との対応が崩れるため）。
+      - entry の集合がヒートのメンバーと完全一致、lane_no が一意かつ 1..lane_count を確認。
+    """
+    # ヒートが tid のものか + レーン数上限
+    async with db.execute(
+        "SELECT lane_count FROM tournaments WHERE id=?", (tid,)
+    ) as cur:
+        trow = await cur.fetchone()
+    if not trow:
+        return JSONResponse({"ok": False, "error": "大会が見つかりません。"}, status_code=404)
+    lane_count = int(trow["lane_count"] or 3)
+
+    async with db.execute(
+        "SELECT id FROM heats WHERE id=? AND tournament_id=?", (heat_id, tid)
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "error": "対象のレースが見つかりません。"}, status_code=404)
+
+    # 結果があるヒートは拒否
+    async with db.execute(
+        """SELECT 1 FROM heat_results hr JOIN heat_lanes hl ON hl.id=hr.heat_lane_id
+            WHERE hl.heat_id=? LIMIT 1""",
+        (heat_id,),
+    ) as cur:
+        if await cur.fetchone():
+            return JSONResponse(
+                {"ok": False, "error": "結果が入っているため入れ替えできません。先に結果を取り消してください。"},
+                status_code=409,
+            )
+
+    # pairs をパース
+    assign: dict[int, int] = {}   # entry_id -> lane_no
+    try:
+        for tok in pairs.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            eid_s, lane_s = tok.split(":")
+            assign[int(eid_s)] = int(lane_s)
+    except (ValueError, KeyError):
+        return JSONResponse({"ok": False, "error": "割り当ての指定が不正です。"}, status_code=400)
+
+    # ヒートの現メンバー
+    async with db.execute(
+        "SELECT entry_id FROM heat_lanes WHERE heat_id=?", (heat_id,)
+    ) as cur:
+        members = [r["entry_id"] for r in await cur.fetchall()]
+
+    lanes = list(assign.values())
+    if (sorted(assign.keys()) != sorted(members) or not members
+            or len(set(lanes)) != len(lanes)
+            or any(l < 1 or l > lane_count for l in lanes)):
+        return JSONResponse(
+            {"ok": False, "error": "割り当てが不正です。画面を更新してからやり直してください。"},
+            status_code=400,
+        )
+
+    async with transaction(db):
+        for eid, lane_no in assign.items():
+            await db.execute(
+                "UPDATE heat_lanes SET lane_no=? WHERE heat_id=? AND entry_id=?",
+                (lane_no, heat_id, eid),
+            )
+
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
+    return JSONResponse({"ok": True, "assign": assign})
+
+
 @router.post("/{tid}/qualifying/heat/{heat_id}/save")
 async def heat_result_save(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
@@ -4170,10 +4253,13 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
                 })
 
     svg_data = {"rounds": ordered_rounds, "third_rounds": []}  # 3位決定戦はグループカードで表示
+    _lane_drag = int(request.query_params.get("lane_drag", 0))
     html = _render_html_bracket(
         svg_data, tid=tid,
         winner_js_func="setHtWinner",
         winner_js_extra_args=str(heat_no),
+        enable_lane_drag=bool(_lane_drag),
+        lane_reorder_url_tmpl=f"/admin/tournaments/{tid}/qualifying/heat-tournament/{heat_no}/group/{{gid}}/reorder-slots",
     )
     return HTMLResponse(html)
 
@@ -4569,6 +4655,75 @@ async def ht_generate(tid: int, heat_no: int, request: Request, db: aiosqlite.Co
         pass
 
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying/heat-tournament/{heat_no}", status_code=303)
+
+
+@router.post("/{tid}/qualifying/heat-tournament/{heat_no}/group/{group_id}/reorder-slots")
+async def ht_reorder_slots(tid: int, heat_no: int, group_id: int, slot_ids: str = Form(...), db: aiosqlite.Connection = Depends(get_db)):
+    """ヒートトーナメント各グループの出走レーン（コース）並び替え。
+
+    受け取った slot_id の並び順（上→下）を、そのまま slot_no（＝レーン番号）1..N に
+    書き換える。反映は slot_no ↔ レーンで照合されるため、この並びが出走レーンになる。
+
+    安全のため:
+      - ヒートがロック中なら拒否。
+      - 対象グループがこの大会(tid)・ヒート(heat_no)に属することを確認。
+      - すでに結果（勝者）が入っている組は拒否。
+      - 受け取った slot_id が、その組のスロット集合と完全一致することを確認。
+    """
+    if await _is_heat_locked(tid, heat_no, db):
+        return _locked_json_response()
+
+    # グループが tid/heat_no のヒートトーナメントに属するか
+    async with db.execute(
+        """SELECT hr.id
+             FROM ht_groups hg
+             JOIN ht_rounds hr ON hr.id = hg.round_id
+            WHERE hg.id = ? AND hr.tournament_id = ? AND hr.heat_no = ?""",
+        (group_id, tid, heat_no),
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "error": "対象の組が見つかりません。"}, status_code=404)
+
+    # 結果確定済みは拒否
+    async with db.execute(
+        "SELECT 1 FROM ht_results WHERE group_id = ? AND winner_slot_id IS NOT NULL", (group_id,)
+    ) as cur:
+        if await cur.fetchone():
+            return JSONResponse(
+                {"ok": False, "error": "結果が確定済みのため並び替えできません。先に結果を取り消してください。"},
+                status_code=409,
+            )
+
+    try:
+        want = [int(x) for x in slot_ids.split(",") if x.strip() != ""]
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "並び順の指定が不正です。"}, status_code=400)
+
+    async with db.execute(
+        "SELECT id FROM ht_slots WHERE group_id = ?", (group_id,)
+    ) as cur:
+        have = [r["id"] for r in await cur.fetchall()]
+
+    if sorted(want) != sorted(have) or not want:
+        return JSONResponse(
+            {"ok": False, "error": "並び順の対象スロットが一致しません。画面を更新してからやり直してください。"},
+            status_code=400,
+        )
+
+    for idx, sid in enumerate(want, start=1):
+        await db.execute(
+            "UPDATE ht_slots SET slot_no = ? WHERE id = ? AND group_id = ?",
+            (idx, sid, group_id),
+        )
+    await db.commit()
+
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+
+    return JSONResponse({"ok": True, "order": want})
 
 
 @router.post("/{tid}/qualifying/heat-tournament/{heat_no}/group/{group_id}/save")
