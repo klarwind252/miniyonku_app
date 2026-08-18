@@ -2722,9 +2722,12 @@ async function applyTimingToHeat(heatId, btn, force){
       handle.addEventListener('mousedown', function(e){ e.stopPropagation(); rc.setAttribute('draggable','true'); });
       handle.addEventListener('touchstart', function(e){ e.stopPropagation(); rc.setAttribute('draggable','true'); }, {passive:true});
       rc.addEventListener('dragstart', function(e){
-        srcTd = td; rc.classList.add('nr-dragging');
+        // ⚠ 移動後は .rc が別セルへ移るため、掴んだ瞬間の「現在のセル」を都度求める
+        //    （読込時にキャプチャした td を使うと、一度動かした後に元セルを掴んでしまう）
+        srcTd = rc.closest('td.nr-lane');
+        rc.classList.add('nr-dragging');
         if(e.dataTransfer){ e.dataTransfer.effectAllowed='move';
-          try{ e.dataTransfer.setData('text/plain', td.getAttribute('data-entry-id')||''); }catch(_){} }
+          try{ e.dataTransfer.setData('text/plain', (srcTd && srcTd.getAttribute('data-entry-id')) || ''); }catch(_){} }
       });
       rc.addEventListener('dragend', function(){
         rc.classList.remove('nr-dragging'); rc.removeAttribute('draggable');
