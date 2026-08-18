@@ -439,3 +439,72 @@ class RacerService:
         open_total = sum(1 for t in finalized if is_open_map.get(t["id"]))
         return {"racers": racers, "race_total": len(finalized),
                 "open_total": open_total, "ltd_total": len(finalized) - open_total}
+
+    async def race_results_list(self):
+        """確定済み大会を開催日順（新しい順）に、レース結果一覧として返す。
+
+        1件 = { id, name, date, regulation, is_open, entries, podium[1..3の名前] }。
+        レコードホルダー（M4LAPS）は HTTP 層で付与する（ライセンス・計測サービス依存のため）。
+        """
+        async with self.db.execute(
+            "SELECT id, name, date, qualifying_type, regulation "
+            "FROM tournaments ORDER BY date DESC, id DESC"
+        ) as cur:
+            tournaments = await cur.fetchall()
+
+        finalized = []
+        for t in tournaments:
+            if await self.results.is_result_finalized(t["id"]):
+                finalized.append(t)
+
+        if not finalized:
+            return {"races": []}
+
+        ftids = [t["id"] for t in finalized]
+
+        # 参加人数（大会ごとの重複しないレーサー数）
+        entry_count = {tid: set() for tid in ftids}
+        for row in await self.entries.list_entries_in(ftids):
+            entry_count.setdefault(row["tournament_id"], set()).add(row["racer_id"])
+
+        # 各大会の表彰台（racer_id）
+        podium_ids = {}
+        need_name_ids = set()
+        for t in finalized:
+            pod = await self.results.race_podium_racer_ids(t["id"], t["qualifying_type"])
+            podium_ids[t["id"]] = pod
+            for rid in pod.values():
+                if rid is not None:
+                    need_name_ids.add(rid)
+
+        # racer_id -> 名前 をまとめて引く
+        name_by_rid = {}
+        if need_name_ids:
+            ids = list(need_name_ids)
+            ph = ",".join("?" for _ in ids)
+            async with self.db.execute(
+                f"SELECT id, name FROM racers WHERE id IN ({ph})", ids
+            ) as cur:
+                for row in await cur.fetchall():
+                    name_by_rid[row["id"]] = row["name"]
+
+        races = []
+        for t in finalized:
+            tid = t["id"]
+            pod = podium_ids.get(tid, {})
+            races.append({
+                "id": tid,
+                "name": t["name"],
+                "date": t["date"],
+                "regulation": t["regulation"] or "",
+                "is_open": is_open_regulation(t["regulation"]),
+                "entries": len(entry_count.get(tid, set())),
+                "podium": {
+                    1: name_by_rid.get(pod.get(1)),
+                    2: name_by_rid.get(pod.get(2)),
+                    3: name_by_rid.get(pod.get(3)),
+                },
+                # record_holder は HTTP 層で（M4LAPS ライセンス時のみ）付与する
+                "record": None,
+            })
+        return {"races": races}

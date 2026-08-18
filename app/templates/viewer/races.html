@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>レースの結果</title>
+<style>
+:root{ color-scheme: dark; }
+*{ box-sizing:border-box; }
+body{
+  margin:0; background:#0d1b2a; color:#e8eef4;
+  font-family:'Hiragino Kaku Gothic Pro','Meiryo',system-ui,sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{ max-width:820px; margin:0 auto; padding:14px 14px 60px; }
+.top{ display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+h1{ font-size:22px; margin:0; letter-spacing:1px; }
+.back{
+  margin-left:auto;                 /* .top は flex。右寄せにする */
+  color:#fff; text-decoration:none; font-size:15px; font-weight:bold;
+  border:1px solid #1f6feb; border-radius:20px; padding:10px 20px; background:#1f6feb;
+  box-shadow:0 3px 10px rgba(31,111,235,.45);
+}
+.back:active{ transform:translateY(1px); box-shadow:0 2px 6px rgba(31,111,235,.4); }
+.note{ color:#9fb3c8; font-size:13px; margin:0 0 14px; }
+
+.rcard{
+  background:#101f31; border:1px solid #22384f; border-radius:12px;
+  padding:12px 14px; margin-bottom:10px;
+}
+.rhead{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.rdate{ color:#9fb3c8; font-size:13px; font-variant-numeric:tabular-nums; }
+.rname{ font-size:17px; font-weight:bold; color:#e8eef4; }
+.reg{
+  font-size:11px; font-weight:bold; border-radius:5px; padding:2px 8px; letter-spacing:.5px;
+}
+.reg-open{ color:#0d1b2a; background:#7fc4ff; }
+.reg-ltd{ color:#0d1b2a; background:#ffb37f; }
+.rcount{ color:#9fb3c8; font-size:13px; margin-left:auto; white-space:nowrap; }
+.rcount b{ color:#e8eef4; font-size:15px; }
+
+.podium{ display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.pod{
+  display:flex; align-items:center; gap:6px; flex:1 1 30%; min-width:120px;
+  background:#0a1622; border:1px solid #1a2c40; border-radius:8px; padding:7px 10px;
+}
+.pmark{ font-size:15px; font-weight:bold; width:1.6em; text-align:center; flex-shrink:0; }
+.p1 .pmark{ color:#ffd45e; }
+.p2 .pmark{ color:#cdd8e3; }
+.p3 .pmark{ color:#d8a56b; }
+.pname{ font-size:15px; font-weight:bold; color:#e8eef4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pname.empty{ color:#54708a; font-weight:normal; }
+
+.record{
+  margin-top:10px; padding-top:9px; border-top:1px dashed #2c455f;
+}
+.record-hd{ color:#8fe0c8; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:5px; }
+.rec-row{ display:flex; align-items:baseline; gap:8px; font-size:13px; padding:2px 0; flex-wrap:wrap; }
+.rec-cat{ color:#7f97ad; width:6.5em; flex-shrink:0; }
+.rec-val{ color:#8fe0c8; font-weight:bold; font-variant-numeric:tabular-nums; }
+.rec-name{ color:#e8eef4; font-weight:bold; }
+
+.empty{ color:#9fb3c8; text-align:center; padding:30px 0; }
+@media(max-width:600px){
+  h1{ font-size:19px; }
+  .rname{ font-size:16px; }
+  .pod{ flex:1 1 100%; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>レースの結果</h1>
+    <a class="back" href="{{ back_href }}">← 観覧に戻る</a>
+  </div>
+  <p class="note">確定した大会を開催日の新しい順に並べています。{% if m4laps %}⚡マーク付きはM4LAPS計測のレコードホルダーです。{% endif %}</p>
+
+  {% if races %}
+    {% for r in races %}
+    <div class="rcard">
+      <div class="rhead">
+        <span class="rdate">{{ r.date }}</span>
+        <span class="rname">{{ r.name }}</span>
+        {% if r.is_open %}
+          <span class="reg reg-open">オープン</span>
+        {% else %}
+          <span class="reg reg-ltd">限定</span>
+        {% endif %}
+        <span class="rcount">参加 <b>{{ r.entries }}</b> 名</span>
+      </div>
+
+      <div class="podium">
+        <div class="pod p1"><span class="pmark">1</span>
+          {% if r.podium[1] %}<span class="pname">{{ r.podium[1] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
+        </div>
+        <div class="pod p2"><span class="pmark">2</span>
+          {% if r.podium[2] %}<span class="pname">{{ r.podium[2] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
+        </div>
+        <div class="pod p3"><span class="pmark">3</span>
+          {% if r.podium[3] %}<span class="pname">{{ r.podium[3] }}</span>{% else %}<span class="pname empty">—</span>{% endif %}
+        </div>
+      </div>
+
+      {% if m4laps and r.record %}
+        <div class="record">
+          <div class="record-hd">⚡ RECORD HOLDER</div>
+          {% if r.record.overall %}
+          <div class="rec-row">
+            <span class="rec-cat">総合ベスト</span>
+            <span class="rec-val">{{ r.record.overall.value_str }}</span>
+            <span class="rec-name">{% for h in r.record.overall.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+          </div>
+          {% endif %}
+          {% if r.record.fastest_lap %}
+          <div class="rec-row">
+            <span class="rec-cat">最速ラップ</span>
+            <span class="rec-val">{{ r.record.fastest_lap.value_str }}</span>
+            <span class="rec-name">{% for h in r.record.fastest_lap.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+          </div>
+          {% endif %}
+          {% if r.record.top_speed %}
+          <div class="rec-row">
+            <span class="rec-cat">最高速</span>
+            <span class="rec-val">{{ r.record.top_speed.value_str }}</span>
+            <span class="rec-name">{% for h in r.record.top_speed.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
+          </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">確定したレース結果はまだありません。</div>
+  {% endif %}
+</div>
+</body>
+</html>

@@ -186,6 +186,93 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
     })
 
 
+# ---- 過去レース結果一覧（参加者向け・ライブ配信。「レースの結果」ボタンから開く）----
+_races_cache = {}        # store_id -> (monotonic_ts, html_context_data)
+_RACES_TTL = 60
+
+
+async def _m4laps_licensed(request, db) -> bool:
+    """この店舗で M4LAPS が有効か（クラウド版＆app_settings で判定）。公開ルート用。"""
+    from app.core.config import IS_CLOUD
+    if not IS_CLOUD:
+        return False
+    try:
+        async with db.execute(
+            "SELECT value FROM app_settings WHERE key='m4laps_licensed'"
+        ) as cur:
+            row = await cur.fetchone()
+        return bool(row) and (row[0] == "1")
+    except Exception:
+        return False
+
+
+async def _record_holder_for(db, tid: int):
+    """1大会のレコードホルダー（総合ベスト・最速ラップ・最高速）を表示用に返す。
+
+    計測データ（M4LAPS）が無い大会は None。整形は既存の qualifying_records を流用。
+    """
+    from app.application import timing_racer_best_service as _rbest
+    from app.application import qualifying_records as _qr
+    try:
+        raw = await _rbest.record_holders_for_tournament(db, tid, include_finals=True)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    # entry_id -> レーサー名（この大会のエントリー）
+    name_by_eid = {}
+    try:
+        async with db.execute(
+            "SELECT e.id AS eid, r.name AS name "
+            "FROM entries e JOIN racers r ON r.id = e.racer_id "
+            "WHERE e.tournament_id = ?", (tid,)
+        ) as cur:
+            for row in await cur.fetchall():
+                name_by_eid[row["eid"]] = row["name"]
+    except Exception:
+        name_by_eid = {}
+    try:
+        disp = _qr.format_records_display(raw, name_by_eid, {})
+    except Exception:
+        return None
+    return disp  # {"overall":{...}|None, "fastest_lap":..., "top_speed":...} or None
+
+
+@router.get("/api/races", response_class=HTMLResponse)
+async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """確定済み大会のレース結果一覧（開催日順）を返す（公開）。"""
+    import time as _time
+    store = getattr(request.state, "store", None)
+    slug = (getattr(store, "slug", "") or "")
+    sid = getattr(store, "id", 0)
+
+    licensed = await _m4laps_licensed(request, db)
+
+    now = _time.monotonic()
+    cache_key = (sid, bool(licensed))
+    cached = _races_cache.get(cache_key)
+    if cached and (now - cached[0]) < _RACES_TTL:
+        races = cached[1]
+    else:
+        data = await _RacerService(db).race_results_list()
+        races = data.get("races", [])
+        if licensed:
+            for r in races:
+                try:
+                    r["record"] = await _record_holder_for(db, r["id"])
+                except Exception:
+                    r["record"] = None
+        _races_cache[cache_key] = (now, races)
+
+    return _templates.TemplateResponse("viewer/races.html", {
+        "request": request,
+        "prefix": (f"/{slug}" if slug else ""),
+        "back_href": (f"/{slug}/" if slug else "/"),
+        "m4laps": bool(licensed),
+        "races": races,
+    })
+
+
 @router.get("/api/history/racer/{racer_id}")
 async def public_history_racer(racer_id: int, request: Request,
                                db: aiosqlite.Connection = Depends(get_db)):
