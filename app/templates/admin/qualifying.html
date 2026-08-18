@@ -2649,18 +2649,32 @@ async function applyTimingToHeat(heatId, btn, force){
 <script>
 (function(){
   var TID = {{ t.id }};
-  var dragEl = null;     // ドラッグ中の .rc
-  var srcTd  = null;     // ドラッグ元の td.nr-lane
+  var srcTd = null;     // ドラッグ元の td.nr-lane
 
-  function rowOf(td){ return td.closest('tr.race-row'); }
+  function rowOf(td){ return (td && td.closest) ? td.closest('tr.race-row') : null; }
   function lanesInRow(row){ return Array.prototype.slice.call(row.querySelectorAll('td.nr-lane')); }
+  function clearHover(){ document.querySelectorAll('td.nr-lane.nr-drop-hover').forEach(function(x){ x.classList.remove('nr-drop-hover'); }); }
+
+  // td 直下の中身要素（.rc か .nr-empty）を返す
+  function contentOf(td){
+    for(var i=0; i<td.children.length; i++){
+      var c = td.children[i];
+      if(c.classList.contains('rc') || c.classList.contains('nr-empty')) return c;
+    }
+    return td.firstElementChild;
+  }
+  // 離した座標の直下にある td.nr-lane を返す（＝実際に落とした先）
+  function targetFromEvent(e){
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    return (el && el.closest) ? el.closest('td.nr-lane') : null;
+  }
 
   function saveRow(row){
     var heatId = null, pairs = [];
     lanesInRow(row).forEach(function(td){
-      if(td.dataset.heatId) heatId = td.dataset.heatId;
-      var eid = td.dataset.entryId;
-      if(eid){ pairs.push(eid + ':' + td.dataset.laneNo); }
+      if(td.getAttribute('data-heat-id')) heatId = td.getAttribute('data-heat-id');
+      var eid = td.getAttribute('data-entry-id');
+      if(eid){ pairs.push(eid + ':' + td.getAttribute('data-lane-no')); }
     });
     if(heatId === null) return;
     var fd = new FormData();
@@ -2679,23 +2693,25 @@ async function applyTimingToHeat(heatId, btn, force){
       });
   }
 
-  // src td と tgt td の中身（.rc / .nr-empty）と data-entry-id を入れ替える
+  // src td と tgt td の中身（.rc / .nr-empty）と data-entry-id を入れ替える。
+  // 一時ホルダーを使い、位置の取り違えが起きない確実な入れ替えにする。
   function swapCells(a, b){
-    if(a === b) return;
-    var ca = a.firstElementChild, cb = b.firstElementChild;
-    // 子要素を入れ替え
-    b.appendChild(ca);
-    a.appendChild(cb);
-    // entry_id を入れ替え
-    var ea = a.dataset.entryId || '', eb = b.dataset.entryId || '';
-    if(eb){ a.dataset.entryId = eb; } else { delete a.dataset.entryId; a.removeAttribute('data-entry-id'); }
-    if(ea){ b.dataset.entryId = ea; } else { delete b.dataset.entryId; b.removeAttribute('data-entry-id'); }
-    // 空セルの見た目クラスを更新
-    a.classList.toggle('nr-empty-cell', !a.dataset.entryId);
-    b.classList.toggle('nr-empty-cell', !b.dataset.entryId);
+    if(!a || !b || a === b) return;
+    var ca = contentOf(a), cb = contentOf(b);
+    if(!ca || !cb) return;
+    var holder = document.createElement('div');
+    holder.appendChild(ca);   // a から取り出し
+    a.appendChild(cb);        // b の中身を a へ
+    b.appendChild(ca);        // a の中身を b へ
+    var ea = a.getAttribute('data-entry-id'), eb = b.getAttribute('data-entry-id');
+    if(eb){ a.setAttribute('data-entry-id', eb); } else { a.removeAttribute('data-entry-id'); }
+    if(ea){ b.setAttribute('data-entry-id', ea); } else { b.removeAttribute('data-entry-id'); }
+    a.classList.toggle('nr-empty-cell', !a.getAttribute('data-entry-id'));
+    b.classList.toggle('nr-empty-cell', !b.getAttribute('data-entry-id'));
   }
 
   function wire(){
+    // ハンドル（占有セルのみ）：押している間だけ .rc をドラッグ可能にする
     document.querySelectorAll('td.nr-lane .nr-lane-handle').forEach(function(handle){
       if(handle.dataset.wired === '1') return;
       handle.dataset.wired = '1';
@@ -2706,33 +2722,40 @@ async function applyTimingToHeat(heatId, btn, force){
       handle.addEventListener('mousedown', function(e){ e.stopPropagation(); rc.setAttribute('draggable','true'); });
       handle.addEventListener('touchstart', function(e){ e.stopPropagation(); rc.setAttribute('draggable','true'); }, {passive:true});
       rc.addEventListener('dragstart', function(e){
-        dragEl = rc; srcTd = td; rc.classList.add('nr-dragging');
+        srcTd = td; rc.classList.add('nr-dragging');
         if(e.dataTransfer){ e.dataTransfer.effectAllowed='move';
-          try{ e.dataTransfer.setData('text/plain', td.dataset.entryId||''); }catch(_){} }
+          try{ e.dataTransfer.setData('text/plain', td.getAttribute('data-entry-id')||''); }catch(_){} }
       });
       rc.addEventListener('dragend', function(){
         rc.classList.remove('nr-dragging'); rc.removeAttribute('draggable');
-        document.querySelectorAll('td.nr-lane.nr-drop-hover').forEach(function(x){ x.classList.remove('nr-drop-hover'); });
-        dragEl = null; srcTd = null;
+        clearHover(); srcTd = null;
       });
     });
 
+    // ドロップ先（占有・空きどちらも）：同じレース内のセルだけ受け付ける
     document.querySelectorAll('td.nr-lane').forEach(function(td){
       if(td.dataset.dropWired === '1') return;
       td.dataset.dropWired = '1';
-      td.addEventListener('dragover', function(e){
-        if(!srcTd || rowOf(td) !== rowOf(srcTd)) return;   // 同じレース内だけ
+      function overOK(e){
+        if(!srcTd || rowOf(td) !== rowOf(srcTd)) return false;
         e.preventDefault();
-        if(e.dataTransfer) e.dataTransfer.dropEffect='move';
-        if(td !== srcTd) td.classList.add('nr-drop-hover');
+        if(e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        return true;
+      }
+      td.addEventListener('dragenter', function(e){
+        if(!overOK(e)) return;
+        clearHover();
+        if(td !== srcTd) td.classList.add('nr-drop-hover');   // 常に1セルだけ強調
       });
-      td.addEventListener('dragleave', function(){ td.classList.remove('nr-drop-hover'); });
+      td.addEventListener('dragover', function(e){ overOK(e); });
       td.addEventListener('drop', function(e){
         e.preventDefault();
-        td.classList.remove('nr-drop-hover');
-        if(!srcTd || td === srcTd || rowOf(td) !== rowOf(srcTd)) return;
-        var row = rowOf(td);
-        swapCells(srcTd, td);
+        // 落とした「座標の直下セル」を最優先にする（強調表示と必ず一致）
+        var tgt = targetFromEvent(e) || td;
+        clearHover();
+        if(!srcTd || !tgt || tgt === srcTd || rowOf(tgt) !== rowOf(srcTd)) return;
+        var row = rowOf(tgt);
+        swapCells(srcTd, tgt);
         saveRow(row);
       });
     });
