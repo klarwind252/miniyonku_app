@@ -186,13 +186,13 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
     })
 
 
-# ---- 過去レース結果一覧（参加者向け・ライブ配信。「レースの結果」ボタンから開く）----
-_races_cache = {}        # store_id -> (monotonic_ts, html_context_data)
+# ---- 過去レース結果一覧（「レースの結果」ボタンから開く）----
+_races_cache = {}        # store_id -> (monotonic_ts, races)  ※既定表示(絞り込みなし)のみキャッシュ
 _RACES_TTL = 60
+_RACES_DEFAULT_LIMIT = 5
 
 
 async def _m4laps_licensed(request, db) -> bool:
-    """この店舗で M4LAPS が有効か（クラウド版＆app_settings で判定）。公開ルート用。"""
     from app.core.config import IS_CLOUD
     if not IS_CLOUD:
         return False
@@ -207,10 +207,6 @@ async def _m4laps_licensed(request, db) -> bool:
 
 
 async def _record_holder_for(db, tid: int):
-    """1大会のレコードホルダー（総合ベスト・最速ラップ・最高速）を表示用に返す。
-
-    計測データ（M4LAPS）が無い大会は None。整形は既存の qualifying_records を流用。
-    """
     from app.application import timing_racer_best_service as _rbest
     from app.application import qualifying_records as _qr
     try:
@@ -219,7 +215,6 @@ async def _record_holder_for(db, tid: int):
         return None
     if not raw:
         return None
-    # entry_id -> レーサー名（この大会のエントリー）
     name_by_eid = {}
     try:
         async with db.execute(
@@ -232,29 +227,38 @@ async def _record_holder_for(db, tid: int):
     except Exception:
         name_by_eid = {}
     try:
-        disp = _qr.format_records_display(raw, name_by_eid, {})
+        return _qr.format_records_display(raw, name_by_eid, {})
     except Exception:
         return None
-    return disp  # {"overall":{...}|None, "fastest_lap":..., "top_speed":...} or None
 
 
 @router.get("/api/races", response_class=HTMLResponse)
 async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """確定済み大会のレース結果一覧（開催日順）を返す（公開）。"""
+    """確定済み大会のレース結果一覧（開催日順）。既定は直近数件のみ、絞り込み対応。"""
     import time as _time
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
     sid = getattr(store, "id", 0)
 
+    qp = request.query_params
+    f_from = (qp.get("from") or "").strip()
+    f_to = (qp.get("to") or "").strip()
+    f_reg = (qp.get("reg") or "").strip()
+    if f_reg not in ("open", "ltd"):
+        f_reg = ""
+    show_all = (qp.get("all") == "1")
+    active_filter = bool(f_from or f_to or f_reg)
+
+    # 既定（絞り込みなし・全件でない）は直近 N 件に制限し、レコード計算も N 件に抑える
+    limit = None if (active_filter or show_all) else _RACES_DEFAULT_LIMIT
+
     licensed = await _m4laps_licensed(request, db)
 
-    now = _time.monotonic()
-    cache_key = (sid, bool(licensed))
-    cached = _races_cache.get(cache_key)
-    if cached and (now - cached[0]) < _RACES_TTL:
-        races = cached[1]
-    else:
-        data = await _RacerService(db).race_results_list()
+    async def _compute():
+        data = await _RacerService(db).race_results_list(
+            date_from=f_from or None, date_to=f_to or None,
+            reg=f_reg or None, limit=limit,
+        )
         races = data.get("races", [])
         if licensed:
             for r in races:
@@ -262,7 +266,20 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
                     r["record"] = await _record_holder_for(db, r["id"])
                 except Exception:
                     r["record"] = None
-        _races_cache[cache_key] = (now, races)
+        return races, data.get("total", len(races))
+
+    # ホットパス（既定表示）だけキャッシュする。絞り込み/全件は都度計算。
+    if limit is not None and not active_filter and not show_all:
+        now = _time.monotonic()
+        ck = (sid, bool(licensed))
+        cached = _races_cache.get(ck)
+        if cached and (now - cached[0]) < _RACES_TTL:
+            races, total = cached[1]
+        else:
+            races, total = await _compute()
+            _races_cache[ck] = (now, (races, total))
+    else:
+        races, total = await _compute()
 
     return _templates.TemplateResponse("viewer/races.html", {
         "request": request,
@@ -270,6 +287,12 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
         "back_href": (f"/{slug}/" if slug else "/"),
         "m4laps": bool(licensed),
         "races": races,
+        "total": total,
+        "shown": len(races),
+        "limit": limit,                 # None＝全件/絞り込み表示、数値＝既定の制限件数
+        "active_filter": active_filter,
+        "show_all": show_all,
+        "f_from": f_from, "f_to": f_to, "f_reg": f_reg,
     })
 
 

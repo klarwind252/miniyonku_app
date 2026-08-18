@@ -22,9 +22,39 @@ h1{ font-size:22px; margin:0; letter-spacing:1px; }
   box-shadow:0 3px 10px rgba(31,111,235,.45);
 }
 .back:active{ transform:translateY(1px); box-shadow:0 2px 6px rgba(31,111,235,.4); }
-.note{ color:#9fb3c8; font-size:13px; margin:0 0 14px; }
+.note{ color:#9fb3c8; font-size:13px; margin:0 0 12px; }
 
-/* カード全体を詳細ページへのリンクにする */
+/* 絞り込みパネル（JS不要の details/summary） */
+.filter{ margin:0 0 14px; border:1px solid #22384f; border-radius:10px; background:#101f31; overflow:hidden; }
+.filter>summary{
+  list-style:none; cursor:pointer; padding:11px 14px; font-size:14px; font-weight:bold;
+  color:#cfe0f2; display:flex; align-items:center; gap:8px; user-select:none;
+}
+.filter>summary::-webkit-details-marker{ display:none; }
+.filter>summary::after{ content:"▾"; margin-left:auto; color:#7f97ad; }
+.filter[open]>summary::after{ content:"▴"; }
+.filter-form{ padding:4px 14px 14px; display:flex; flex-direction:column; gap:12px; }
+.filter-row{ display:flex; flex-direction:column; gap:5px; }
+.filter-row>label{ font-size:12px; color:#8fa6bd; font-weight:bold; }
+.filter-dates{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.filter input[type=date], .filter select{
+  background:#0a1622; color:#e8eef4; border:1px solid #35506e; border-radius:8px;
+  padding:9px 10px; font-size:14px; font-family:inherit; min-width:0;
+}
+.filter input[type=date]{ flex:1 1 40%; }
+.filter select{ width:100%; }
+.filter-actions{ display:flex; gap:10px; margin-top:2px; }
+.filter-actions button{
+  flex:1; border:none; border-radius:8px; padding:11px; font-size:14px; font-weight:bold;
+  background:#1f6feb; color:#fff; cursor:pointer;
+}
+.filter-actions button:active{ transform:translateY(1px); }
+.filter-actions .clear{
+  flex:1; text-align:center; text-decoration:none; border:1px solid #35506e; border-radius:8px;
+  padding:11px; font-size:14px; font-weight:bold; color:#cfe0f2; background:transparent;
+}
+.active-badge{ font-size:11px; color:#0d1b2a; background:#7fc4ff; border-radius:5px; padding:2px 7px; font-weight:bold; }
+
 a.rcard{
   display:block; text-decoration:none; color:inherit;
   background:#101f31; border:1px solid #22384f; border-radius:12px;
@@ -61,6 +91,12 @@ a.rcard:active{ transform:translateY(1px); }
 .rec-name{ color:#e8eef4; font-weight:bold; }
 
 .detail{ margin-top:10px; text-align:right; color:#7fb2e8; font-size:13px; font-weight:bold; }
+.more{
+  display:block; text-align:center; text-decoration:none; margin:6px 0 0;
+  padding:12px; border:1px solid #35506e; border-radius:10px; color:#cfe0f2;
+  font-size:14px; font-weight:bold; background:#101f31;
+}
+.more:active{ transform:translateY(1px); }
 .empty{ color:#9fb3c8; text-align:center; padding:30px 0; }
 @media(max-width:600px){
   h1{ font-size:19px; }
@@ -75,9 +111,42 @@ a.rcard:active{ transform:translateY(1px); }
     <h1>レースの結果</h1>
     <a class="back" href="{{ back_href }}">← 観覧に戻る</a>
   </div>
-  <p class="note">確定した大会を開催日の新しい順に並べています。カードをタップすると、そのレースの予選〜決勝の詳細が開きます。{% if m4laps %} ⚡はM4LAPS計測のレコードホルダーです。{% endif %}</p>
+
+  <p class="note">
+    確定した大会を開催日の新しい順に並べています。カードをタップすると予選〜決勝の詳細が開きます。{% if m4laps %} ⚡はM4LAPS計測のレコードホルダーです。{% endif %}
+  </p>
+
+  <details class="filter" {% if active_filter %}open{% endif %}>
+    <summary>🔍 絞り込み{% if active_filter %} <span class="active-badge">適用中</span>{% endif %}</summary>
+    <form class="filter-form" method="get" action="{{ prefix }}/api/races">
+      <div class="filter-row">
+        <label>開催日</label>
+        <div class="filter-dates">
+          <input type="date" name="from" value="{{ f_from }}" aria-label="開始日">
+          <span>〜</span>
+          <input type="date" name="to" value="{{ f_to }}" aria-label="終了日">
+        </div>
+      </div>
+      <div class="filter-row">
+        <label>レギュレーション</label>
+        <select name="reg">
+          <option value="">すべて</option>
+          <option value="open" {% if f_reg == 'open' %}selected{% endif %}>オープン</option>
+          <option value="ltd" {% if f_reg == 'ltd' %}selected{% endif %}>限定</option>
+        </select>
+      </div>
+      <div class="filter-actions">
+        <button type="submit">絞り込む</button>
+        <a class="clear" href="{{ prefix }}/api/races">クリア</a>
+      </div>
+    </form>
+  </details>
 
   {% if races %}
+    {% if active_filter %}
+      <p class="note">絞り込み結果：{{ total }} 件</p>
+    {% endif %}
+
     {% for r in races %}
     <a class="rcard" href="{{ prefix }}/view/tournament/{{ r.id }}?ro=1">
       <div class="rhead">
@@ -107,22 +176,19 @@ a.rcard:active{ transform:translateY(1px); }
         <div class="record">
           <div class="record-hd">⚡ RECORD HOLDER</div>
           {% if r.record.overall %}
-          <div class="rec-row">
-            <span class="rec-cat">総合ベスト</span>
+          <div class="rec-row"><span class="rec-cat">総合ベスト</span>
             <span class="rec-val">{{ r.record.overall.value_str }}</span>
             <span class="rec-name">{% for h in r.record.overall.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
           </div>
           {% endif %}
           {% if r.record.fastest_lap %}
-          <div class="rec-row">
-            <span class="rec-cat">最速ラップ</span>
+          <div class="rec-row"><span class="rec-cat">最速ラップ</span>
             <span class="rec-val">{{ r.record.fastest_lap.value_str }}</span>
             <span class="rec-name">{% for h in r.record.fastest_lap.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
           </div>
           {% endif %}
           {% if r.record.top_speed %}
-          <div class="rec-row">
-            <span class="rec-cat">最高速</span>
+          <div class="rec-row"><span class="rec-cat">最高速</span>
             <span class="rec-val">{{ r.record.top_speed.value_str }}</span>
             <span class="rec-name">{% for h in r.record.top_speed.holders %}{{ h.name }}{% if not loop.last %} / {% endif %}{% endfor %}</span>
           </div>
@@ -133,8 +199,14 @@ a.rcard:active{ transform:translateY(1px); }
       <div class="detail">予選〜決勝の詳細を見る ›</div>
     </a>
     {% endfor %}
+
+    {% if limit and not active_filter and total > shown %}
+      <a class="more" href="{{ prefix }}/api/races?all=1">すべて表示（他 {{ total - shown }} 件）</a>
+    {% endif %}
   {% else %}
-    <div class="empty">確定したレース結果はまだありません。</div>
+    <div class="empty">
+      {% if active_filter %}条件に合うレースがありません。{% else %}確定したレース結果はまだありません。{% endif %}
+    </div>
   {% endif %}
 </div>
 </body>

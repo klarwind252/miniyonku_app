@@ -440,11 +440,15 @@ class RacerService:
         return {"racers": racers, "race_total": len(finalized),
                 "open_total": open_total, "ltd_total": len(finalized) - open_total}
 
-    async def race_results_list(self):
-        """確定済み大会を開催日順（新しい順）に、レース結果一覧として返す。
+    async def race_results_list(self, *, date_from: str | None = None,
+                                date_to: str | None = None, reg: str | None = None,
+                                limit: int | None = None):
+        """確定済み大会を開催日順（新しい順）にレース結果一覧として返す。
 
-        1件 = { id, name, date, regulation, is_open, entries, podium[1..3の名前] }。
-        レコードホルダー（M4LAPS）は HTTP 層で付与する（ライセンス・計測サービス依存のため）。
+        絞り込み: date_from/date_to（'YYYY-MM-DD' 文字列比較）、reg（'open'/'ltd'/None）。
+        limit を指定すると、絞り込み後の先頭（＝直近）から limit 件だけに切り詰める。
+        レコード計算（M4LAPS）は重いので、切り詰めた後の件数ぶんだけ HTTP 層で付与する。
+        戻り値: {"races":[...], "total": 絞り込み後の総数, "shown": 実際に返した件数}
         """
         async with self.db.execute(
             "SELECT id, name, date, qualifying_type, regulation "
@@ -457,8 +461,24 @@ class RacerService:
             if await self.results.is_result_finalized(t["id"]):
                 finalized.append(t)
 
+        # レギュレーション絞り込み
+        if reg == "open":
+            finalized = [t for t in finalized if is_open_regulation(t["regulation"])]
+        elif reg == "ltd":
+            finalized = [t for t in finalized if not is_open_regulation(t["regulation"])]
+
+        # 開催日絞り込み（ISO 'YYYY-MM-DD' なので文字列比較で順序が一致する）
+        if date_from:
+            finalized = [t for t in finalized if (t["date"] or "") >= date_from]
+        if date_to:
+            finalized = [t for t in finalized if (t["date"] or "") <= date_to]
+
+        total = len(finalized)
+        if limit is not None and limit >= 0:
+            finalized = finalized[:limit]
+
         if not finalized:
-            return {"races": []}
+            return {"races": [], "total": total, "shown": 0}
 
         ftids = [t["id"] for t in finalized]
 
@@ -477,7 +497,6 @@ class RacerService:
                 if rid is not None:
                     need_name_ids.add(rid)
 
-        # racer_id -> 名前 をまとめて引く
         name_by_rid = {}
         if need_name_ids:
             ids = list(need_name_ids)
@@ -504,7 +523,6 @@ class RacerService:
                     2: name_by_rid.get(pod.get(2)),
                     3: name_by_rid.get(pod.get(3)),
                 },
-                # record_holder は HTTP 層で（M4LAPS ライセンス時のみ）付与する
-                "record": None,
+                "record": None,  # HTTP層（M4LAPSライセンス時）で付与
             })
-        return {"races": races}
+        return {"races": races, "total": total, "shown": len(races)}
