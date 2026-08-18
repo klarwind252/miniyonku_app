@@ -4260,6 +4260,7 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
         winner_js_extra_args=str(heat_no),
         enable_lane_drag=bool(_lane_drag),
         lane_reorder_url_tmpl=f"/admin/tournaments/{tid}/qualifying/heat-tournament/{heat_no}/group/{{gid}}/reorder-slots",
+        lane_drag_green=True,
     )
     return HTMLResponse(html)
 

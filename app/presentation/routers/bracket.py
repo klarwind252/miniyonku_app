@@ -4972,7 +4972,7 @@ async def bracket_html(tid: int, lane_drag: int = 0, db: aiosqlite.Connection = 
     return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes, enable_lane_drag=bool(lane_drag)))
 
 
-def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None) -> str:
+def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None, lane_drag_green: bool = False) -> str:
     """flexboxベースのHTML/CSSトーナメント表（コネクタ線・勝ち上がり強調付き）
 
     compact=True のとき、表彰台（br-podium）を約半分の高さに縮小する（admin画面用）。
@@ -5104,6 +5104,9 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-lane-handle:active { cursor:grabbing; }
     .br-slot.br-lane-dragging { opacity:.55; box-shadow:0 2px 10px rgba(10,132,255,.35); }
     .br-group.lane-sortable.br-lane-drop { outline:2px dashed #0a84ff; outline-offset:2px; }
+    /* 緑テーマ（ヒート制トーナメント図）：ドロップ先の点線を緑にする */
+    .br-group.lane-sortable.lane-drop-green.br-lane-drop { outline-color:#27ae60; background:rgba(39,174,96,.06); }
+    .lane-drop-green .br-slot.br-lane-dragging { box-shadow:0 2px 10px rgba(39,174,96,.4); outline:2px dashed #27ae60; outline-offset:2px; opacity:.7; }
     .br-slot-mark { font-size:20px; }
     /* 1位：濃い緑・白文字・強調 */
     /* シード（winnerより前に宣言してwinnerが上書きできるようにする） */
@@ -5215,6 +5218,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             if has_winner: grp_cls += " has-winner"
             if is_final: grp_cls += " is-final"
             if sortable_group: grp_cls += " lane-sortable"
+            if sortable_group and lane_drag_green: grp_cls += " lane-drop-green"
             # 勝者名をdata属性に付与（コネクタ線の色判定用）
             winner_name = ""
             if winner_sid:
