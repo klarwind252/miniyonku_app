@@ -1768,17 +1768,17 @@ async def bracket_reorder_slots(
     slot_ids: str = Form(...),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """決勝グループの出走レーン（コース）並び替え。
+    """決勝・準決勝など各グループの出走レーン（コース）並び替え。
 
     受け取った slot_id の並び順（上→下）を、そのまま slot_no（＝レーン番号）1..N に
     書き換える。反映は slot_no ↔ レーンで照合されるため、この並びが出走レーンになる。
 
     安全のため:
-      - 対象グループが決勝(final)ラウンドで、この大会(tid)に属することを確認。
-      - すでに結果が入っている組は拒否（並びを変えると記録とレーンの対応が崩れるため）。
+      - 対象グループがこの大会(tid)に属することを確認。
+      - すでに結果（勝者）が入っている組は拒否（並びを変えると記録とレーンの対応が崩れるため）。
       - 受け取った slot_id が、その組のスロット集合と完全一致することを確認。
     """
-    # グループが tid の決勝ラウンドに属するか
+    # グループが tid のブラケットに属するか
     async with db.execute(
         """SELECT br.round_type
              FROM bracket_groups bg
@@ -1789,8 +1789,6 @@ async def bracket_reorder_slots(
         rnd = await cur.fetchone()
     if not rnd:
         return JSONResponse({"ok": False, "error": "対象の組が見つかりません。"}, status_code=404)
-    if rnd["round_type"] != "final":
-        return JSONResponse({"ok": False, "error": "並び替えは決勝の組だけ可能です。"}, status_code=400)
 
     # 結果確定済みは拒否
     async with db.execute(
@@ -4802,7 +4800,7 @@ async def bracket_svg(tid: int, db: aiosqlite.Connection = Depends(get_db)):
 
 
 @router.get("/{tid}/bracket/html", response_class=HTMLResponse)
-async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
+async def bracket_html(tid: int, lane_drag: int = 0, db: aiosqlite.Connection = Depends(get_db)):
     """HTML/CSS形式のトーナメント表（フレックスボックス自動レイアウト）"""
     rounds_db_all = await _get_rounds(tid, db)
     rounds_db = [r for r in rounds_db_all if r["round_type"] != "losers"]
@@ -4971,10 +4969,10 @@ async def bracket_html(tid: int, db: aiosqlite.Connection = Depends(get_db)):
         logging.getLogger(__name__).exception("[bracket] holder_boxes build failed")
         holder_boxes = []
 
-    return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes))
+    return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes, enable_lane_drag=bool(lane_drag)))
 
 
-def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None) -> str:
+def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False) -> str:
     """flexboxベースのHTML/CSSトーナメント表（コネクタ線・勝ち上がり強調付き）
 
     compact=True のとき、表彰台（br-podium）を約半分の高さに縮小する（admin画面用）。
@@ -5101,6 +5099,11 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-slot-name { flex:1; white-space:nowrap; min-width:max-content; font-size:18px; color:#212529 !important; font-weight:500; }
     .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
     .br-slot.winner .br-slot-time { color:#ffffff; }
+    /* 出走レーン（コース）並び替え：admin図のみ（?lane_drag=1）。公開図には出さない */
+    .br-lane-handle { cursor:grab; color:#9aa3ad; font-size:16px; line-height:1; margin-right:2px; user-select:none; touch-action:none; flex-shrink:0; }
+    .br-lane-handle:active { cursor:grabbing; }
+    .br-slot.br-lane-dragging { opacity:.55; box-shadow:0 2px 10px rgba(10,132,255,.35); }
+    .br-group.lane-sortable.br-lane-drop { outline:2px dashed #0a84ff; outline-offset:2px; }
     .br-slot-mark { font-size:20px; }
     /* 1位：濃い緑・白文字・強調 */
     /* シード（winnerより前に宣言してwinnerが上書きできるようにする） */
@@ -5141,7 +5144,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     </style>
     """
 
-    def render_slot(s, is_final, winner_sid=None, group_id=None):
+    def render_slot(s, is_final, winner_sid=None, group_id=None, sortable=False):
         rank = s.get("rank")
         sid = s.get("slot_id")
         # 勝者判定: rank=1 OR winner_slot_idと一致
@@ -5182,8 +5185,13 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         time_html = ('<span class="br-slot-time">' + ('%.3f' % _tt) + '</span>') if _tt is not None else ''
         # 公開HTMLでレーサー名タップ→成績モーダル用に entry_id を持たせる（view/adminでは未使用）。
         _eid_attr = (' data-entry-id="%d"' % s["entry_id"]) if s.get("entry_id") else ''
+        # 出走レーン（コース）並び替え：admin図のみ。data-slot-id と ⠿ ハンドルを付ける。
+        _sid_attr = (' data-slot-id="%d"' % slot_id_val) if (sortable and slot_id_val) else ''
+        _handle = ('<span class="br-lane-handle" title="ドラッグで出走レーン（コース）を入れ替え">\u283f</span>'
+                   if (sortable and s.get("name")) else '')
         return (
-            '<div class="' + cls + '"' + onclick_attr + is_seed_attr + _eid_attr + '>'
+            '<div class="' + cls + '"' + onclick_attr + is_seed_attr + _eid_attr + _sid_attr + '>'
+            + _handle
             + '<span class="br-slot-no">' + str(s.get("slot_no","")) + '</span>'
             + '<span class="br-slot-name">' + name + '</span>'
             + time_html
@@ -5200,10 +5208,13 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             group_id = g.get("group_id")
             # rank=1 または winner_slot_id一致で勝者とみなす
             has_winner = (winner_sid is not None) or any(s.get("rank") == 1 for s in g["slots"])
-            slots_html = "".join(render_slot(s, is_final, winner_sid, group_id) for s in g["slots"])
+            # 出走レーン並び替え可否：admin図で有効化 & 勝者未確定 & 決勝以外の組
+            sortable_group = bool(enable_lane_drag) and (group_id is not None) and (not has_winner) and (not is_final)
+            slots_html = "".join(render_slot(s, is_final, winner_sid, group_id, sortable_group) for s in g["slots"])
             grp_cls = "br-group"
             if has_winner: grp_cls += " has-winner"
             if is_final: grp_cls += " is-final"
+            if sortable_group: grp_cls += " lane-sortable"
             # 勝者名をdata属性に付与（コネクタ線の色判定用）
             winner_name = ""
             if winner_sid:
@@ -5218,6 +5229,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                         break
             data_winner = f' data-winner-name="{winner_name}"' if winner_name else ""
             gid_attr = f' id="vg-{group_id}"' if group_id else ""
+            # 並び替え可能な組には group_id / tid を持たせる（保存先の解決に使う）
+            sort_attr = f' data-group-id="{group_id}" data-tid="{tid}"' if sortable_group else ""
             # 固定リンクによる「勝者の進む先グループ番号」（存在すれば）をJSへ渡す
             # ri=None（3位決定戦・裏トーナメント）ではリンク描画は使わない
             _adv_tgi = _adv_group_of.get((ri, gi)) if ri is not None else None
@@ -5230,7 +5243,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             _no_title = ' title="クリックで反映／取消"' if group_id else ''
             grp_no = (f'<span class="br-grp-badge{_no_click}"{_no_title} style="position:absolute;top:-8px;left:-8px;width:22px;height:22px;border-radius:50%;background:#ffffff;color:#333333;font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center;line-height:1;pointer-events:{_no_pe};{_no_cursor}z-index:3;">{gi+1}</span>')
             groups_html.append(
-                f'<div class="{grp_cls}" data-group-idx="{gi}"{data_winner}{gid_attr}{adv_attr}>{grp_no}{slots_html}</div>'
+                f'<div class="{grp_cls}" data-group-idx="{gi}"{data_winner}{gid_attr}{adv_attr}{sort_attr}>{grp_no}{slots_html}</div>'
             )
         return (
             f'<div class="br-round{" br-round-final" if is_final else ""}" data-round-label="{esc(rnd.get("label",""))}">'
