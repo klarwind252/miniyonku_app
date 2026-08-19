@@ -202,5 +202,8 @@
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_wifi/include/esp_wifi_crypto_types.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_wifi/include/esp_private/wifi_os_adapter.h \
  C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_wifi/include/esp_wifi_default.h \
+ C:/Users/hajim/Desktop/GitHub/miniyonku_app/firmware/common/chfollow.h \
+ C:/Users/hajim/Desktop/GitHub/miniyonku_app/firmware/common/nvs_config.h \
+ C:/Users/hajim/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src/Preferences.h \
  C:/Users/hajim/Desktop/GitHub/miniyonku_app/firmware/common/timesync.h \
  C:/Users/hajim/Desktop/GitHub/miniyonku_app/firmware/common/beam.h

@@ -101,6 +101,7 @@ static constexpr int      PIN_BUZZER = 12;   // ストラップだが実機で�
 static constexpr uint32_t BUZZER_MS  = 60;   // 鳴動長（80→40→20→60で実機比較し確定）
 static constexpr uint32_t BUZZER_ERR_MS = 1000;  // エラー発生時の「ピー」（1秒・1回だけ）
 static uint32_t s_buzz_off_ms = 0;           // 0=消灯中／非0=この millis で消灯予定
+static bool     s_sg_beeped   = false;       // ST_IDLE中に既にS/G通過ピッを鳴らしたか（TAの毎回鳴り防止・灰リセットで復活）
 static inline void buzzer_start(uint32_t ms) {   // 非ブロッキング開始（ms鳴らす）
   digitalWrite(PIN_BUZZER, HIGH);
   s_buzz_off_ms = millis() + ms;
@@ -373,6 +374,7 @@ static void on_reset_pressed() {
   if (was_idle) { disp::g_status.lost = false; s_lost_src = 0; }
 
   s_state = ST_IDLE;
+  s_sg_beeped = false;          // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
   s_need_race        = false;   // #20: 保留中のサーバー登録も破棄
   s_need_green_patch = false;
@@ -937,7 +939,10 @@ void loop() {
     spool_append(e);
     note_quality(hit.quality, (uint8_t)NODE_ID);   // 自機S/GのA1/A2も拾う（27章）
     Serial.printf("[SG] lane=%u q=%u\n", hit.lane, hit.quality);
-    if (s_state == ST_IDLE) buzzer_beep();   // 待機中のS/G通過のみ 60ms「ピッ」（29章）
+    if (s_state == ST_IDLE && !s_sg_beeped) {  // 待機中の「最初の」S/G通過のみ 60ms「ピッ」（29章）
+      buzzer_beep();
+      s_sg_beeped = true;                       // 以降は灰リセットまで鳴らさない（TA周回の毎回鳴り防止）
+    }
   }
 
   // 24.3：3秒ごとの機械的POSTは廃止。送信は灰ボタン(on_reset_pressed)起点のみ。
