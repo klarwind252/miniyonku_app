@@ -127,6 +127,25 @@ static inline void buzzer_error_edge(bool err_now) {
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
 enum GwState { ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
 static GwState s_state = ST_IDLE;
+
+// ---- COMMAND冪等化（SIGNAL二重発火の絶対防止・20260819）----------------
+//  RCは1押下ごとに一意 nonce(=CommandBody.arg) を採番し、その押下の全再送に同値を載せる。
+//  GWは直近の (src,nonce) を覚え、同一の再来はACKのみでアクションを実行しない。
+//  → 状態（ST_IDLE復帰）に依存せず「1押下＝最大1アクション」を保証。
+//  srcごとに持つので RC8/RC9 を同時に使っても nonce が混ざらない。
+//  arg==0 は旧RC互換（nonce無し）＝従来の状態ガードに委ねる。
+struct CmdKey { uint8_t src; uint32_t nonce; };
+static CmdKey  s_cmd_seen[8] = {};
+static uint8_t s_cmd_seen_pos = 0;
+static bool cmd_nonce_seen(uint8_t src, uint32_t nonce) {
+  if (nonce == 0) return false;                 // 0は「nonce無し」（旧RC互換）
+  for (uint8_t i = 0; i < 8; i++)
+    if (s_cmd_seen[i].src == src && s_cmd_seen[i].nonce == nonce) return true;
+  s_cmd_seen[s_cmd_seen_pos].src   = src;
+  s_cmd_seen[s_cmd_seen_pos].nonce = nonce;
+  s_cmd_seen_pos = (uint8_t)((s_cmd_seen_pos + 1) & 7);
+  return false;
+}
 static uint32_t s_armed_ms = 0;         // ARMEDに入った時刻
 static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（3秒＋ランダム）
 static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）
@@ -515,8 +534,12 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
       // リモコンからのCOMMAND。本体ボタンと同じ処理を呼ぶ（docs/03）。
       if (body_len >= (int)sizeof(proto::CommandBody)) {
         proto::CommandBody c; memcpy(&c, body, sizeof(c));
-        if (c.code == proto::CMD_SIGNAL) on_signal_pressed();
-        else if (c.code == proto::CMD_RESET) on_reset_pressed();
+        // ★冪等化：同一押下(src,nonce=c.arg)の再送はアクションを実行しない。
+        //   別ch再送・ACK駆動再送・中継の遅延重複でも SIGNAL が二度発火しない（絶対NG対策）。
+        if (!cmd_nonce_seen(h.src, c.arg)) {
+          if (c.code == proto::CMD_SIGNAL) on_signal_pressed();
+          else if (c.code == proto::CMD_RESET) on_reset_pressed();
+        }
         // ACK（届いた確認・docs/12 COMMAND_ACK）
         mesh::send_ack(proto::PT_COMMAND_ACK, h.src, h.seq);
       }
