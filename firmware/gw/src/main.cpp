@@ -4,11 +4,27 @@
 //  役割（docs/14 DA1/DA2）：全ゲートの集約点。SYNC親時計。EVENT集約→サーバーPOST。
 //    JOIN転送（/api/timing/join）。S/G（自分の3レーン）ビーム検出。
 //  ＋スタートシーケンス（docs/14 DA11・docs/12.3 状態機械）：
-//    赤ボタン(本体) or リモコンCMD_SIGNAL → 新レース作成(layout_id付き) →
+//    赤ボタン(本体) or リモコンCMD_SIGNAL →
 //    赤点灯 → 最低3秒＋ランダム → 緑点灯(green_t_us記録・F1式) → シグナルへCOMMAND
 //    灰ボタン or CMD_RESET → IDLEへ戻す（消灯）
 //  ⚠ 「レース中か」の意味づけはアプリ（DA1）。GWが持つのは“演出の進行”のみ。
 //  common（protocol/espnow_link/timesync/beam）を呼ぶ。TFTは最小デバッグ表示。
+//
+//  ============================================================================
+//  【20260821 設計改修：POST集約・内部race_id・参加レーン自動確定】
+//  ・計測中はサーバー通信を一切しない（D11の純化）。走行中は「受信→内部ridで刻む→
+//    LittleFSへ溜める→TFT表示」だけ。赤→緑の演出も裏でPOSTしない（緑時刻はRAM保持）。
+//  ・サーバーへのPOST（レース作成＋イベント送信）は次の2契機だけで行う：
+//      ① 全員完走（有効化された全レーンが規定周回を完了）＝自動送信
+//      ② 灰ボタン（RESET）＝手動送信（CO等で①が立たない時の受け皿・D3）
+//  ・race_id は GW内部の連番(s_internal_rid)で刻み、flush時にサーバーrace_idへ翻訳
+//    （s_ridmap）。F1式/走行式で作られ方が分岐しない（ensure_raceの特殊分岐を廃止）。
+//  ・参加レーン確定：各レーンは「GWのS/Gを1回目通過」で有効化＝完走待ち対象。未通過の
+//    空きレーンは計測・完走カウント・送信すべて対象外。DA8によりLC総数は3の倍数＝各機は
+//    毎周同じ物理レーンでS/Gを切るため、物理レーン別クロス数＝そのレーンの周回数になる。
+//    活性化(1回目)は起点なので、完走条件は「クロス数 ≥ target_laps + 1」。
+//  ・計測中の赤ボタンは無視（G2）。やり直しは「灰→赤」。
+//  ・HTTPS（レース作成/送信）は必ずloop文脈で実行（ESP-NOWコールバックでI/O禁止・#20）。
 // ============================================================================
 #include <Arduino.h>
 #include <WiFi.h>
@@ -149,10 +165,21 @@ static bool cmd_nonce_seen(uint8_t src, uint32_t nonce) {
 }
 static uint32_t s_armed_ms = 0;         // ARMEDに入った時刻
 static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（3秒＋ランダム）
-static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）
-// #20: サーバー登録はloop文脈で非同期実行（ESP-NOWコールバックからHTTPSしない）
-static bool s_need_race        = false;  // レース作成が未了
-static bool s_need_green_patch = false;  // green後付けが未了
+static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）。走行式は0のまま
+
+// ---- レース識別・参加レーン（20260821改修）--------------------------------
+//  s_internal_rid：GW内部の連番。スプール各行に刻む“取り違え防止用”のID。サーバーの
+//    race_id とは別物で、flush時に s_ridmap で翻訳する。0=まだレース未開始。
+//  s_race_active：現在レースが進行中か（begin_internal_race で true、flush/RESETで false）。
+//  s_lane_cross/s_lane_active：GWのS/G(自機3レーン)の物理レーン別クロス数と活性化。
+//    活性化(1回目通過)＝参加確定。完走は cross ≥ target_laps+1（起点1回ぶん足す）。
+static uint32_t s_internal_rid = 0;
+static bool     s_race_active  = false;
+static uint32_t s_lane_cross[4] = {0,0,0,0};   // index 1..3（0は未使用）
+static bool     s_lane_active[4] = {false,false,false,false};
+// s_need_flush：送信要求フラグ。全員完走 or 灰ボタンで立て、loopのtick_flushがHTTPSを実行。
+//   （on_reset_pressed はESP-NOWコールバックからも呼ばれるためHTTPSを直接呼ばない・#20）
+static bool     s_need_flush   = false;
 
 // ---- 受信EVENTレコード -----------------------------------------------------
 struct RawEvent {
@@ -161,10 +188,29 @@ struct RawEvent {
 };
 
 static const char* SPOOL = "/spool.jsonl";
-static uint32_t s_race_id = 0;
 // 24.3(1-e)：送信失敗中は「次の赤ボタン(新レース開始)を封じる」安全フラグ。
 //   flush_spool 成功でクリア、失敗でセット。灰3秒長押し(緊急解除)でも手動クリア可。
 static bool s_send_blocked = false;
+
+// ---- 内部rid → サーバーrace_id の対応表（flush時に確定・20260821）----------
+//  同じ内部ridの2回目以降のflush（100件超で分割送信）では既に作ったサーバーrace_idを
+//  再利用する。races が短命で順次flushされるため 8枠で足りる。
+struct RidMap { uint32_t internal; uint32_t server; };
+static RidMap  s_ridmap[8] = {};
+static uint8_t s_ridmap_pos = 0;
+static uint32_t ridmap_lookup(uint32_t internal) {
+  if (internal == 0) return 0;
+  for (uint8_t i = 0; i < 8; i++)
+    if (s_ridmap[i].internal == internal) return s_ridmap[i].server;
+  return 0;
+}
+static void ridmap_store(uint32_t internal, uint32_t server) {
+  for (uint8_t i = 0; i < 8; i++)
+    if (s_ridmap[i].internal == internal) { s_ridmap[i].server = server; return; }
+  s_ridmap[s_ridmap_pos].internal = internal;
+  s_ridmap[s_ridmap_pos].server   = server;
+  s_ridmap_pos = (uint8_t)((s_ridmap_pos + 1) & 7);
+}
 
 // ---- ③群 GW配線（A1/A2・Sync・C1 Lost・24.4⑤画面フロー・27章）--------------
 //  A1(q=2 両ビーム欠)/A2(q=1 片ビーム欠)は per-raceで最悪値を保持し、灰ボタン後3秒だけ表示。
@@ -303,23 +349,6 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
   return rid;
 }
 
-// ---- 既存レースに緑時刻を後付け（走行式→F1式・残課題7の解消）--------------
-//  race_id を変えずに green_t_us だけPATCHする。POST .../{id}/green。
-static bool set_race_green(uint32_t rid, uint64_t green_us) {
-  if (!rid || !wifi_up()) return false;
-  JsonDocument doc;
-  doc["green_t_us"] = green_us;
-  String body; serializeJson(doc, body);
-  WiFiClientSecure _c; _c.setInsecure();
-  HTTPClient http;
-  http.begin(_c, server_base() + "/api/timing/races/" + rid + "/green");
-  add_common_headers(http);
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(body);
-  http.end();
-  return code == 200;
-}
-
 // ---- シグナルへ COMMAND（赤/緑/リセット）----------------------------------
 static void signal_cmd(uint8_t code) {
   proto::CommandBody c = {};
@@ -328,10 +357,26 @@ static void signal_cmd(uint8_t code) {
   mesh::send(proto::PT_COMMAND, s_active_sg_id, &c, sizeof(c));
 }
 
+// ---- 内部レース開始（内部rid採番＋参加レーン/緑/per-raceフラグの初期化）------
+//  F1式：on_signal_pressed から。走行式：最初のS/G通過時に loop から呼ぶ。
+//  ⚠ HTTPSは一切しない（サーバー作成はflush時）。ここは純粋にRAM上の初期化のみ。
+static void begin_internal_race() {
+  s_internal_rid++;
+  if (s_internal_rid == 0) s_internal_rid = 1;   // wrap回避（0は「未開始」の意味に予約）
+  s_race_active = true;
+  s_green_t_us  = 0;                              // 走行式は0のまま／F1は緑点灯時に上書き
+  for (int i = 1; i <= 3; i++) { s_lane_cross[i] = 0; s_lane_active[i] = false; }
+  s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
+}
+
 // ---- スタートシーケンス制御 -----------------------------------------------
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
-  if (s_state != ST_IDLE) return;             // 二度押し無視
+  if (s_state != ST_IDLE) return;             // 計測中の赤は無視（G2）。二度押しも無視
+  if (s_race_active) {                          // 走行式(ST_IDLEのまま計測中)の赤も無視。
+    Serial.println("[SEQ] blocked: race active（計測中の赤は無視。やり直しは灰→赤）");
+    return;                                      //   やり直しは「灰でリセット→赤」（G2）
+  }
   if (s_send_blocked) {                        // 1-e：送信失敗中は新レースを封じる
     Serial.println("[SEQ] blocked: 前レース未送信。灰ボタンで再送、または灰3秒長押しで強制解除");
     return;
@@ -340,18 +385,14 @@ static void on_signal_pressed() {
     Serial.println("[SEQ] blocked: GW/RC/SG duplicate active (power off one)");
     return;
   }
-  // #19+#20: 演出のみ即実行。HTTPS（レース作成）はここでは一切しない。
-  //  本関数はESP-NOW受信コールバック文脈からも呼ばれるため、ブロッキングI/O禁止。
-  //  レース作成は tick_race_registration()（loop文脈）が拾う。
+  // 演出のみ即実行。HTTPS（レース作成）はここでは一切しない（#20・本関数はESP-NOW
+  //  受信コールバック文脈からも呼ばれるため、ブロッキングI/O禁止）。作成はflush時。
+  begin_internal_race();                          // 内部rid採番＋参加レーン初期化
   s_red_dur_ms = 3000 + (esp_random() % 2000);   // 3.0〜5.0秒
   s_armed_ms   = millis();
   s_state      = ST_ARMED;
-  s_race_q2 = false; s_race_q1 = false;   // 24.4：新レース開始でA1/A2 per-raceフラグをclear
   signal_cmd(proto::CMD_RED);
-  Serial.printf("[SEQ] ARMED red=%ums\n", s_red_dur_ms);
-  s_race_id          = 0;
-  s_need_race        = true;
-  s_need_green_patch = false;
+  Serial.printf("[SEQ] ARMED rid=%u red=%ums\n", s_internal_rid, s_red_dur_ms);
 }
 
 // flush_spool / spool_has_data は本関数より後方で定義されるため前方宣言。
@@ -360,11 +401,11 @@ static void flush_spool();
 
 static void on_reset_pressed() {
   // 24.3：灰ボタン押下時、スプールに溜まっていれば送信（空なら何もしない）。
-  //   送信 → 表示リセット → IDLE の順。送信失敗しても RESET 自体は進める
-  //   （灰ボタンは再送手段として残す設計・24.3）。WiFi不通時は flush_spool 内で
-  //   送信せず return し、データはスプールに残る（消えない）。
+  //   ⚠ 本関数はESP-NOWコールバック(CMD_RESET)からも呼ばれるため、ここでHTTPSは
+  //     しない。送信要求(s_need_flush)だけ立て、実送信は loop の tick_flush が行う(#20)。
+  //   WiFi不通時は tick_flush 内で送らず、データはスプールに残る（消えない）。
   bool was_idle = (s_state == ST_IDLE);   // F-1：この灰が「走行終了」か「待機での確認」かを区別
-  if (spool_has_data()) flush_spool();
+  if (spool_has_data()) s_need_flush = true;
 
   // 24.4⑤：待機画面に入った直後、3秒間だけA1/A2エラーを表示する窓を開く。
   s_post_err_until = millis() + 3000;
@@ -373,46 +414,23 @@ static void on_reset_pressed() {
   //   未表示のまま消えるのを防ぐ。待機で見えている状態の灰(was_idle=true)が「確認＝解除」。
   if (was_idle) { disp::g_status.lost = false; s_lost_src = 0; }
 
-  s_state = ST_IDLE;
-  s_sg_beeped = false;          // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
+  s_state      = ST_IDLE;
+  s_race_active = false;        // 現レースを閉じる（次のS/G通過は新しい内部レースになる）
+  s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
-  s_need_race        = false;   // #20: 保留中のサーバー登録も破棄
-  s_need_green_patch = false;
   signal_cmd(proto::CMD_RESET);
-  Serial.println("[SEQ] RESET -> IDLE");
+  Serial.println("[SEQ] RESET -> IDLE (flush queued if data)");
 }
 
-// ARMED経過で緑へ。loopから呼ぶ。
+// ARMED経過で緑へ。loopから呼ぶ。緑時刻はRAM保持のみ（POSTしない。flush時に同梱）。
 static void tick_sequence() {
   if (s_state == ST_ARMED && (millis() - s_armed_ms) >= s_red_dur_ms) {
-    s_green_t_us = tsync::now_gw_us();          // 緑を出した瞬間＝green_t_us
+    s_green_t_us = tsync::now_gw_us();          // 緑を出した瞬間＝green_t_us（F1式起点）
     s_state = ST_GREEN;
     signal_cmd(proto::CMD_GREEN);
-    Serial.printf("[SEQ] GREEN t=%llu\n", (unsigned long long)s_green_t_us);
-    // #20: green後付けはレース確定後に tick_race_registration() が実行する。
-    s_need_green_patch = true;
+    Serial.printf("[SEQ] GREEN t=%llu (rid=%u)\n",
+                  (unsigned long long)s_green_t_us, s_internal_rid);
     s_state = ST_RACE;
-  }
-}
-
-// ---- #20: サーバー登録の非同期実行（loop文脈・失敗は3秒おきに再試行）------
-static void tick_race_registration() {
-  static uint32_t last_try = 0;
-  uint32_t nowm = millis();
-  if (nowm - last_try < 3000) return;           // 試行は3秒に1回まで
-  if (s_need_race && s_race_id == 0) {
-    last_try = nowm;
-    s_race_id = create_race(/*with_green=*/false, 0);
-    Serial.printf("[SEQ] race=%u%s\n", s_race_id, s_race_id ? "" : " (retry in 3s)");
-    if (s_race_id) s_need_race = false;
-    return;                                     // 1周1リクエストに抑える
-  }
-  if (s_need_green_patch && s_race_id) {
-    last_try = nowm;
-    bool ok = set_race_green(s_race_id, s_green_t_us);
-    Serial.printf("[SEQ] green_patch=%s race=%u%s\n",
-                  ok ? "OK" : "NG", s_race_id, ok ? "" : " (retry in 3s)");
-    if (ok) s_need_green_patch = false;
   }
 }
 
@@ -486,12 +504,14 @@ static void spool_append(const RawEvent& e) {
   doc["t_us"]        = e.t_us;
   if (e.t_us_b) doc["t_us_b"] = e.t_us_b;
   doc["quality"]     = e.quality;
-  // 24.3(1-c)：race_id は「セクターから受信した瞬間」の値を刻む。flush時点の
-  //   s_race_id では、受信〜送信間に再起動等でIDが変わると誤帰属する。
-  //   rid はスプール内部の振り分け専用（送信ペイロードには載せない。サーバーの
-  //   冪等キーは device_id/src/src_boot_id/seq で race_id を含まないため）。
-  //   rid=0 は「受信時まだレース未確定」を意味し、flush時にその時点の確定IDへ寄せる。
-  doc["rid"]         = s_race_id;
+  // 24.3(1-c)＋20260821：race_id は「受信した瞬間」の“内部rid”を刻む。サーバーの
+  //   race_id は flush 時に採番して s_ridmap で翻訳するので、受信〜送信間の再起動等で
+  //   取り違えが起きない。rid はスプール内部の振り分け専用（送信payloadには載せない。
+  //   サーバーの冪等キーは device_id/src/src_boot_id/seq で race_id を含まないため）。
+  //   grn：その時点の緑時刻（F1式のgreen_t_us・走行式は0）。flush時にグループ内の最大値を
+  //   採ってレース作成に同梱する（緑前=フライング通過はgrn=0でも他行の値で拾える）。
+  doc["rid"]         = s_internal_rid;
+  doc["grn"]         = (uint64_t)s_green_t_us;
   serializeJson(doc, f);           // 1行1JSON
   f.print('\n');
   f.close();
@@ -560,14 +580,6 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
   }
 }
 
-// ---- レース払い出し（EVENTを送る先が無ければ暫定で1つ作る）----------------
-//  スタートシーケンス未使用でもS/G通過だけ記録したい場合の保険。
-static bool ensure_race() {
-  if (s_race_id) return true;
-  s_race_id = create_race(/*with_green=*/false, 0);
-  return s_race_id != 0;
-}
-
 // ---- スプールに送るべき行があるか（空/存在しないなら false）----------------
 //  24.3：灰ボタンは「溜まっていれば送信・空なら何もしない」。その判定に使う。
 static bool spool_has_data() {
@@ -613,18 +625,19 @@ static void rewrite_spool_drop_group(uint32_t rid, int limit) {
   LittleFS.rename(TMP, SPOOL);
 }
 
-// ---- スプールPOST（200まで消さない・S8）-----------------------------------
-// ---- スプールPOST（200まで消さない・S8／rid=受信時race_idでグループ送信・1-c）---
-//  24.3(1-c)：各行が受信時の race_id(rid) を持つ。1回のflushでは「先頭有効行の
-//  グループ(=同じ送信先race_id)」だけを最大100件集めて送る。これにより受信〜送信間に
-//  s_race_id が変わっても、行は自分の rid のレースへ正しく送られる（誤帰属しない）。
-//  rid=0 の行（受信時レース未確定）は、その時点の確定 race_id(ensure_race) へ寄せる。
+// ---- スプールPOST（200まで消さない・S8／内部ridグループ→サーバーrace_id翻訳）---
+//  20260821：各行は受信時の“内部rid”を持つ。1回のflushでは「先頭有効行のグループ
+//  (=同じ内部rid)」だけを最大100件送る。送信先サーバーrace_idは：
+//    ・既に作成済み(s_ridmap)ならそれを再利用（100件超の分割2回目以降）。
+//    ・未作成なら“今ここで” create_race（グループ内 grn の最大値＝緑があればF1式）で採番し、
+//      s_ridmap に記録。これが「作成POSTも終了時に集約」の実体。
+//  ⚠ 必ずloop文脈(tick_flush)から呼ぶこと（HTTPSブロッキング・#20）。
 static void flush_spool() {
   if (!LittleFS.exists(SPOOL)) return;
   File f = LittleFS.open(SPOOL, FILE_READ);
   if (!f) return;
 
-  // まず先頭の有効行から「今回送るグループの rid」を決める。
+  // まず先頭の有効行から「今回送るグループの内部rid」を決める。
   uint32_t group_rid = 0;
   bool group_found = false;
   while (f.available()) {
@@ -639,15 +652,34 @@ static void flush_spool() {
   f.close();
   if (!group_found) return;   // 有効行なし
 
-  // 送信先 race_id を確定。group_rid>0 ならそれを使う。0 なら ensure_race で確定。
-  uint32_t dest_race_id = group_rid;
-  if (dest_race_id == 0) {
-    if (!ensure_race()) return;   // WiFi不通等：送らずデータは残す
-    dest_race_id = s_race_id;
+  // 内部rid → サーバーrace_id を確定。未作成ならグループの緑(最大)を拾って create_race。
+  uint32_t server_id = ridmap_lookup(group_rid);
+  if (server_id == 0) {
+    uint64_t group_green = 0;                       // グループ内 grn の最大値（0=走行式）
+    f = LittleFS.open(SPOOL, FILE_READ);
+    if (!f) return;
+    while (f.available()) {
+      String line = f.readStringUntil('\n'); line.trim();
+      if (line.length() == 0) continue;
+      JsonDocument ev;
+      if (deserializeJson(ev, line) != DeserializationError::Ok) continue;
+      if ((uint32_t)(ev["rid"] | 0) != group_rid) continue;
+      uint64_t g = ev["grn"] | (uint64_t)0;
+      if (g > group_green) group_green = g;
+    }
+    f.close();
+    server_id = create_race(/*with_green=*/group_green != 0, group_green);  // ここで初めてサーバー作成
+    if (server_id == 0) {                            // WiFi/TLS失敗：送らずデータは残す
+      Serial.println("[POST] create_race 失敗（データ保持・再試行）");
+      s_send_blocked = true;
+      return;
+    }
+    ridmap_store(group_rid, server_id);
+    Serial.printf("[POST] rid(int)=%u -> race=%u%s\n",
+                  group_rid, server_id, group_green ? " (F1)" : " (run)");
   }
-  if (dest_race_id == 0) return;
 
-  // dest グループ(rid==group_rid)の行だけを最大100件、events配列へ積む。
+  // group（内部rid==group_rid）の行だけを最大100件、events配列へ積む。
   f = LittleFS.open(SPOOL, FILE_READ);
   if (!f) return;
   JsonDocument out;
@@ -660,7 +692,8 @@ static void flush_spool() {
     JsonDocument ev;
     if (deserializeJson(ev, line) != DeserializationError::Ok) continue; // 壊れた行は捨てる
     if ((uint32_t)(ev["rid"] | 0) != group_rid) continue;   // 別グループは今回送らない
-    ev.remove("rid");                                       // rid は内部用。送信payloadから除く
+    ev.remove("rid");                                       // rid/grn は内部用。送信payloadから除く
+    ev.remove("grn");
     arr.add(ev);
     n++;
     if (n >= 100) { capped = true; break; }                // 1回のPOSTは100件まで
@@ -669,7 +702,7 @@ static void flush_spool() {
   if (n == 0) return;
   String payload; serializeJson(out, payload);
 
-  String url = server_base() + "/api/timing/races/" + dest_race_id + "/events";
+  String url = server_base() + "/api/timing/races/" + server_id + "/events";
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, url);
@@ -679,7 +712,7 @@ static void flush_spool() {
   http.end();
 
   if (code != 200) {
-    Serial.printf("[POST] 失敗 code=%d\n", code);
+    Serial.printf("[POST] events 失敗 code=%d\n", code);
     s_send_blocked = true;              // 1-e：送信失敗→次レース封じ
     return;
   }
@@ -687,7 +720,46 @@ static void flush_spool() {
   // 送信成功：送った group_rid の行を（最大100件ぶん）スプールから除去。
   rewrite_spool_drop_group(group_rid, n);
   s_send_blocked = false;              // 1-e：送信成功→封じ解除
-  Serial.printf("[POST] rid=%u %d件 送信%s\n", group_rid, n, capped ? "（続きあり・同rid）" : "");
+  Serial.printf("[POST] race=%u %d件 送信%s\n", server_id, n, capped ? "（続きあり・同rid）" : "");
+}
+
+// ---- 全員完走の判定（20260821・DA15）--------------------------------------
+//  有効化(1回目S/G通過)された全レーンが規定周回を完了したら、自動で送信要求を立てる。
+//  完了条件：物理レーン別クロス数 ≥ target_laps + 1（1回目＝起点ぶんを加算）。
+//  DA8によりLC総数は3の倍数＝各機は毎周同じ物理レーンでS/Gを切るため、この単純カウントで
+//  機ごとの周回数に一致する。1台でもCO(=活性化済みだが完了しない)なら成立せず→灰ボタンへ。
+static void maybe_autocomplete() {
+  if (!s_race_active) return;
+  bool any = false, all = true;
+  for (int i = 1; i <= 3; i++) {
+    if (!s_lane_active[i]) continue;
+    any = true;
+    if (s_lane_cross[i] < (uint32_t)s_target_laps + 1) all = false;
+  }
+  if (!(any && all)) return;
+
+  Serial.printf("[SEQ] 全員完走 rid=%u -> 自動送信\n", s_internal_rid);
+  s_race_active   = false;        // レースを閉じる
+  s_need_flush    = true;         // 送信はloopのtick_flushが実行
+  s_state         = ST_IDLE;      // 待機へ
+  s_sg_beeped     = false;
+  s_green_t_us    = 0;
+  s_post_err_until = millis() + 3000;   // 24.4⑤：A1/A2を3秒だけ表示
+  signal_cmd(proto::CMD_RESET);         // シグナル消灯（念のため）
+}
+
+// ---- 送信要求の実行（loop文脈・HTTPSはここだけ・#20）------------------------
+//  s_need_flush が立っている間、throttleしつつ flush_spool を回す。flush_spool は
+//  1回で1グループ(最大100件)送るので、スプールが空になるまで複数tickで送り切る。
+//  失敗（s_send_blocked）時は要求を残したまま再試行（灰3秒長押しで封じ解除も可）。
+static void tick_flush() {
+  if (!s_need_flush) return;
+  static uint32_t last = 0;
+  if (millis() - last < 1500) return;      // 1.5秒に1回まで（TLS連打防止）
+  last = millis();
+  if (!spool_has_data()) { s_need_flush = false; return; }
+  flush_spool();                            // 1グループ送信（失敗ならs_send_blocked）
+  if (!spool_has_data()) s_need_flush = false;   // 送り切ったら要求解除
 }
 
 // ---- レイアウト取得（GW向け軽量版 /for_gw・docs/19.16）--------------------
@@ -928,25 +1000,36 @@ void loop() {
   buzzer_tick();              // ブザー非ブロッキング消灯（29章）
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_sequence();
-  tick_race_registration();   // #20: レース作成/green後付けをloop文脈で非同期実行
 
   beam::Hit hit;
   int drain = 0;
   while (drain++ < 8 && beam::poll(hit)) {   // 1周8件まで（浮きGPIO洪水でloopを占有させない）
     static uint32_t self_seq = 0;
+    // 走行式(赤ボタン未使用)：最初のS/G通過で内部レースを開始する（F1式は既にactive）。
+    //   これで s_internal_rid が採番され、以降の自機/SQイベントが同じ内部ridで刻まれる。
+    if (!s_race_active) begin_internal_race();
+    // 参加レーン確定＋周回カウント（自機S/Gのみ・DA15/DA8）。
+    if (hit.lane >= 1 && hit.lane <= 3) {
+      s_lane_active[hit.lane] = true;
+      s_lane_cross[hit.lane]++;
+    }
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };
     spool_append(e);
     note_quality(hit.quality, (uint8_t)NODE_ID);   // 自機S/GのA1/A2も拾う（27章）
-    Serial.printf("[SG] lane=%u q=%u\n", hit.lane, hit.quality);
+    Serial.printf("[SG] lane=%u q=%u rid=%u cross=%u\n",
+                  hit.lane, hit.quality, s_internal_rid,
+                  (hit.lane>=1&&hit.lane<=3)?s_lane_cross[hit.lane]:0);
     if (s_state == ST_IDLE && !s_sg_beeped) {  // 待機中の「最初の」S/G通過のみ 60ms「ピッ」（29章）
       buzzer_beep();
       s_sg_beeped = true;                       // 以降は灰リセットまで鳴らさない（TA周回の毎回鳴り防止）
     }
   }
 
-  // 24.3：3秒ごとの機械的POSTは廃止。送信は灰ボタン(on_reset_pressed)起点のみ。
-  //   （旧: static uint32_t last=0; if (millis()-last>3000){ last=millis(); flush_spool(); }）
+  // 20260821：POSTは「全員完走(自動)」と「灰ボタン(手動)」の2契機のみ。
+  //   計測中はサーバー通信ゼロ（受信→内部ridで刻む→LittleFSへ溜める→TFTのみ）。
+  maybe_autocomplete();  // 有効レーンが全員規定周回完了なら s_need_flush を立てる（DA15）
+  tick_flush();          // 送信要求があればloop文脈でHTTPS実行（#20・全送信の唯一の出口）
 
   tick_fetch_layout();   // #14：成功60s/失敗5sのバックオフで /for_gw を取得
   tick_display();        // TFT描画：全画面フル更新（状態機械に同期・約4fps）
