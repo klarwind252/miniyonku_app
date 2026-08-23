@@ -194,6 +194,32 @@ static void draw_idle() {
   }
 }
 
+// ===== 受付(SET)画面（赤押下→ARMED・docs/20.6）=============================
+//  赤ボタンを受け付けた瞬間〜緑点灯までの「間」を埋める表示。
+//  READY(待機)から即座に大きな「SET」へ切り替え、押下が通ったことを視認させる。
+//  blink_on はtick_display側の250ms周期。SETの下の●で「準備中」を点滅表示する。
+static void draw_set(bool blink_on) {
+  s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
+  // 中央に大きく SET（ON TRACK と同じ赤系＝これから始まる合図）
+  //  font7/8は7セグ数字専用で英字が無いため、英字入りfont4を拡大して大書きする。
+  s_spr.setTextDatum(MC_DATUM);
+  s_spr.setTextColor(C_ONTRK, C_BLACK);
+  s_spr.setTextFont(4);
+  s_spr.setTextSize(3);                        // font4(約26px)×3で大型化
+  s_spr.drawString("SET", W / 2, BODY_H / 2 - 10);
+  s_spr.setTextSize(1);                        // 以降のために倍率を戻す
+  // 下に「GET READY」＋点滅●（準備中の合図・フォント非依存で円を直接描く）
+  s_spr.setTextFont(4);
+  s_spr.setTextColor(C_FINISH, C_BLACK);      // 黄（間もなく＝注意色）
+  s_spr.setTextDatum(MC_DATUM);
+  const int ty = BODY_H - 34;
+  s_spr.drawString("GET READY", W / 2, ty);
+  if (blink_on) {
+    int tw = s_spr.textWidth("GET READY");
+    s_spr.fillCircle(W / 2 - tw / 2 - 16, ty, 6, C_FINISH);   // 見出し左に点滅ドット
+  }
+}
+
 // ===== 計測中(ON TRACK)画面（docs/20.3）====================================
 //  ●点滅・経過秒・3レーン枠。ラップテーブルは骨組みのみ（実データ後続）。
 static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
