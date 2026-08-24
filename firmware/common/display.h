@@ -12,7 +12,9 @@
 // ============================================================================
 #pragma once
 #include <Arduino.h>
+#include <math.h>
 #include <TFT_eSPI.h>
+#include "logo_arcadebase.h"
 
 namespace disp {
 
@@ -113,9 +115,115 @@ static void begin() {
 }
 static inline bool ready() { return s_ok; }
 
-// ===== 共通：ステータスバー（全画面の最下部・docs/20.1）=====================
-//  ○判定：WiFi接続 / NODE充足(need>0 && have==need) / ビーム全数 / 未送信0。
-//  GW番号・chは固定値＝○×なし（20.1）。×が1つでもあればバー全体赤。
+// ===== 起動スプラッシュ（ARCADE BASE・回転縮小リビール・非ブロッキング）========
+//  右下がり45°＋ドアップの状態から、0°・100%へ回転しながら縮小して着地。黒地・白ロゴ。
+//  1フレーム = draw_splash_frame(p)（p:0→1）。main側がloopで少しずつ呼ぶ（裏で通信進行）。
+//  逆写像アフィン（増分ステップ）で s_spr に直接描く。ステータスバー無し。
+static inline uint8_t logo_alpha(int lx, int ly) {
+  if (lx < 0 || lx >= LOGO_W || ly < 0 || ly >= LOGO_H) return 0;
+  return pgm_read_byte(&LOGO_ALPHA[ly * LOGO_W + lx]);
+}
+static inline uint8_t logo_glow(int lx, int ly) {
+  if (lx < 0 || lx >= LOGO_W || ly < 0 || ly >= LOGO_H) return 0;
+  return pgm_read_byte(&LOGO_GLOW[ly * LOGO_W + lx]);
+}
+// F1リビール準拠スプラッシュ（2026-08-24r）
+//  カーボン地 → 横スピードライン → ロゴ(赤塗り＋白熱縁＋ガウスグロー)が45°ドアップから着地
+//  → 発光ホールド(呼吸) → 40xズームで突き抜け(ライン再走) → 暗転。
+//  グローは事前ガウスぼかし(LOGO_GLOW)参照のみ＝実行時ぼかし計算なし（軽量）。
+static void draw_splash_frame(float p) {
+  if (!s_ok) return;
+  if (p < 0) p = 0; if (p > 1) p = 1;
+
+  // カーボン柄タイル（20x20・初回のみ生成）
+  static bool tile_ok = false;
+  static uint8_t tR[20][20], tG[20][20], tB[20][20];
+  if (!tile_ok) { tile_ok = true;
+    for (int y = 0; y < 20; y++) for (int x = 0; x < 20; x++) {
+      int cx = x % 10, cy = y % 10;
+      int par = ((x / 10) + (y / 10)) & 1;
+      int diag = par ? (9 - cx) + cy : cx + cy;
+      float sheen = 0.5f + 0.5f * cosf(diag / 10.0f * 3.14159265f);
+      float base = 16.0f + sheen * 22.0f;
+      uint8_t gray = (uint8_t)base;   // 白黒カーボン（色素なし）
+      tR[y][x] = gray; tG[y][x] = gray; tB[y][x] = gray;
+    }
+  }
+
+  // --- 進行スケジュール（プレビューと同一）---
+  bool  logo_vis = (p >= 0.06f);
+  float ang = 0.0f, scale = 1.0f;
+  if (logo_vis && p < 0.26f) {
+    float q = (p - 0.06f) / 0.20f; float e = 1.0f - (1.0f - q) * (1.0f - q);
+    ang = (45.0f * 3.14159265f / 180.0f) * (1.0f - e);
+    scale = 1.0f + (5.0f - 1.0f) * (1.0f - e);
+  } else if (p < 0.66f) {
+    scale = 1.0f + 0.015f * sinf((p - 0.26f) / 0.40f * 3.14159265f * 3.0f);  // 呼吸
+  } else {
+    float q = (p - 0.66f) / 0.34f;
+    scale = 1.0f + (40.0f - 1.0f) * q * q * q;                              // 40xで突き抜け
+  }
+  float ca = cosf(ang), sa = sinf(ang);
+  float cx = W / 2.0f, cy = H / 2.0f, lcx = LOGO_W / 2.0f, lcy = LOGO_H / 2.0f;
+  float sxu = ca / scale, sxv = -sa / scale;
+
+  // スピードライン（固定y・イントロ/アウトロ）
+  static const int SY[9] = {13, 177, 84, 220, 49, 140, 201, 26, 110};
+  float in_t   = (p < 0.22f) ? (p / 0.22f) : -1.0f;
+  float in_amp = (p < 0.22f) ? (1.0f - p / 0.22f) * 1.3f : 0.0f;
+  float out_t  = (p >= 0.80f) ? ((p - 0.80f) / 0.20f) : -1.0f;
+  float out_amp= (p >= 0.80f) ? fminf(1.0f, (p - 0.80f) / 0.06f) : 0.0f;
+  float fade   = (p >= 0.95f) ? (1.0f - (p - 0.95f) / 0.05f) : 1.0f;
+
+  for (int y = 0; y < H; y++) {
+    // この行に掛かるライン（帯幅±5px）を最大4本収集
+    struct SL { float amp; float xo; };
+    SL Lin[4], Lout[4]; int nin = 0, nout = 0;
+    for (int i = 0; i < 9; i++) {
+      int dy = y - SY[i]; if (dy < 0) dy = -dy;
+      if (dy >= 5) continue;
+      float band = 1.0f - dy / 5.0f;
+      if (in_t >= 0 && nin < 4)  { Lin[nin].amp  = band * in_amp;
+        Lin[nin].xo  = fmodf(in_t  * 1000.0f + i * 90.0f, (float)(W + 260)) - 130.0f; nin++; }
+      if (out_t >= 0 && nout < 4){ Lout[nout].amp = band * out_amp;
+        Lout[nout].xo = fmodf(out_t * 1000.0f + i * 90.0f + 300.0f, (float)(W + 260)) - 130.0f; nout++; }
+    }
+    const uint8_t* rR = tR[y % 20]; const uint8_t* rG = tG[y % 20]; const uint8_t* rB = tB[y % 20];
+    float rx0 = 0 - cx, ry = (float)y - cy;
+    float u = ( ca * rx0 + sa * ry) / scale + lcx;
+    float v = (-sa * rx0 + ca * ry) / scale + lcy;
+    for (int x = 0; x < W; x++) {
+      int R = rR[x % 20], G = rG[x % 20], B = rB[x % 20];   // カーボン地
+      // イントロのライン（ロゴより下層）
+      for (int i = 0; i < nin; i++) {
+        float d = x - Lin[i].xo; if (d < 0) d = -d;
+        if (d < 130.0f) { float h = 1.0f - d / 130.0f; float sgl = Lin[i].amp * h * h;
+          R += (int)(sgl * 110); G += (int)(sgl * 12); B += (int)(sgl * 28); }
+      }
+      if (logo_vis) {
+        int su = (int)(u + 0.5f), sv = (int)(v + 0.5f);
+        int a  = logo_alpha(su, sv);
+        int g8 = logo_glow(su, sv);
+        // 縁のにじみ＝ワインレッド（ガウスぼかしグローをワイン色で加算）
+        int gr = (g8 * 110) >> 8, gg = (g8 * 12) >> 8, gb = (g8 * 28) >> 8;   // ダークワインにじみ
+        if (gr > R) R = gr; if (gg > G) G = gg; if (gb > B) B = gb;
+        if (a >= 128) { R = 255; G = 255; B = 255; }   // ロゴ本体＝白固定
+      }
+      // アウトロのライン（ロゴの上層）
+      for (int i = 0; i < nout; i++) {
+        float d = x - Lout[i].xo; if (d < 0) d = -d;
+        if (d < 130.0f) { float h = 1.0f - d / 130.0f; float sgl = Lout[i].amp * h * h;
+          R += (int)(sgl * 110); G += (int)(sgl * 12); B += (int)(sgl * 28); }
+      }
+      if (fade < 1.0f) { R = (int)(R * fade); G = (int)(G * fade); B = (int)(B * fade); }
+      if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
+      s_spr.drawPixel(x, y, s_spr.color565((uint8_t)R, (uint8_t)G, (uint8_t)B));
+      u += sxu; v += sxv;
+    }
+  }
+  s_spr.pushSprite(0, 0);
+}
+
 static void draw_status_bar() {
   Status& st = g_status;   // 共有状態（main側が更新）
   bool node_ok = (st.node_need > 0) && (st.node_have == st.node_need);

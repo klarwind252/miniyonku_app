@@ -143,8 +143,10 @@ static inline void buzzer_error_edge(bool err_now) {
 }
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
-enum GwState { ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
+enum GwState { ST_SPLASH, ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
 static GwState s_state = ST_IDLE;
+static uint32_t s_splash_ms = 0;                 // スプラッシュ開始時刻（ST_SPLASH中）
+static constexpr uint32_t SPLASH_MS = 3200;      // スプラッシュ総時間（締めの大拡大ぶん延長）
 // 赤押下でSETを「即座に」出すための一発フラグ。on_signal_pressed（ESP-NOW受信
 // コールバック文脈からも呼ばれる）でSPIを叩くとクラッシュしうるため、ここでは
 // フラグだけ立て、実描画は loop（安全な文脈）で render_set_now() が行う。
@@ -406,6 +408,7 @@ static void render_ontrack_now();
 // ---- スタートシーケンス制御 -----------------------------------------------
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
+  if (s_state == ST_SPLASH) { s_state = ST_IDLE; Serial.println("[SPLASH] skip -> READY"); return; }
   // docs要望2026-08-24b：赤を受け付けるのは READY(待機=ST_IDLE) のときだけ。
   //   計測中・ARMED・GREEN・RACE、および走行式レース活性中は赤を無視する。
   //   やり直しは従来どおり「灰(RESET)→赤」の順。
@@ -962,6 +965,7 @@ void setup() {
   }
   beam::begin();
   disp::begin();                       // TFT初期化（PSRAMスプライト確保）
+  s_state = ST_SPLASH; s_splash_ms = millis();   // スプラッシュ開始（非ブロッキング・loopで描画。裏で通信進行）
   disp::g_status.gw_id = NODE_ID;
   disp::g_status.ch    = g_channel;
   wifi_up();
@@ -1012,6 +1016,17 @@ static void render_ontrack_now() {
 // ---- TFT描画：状態機械に同期して画面を切り替える（docs/20・12.3）----------
 //  ステータスバーの○×はここで g_status に反映してから各画面を描く。
 static void tick_display() {
+  // スプラッシュ（非ブロッキング）：250msゲートより前で自前タイミング描画。
+  if (s_state == ST_SPLASH) {
+    static uint32_t sf_last = 0;
+    uint32_t e = millis() - s_splash_ms;
+    if (e >= SPLASH_MS) { s_state = ST_IDLE; return; }     // 終了→READY
+    if (millis() - sf_last >= 33) {                        // 約30fps
+      sf_last = millis();
+      disp::draw_splash_frame((float)e / (float)SPLASH_MS);
+    }
+    return;                                                // スプラッシュ中は他描画しない
+  }
   static uint32_t last = 0;
   static bool blink = false;
   if (millis() - last < 250) return;     // 約4fps（●点滅もこの周期）
