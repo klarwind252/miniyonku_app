@@ -37,7 +37,7 @@ static inline uint16_t lane_color(int lane1) {
 
 // ---- 画面サイズ ----
 static constexpr int W = 320, H = 240;
-static constexpr int BAR_H = 28;                 // ステータスバー高（docs/20.1）
+static constexpr int BAR_H = 22;                 // ステータスバー高（font1化で28→22に縮小・ボディ+6px・2026-08-24）
 static constexpr int BODY_H = H - BAR_H;
 
 // ---- ステータス状態（バーの○×判定に使う）---------------------------------
@@ -130,39 +130,41 @@ static void draw_status_bar() {
   s_spr.setTextFont(2);
 
   int y = H - BAR_H/2;
-  int x = 2;
+  int x = 4;
   char buf[24];
 
-  // 8項目を320px幅に収めるため間隔を詰める（フォント2・ML基準）。
-  //  GW ch WiFi Node Beam Send Sync Lost（24.11の並び）。
-  // GW番号（○×なし）
+  // 全項目フォント1・ASCIIのみ（実機で確実に表示）。OK=正常 / NG=異常。
+  //  SQ・Send・Lost… の並び（24.11）。SQ/Sendは数字が情報なのでOK/NGは付けない。
+  s_spr.setTextFont(1);
+  s_spr.setTextSize(1);
+
+  // GW番号（OK/NGなし）
   snprintf(buf, sizeof(buf), "GW%u", st.gw_id);
-  s_spr.drawString(buf, x, y); x += 30;
-  // ch（○×なし）
+  s_spr.drawString(buf, x, y); x += 26;
+  // ch（OK/NGなし）
   snprintf(buf, sizeof(buf), "ch%u", st.ch);
-  s_spr.drawString(buf, x, y); x += 28;
+  s_spr.drawString(buf, x, y); x += 26;
   // WiFi
-  s_spr.drawString(st.wifi_ok ? "WiFi○" : "WiFi×", x, y); x += 44;   // ○/× 全角（2026-08-24）
-  // Node
-  if (st.node_need > 0) snprintf(buf, sizeof(buf), "Nd%d/%d%s", st.node_have, st.node_need, node_ok?"○":"×");  // ○/×全角
-  else                  snprintf(buf, sizeof(buf), "Nd-/-");
-  s_spr.drawString(buf, x, y); x += 52;
+  s_spr.drawString(st.wifi_ok ? "WiFi:OK" : "WiFi:NG", x, y); x += 44;
+  // SQ（実JOIN数/必要数。未取得は -/-）
+  if (st.node_need > 0) snprintf(buf, sizeof(buf), "SQ%d/%d", st.node_have, st.node_need);
+  else                  snprintf(buf, sizeof(buf), "SQ-/-");
+  s_spr.drawString(buf, x, y); x += 40;
   // Beam
-  s_spr.drawString(st.beam_ok ? "Bm○" : "Bm×", x, y); x += 32;   // ○/×全角
-  // Send or 重複検知（重複は最重要なので、その時だけ差し替え表示）
-  //  優先順位：GW > SG > RC（GWが最重要・docs/20.5）。
+  s_spr.drawString(st.beam_ok ? "Beam:OK" : "Beam:NG", x, y); x += 48;
+  // Send or 重複検知（重複は最重要なのでSendスロットを差し替え・優先 GW>SG>RC）
   if (any_dup) {
-    const char* d = st.gw_dup ? "GWx2x" : (st.sg_dup ? "SGx2x" : "RCx2x");
+    const char* d = st.gw_dup ? "GWx2!" : (st.sg_dup ? "SGx2!" : "RCx2!");
     s_spr.drawString(d, x, y);
   } else {
-    snprintf(buf, sizeof(buf), "Sd%d%s", st.unsent, send_ok?"O":"x");
+    snprintf(buf, sizeof(buf), "Send:%d", st.unsent);
     s_spr.drawString(buf, x, y);
   }
-  x += 44;
+  x += 40;
   // Sync（時刻同期・B1/24.11）
-  s_spr.drawString(st.sync_ok ? "SyO" : "Syx", x, y); x += 32;
+  s_spr.drawString(st.sync_ok ? "Sync:OK" : "Sync:NG", x, y); x += 44;
   // Lost（あきらめ発生・C1/24.14。灰リセットまで保持）
-  s_spr.drawString(st.lost ? "Lox" : "LoO", x, y);
+  s_spr.drawString(st.lost ? "Lost:NG" : "Lost:OK", x, y);
 }
 
 // ===== 待機(IDLE)画面（docs/20.2）==========================================
