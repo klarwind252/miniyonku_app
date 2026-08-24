@@ -142,13 +142,13 @@ static void draw_status_bar() {
   snprintf(buf, sizeof(buf), "ch%u", st.ch);
   s_spr.drawString(buf, x, y); x += 28;
   // WiFi
-  s_spr.drawString(st.wifi_ok ? "WiFiO" : "WiFix", x, y); x += 44;
+  s_spr.drawString(st.wifi_ok ? "WiFi○" : "WiFi×", x, y); x += 44;   // ○/× 全角（2026-08-24）
   // Node
-  if (st.node_need > 0) snprintf(buf, sizeof(buf), "Nd%d/%d%s", st.node_have, st.node_need, node_ok?"O":"x");
+  if (st.node_need > 0) snprintf(buf, sizeof(buf), "Nd%d/%d%s", st.node_have, st.node_need, node_ok?"○":"×");  // ○/×全角
   else                  snprintf(buf, sizeof(buf), "Nd-/-");
   s_spr.drawString(buf, x, y); x += 52;
   // Beam
-  s_spr.drawString(st.beam_ok ? "BmO" : "Bmx", x, y); x += 32;
+  s_spr.drawString(st.beam_ok ? "Bm○" : "Bm×", x, y); x += 32;   // ○/×全角
   // Send or 重複検知（重複は最重要なので、その時だけ差し替え表示）
   //  優先順位：GW > SG > RC（GWが最重要・docs/20.5）。
   if (any_dup) {
@@ -197,27 +197,18 @@ static void draw_idle() {
 // ===== 受付(SET)画面（赤押下→ARMED・docs/20.6）=============================
 //  赤ボタンを受け付けた瞬間〜緑点灯までの「間」を埋める表示。
 //  READY(待機)から即座に大きな「SET」へ切り替え、押下が通ったことを視認させる。
-//  blink_on はtick_display側の250ms周期。SETの下の●で「準備中」を点滅表示する。
-static void draw_set(bool blink_on) {
+//  ⚠docs要望2026-08-24b：ステータスバーを除く本体全面に「SET」の一語だけを出す。
+//    以前の「GET READY」＋点滅ドットは廃止（引数 blink は互換のため残すが未使用）。
+static void draw_set(bool /*blink 未使用*/) {
+  // 本体領域（バーを除く全面）を黒で塗り、中央に SET だけを大書きする。
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
-  // 中央に大きく SET（ON TRACK と同じ赤系＝これから始まる合図）
-  //  font7/8は7セグ数字専用で英字が無いため、英字入りfont4を拡大して大書きする。
   s_spr.setTextDatum(MC_DATUM);
-  s_spr.setTextColor(C_ONTRK, C_BLACK);
+  s_spr.setTextColor(C_ONTRK, C_BLACK);       // 赤系＝これから始まる合図
+  // font4(約26px)を size4 で拡大し、本体中央に大書き（英字入りフォントはfont4系のみ）。
   s_spr.setTextFont(4);
-  s_spr.setTextSize(3);                        // font4(約26px)×3で大型化
-  s_spr.drawString("SET", W / 2, BODY_H / 2 - 10);
+  s_spr.setTextSize(4);
+  s_spr.drawString("SET", W / 2, BODY_H / 2);
   s_spr.setTextSize(1);                        // 以降のために倍率を戻す
-  // 下に「GET READY」＋点滅●（準備中の合図・フォント非依存で円を直接描く）
-  s_spr.setTextFont(4);
-  s_spr.setTextColor(C_FINISH, C_BLACK);      // 黄（間もなく＝注意色）
-  s_spr.setTextDatum(MC_DATUM);
-  const int ty = BODY_H - 34;
-  s_spr.drawString("GET READY", W / 2, ty);
-  if (blink_on) {
-    int tw = s_spr.textWidth("GET READY");
-    s_spr.fillCircle(W / 2 - tw / 2 - 16, ty, 6, C_FINISH);   // 見出し左に点滅ドット
-  }
 }
 
 // ===== 計測中(ON TRACK)画面（docs/20.3）====================================

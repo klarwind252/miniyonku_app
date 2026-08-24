@@ -58,6 +58,7 @@
 #endif
 static uint32_t s_layout_id   = DEFAULT_LAYOUT_ID;    // 現在のレイアウトID（起動既定→将来アプリ追従）
 static int      s_target_laps = DEFAULT_TARGET_LAPS;  // 現在の周回数（fetch_layoutで更新）
+static int      s_node_need   = 0;   // レイアウト要求ノード数（fetch_layoutのnode_count・0=未取得で「-」表示）
 
 // ---- サーバ接続（K5：DNS回避＝IP直＋Hostヘッダ／#9保険＝DNS二段構え）--------
 //  ⚠ESP32の hostByName() が失敗するため、暫定でIP直＋Hostヘッダを使ってきた。
@@ -144,6 +145,10 @@ static inline void buzzer_error_edge(bool err_now) {
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
 enum GwState { ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
 static GwState s_state = ST_IDLE;
+// 赤押下でSETを「即座に」出すための一発フラグ。on_signal_pressed（ESP-NOW受信
+// コールバック文脈からも呼ばれる）でSPIを叩くとクラッシュしうるため、ここでは
+// フラグだけ立て、実描画は loop（安全な文脈）で render_set_now() が行う。
+static volatile bool s_set_now_req = false;
 
 // ---- COMMAND冪等化（SIGNAL二重発火の絶対防止・20260819）----------------
 //  RCは1押下ごとに一意 nonce(=CommandBody.arg) を採番し、その押下の全再送に同値を載せる。
@@ -218,6 +223,7 @@ static void ridmap_store(uint32_t internal, uint32_t server) {
 //  C1 Lostは give-up通知(PT_LOST_NOTICE)で立て、灰リセットまで出しっぱなし。
 static bool     s_race_q2 = false;  static uint8_t s_race_q2_src = 0;  // A1：両ビーム欠(q=2)
 static bool     s_race_q1 = false;  static uint8_t s_race_q1_src = 0;  // A2：片ビーム欠(q=1)
+static bool     s_beam_bad = false;  // Beam×：片/両ビーム欠を検知したら保持（灰リセットで解除）
 static uint32_t s_last_q3_ms     = 0;   // B1：未同期打刻(q=3)を最後に受けた時刻→Sync×(自動復帰)
 static uint32_t s_post_err_until = 0;   // 24.4⑤：灰ボタン後3秒だけA1/A2を出す窓(millis基準)
 static uint8_t  s_lost_src       = 0;   // C1：give-up通知の発生SQ(Lostラベル用・24.14)
@@ -226,6 +232,7 @@ static uint8_t  s_lost_src       = 0;   // C1：give-up通知の発生SQ(Lostラ
 static inline void note_quality(uint8_t q, uint8_t src) {
   if (q == 2)      { if (!s_race_q2) { s_race_q2 = true; s_race_q2_src = src; } }
   else if (q == 1) { if (!s_race_q1) { s_race_q1 = true; s_race_q1_src = src; } }
+  if (q == 1 || q == 2) s_beam_bad = true;   // 片/両ビーム欠でBeam×（灰リセットまで保持）
   else if (q == 3) { s_last_q3_ms = millis(); }
 }
 
@@ -309,18 +316,38 @@ static void gw_adopt_wifi_channel() {
   disp::g_status.ch = g_channel;                    // TFT表示も更新
 }
 
+// ---- WiFi（非ブロッキング・2026-08-24e）------------------------------------
+//  旧実装は WiFi.begin 後に最大8秒のビジーウェイトがあり、未接続環境では
+//  tick_fetch_layout(失敗時5秒間隔)と組み合わさって loop がほぼ常時停止。
+//  → TFTがREADYのまま固まる／赤・灰の押下が丸ごと消える の根本原因。
+//  本実装：接続済みなら true。未接続なら begin() を仕掛けて即 false
+//  （完了待ちしない）。再beginは15秒間隔。probe_dns等は接続完了の
+//  立ち上がりで1回だけ実行する。
+static uint32_t s_wifi_try_ms = 0;      // 直近 begin() を仕掛けた時刻
+static bool     s_wifi_began  = false;  // begin() 済みか
+static bool     s_wifi_was_up = false;  // 接続完了エッジ検出用
+static constexpr uint32_t WIFI_RETRY_MS = 15000;
+
 static bool wifi_up() {
-  if (WiFi.status() == WL_CONNECTED) { gw_adopt_wifi_channel(); return true; }
-  // DNSを明示（ルーターがDNS未配布でも解決を試せるように）。SSID接続前に設定。
-  //  IP等は0で自動（DHCP）、DNSだけ固定にする。
-  WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0),
-              IPAddress(8,8,8,8), IPAddress(1,1,1,1));
-  WiFi.begin(g_ssid.c_str(), g_pass.c_str());
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) delay(100);
-  bool up = (WiFi.status() == WL_CONNECTED);
-  if (up) { probe_dns(); gw_adopt_wifi_channel(); }  // 接続直後にDNS判定＋実ch採用
-  return up;
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!s_wifi_was_up) {                       // 接続完了の立ち上がりで1回だけ
+      s_wifi_was_up = true;
+      probe_dns(); gw_adopt_wifi_channel();     // DNS判定＋実ch採用（従来どおり）
+    }
+    return true;
+  }
+  s_wifi_was_up = false;
+  uint32_t now = millis();
+  if (!s_wifi_began || (now - s_wifi_try_ms) >= WIFI_RETRY_MS) {
+    s_wifi_began  = true;
+    s_wifi_try_ms = now;
+    // DNSを明示（ルーターがDNS未配布でも解決を試せるように）。SSID接続前に設定。
+    WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0),
+                IPAddress(8,8,8,8), IPAddress(1,1,1,1));
+    WiFi.begin(g_ssid.c_str(), g_pass.c_str()); // 非ブロッキング：完了待ちしない
+    Serial.println("[WIFI] begin (non-blocking)");
+  }
+  return false;                                 // 未接続。呼び出し元は今回は見送る
 }
 
 // ---- 新レース作成（layout_id・任意でgreen_t_usを付ける）--------------------
@@ -336,6 +363,7 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
   WiFiClientSecure _c; _c.setInsecure();            // K4：ローカル生成＋CN検証なし
   HTTPClient http;
   http.begin(_c, server_base() + "/api/timing/races");   // #9：DNS可ならホスト名/不可ならIP直
+  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
   add_common_headers(http);                         // Host(IP直時のみ)＋トークン
   http.addHeader("Content-Type", "application/json");
   uint32_t rid = 0;
@@ -358,6 +386,8 @@ static void signal_cmd(uint8_t code) {
 }
 
 // ---- 内部レース開始（内部rid採番＋参加レーン/緑/per-raceフラグの初期化）------
+//  on_signal_pressed が on_reset_pressed を先に呼ぶため前方宣言（定義は後方）。
+static void on_reset_pressed();
 //  F1式：on_signal_pressed から。走行式：最初のS/G通過時に loop から呼ぶ。
 //  ⚠ HTTPSは一切しない（サーバー作成はflush時）。ここは純粋にRAM上の初期化のみ。
 static void begin_internal_race() {
@@ -369,19 +399,25 @@ static void begin_internal_race() {
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
 }
 
+// tick_display を介さず SET 画面を即時に1回描くための前方宣言（赤押下の即応用）。
+static void render_set_now();
+// 緑点灯と同時に計測中(ON TRACK)画面を即時描画するための前方宣言（緑の即応用）。
+static void render_ontrack_now();
 // ---- スタートシーケンス制御 -----------------------------------------------
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
-  if (s_state != ST_IDLE) return;             // 計測中の赤は無視（G2）。二度押しも無視
-  if (s_race_active) {                          // 走行式(ST_IDLEのまま計測中)の赤も無視。
-    Serial.println("[SEQ] blocked: race active（計測中の赤は無視。やり直しは灰→赤）");
-    return;                                      //   やり直しは「灰でリセット→赤」（G2）
+  // docs要望2026-08-24b：赤を受け付けるのは READY(待機=ST_IDLE) のときだけ。
+  //   計測中・ARMED・GREEN・RACE、および走行式レース活性中は赤を無視する。
+  //   やり直しは従来どおり「灰(RESET)→赤」の順。
+  if (s_state != ST_IDLE) {   // READY(=IDLE画面)のときだけ受付。s_race_active は画面と無関係なので見ない
+    Serial.println("[SEQ] ignored: not READY (赤はREADYのときだけ。やり直しは灰→赤)");
+    return;
   }
-  if (s_send_blocked) {                        // 1-e：送信失敗中は新レースを封じる
+  if (s_send_blocked) {                          // 1-e：送信失敗中は新レースを封じる
     Serial.println("[SEQ] blocked: 前レース未送信。灰ボタンで再送、または灰3秒長押しで強制解除");
     return;
   }
-  if (exclusivity_conflict()) {               // GW/RC/SG重複中は新規スタートを受け付けない
+  if (exclusivity_conflict()) {                 // GW/RC/SG重複中は新規スタートを受け付けない
     Serial.println("[SEQ] blocked: GW/RC/SG duplicate active (power off one)");
     return;
   }
@@ -392,6 +428,7 @@ static void on_signal_pressed() {
   s_armed_ms   = millis();
   s_state      = ST_ARMED;
   signal_cmd(proto::CMD_RED);
+  s_set_now_req = true;                           // ★即SET要求（実描画はloopで・コールバック文脈のSPIクラッシュ回避）
   Serial.printf("[SEQ] ARMED rid=%u red=%ums\n", s_internal_rid, s_red_dur_ms);
 }
 
@@ -416,6 +453,7 @@ static void on_reset_pressed() {
 
   s_state      = ST_IDLE;
   s_race_active = false;        // 現レースを閉じる（次のS/G通過は新しい内部レースになる）
+  s_beam_bad   = false;         // Beam×も待機復帰でクリア
   s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
   signal_cmd(proto::CMD_RESET);
@@ -431,6 +469,7 @@ static void tick_sequence() {
     Serial.printf("[SEQ] GREEN t=%llu (rid=%u)\n",
                   (unsigned long long)s_green_t_us, s_internal_rid);
     s_state = ST_RACE;
+    render_ontrack_now();   // ★緑点灯と同時に計測中画面へ即切替＋カウント開始（250ms待ちを迂回）
   }
 }
 
@@ -471,6 +510,7 @@ static void forward_join(const proto::JoinBody& jb) {
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, server_base() + "/api/timing/join");
+  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
   add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(body);
@@ -633,6 +673,7 @@ static void rewrite_spool_drop_group(uint32_t rid, int limit) {
 //      s_ridmap に記録。これが「作成POSTも終了時に集約」の実体。
 //  ⚠ 必ずloop文脈(tick_flush)から呼ぶこと（HTTPSブロッキング・#20）。
 static void flush_spool() {
+  if (!wifi_up()) return;  // WiFi接続進行中は送らない（封じない・s_need_flush維持で1.5秒後に再試行・2026-08-24e）
   if (!LittleFS.exists(SPOOL)) return;
   File f = LittleFS.open(SPOOL, FILE_READ);
   if (!f) return;
@@ -706,6 +747,7 @@ static void flush_spool() {
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, url);
+  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
   add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(payload);
@@ -770,6 +812,7 @@ static bool fetch_layout() {
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, server_base() + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
+  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
   add_common_headers(http);
   int code = http.GET();
   bool ok = false;
@@ -778,6 +821,7 @@ static bool fetch_layout() {
     if (deserializeJson(res, http.getString()) == DeserializationError::Ok) {
       int laps  = res["target_laps"] | 0;
       int nodes = res["node_count"]  | 0;
+      s_node_need = (nodes >= 0 && nodes <= 6) ? nodes : 0;   // 使用SQ数（0..6）。異常値は0=未取得扱い
       int lc    = res["lc_count"]    | 0;
       float len = res["lap_length_m"] | 0.0f;
       // #8-a：取得できた周回数を実行時変数へ反映（0や異常値は無視して既定を維持）
@@ -794,6 +838,7 @@ static bool fetch_layout() {
 
 // ---- fetch_layout の呼び出し間隔管理（#14：成功60s / 失敗5s）---------------
 static void tick_fetch_layout() {
+  if (s_state != ST_IDLE) return;   // SET〜計測中は通信で止めない（描画・ボタン最優先・2026-08-24e）
   static uint32_t last = 0;
   static bool first = true;
   uint32_t interval = s_layout_ok ? LAYOUT_OK_MS : LAYOUT_NG_MS;
@@ -804,33 +849,40 @@ static void tick_fetch_layout() {
 }
 
 // ---- 本体ボタン読み取り ----------------------------------------------------
+// ---- ボタンISRラッチ（2026-08-24e）------------------------------------------
+//  旧実装はloop内ポーリングのエッジ検出のみ。loopがWiFi/HTTPS等で停止している間に
+//  押して離した押下は「エッジごと消失」していた（＝赤が効かない主因のひとつ）。
+//  FALLINGエッジをISRで取りこぼしなくラッチし、実行はloop（tick_buttons）で行う。
+//  ISRではフラグを立てるだけ（描画・無線・シリアルはしない）。
+static volatile bool     s_red_evt = false, s_gray_evt = false;
+static volatile uint32_t s_red_isr_ms = 0,  s_gray_isr_ms = 0;
+static void IRAM_ATTR isr_btn_red() {
+  uint32_t now = millis();
+  if (now - s_red_isr_ms >= DEBOUNCE_MS) { s_red_isr_ms = now; s_red_evt = true; }
+}
+static void IRAM_ATTR isr_btn_gray() {
+  uint32_t now = millis();
+  if (now - s_gray_isr_ms >= DEBOUNCE_MS) { s_gray_isr_ms = now; s_gray_evt = true; }
+}
+
 static void tick_buttons() {
-  // 赤：押下エッジ（20ms）
-  static bool red_last = false; static uint32_t red_t = 0;
-  bool red_now = (digitalRead(PIN_BTN_RED) == LOW);
-  if (red_now != red_last && (millis() - red_t) > DEBOUNCE_MS) {
-    red_t = millis(); red_last = red_now;
-    if (red_now) on_signal_pressed();
-  }
-  // 灰：600ms長押しでRESET（docs/12 S9）／さらに3秒超で送信封じの緊急解除（1-e）
-  static uint32_t gray_down = 0; static bool gray_fired = false; static bool ovr_fired = false;
+  // 赤：ISRラッチ消化（loop停止中の押下も失われない）。受付判定はon_signal_pressed側。
+  if (s_red_evt) { s_red_evt = false; on_signal_pressed(); }
+
+  // 灰：ISRラッチで即RESET（長押し不要・docs要望2026-08-24）。
+  static uint32_t gray_down = 0; static bool ovr_fired = false;
+  if (s_gray_evt) { s_gray_evt = false; on_reset_pressed(); gray_down = millis(); ovr_fired = false; }
+
+  // 押しっぱなし3秒で「送信封じの緊急解除」だけは従来どおり残す（1-e）。レベルはポーリング。
   bool gray_now = (digitalRead(PIN_BTN_GRAY) == LOW);
-  if (gray_now) {
-    if (gray_down == 0) { gray_down = millis(); gray_fired = false; ovr_fired = false; }
-    else {
-      uint32_t held = millis() - gray_down;
-      if (!gray_fired && held >= RESET_HOLD_MS) {
-        gray_fired = true; on_reset_pressed();     // 600ms：通常RESET（再送も試みる）
-      }
-      if (!ovr_fired && held >= OVERRIDE_HOLD_MS) {
-        ovr_fired = true;                          // 3秒：封じの緊急解除
-        if (s_send_blocked) {
-          s_send_blocked = false;
-          Serial.println("[SEQ] 送信封じを強制解除（データはスプールに保持・後日後送り可）");
-        }
-      }
+  if (!gray_now) gray_down = 0;
+  if (gray_now && gray_down != 0 && !ovr_fired && (millis() - gray_down) >= OVERRIDE_HOLD_MS) {
+    ovr_fired = true;
+    if (s_send_blocked) {
+      s_send_blocked = false;
+      Serial.println("[SEQ] 送信封じを強制解除（データはスプールに保持・後日後送り可）");
     }
-  } else { gray_down = 0; }
+  }
 }
 
 // ---- GW自身の在席ビーコン（相手GWが「GW2台」を検知できるように）------------
@@ -875,6 +927,8 @@ void setup() {
   load_config();   // NVS "m4cfg" を読む（無ければ secrets.h 既定）。以後は g_* を使用
   pinMode(PIN_BTN_RED,  INPUT_PULLUP);
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(PIN_BTN_RED),  isr_btn_red,  FALLING);  // 押下取りこぼし防止（2026-08-24e）
+  attachInterrupt(digitalPinToInterrupt(PIN_BTN_GRAY), isr_btn_gray, FALLING);
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, LOW);   // 起動直後は必ず消灯
   if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
@@ -887,7 +941,7 @@ void setup() {
   disp::g_status.gw_id = NODE_ID;
   disp::g_status.ch    = g_channel;
   wifi_up();
-  Serial.println("稼働開始。赤=スタート / 灰長押し=RESET。");
+  Serial.println("稼働開始。赤=スタート(READY時のみ) / 灰=RESET(即時)。");
 }
 
 // 経過秒フィールド（案B）の設定。
@@ -908,6 +962,29 @@ static void tick_time_field() {
   disp::draw_time_field(elapsed, /*hundredths=*/true);   // 1/100秒（ストップウォッチ的）
 }
 
+// ---- SET画面の即時描画（赤押下の即応・tick_displayの250msゲートを迂回）------
+//  on_signal_pressed から呼ぶ。ARMEDに入った瞬間、状態機械の次周(最大250ms後)を
+//  待たずに SET 全面を1回転送する。以後の維持描画は tick_display(ST_ARMED)が担う。
+static void render_set_now() {
+  if (!disp::ready()) return;
+  disp::draw_set(false);        // blink未使用
+  s_show_ontrack = false;       // 経過秒フィールドを重ねない
+  disp::commit();               // ステータスバーを重ねて即転送
+}
+
+// ---- 計測中画面の即時描画（緑点灯の即応・tick_displayの250msゲートを迂回）----
+//  tick_sequence が緑(CMD_GREEN)を出した瞬間に呼ぶ。状態機械の次周(最大250ms後)を
+//  待たずに ON TRACK 全面を1回転送し、カウント表示をその場で始める。以後の維持描画は
+//  tick_display(ST_RACE)＋経過秒フィールド(約30fps)が担う。
+//  ⚠公式タイムは green_t_us(µs)基準。この描画タイミングは計測精度に影響しない。
+static void render_ontrack_now() {
+  if (!disp::ready()) return;
+  uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
+  disp::draw_ontrack(elapsed, /*blink=*/true, s_target_laps);
+  s_show_ontrack = true;        // 以降、経過秒フィールドを約30fpsで重ねる
+  disp::commit();               // ステータスバーを重ねて即転送
+}
+
 // ---- TFT描画：状態機械に同期して画面を切り替える（docs/20・12.3）----------
 //  ステータスバーの○×はここで g_status に反映してから各画面を描く。
 static void tick_display() {
@@ -920,7 +997,16 @@ static void tick_display() {
   // ステータス更新（NODE充足は残課題#8で実数へ。今はJOIN実数の反映口のみ用意）
   disp::g_status.wifi_ok = (WiFi.status() == WL_CONNECTED);
   disp::g_status.ch      = g_channel;
-  // beam_ok / node_have / node_need / unsent は各機能側から順次代入予定。
+  // Node充足：実JOIN中のSQ(0..5)数を数え、必要数はレイアウト由来(s_node_need)。
+  //   need>0 のときだけ have/need を突合（need=0＝レイアウト未取得は「Nd-/-」表示）。
+  {
+    int have = 0;
+    for (uint8_t id = 0; id <= 5; id++) if (node_alive(id)) have++;
+    disp::g_status.node_have = have;
+    disp::g_status.node_need = s_node_need;
+  }
+  disp::g_status.beam_ok = !s_beam_bad;   // 片/両ビーム欠を一度でも受けたら×（灰リセットで復帰）
+  // unsent は各機能側から順次代入予定。
 
   // Sync集約（B1/24.11・27章）：自機未同期 or 直近q=3受信 で Sync×（自動復帰型）。
   {
@@ -1002,6 +1088,7 @@ void loop() {
   buzzer_tick();              // ブザー非ブロッキング消灯（29章）
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_sequence();
+  if (s_set_now_req) { s_set_now_req = false; render_set_now(); }  // 赤押下の即SETをloop文脈で安全に描画
 
   beam::Hit hit;
   int drain = 0;
