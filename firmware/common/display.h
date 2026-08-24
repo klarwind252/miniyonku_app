@@ -14,7 +14,11 @@
 #include <Arduino.h>
 #include <math.h>
 #include <TFT_eSPI.h>
-#include "logo_arcadebase.h"
+#ifdef LOGO_B
+  #include "logo_onedafull.h"
+#else
+  #include "logo_arcadebase.h"
+#endif
 
 namespace disp {
 
@@ -119,6 +123,97 @@ static inline bool ready() { return s_ok; }
 //  右下がり45°＋ドアップの状態から、0°・100%へ回転しながら縮小して着地。黒地・白ロゴ。
 //  1フレーム = draw_splash_frame(p)（p:0→1）。main側がloopで少しずつ呼ぶ（裏で通信進行）。
 //  逆写像アフィン（増分ステップ）で s_spr に直接描く。ステータスバー無し。
+#ifdef LOGO_B
+// ===== B系スプラッシュ（One Da Full・扇振り→武者震い＋星→拡大・黒地/白）=========
+static inline uint8_t lb_alpha(int x,int y){ if(x<0||x>=LOGOB_W||y<0||y>=LOGOB_H)return 0; return pgm_read_byte(&LOGOB_ALPHA[y*LOGOB_W+x]); }
+static inline uint8_t lb_glow (int x,int y){ if(x<0||x>=LOGOB_W||y<0||y>=LOGOB_H)return 0; return pgm_read_byte(&LOGOB_GLOW [y*LOGOB_W+x]); }
+static void draw_star(int cx,int cy,int size,int bright){   // 白の8方向きらめき（十字＋斜め）
+  if(bright<=8)return; if(bright>255)bright=255;
+  for(int t=-size;t<=size;t++){
+    int at=t<0?-t:t; int b=bright*(size+1-at)/(size+1); if(b<8)continue;
+    uint16_t cc=s_spr.color565((uint8_t)b,(uint8_t)b,(uint8_t)b);
+    int px[4]={cx+t,cx,cx+t,cx+t}, py[4]={cy,cy+t,cy+t,cy-t};
+    for(int k=0;k<4;k++){int x=px[k],y=py[k]; if(x>=0&&x<W&&y>=0&&y<H)s_spr.drawPixel(x,y,cc);}
+  }
+}
+static void draw_splash_frame(float p){
+  if(!s_ok)return; if(p<0)p=0; if(p>1)p=1;
+  const float CXf=W/2.0f, CYf=H/2.0f;
+  const float PIVX=CXf, PIVY=CYf+150.0f, RAD=PIVY-CYf;   // 支点=中央の下・ロゴは上側で振れる（下が中心の扇・th=0で中央収束）
+  float ox,oy,ang,scale;
+  float th_cur=0.0f; bool in_swing=(p<0.55f);
+  if(in_swing){                                  // 扇状に大きく振れて減衰（画面外から）
+    float q=p/0.55f; float damp=expf(-2.0f*q);
+    th_cur=(88.0f*3.14159265f/180.0f)*sinf(q*3.14159265f*5.0f)*damp;   // ±88°（画面外から）
+    ox=PIVX+sinf(th_cur)*RAD; oy=PIVY-cosf(th_cur)*RAD; ang=th_cur*0.5f; scale=1.0f;
+  }else if(p<0.78f){                             // 武者震い
+    float q=(p-0.55f)/0.23f;
+    ox=W/2.0f+sinf(q*3.14159265f*22.0f)*4.0f;
+    oy=H/2.0f+cosf(q*3.14159265f*19.0f)*3.0f;
+    ang=(sinf(q*3.14159265f*22.0f)*1.5f)*3.14159265f/180.0f; scale=1.0f;
+  }else{                                          // 拡大して終了
+    float q=(p-0.78f)/0.22f; ox=W/2.0f; oy=H/2.0f; ang=0.0f; scale=1.0f+(7.0f-1.0f)*q*q;
+  }
+  float ca=cosf(ang), sa=sinf(ang);
+  float lcx=LOGOB_W/2.0f, lcy=LOGOB_H/2.0f;
+  float sxu=ca/scale, sxv=-sa/scale;
+  for(int y=0;y<H;y++){
+    float rx=0-ox, ry=(float)y-oy;
+    float u=( ca*rx+sa*ry)/scale+lcx;
+    float v=(-sa*rx+ca*ry)/scale+lcy;
+    for(int x=0;x<W;x++){
+      int su=(int)(u+0.5f), sv=(int)(v+0.5f);
+      int a=lb_alpha(su,sv); int g=lb_glow(su,sv);
+      int R=0,G=0,B=0;
+      int gw=g>>1; if(gw>R){R=gw;G=gw;B=gw;}     // 白グロー
+      if(a>=110){R=255;G=255;B=255;}             // 白ロゴ
+      s_spr.drawPixel(x,y,s_spr.color565((uint8_t)R,(uint8_t)G,(uint8_t)B));
+      u+=sxu; v+=sxv;
+    }
+  }
+  // 星・着地バースト：揺れ終わり(0.55)直後に大きく12個を四方へ弾く
+  if(p>=0.55f && p<0.72f){
+    float q=(p-0.55f)/0.17f; int bright=(int)(255*(1.0f-q));
+    for(int i=0;i<12;i++){
+      float aa=(float)i*(6.2831853f/12.0f); float r=40.0f+170.0f*q;
+      draw_star((int)(W/2+cosf(aa)*r),(int)(H/2+sinf(aa)*r),26,bright);
+    }
+  }
+  // 星A：武者震いで四方へ飛散（大きめ）
+  if(p>=0.55f && p<0.88f){
+    float q=(p-0.55f)/0.33f; int bright=(int)(255*(1.0f-q));
+    static const float SA_[9]={0.3f,1.0f,1.9f,2.7f,3.5f,4.2f,5.0f,5.7f,0.9f};
+    static const float SD_[9]={70,120,95,140,80,130,100,150,110};
+    for(int i=0;i<9;i++){
+      float r=SD_[i]*q; int sx=(int)(W/2+cosf(SA_[i])*r); int sy=(int)(H/2+sinf(SA_[i])*r);
+      draw_star(sx,sy,22,bright);
+    }
+  }
+  // 星B：左右の振り切り（折り返し＝角度が極大の瞬間）でロゴ周囲へバースト。
+  //  非ブロッキングのため前2フレームの|th|を保持し、山（増加→減少）を検出。
+  static float pth1 = 0.0f, pth2 = 0.0f;      // |th| 履歴
+  static float burst_x = 0, burst_y = 0;      // 直近の端バースト発生位置
+  static int   burst_age = 99;                // バースト経過フレーム
+  if (in_swing) {
+    float ath = th_cur < 0 ? -th_cur : th_cur;
+    // 折り返し検出：一つ前がピーク（pth1>=ath かつ pth1>=pth2）かつ十分振れている
+    if (pth1 >= ath && pth1 >= pth2 && pth1 > (20.0f * 3.14159265f / 180.0f)) {
+      burst_x = ox; burst_y = oy; burst_age = 0;   // ここで発火
+    }
+    pth2 = pth1; pth1 = ath;
+  }
+  if (burst_age < 5) {                          // 5フレームかけて広がり減衰
+    float q = burst_age / 5.0f; int br = (int)(255 * (1.0f - q));
+    for (int k = 0; k < 8; k++) {
+      float a0 = (float)k * (6.2831853f / 8.0f);
+      float r = 20.0f + 90.0f * q;
+      draw_star((int)(burst_x + cosf(a0) * r), (int)(burst_y + sinf(a0) * r), 20, br);
+    }
+    burst_age++;
+  }
+  s_spr.pushSprite(0,0);
+}
+#else
 static inline uint8_t logo_alpha(int lx, int ly) {
   if (lx < 0 || lx >= LOGO_W || ly < 0 || ly >= LOGO_H) return 0;
   return pgm_read_byte(&LOGO_ALPHA[ly * LOGO_W + lx]);
@@ -223,6 +318,7 @@ static void draw_splash_frame(float p) {
   }
   s_spr.pushSprite(0, 0);
 }
+#endif  // LOGO_B
 
 static void draw_status_bar() {
   Status& st = g_status;   // 共有状態（main側が更新）
@@ -348,7 +444,7 @@ static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
   //  draw_time_field()による約30fpsの部分更新（同じ位置・同じ書式に重なる）。
   s_spr.setTextDatum(TR_DATUM);
   s_spr.setTextColor(C_WHITE, C_BLACK);
-  char t[16]; snprintf(t, sizeof(t), "%.2f", elapsed_ms / 1000.0);
+  char t[16]; snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
   s_spr.drawString(t, W - 8, 8);
   draw_link_line();   // 上段中央に接続機材ID一覧（ON TRACKとタイムの間）
 

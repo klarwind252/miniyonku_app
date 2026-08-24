@@ -416,10 +416,6 @@ static void on_signal_pressed() {
     Serial.println("[SEQ] ignored: not READY (赤はREADYのときだけ。やり直しは灰→赤)");
     return;
   }
-  if (s_send_blocked) {                          // 1-e：送信失敗中は新レースを封じる
-    Serial.println("[SEQ] blocked: 前レース未送信。灰ボタンで再送、または灰3秒長押しで強制解除");
-    return;
-  }
   if (exclusivity_conflict()) {                 // GW/RC/SG重複中は新規スタートを受け付けない
     Serial.println("[SEQ] blocked: GW/RC/SG duplicate active (power off one)");
     return;
@@ -636,6 +632,20 @@ static bool spool_has_data() {
   }
   f.close();
   return has;
+}
+
+// 未送信件数＝スプールの有効行数（TFTバーの Send:N 表示用・2026-08-24）。
+static int spool_count() {
+  if (!LittleFS.exists(SPOOL)) return 0;
+  File f = LittleFS.open(SPOOL, FILE_READ);
+  if (!f) return 0;
+  int n = 0;
+  while (f.available()) {
+    String line = f.readStringUntil('\n'); line.trim();
+    if (line.length() > 0) n++;
+  }
+  f.close();
+  return n;
 }
 
 // ---- 指定 rid の行を先頭から最大 limit 件だけ除去し、残りを書き戻す（1-c）-----
@@ -872,20 +882,8 @@ static void tick_buttons() {
   // 赤：ISRラッチ消化（loop停止中の押下も失われない）。受付判定はon_signal_pressed側。
   if (s_red_evt) { s_red_evt = false; on_signal_pressed(); }
 
-  // 灰：ISRラッチで即RESET（長押し不要・docs要望2026-08-24）。
-  static uint32_t gray_down = 0; static bool ovr_fired = false;
-  if (s_gray_evt) { s_gray_evt = false; on_reset_pressed(); gray_down = millis(); ovr_fired = false; }
-
-  // 押しっぱなし3秒で「送信封じの緊急解除」だけは従来どおり残す（1-e）。レベルはポーリング。
-  bool gray_now = (digitalRead(PIN_BTN_GRAY) == LOW);
-  if (!gray_now) gray_down = 0;
-  if (gray_now && gray_down != 0 && !ovr_fired && (millis() - gray_down) >= OVERRIDE_HOLD_MS) {
-    ovr_fired = true;
-    if (s_send_blocked) {
-      s_send_blocked = false;
-      Serial.println("[SEQ] 送信封じを強制解除（データはスプールに保持・後日後送り可）");
-    }
-  }
+  // 灰：ISRラッチで単押し即RESET（長押し機能は廃止・2026-08-24）。
+  if (s_gray_evt) { s_gray_evt = false; on_reset_pressed(); }
 }
 
 // ---- GW自身の在席ビーコン（相手GWが「GW2台」を検知できるように）------------
@@ -906,6 +904,7 @@ static void tick_roster() {
   static uint32_t last = 0;
   if (millis() - last < 3000) return;
   last = millis();
+  disp::g_status.unsent = spool_count();          // 未送信件数をバー(Send:N)へ反映
   char sq[40]; int sn = 0; sq[0] = 0;
   for (uint8_t id = 0; id <= 5; id++)
     if (node_alive(id)) sn += snprintf(sq + sn, sizeof(sq) - sn, sn ? ",%u" : "%u", id);
@@ -976,7 +975,7 @@ void setup() {
 //  s_show_ontrack：いまフルフレーム層にON TRACK画面が出ているか（tick_displayが4fpsで更新）。
 //   これがtrueのときだけ経過秒フィールドを上に重ねる（エラー面の上に重ねない保険）。
 static bool s_show_ontrack = false;
-static constexpr uint32_t TIME_FIELD_MS = 33;   // 約30fps（1000/30≒33）
+static constexpr uint32_t TIME_FIELD_MS = 16;   // 約60fps（より滑らか・2026-08-24）
 
 // 経過秒フィールドだけを高頻度で部分更新する（案B）。loop()から毎周回呼ぶ。
 //  tick_displayの250msゲートに縛られず、ON TRACK表示中のみ経過秒を機敏に動かす。
@@ -987,7 +986,7 @@ static void tick_time_field() {
   if (millis() - last_t < TIME_FIELD_MS) return;      // 約30fpsに間引き
   last_t = millis();
   uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
-  disp::draw_time_field(elapsed, /*hundredths=*/true);   // 1/100秒（ストップウォッチ的）
+  disp::draw_time_field(elapsed, /*hundredths=*/false);  // コンマ1秒（右上・滑らか描画）
 }
 
 // ---- SET画面の即時描画（赤押下の即応・tick_displayの250msゲートを迂回）------
@@ -1043,6 +1042,21 @@ static void tick_display() {
     for (uint8_t id = 0; id <= 5; id++) if (node_alive(id)) have++;
     disp::g_status.node_have = have;
     disp::g_status.node_need = s_node_need;
+  }
+  // 切断ビープ（READY時のみ・切断の瞬間だけ1回。WiFi切断／ノード離脱・2026-08-24）。
+  //  鳴りっぱなしにしない＝立ち上がり検出。復帰では鳴らさない。計測中は鳴らさない。
+  {
+    static bool init_done = false, prev_wifi = false; static int prev_have = 0;
+    bool wifi_now = disp::g_status.wifi_ok;
+    int  have_now = disp::g_status.node_have;
+    if (s_state == ST_IDLE) {
+      if (!init_done) { prev_wifi = wifi_now; prev_have = have_now; init_done = true; }
+      else {
+        if (prev_wifi && !wifi_now) { buzzer_start(150); Serial.println("[BEEP] WiFi切断"); }
+        if (have_now < prev_have)   { buzzer_start(150); Serial.println("[BEEP] ノード離脱"); }
+        prev_wifi = wifi_now; prev_have = have_now;
+      }
+    }
   }
   // READY用：接続中の機材ID一覧（番号のみ・昇順・自分は除く）。無ければ "-"。
   {
