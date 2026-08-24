@@ -54,6 +54,7 @@ struct Status {
   bool sg_dup     = false;  // SG2台検知（シグナル重複・true=異常）
   bool sync_ok    = true;   // 時刻同期完了（B1・24.11。false=未同期でSync x）
   bool lost       = false;  // あきらめ(give up)発生（C1・24.14。true=Lost x・灰リセットまで保持）
+  char link[48]  = "-";     // 接続中の機材ID一覧（main側が在席から生成）
 };
 
 // ---- エラー種別（docs/20.5 優先順位）---------------------------------------
@@ -169,6 +170,16 @@ static void draw_status_bar() {
 
 // ===== 待機(IDLE)画面（docs/20.2）==========================================
 //  当日ベスト4行はプレースホルダ（WiFi切れ時は「-」）。数値流し込みは後続。
+// 接続中の機材ID一覧を上段中央に固定表示（READY/ON TRACK共通・フォント1・白・2026-08-24）。
+//  READYなら「READY」と「TODAY BEST」の間、ON TRACKなら「ON TRACK」とタイムの間。
+static void draw_link_line() {
+  s_spr.setTextFont(1);
+  s_spr.setTextSize(1);
+  s_spr.setTextColor(C_GREY, C_BLACK);   // 接続一覧はグレー（2026-08-24）
+  s_spr.setTextDatum(MC_DATUM);
+  s_spr.drawString(g_status.link, 186, 14);
+}
+
 static void draw_idle() {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
   s_spr.setTextDatum(TL_DATUM);
@@ -194,6 +205,7 @@ static void draw_idle() {
     s_spr.setTextDatum(TL_DATUM);
     y += (i == 0 ? 40 : 34);
   }
+  draw_link_line();   // 上段中央に接続機材ID一覧
 }
 
 // ===== 受付(SET)画面（赤押下→ARMED・docs/20.6）=============================
@@ -230,6 +242,7 @@ static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
   s_spr.setTextColor(C_WHITE, C_BLACK);
   char t[16]; snprintf(t, sizeof(t), "%.2f", elapsed_ms / 1000.0);
   s_spr.drawString(t, W - 8, 8);
+  draw_link_line();   // 上段中央に接続機材ID一覧（ON TRACKとタイムの間）
 
   // 3レーン枠（枠線＝レーン色）。中身のラップは実データ流し込みで拡張。
   int lane_w = (W - 16) / 3;

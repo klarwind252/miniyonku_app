@@ -895,6 +895,30 @@ static void tick_gw_presence() {
   mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, nullptr, 0);
 }
 
+// ---- 接続機材ロスター（設営確認用・2026-08-24）--------------------------------
+//  3秒ごとに、いま在席(node_alive)している機材IDをシリアルへ一覧出力する。
+//  新配線・プロトコル変更なし（既存の在席トラッキングを読むだけ）。無線・描画に影響なし。
+//  例）[LINK] SQ:0,1,2 RC:8 SG:10 GW7:-
+static void tick_roster() {
+  static uint32_t last = 0;
+  if (millis() - last < 3000) return;
+  last = millis();
+  char sq[40]; int sn = 0; sq[0] = 0;
+  for (uint8_t id = 0; id <= 5; id++)
+    if (node_alive(id)) sn += snprintf(sq + sn, sizeof(sq) - sn, sn ? ",%u" : "%u", id);
+  if (sn == 0) { sq[0] = '-'; sq[1] = 0; }
+  char rc[16]; int rn = 0; rc[0] = 0;
+  for (uint8_t id = 8; id <= 9; id++)
+    if (node_alive(id)) rn += snprintf(rc + rn, sizeof(rc) - rn, rn ? ",%u" : "%u", id);
+  if (rn == 0) { rc[0] = '-'; rc[1] = 0; }
+  char sg[16]; int gn = 0; sg[0] = 0;
+  for (uint8_t id = 10; id <= 11; id++)
+    if (node_alive(id)) gn += snprintf(sg + gn, sizeof(sg) - gn, gn ? ",%u" : "%u", id);
+  if (gn == 0) { sg[0] = '-'; sg[1] = 0; }
+  Serial.printf("[LINK] SQ:%s RC:%s SG:%s GW7:%s (activeSG=%u)\n",
+                sq, rc, sg, node_alive(7) ? "on" : "-", s_active_sg_id);
+}
+
 // ---- 設定の読み込み（NVS "m4cfg" → 無ければ secrets.h / 既定）---------------
 //  アプリが nvs_partition_gen で作った nvs.bin を USB(Web Serial) で 0x9000 に焼くと、
 //  ここが拾って上書きする。キーが無ければ従来どおり secrets.h の値で動く（後方互換）。
@@ -1005,6 +1029,17 @@ static void tick_display() {
     disp::g_status.node_have = have;
     disp::g_status.node_need = s_node_need;
   }
+  // READY用：接続中の機材ID一覧（番号のみ・昇順・自分は除く）。無ければ "-"。
+  {
+    char* d = disp::g_status.link; int n = 0; int cap = (int)sizeof(disp::g_status.link);
+    for (uint8_t id = 0; id <= proto::NODE_ID_MAX; id++) {
+      if (id == (uint8_t)NODE_ID) continue;           // 自分(GW)は除く
+      if (!node_alive(id)) continue;
+      n += snprintf(d + n, cap - n, n ? ",%u" : "%u", id);
+      if (n >= cap - 4) break;
+    }
+    if (n == 0) { d[0] = '-'; d[1] = 0; }
+  }
   disp::g_status.beam_ok = !s_beam_bad;   // 片/両ビーム欠を一度でも受けたら×（灰リセットで復帰）
   // unsent は各機能側から順次代入予定。
 
@@ -1087,6 +1122,7 @@ void loop() {
   tick_buttons();
   buzzer_tick();              // ブザー非ブロッキング消灯（29章）
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
+  tick_roster();              // 接続機材の一覧をシリアルへ（設営確認用・3秒毎）
   tick_sequence();
   if (s_set_now_req) { s_set_now_req = false; render_set_now(); }  // 赤押下の即SETをloop文脈で安全に描画
 
