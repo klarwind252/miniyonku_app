@@ -256,7 +256,7 @@ static void draw_splash_frame(float p) {
     scale = 1.0f + 0.015f * sinf((p - 0.26f) / 0.40f * 3.14159265f * 3.0f);  // 呼吸
   } else {
     float q = (p - 0.66f) / 0.34f;
-    scale = 1.0f + (40.0f - 1.0f) * q * q * q;                              // 40xで突き抜け
+    scale = 1.0f + (90.0f - 1.0f) * q * q * q;                              // 90xで超拡大・突き抜け
   }
   float ca = cosf(ang), sa = sinf(ang);
   float cx = W / 2.0f, cy = H / 2.0f, lcx = LOGO_W / 2.0f, lcy = LOGO_H / 2.0f;

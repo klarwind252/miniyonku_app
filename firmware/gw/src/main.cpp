@@ -531,7 +531,44 @@ static void forward_join(const proto::JoinBody& jb) {
 }
 
 // ---- EVENTスプール ---------------------------------------------------------
+// スプール上限（超過分は古い順に破棄）。
+static constexpr int SPOOL_MAX = 200;
+static int spool_count();   // 後方定義の前方宣言
+// 先頭（最古）から (count-keep) 行を削除して keep 行に収める。
+static void spool_trim_to(int keep) {
+  int total = spool_count();
+  if (total <= keep) return;
+  int drop = total - keep;
+  File in = LittleFS.open(SPOOL, FILE_READ);
+  if (!in) return;
+  const char* TMP2 = "/spool_trim.jsonl";
+  File out = LittleFS.open(TMP2, FILE_WRITE);
+  if (!out) { in.close(); return; }
+  int idx = 0;
+  while (in.available()) {
+    String line = in.readStringUntil('\n');
+    if (line.length() == 0) continue;
+    if (idx >= drop) { out.print(line); out.print('\n'); }   // 古いdrop行はスキップ
+    idx++;
+  }
+  in.close(); out.close();
+  LittleFS.remove(SPOOL);
+  LittleFS.rename(TMP2, SPOOL);
+}
+
 static void spool_append(const RawEvent& e) {
+  // q=2連続の間引き：同一レーンでq=2が0.5秒以内に連続したら2件目以降は捨てる
+  //   （張り付き/未接続の洪水を発生源で止める。正当なエラーは先頭1件だけ残る）。
+  if (e.quality == 2) {
+    static uint32_t last_q2_ms[4] = {0,0,0,0};    // lane 1..3（0は未使用）
+    uint8_t ln = (e.lane >= 1 && e.lane <= 3) ? e.lane : 0;
+    uint32_t now = millis();
+    if (last_q2_ms[ln] != 0 && (now - last_q2_ms[ln]) < 500) { last_q2_ms[ln] = now; return; }
+    last_q2_ms[ln] = now;
+  }
+  // 上限：追記前に (SPOOL_MAX-1) 行へ詰めておく（append後にちょうど上限）。
+  spool_trim_to(SPOOL_MAX - 1);
+
   File f = LittleFS.open(SPOOL, FILE_APPEND);
   if (!f) return;
   JsonDocument doc;
@@ -958,13 +995,17 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, LOW);   // 起動直後は必ず消灯
   if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
+  // 案X：起動時にスプールを全消し（毎回まっさら・2026-08-24）。
+  //   「空ファイルを作成」して常に存在させる → 読み込み時の vfs "does not exist" ログ抑止。
+  { File sf = LittleFS.open(SPOOL, FILE_WRITE); if (sf) sf.close(); }
+  Serial.println("[SPOOL] 起動時クリア（空作成）");
   Serial.printf("PSRAM=%u (VE normal: approx 4MB mapped of 8MB)\n", (unsigned)ESP.getPsramSize());
   if (!mesh::begin(NODE_ID, g_channel, on_recv)) {
     Serial.println("ESP-NOW init 失敗"); return;
   }
   beam::begin();
   disp::begin();                       // TFT初期化（PSRAMスプライト確保）
-  s_state = ST_SPLASH; s_splash_ms = millis();   // スプラッシュ開始（非ブロッキング・loopで描画。裏で通信進行）
+  s_state = ST_SPLASH; s_splash_ms = millis(); Serial.println("[SPLASH] start");   // 開始（非ブロッキング・loopで描画）
   disp::g_status.gw_id = NODE_ID;
   disp::g_status.ch    = g_channel;
   wifi_up();
@@ -1019,7 +1060,7 @@ static void tick_display() {
   if (s_state == ST_SPLASH) {
     static uint32_t sf_last = 0;
     uint32_t e = millis() - s_splash_ms;
-    if (e >= SPLASH_MS) { s_state = ST_IDLE; return; }     // 終了→READY
+    if (e >= SPLASH_MS) { s_state = ST_IDLE; Serial.println("[SPLASH] done -> READY"); return; }     // 終了→READY
     if (millis() - sf_last >= 33) {                        // 約30fps
       sf_last = millis();
       disp::draw_splash_frame((float)e / (float)SPLASH_MS);
@@ -1157,6 +1198,9 @@ void loop() {
 
   beam::Hit hit;
   int drain = 0;
+  if (s_state == ST_SPLASH) {                 // スプラッシュ中はビームを捨てるだけ（書込み無し・loop解放）
+    while (drain++ < 8 && beam::poll(hit)) { /* discard */ }
+  } else
   while (drain++ < 8 && beam::poll(hit)) {   // 1周8件まで（浮きGPIO洪水でloopを占有させない）
     static uint32_t self_seq = 0;
     // 走行式(赤ボタン未使用)：最初のS/G通過で内部レースを開始する（F1式は既にactive）。
