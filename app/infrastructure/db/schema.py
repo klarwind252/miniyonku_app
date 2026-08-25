@@ -844,6 +844,7 @@ async def init_db(db_path: str = None):
             run_no         INTEGER NOT NULL,
             time_ms        INTEGER DEFAULT NULL,
             is_co          INTEGER DEFAULT 0,
+            race_id        INTEGER DEFAULT NULL,
             created_at     TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE(tournament_id, entry_id, run_no),
             FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
@@ -857,6 +858,10 @@ async def init_db(db_path: str = None):
             # 既存値はセンチ秒なので ×10 してミリ秒へ換算
             await db.execute("UPDATE time_attack_runs SET time_ms = time_ms * 10 WHERE time_ms IS NOT NULL")
             print("[DB] migration: time_attack_runs.time_cs -> time_ms (x10)")
+        # race_id : M4LAPS反映元の計測レース（詳細指標＝ラップ/セクター/速度の集計に使用）
+        if "race_id" not in _ta_cols:
+            await db.execute("ALTER TABLE time_attack_runs ADD COLUMN race_id INTEGER DEFAULT NULL")
+            print("[DB] migration: time_attack_runs.race_id added")
 
         # tournaments.ta_status : タイムアタック予選の締め状態（NULL=進行中, 'closed'=予選終了）
         if "ta_status" not in t_cols_o:

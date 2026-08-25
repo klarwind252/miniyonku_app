@@ -3,36 +3,54 @@
 {% block title %}タイムアタック予選 - {{ t.name }}{% endblock %}
 {% block head %}
 <style>
-/* 予選管理と同じ順位表の見た目（ゼブラ＋濃いめ罫線＋ホバー） */
+/* 予選管理と同じ順位表の見た目 */
 .std-tbl tbody td{border-bottom:1px solid #cfd6e0}
 .std-tbl tbody tr:nth-child(even){background:#eef2f7}
 .std-tbl tbody tr:hover td{background:#e1ecfa}
 .std-tbl td.center,.std-tbl th.center{text-align:center}
 .std-tbl tr.adv td{background:#eafaf1}
 .std-tbl tr.adv:hover td{background:#dff3e7}
-
-/* 決勝進出○×ボタン（他予選と共通のクラス名） */
-.adv-btn{width:34px;height:34px;border:2px solid #dee2e6;border-radius:6px;cursor:pointer;
-         font-size:16px;font-weight:bold;background:#fff;transition:all .12s;font-family:inherit;
-         display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1}
+/* M4LAPS ベスト列（他予選と同じ配色・区切り） */
+.std-tbl th.bsep,.std-tbl td.bsep{border-left:2px solid #dde3ea}
+.std-tbl td.bcell{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;padding:5px 8px}
+.std-tbl td.bsec2{text-align:right;font-variant-numeric:tabular-nums;padding:3px 5px}
+.std-tbl td.bsec2 .st{font-size:12px;display:block;line-height:1.15}
+.std-tbl td.bsec2 .sp{font-size:10px;display:block;line-height:1.1;color:#7f8c8d}
+.std-tbl .b1{background:#f3e8ff;color:#6b21a8;font-weight:bold;border-radius:3px}
+.std-tbl .b2{background:#dbeafe;color:#1e40af;font-weight:bold;border-radius:3px}
+.std-tbl .b3{background:#dcfce7;color:#166534;font-weight:bold;border-radius:3px}
+/* RECORD HOLDERS */
+.zap{color:#f0ad4e}
+.m4rec-row{display:grid;grid-template-columns:168px 104px 74px 1fr;gap:2px 12px;padding:7px 2px;border-top:1px solid #eee;align-items:baseline}
+.m4rec-row:first-of-type{border-top:none}
+.m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:6px;font-weight:bold;color:#2c3e50;font-size:14px}
+.m4rec-ic{text-align:center}
+.m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d}
+.m4rec-gap{font-size:12px;color:#95a5a6;font-variant-numeric:tabular-nums;white-space:nowrap}
+.m4rec-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;background:#f6f8fa;border:1px solid #e2e8f0;border-radius:6px;padding:2px 8px}
+.m4rec-holder .nm{font-weight:bold;color:#2c3e50}
+.m4rec-holder .rc{color:#9a8f76;font-size:11px}
+.m4rec-none{color:#9aa3ad;font-size:13px}
+.m4rec-rt{color:#e67e22;font-weight:bold;font-size:13px;margin-left:2px}
+.m4rec-cond{grid-column:2 / 4;color:#95a5a6;font-size:11px;align-self:baseline;line-height:1.3}
+@media(max-width:760px){.m4rec-row{grid-template-columns:1fr;gap:4px}.m4rec-cond{grid-column:1}}
+/* 決勝進出○×ボタン */
+.adv-btn{width:34px;height:34px;border:2px solid #dee2e6;border-radius:6px;cursor:pointer;font-size:16px;font-weight:bold;background:#fff;transition:all .12s;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1}
 .adv-btn.adv-yes{border-color:#27ae60;background:#eafaf1;color:#27ae60}
 .adv-btn.adv-no {border-color:#e74c3c;background:#fdf2f2;color:#e74c3c}
 .adv-btn:disabled{opacity:.5;cursor:not-allowed}
-
 /* 走行記録グリッド */
 .ta-grid{width:100%;border-collapse:collapse}
-.ta-grid th{background:#f8f9fa;color:#636e72;font-size:13px;text-align:center;
-            padding:10px 8px;border-bottom:2px solid #dee2e6;white-space:nowrap}
+.ta-grid th{background:#f8f9fa;color:#636e72;font-size:13px;text-align:center;padding:10px 8px;border-bottom:2px solid #dee2e6;white-space:nowrap}
 .ta-grid td{padding:8px;border-bottom:1px solid #eef0f2;text-align:center;vertical-align:middle}
 .ta-grid td.name-cell{text-align:left;font-weight:bold;color:#2c3e50;white-space:nowrap}
 .ta-grid tbody tr:nth-child(even){background:#fafbfc}
 .ta-cell{display:inline-flex;align-items:center;gap:6px;justify-content:flex-start;flex-wrap:nowrap}
 .ta-time-val{font-variant-numeric:tabular-nums;font-weight:bold;color:#1a56db;font-size:16px;text-align:left}
 .ta-time-val.co{color:#d35400}
-.ta-input{width:44px;padding:6px 5px;border:1px solid #cdd4da;border-radius:6px;text-align:left;
-          font-size:13px;font-variant-numeric:tabular-nums}
-.ta-mini{border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;
-         min-width:52px;padding:6px 12px;font-family:inherit;line-height:1.2;text-align:center}
+.ta-input{width:44px;padding:6px 5px;border:1px solid #cdd4da;border-radius:6px;text-align:left;font-size:13px;font-variant-numeric:tabular-nums}
+.ta-mini{border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;min-width:52px;padding:6px 12px;font-family:inherit;line-height:1.2;text-align:center}
 .ta-mini.decide{background:#6c757d;color:#fff}
 .ta-mini.fetch{background:#1a56db;color:#fff}
 .ta-mini.co{background:#f39c12;color:#fff}
@@ -66,9 +84,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   <h1>⏱️ タイムアタック予選</h1>
   <p>{{ t.name }} / {{ t.date }} / {{ t.lane_count }}レーン</p>
   <p style="margin-top:4px">
-    <span class="status status-qualifying" style="font-size:13px">
-      {{ qualifying_labels.get(t.qualifying_type, t.qualifying_type) }}
-    </span>
+    <span class="status status-qualifying" style="font-size:13px">{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type) }}</span>
     <span style="margin-left:8px;font-size:13px;color:#636e72">→ 決勝進出予定 <strong>{{ finalist_n }}名</strong> ／ 走行回数 <strong>{{ runs }}回</strong></span>
   </p>
 </div>
@@ -76,7 +92,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 <div style="background:#eef6ff;border:1px solid #b8d9f7;color:#1c5c9c;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.7;margin-bottom:16px">
   タイムの記録方法は2通りです。走行順は任意です。<br>
   ・<strong>手入力</strong>：枠にタイム（秒。例 <strong>10.115</strong>）を入力し <strong>[決定]</strong> を押す。<br>
-  {% if m4_on %}・<strong>M4LAPS</strong>：走行後に <strong>[反映]</strong> を押すと、最新の計測タイムが自動で入ります。<br>{% endif %}
+  {% if m4_on %}・<strong>M4LAPS</strong>：走行後に <strong>[反映]</strong> を押すと、最新の計測タイム（ラップ・セクター・速度も）が自動で入ります。<br>{% endif %}
   ・完走できなかった走行は <strong>[CO]</strong>。決勝進出は「決勝」列の○で決まります（<strong>⚡自動集計</strong>で上位{{ finalist_n }}名に自動で○）。
 </div>
 
@@ -105,15 +121,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% for c in row.cells %}
           <td data-run="{{ c.run_no }}">
             {% if c.state == 'time' %}
-              <span class="ta-cell">
-                <span class="ta-time-val">{{ c.time_str }}</span>
-                <button class="ta-mini cancel" onclick="taCancel(this)" {% if is_finalized %}disabled{% endif %}>取消</button>
-              </span>
+              <span class="ta-cell"><span class="ta-time-val">{{ c.time_str }}</span>
+                <button class="ta-mini cancel" onclick="taCancel(this)" {% if is_finalized %}disabled{% endif %}>取消</button></span>
             {% elif c.state == 'co' %}
-              <span class="ta-cell">
-                <span class="ta-time-val co">CO</span>
-                <button class="ta-mini cancel" onclick="taCancel(this)" {% if is_finalized %}disabled{% endif %}>取消</button>
-              </span>
+              <span class="ta-cell"><span class="ta-time-val co">CO</span>
+                <button class="ta-mini cancel" onclick="taCancel(this)" {% if is_finalized %}disabled{% endif %}>取消</button></span>
             {% else %}
               <span class="ta-cell">
                 <input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key==='Enter'){taDecide(this)}" {% if is_finalized %}disabled{% endif %}>
@@ -131,12 +143,12 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
 </div>
 
+{% set show_m4 = (racer_bests and racer_bests|length > 0) %}
 <div class="card">
   <div class="card-header">
     予選順位表
     <span style="font-size:12px;color:#636e72;font-weight:normal;margin-left:4px">決勝進出 {{ finalist_n }} 名</span>
-    <button type="button" class="btn btn-success" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold"
-            onclick="autoAdvanced(TA_TID)" {% if is_finalized %}disabled{% endif %}>⚡ 自動集計</button>
+    <button type="button" class="btn btn-success" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold" onclick="autoAdvanced(TA_TID)" {% if is_finalized %}disabled{% endif %}>⚡ 自動集計</button>
   </div>
   <div class="card-body" style="padding:0;overflow-x:auto">
     <table class="std-tbl">
@@ -145,11 +157,96 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <th class="center">順位</th><th>レーサー</th><th class="center">最速タイム</th>
           <th class="center">出走</th><th class="center">完走</th><th class="center">完走率</th>
           <th class="center">決勝</th>
+          {% if show_m4 %}
+          <th class="bsep center" colspan="4">TOTAL BEST</th>
+          <th class="bsep center" colspan="2">LAP BEST</th>
+          {% if max_sector_no > 0 %}<th class="bsep center" colspan="{{ max_sector_no }}">SECTOR BEST（上:秒／下:m/s）</th>{% endif %}
+          {% endif %}
         </tr>
+        {% if show_m4 %}
+        <tr>
+          <th colspan="7"></th>
+          <th class="bsep center">TIME</th><th class="center">GAP</th><th class="center">Av.</th><th class="center">MAX</th>
+          <th class="bsep center">TIME</th><th class="center">Av.</th>
+          {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep center"{% else %} class="center"{% endif %}>{{ n }}</th>{% endfor %}
+        </tr>
+        {% endif %}
       </thead>
-      <tbody id="rank-tbody"><!-- JSで描画 --></tbody>
+      <tbody>
+        {% for s in standings %}
+        {% set rc = {1:'#d4a017',2:'#aaa',3:'#cd7f32'} %}
+        <tr class="{% if s.advanced is not none and s.advanced >= 1 %}adv{% endif %}">
+          <td class="center" style="font-weight:bold;font-size:16px;color:{{ rc.get(s.rank,'#636e72') }}">{{ s.rank }}</td>
+          <td><strong>{{ s.name }}</strong></td>
+          <td class="center" style="font-variant-numeric:tabular-nums">{{ s.best_str }}</td>
+          <td class="center">{{ s.started }}</td>
+          <td class="center">{{ s.finished }}</td>
+          <td class="center">{{ s.finish_rate }}%</td>
+          <td class="center">
+            <button type="button" class="adv-btn {% if s.advanced is not none and s.advanced >= 1 %}adv-yes{% elif s.advanced == 0 %}adv-no{% endif %}"
+                    id="adv-{{ s.entry_id }}" {% if is_finalized %}disabled{% endif %}
+                    onclick="toggleAdvanced({{ s.entry_id }}, {{ t.id }}, {{ s.advanced if s.advanced is not none else 'null' }})">
+              {% if s.advanced is not none and s.advanced >= 1 %}○{% elif s.advanced == 0 %}×{% else %}－{% endif %}
+            </button>
+          </td>
+          {% if show_m4 %}
+          {% set rb = racer_bests.get(s.entry_id, {}) %}
+          <td class="bsep bcell{% if best_ranks.total.get(s.entry_id) %} b{{ best_ranks.total.get(s.entry_id) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
+          <td class="bcell">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
+          <td class="bcell{% if best_ranks.total_avg.get(s.entry_id) %} b{{ best_ranks.total_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
+          <td class="bcell{% if best_ranks.max_ms.get(s.entry_id) %} b{{ best_ranks.max_ms.get(s.entry_id) }}{% endif %}">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
+          <td class="bsep bcell{% if best_ranks.lap.get(s.entry_id) %} b{{ best_ranks.lap.get(s.entry_id) }}{% endif %}">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
+          <td class="bcell{% if best_ranks.lap_avg.get(s.entry_id) %} b{{ best_ranks.lap_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('lap_avg') is not none %}{{ '%.2f'|format(rb['lap_avg']) }}{% else %}—{% endif %}</td>
+          {% for n in range(1, max_sector_no + 1) %}
+          {% set _st = rb.get('sector' ~ n) %}{% set _sp = rb.get('sector_ms' ~ n) %}
+          {% set _rt = best_ranks['sector' ~ n].get(s.entry_id) %}{% set _rp = best_ranks['sector_ms' ~ n].get(s.entry_id) %}
+          <td class="bsec2{% if n == 1 %} bsep{% endif %}">
+            <span class="st{% if _rt %} b{{ _rt }}{% endif %}">{% if _st is not none %}{{ '%.3f'|format(_st) }}{% else %}—{% endif %}</span>
+            <span class="sp{% if _rp %} b{{ _rp }}{% endif %}">{% if _sp is not none %}{{ '%.2f'|format(_sp) }}{% else %}—{% endif %}</span>
+          </td>
+          {% endfor %}
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
   </div>
+</div>
+
+{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or achievements %}
+<div class="card">
+  <div class="card-header"><span><span class="zap">⚡</span> M4LAPS RECORD HOLDERS（暫定）</span></div>
+  <div class="card-body" style="padding-top:8px">
+    {% if record_holders and record_holders.overall %}
+    <div class="m4rec-row"><span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">{{ ach_labels.overall }}</span></span>
+      <span class="m4rec-val">{{ record_holders.overall.value_str }}</span><span class="m4rec-gap">{{ record_holders.overall.gap_str or "" }}</span>
+      <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span></div>
+    {% endif %}
+    {% if record_holders and record_holders.fastest_lap %}
+    <div class="m4rec-row"><span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">{{ ach_labels.fastest_lap }}</span></span>
+      <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span><span class="m4rec-gap">{{ record_holders.fastest_lap.gap_str or "" }}</span>
+      <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span></div>
+    {% endif %}
+    {% if record_holders and record_holders.top_speed %}
+    <div class="m4rec-row"><span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">{{ ach_labels.top_speed }}</span></span>
+      <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span><span class="m4rec-gap">{{ record_holders.top_speed.gap_str or "" }}</span>
+      <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span></div>
+    {% endif %}
+    {% if achievements %}
+    {% if achievements.speed_star is not none %}<div class="m4rec-row"><span class="m4rec-label"><span class="m4rec-ic">⭐</span><span class="m4rec-tx">{{ ach_labels.speed_star }}</span></span>
+      <span class="m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span>
+      <span class="m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span></div>{% endif %}
+    {% if achievements.sprinter is not none %}<div class="m4rec-row"><span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">{{ ach_labels.sprinter }}</span></span>
+      <span class="m4rec-cond">各セクターの1位</span>
+      <span class="m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span></div>{% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+  <span style="font-size:13px;color:#636e72">決勝進出は「決勝」列の○で決まります。</span>
+  <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success" style="margin-left:auto">🏆 決勝管理へ</a>
 </div>
 
 {% endif %}
@@ -157,38 +254,39 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 <script>
 const TA_TID = {{ t.id }};
 const TA_FINALIST_N = {{ finalist_n }};
-const TA_FINALIZED = {{ 'true' if is_finalized else 'false' }};
-const TA_M4ON = {{ 'true' if m4_on else 'false' }};
 
 function taRow(el){ return el.closest('tr'); }
 function taCell(el){ return el.closest('td'); }
-
 async function taPost(url, body){
-  const res = await fetch(url, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body||{})
-  });
+  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{}) });
   return res.json();
 }
+function taReload(){ try{ var u=new URL(location.href); u.searchParams.set('_',Date.now()); location.replace(u.toString()); }catch(e){ location.reload(); } }
 
 async function taDecide(el){
   const td = taCell(el), tr = taRow(el);
-  const input = td.querySelector('.ta-input');
-  const raw = (input.value || '').trim();
-  if(!raw){ input.focus(); return; }
-  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, {
-    entry_id:+tr.dataset.entry, run_no:+td.dataset.run, time:raw });
+  const raw = (td.querySelector('.ta-input').value || '').trim();
+  if(!raw){ td.querySelector('.ta-input').focus(); return; }
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, { entry_id:+tr.dataset.entry, run_no:+td.dataset.run, time:raw });
   if(!r.ok){ alert('入力を確認してください（例: 10.115）'); return; }
-  renderCellTime(td, r.time_str, false);
-  renderRank(r.standings);
+  taReload();
+}
+async function taCO(el){
+  const td = taCell(el), tr = taRow(el);
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, { entry_id:+tr.dataset.entry, run_no:+td.dataset.run, co:true });
+  if(!r.ok){ alert('記録に失敗しました'); return; }
+  taReload();
+}
+async function taCancel(el){
+  const td = taCell(el), tr = taRow(el);
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run/cancel`, { entry_id:+tr.dataset.entry, run_no:+td.dataset.run });
+  if(!r.ok){ alert('取消に失敗しました'); return; }
+  taReload();
 }
 async function taFetchM4(el){
   const td = taCell(el), tr = taRow(el);
-  const btn = el; const orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '…';
+  const btn = el; const orig = btn.textContent; btn.disabled = true; btn.textContent = '…';
   try{
-    // PIP（ラップタイマー）で選択中のレースがあればそれを、無ければ最新を使う
     const picked = (typeof m4pipSelectedRaceId === 'function') ? m4pipSelectedRaceId() : null;
     const res = await fetch(`/admin/tournaments/${TA_TID}/qualifying/time-attack/apply`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -199,110 +297,32 @@ async function taFetchM4(el){
       const msg = r.error==='no_measurement' ? 'M4LAPSに反映できる計測結果がありません（PIPで結果を選ぶか、先に走行してください）' : '反映できませんでした';
       alert(msg); btn.disabled=false; btn.textContent=orig; return;
     }
-    renderCellTime(td, r.time_str, r.time_str==='CO');
-    renderRank(r.standings);
+    taReload();
   }catch(e){ alert('通信エラー: '+e); btn.disabled=false; btn.textContent=orig; }
 }
-async function taCO(el){
-  const td = taCell(el), tr = taRow(el);
-  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, {
-    entry_id:+tr.dataset.entry, run_no:+td.dataset.run, co:true });
-  if(!r.ok){ alert('記録に失敗しました'); return; }
-  renderCellTime(td, 'CO', true);
-  renderRank(r.standings);
-}
-async function taCancel(el){
-  const td = taCell(el), tr = taRow(el);
-  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run/cancel`, {
-    entry_id:+tr.dataset.entry, run_no:+td.dataset.run });
-  if(!r.ok){ alert('取消に失敗しました'); return; }
-  renderCellEmpty(td);
-  renderRank(r.standings);
-}
 
-function renderCellTime(td, text, isCo){
-  const cls = isCo ? 'ta-time-val co' : 'ta-time-val';
-  td.innerHTML =
-    '<span class="ta-cell">' +
-      '<span class="'+cls+'">'+text+'</span>' +
-      '<button class="ta-mini cancel" onclick="taCancel(this)">取消</button>' +
-    '</span>';
-}
-function renderCellEmpty(td){
-  const m4 = TA_M4ON
-    ? '<button class="ta-mini fetch" onclick="taFetchM4(this)" title="M4LAPSの最新計測タイムを取り込む">反映</button>'
-    : '';
-  td.innerHTML =
-    '<span class="ta-cell">' +
-      '<input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key===\'Enter\'){taDecide(this)}">' +
-      '<button class="ta-mini decide" onclick="taDecide(this)">決定</button>' +
-      m4 +
-      '<button class="ta-mini co" onclick="taCO(this)">CO</button>' +
-    '</span>';
-}
-
-function rankColor(rank){
-  return rank===1 ? '#d4a017' : rank===2 ? '#aaa' : rank===3 ? '#cd7f32' : '#636e72';
-}
-function renderRank(standings){
-  const tb = document.getElementById('rank-tbody');
-  if(!tb || !standings) return;
-  tb.innerHTML = standings.map(function(s){
-    const adv = s.advanced;
-    const advClass = (adv!=null && adv>=1) ? 'adv-yes' : (adv===0 ? 'adv-no' : '');
-    const advText  = (adv!=null && adv>=1) ? '○' : (adv===0 ? '×' : '－');
-    const advVal   = (adv==null) ? 'null' : adv;
-    const isAdv = (adv!=null && adv>=1);
-    const btn = '<button type="button" class="adv-btn '+advClass+'" id="adv-'+s.entry_id+'" '
-      + (TA_FINALIZED ? 'disabled ' : '')
-      + 'onclick="toggleAdvanced('+s.entry_id+','+TA_TID+','+advVal+')">'+advText+'</button>';
-    return '<tr class="'+(isAdv?'adv':'')+'">' +
-      '<td class="center" style="font-weight:bold;font-size:16px;color:'+rankColor(s.rank)+'">'+s.rank+'</td>' +
-      '<td><strong>'+escapeHtml(s.name)+'</strong></td>' +
-      '<td class="center" style="font-variant-numeric:tabular-nums">'+s.best_str+'</td>' +
-      '<td class="center">'+s.started+'</td>' +
-      '<td class="center">'+s.finished+'</td>' +
-      '<td class="center">'+s.finish_rate+'%</td>' +
-      '<td class="center">'+btn+'</td>' +
-    '</tr>';
-  }).join('');
-}
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, function(c){
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-  });
-}
-
-// ── 決勝進出○×切替（他予選と共通の set-advanced を使用）──
+// 決勝進出○×切替（他予選と共通の set-advanced を使用）
 function updateAdvBtn(entryId, val){
-  const btn = document.getElementById('adv-'+entryId);
-  if(!btn) return;
+  const btn = document.getElementById('adv-'+entryId); if(!btn) return;
   btn.className = 'adv-btn' + (val===1 ? ' adv-yes' : val===0 ? ' adv-no' : '');
   btn.textContent = val===1 ? '○' : val===0 ? '×' : '－';
   btn.setAttribute('onclick', 'toggleAdvanced('+entryId+','+TA_TID+','+(val==null?'null':val)+')');
   const tr = btn.closest('tr'); if(tr) tr.className = (val===1) ? 'adv' : '';
 }
 async function toggleAdvanced(entryId, tid, current){
-  let next;
-  if(current===null || current===undefined || current==='') next = 1;
-  else if(current===1) next = 0;
-  else next = -1;
+  let next; if(current===null||current===undefined||current==='') next=1; else if(current===1) next=0; else next=-1;
   const form = new FormData(); form.append('advanced', next);
   try{
     const res = await fetch(`/admin/tournaments/${tid}/qualifying/set-advanced/${entryId}`, { method:'POST', body: form });
-    const data = await res.json();
-    if(data.ok) updateAdvBtn(entryId, data.advanced);
+    const data = await res.json(); if(data.ok) updateAdvBtn(entryId, data.advanced);
   }catch(e){ console.error(e); }
 }
 async function autoAdvanced(tid){
   try{
     const res = await fetch(`/admin/tournaments/${tid}/qualifying/auto-advanced`, { method:'POST' });
     const data = await res.json();
-    if(data.ok){ location.reload(); } else { alert('集計エラー: ' + (data.error || '不明')); }
+    if(data.ok){ taReload(); } else { alert('集計エラー: ' + (data.error || '不明')); }
   }catch(e){ console.error(e); }
 }
-
-// 初期描画
-renderRank({{ standings|tojson }});
 </script>
 {% endblock %}

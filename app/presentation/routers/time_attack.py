@@ -154,6 +154,76 @@ async def time_attack_screen(tid: int, request: Request, db: aiosqlite.Connectio
     finalist_n = calc_finalists("time_attack", t) or 0
     standings = _ta_standings(entries, runs_map)
 
+    # ── M4LAPS 詳細指標（他予選と同じ集計エンジンを共有）──
+    #    反映(M4LAPS)で time_attack_runs.race_id に紐づいた計測レースを走査し、
+    #    レーサー別ベスト（TOTAL/LAP/セクター/速度）と RECORD HOLDERS を出す。
+    from app.core.config import IS_CLOUD
+    racer_bests = {}
+    _m4_scan = None
+    if IS_CLOUD and getattr(request.state, "m4laps_licensed", False) and t.get("use_m4laps", 1) != 0:
+        try:
+            from app.application import timing_racer_best_service as rbest_svc
+            _m4_scan = await rbest_svc.scan_tournament_metrics(db, tid)
+            racer_bests = _m4_scan["bests"] if _m4_scan else {}
+        except Exception:
+            racer_bests = {}
+    max_sector_no = 0
+    for _bm in racer_bests.values():
+        for _i in range(1, 8):
+            if _bm.get(f"sector{_i}") is not None or _bm.get(f"sector_ms{_i}") is not None:
+                max_sector_no = max(max_sector_no, _i)
+    best_total_min = None
+    for _bm in racer_bests.values():
+        _tv = _bm.get("total")
+        if _tv is not None and (best_total_min is None or _tv < best_total_min):
+            best_total_min = _tv
+    _LOWER = {"total", "lap"}
+    for _i in range(1, 8):
+        _LOWER.add(f"sector{_i}")
+    def _rank_map(metric, lower):
+        vals = [(eid, bm[metric]) for eid, bm in racer_bests.items() if bm.get(metric) is not None]
+        vals.sort(key=lambda x: x[1], reverse=not lower)
+        out = {}; pos = 0; prev = None
+        for i, (eid, v) in enumerate(vals, start=1):
+            if prev is None or v != prev:
+                pos = i; prev = v
+            if pos > 3:
+                break
+            out[eid] = pos
+        return out
+    best_ranks = {}
+    for _m in ["total", "total_avg", "max_ms", "lap", "lap_avg"]:
+        best_ranks[_m] = _rank_map(_m, _m in _LOWER)
+    for _i in range(1, 8):
+        best_ranks[f"sector{_i}"] = _rank_map(f"sector{_i}", True)
+        best_ranks[f"sector_ms{_i}"] = _rank_map(f"sector_ms{_i}", False)
+
+    # RECORD HOLDERS / 称号（POINT LEADER はポイント制専用なので出さない）
+    record_holders = None
+    achievements = None
+    ach_labels = {}
+    if _m4_scan is not None:
+        try:
+            from app.application import qualifying_records as qrec
+            _name_by_entry = {s["entry_id"]: s["name"] for s in standings}
+            for _e in entries:
+                _name_by_entry.setdefault(_e["entry_id"], _e["name"])
+            _rh_raw = _m4_scan["records"]
+            record_holders = qrec.format_records_display(_rh_raw, _name_by_entry, {})
+            try:
+                _sweep = await qrec.sweep_entries_for_tournament(db, tid)
+            except Exception:
+                _sweep = set()
+            achievements = qrec.compute_achievements(_rh_raw, None, _sweep, _name_by_entry)
+            _ach_cfg = await qrec.get_ach_config(db)
+            record_holders, _pl, achievements = qrec.apply_panel_config(
+                record_holders, None, achievements, _ach_cfg)
+            ach_labels = qrec.labels_from_cfg(_ach_cfg)
+        except Exception:
+            record_holders = None
+            achievements = None
+            ach_labels = {}
+
     # グリッド用にセル情報を組み立て（各エントリー × 1..runs）
     grid = []
     for e in entries:
@@ -179,6 +249,13 @@ async def time_attack_screen(tid: int, request: Request, db: aiosqlite.Connectio
         "standings": standings,
         "is_finalized": is_finalized,
         "m4_on": m4_on,
+        "racer_bests": racer_bests,
+        "best_ranks": best_ranks,
+        "best_total_min": best_total_min,
+        "max_sector_no": max_sector_no,
+        "record_holders": record_holders,
+        "achievements": achievements,
+        "ach_labels": ach_labels,
         "any_adv": any(s.get("advanced") not in (None,) for s in standings),
         "qualifying_labels": QUALIFYING_LABELS,
     })
@@ -226,10 +303,10 @@ async def time_attack_record(tid: int, request: Request, db: aiosqlite.Connectio
 
     async with transaction(db):
         await db.execute(
-            """INSERT INTO time_attack_runs (tournament_id, entry_id, run_no, time_ms, is_co)
-               VALUES (?,?,?,?,?)
+            """INSERT INTO time_attack_runs (tournament_id, entry_id, run_no, time_ms, is_co, race_id)
+               VALUES (?,?,?,?,?,NULL)
                ON CONFLICT(tournament_id, entry_id, run_no)
-               DO UPDATE SET time_ms=excluded.time_ms, is_co=excluded.is_co""",
+               DO UPDATE SET time_ms=excluded.time_ms, is_co=excluded.is_co, race_id=NULL""",
             (tid, entry_id, run_no, time_ms, 1 if is_co else 0),
         )
         # 記録が入ったら予選中に遷移（締め済みでない限り）
@@ -314,11 +391,11 @@ async def time_attack_apply_m4(tid: int, request: Request, db: aiosqlite.Connect
 
     async with transaction(db):
         await db.execute(
-            """INSERT INTO time_attack_runs (tournament_id, entry_id, run_no, time_ms, is_co)
-               VALUES (?,?,?,?,?)
+            """INSERT INTO time_attack_runs (tournament_id, entry_id, run_no, time_ms, is_co, race_id)
+               VALUES (?,?,?,?,?,?)
                ON CONFLICT(tournament_id, entry_id, run_no)
-               DO UPDATE SET time_ms=excluded.time_ms, is_co=excluded.is_co""",
-            (tid, entry_id, run_no, time_ms, is_co),
+               DO UPDATE SET time_ms=excluded.time_ms, is_co=excluded.is_co, race_id=excluded.race_id""",
+            (tid, entry_id, run_no, time_ms, is_co, race["id"] if race else None),
         )
         await db.execute(
             "UPDATE tournaments SET status='qualifying' WHERE id=? AND status='prepare'",

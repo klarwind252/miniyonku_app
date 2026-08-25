@@ -64,7 +64,23 @@ async def _collect_race_rows(db, tournament_id: int, include_finals: bool) -> li
                                   "group_id": None, "ht_group_id": r["ht_group_id"]})
     except Exception:
         pass
-    # 安全網：1レースは必ず1回だけ走査する。反映操作の履歴によっては heat_id と
+    # タイムアタック予選：反映(M4LAPS)で紐づいた計測レースを「予選の記録」として合算する。
+    #   time_attack_runs.race_id ↔ entry_id で対応（旧DBは列なし→静かにスキップ）。
+    try:
+        async with db.execute(
+            """SELECT DISTINCT tar.race_id AS race_id, tar.entry_id AS ta_entry_id
+                 FROM time_attack_runs tar
+                WHERE tar.tournament_id = ?
+                  AND tar.race_id IS NOT NULL
+                  AND COALESCE(tar.is_co, 0) = 0""",
+            (tournament_id,),
+        ) as cur:
+            for r in await cur.fetchall():
+                race_rows.append({"race_id": r["race_id"], "heat_id": None,
+                                  "group_id": None, "ht_group_id": None,
+                                  "ta_entry_id": r["ta_entry_id"]})
+    except Exception:
+        pass
     # applied_(ht_)group_id が同時に残り得るため、race_id で重複排除する
     # （先勝ち＝上の並びどおり 予選H → 決勝G → 予選HT の優先）。重複を許すと
     # 同じ記録が別のレーン対応表で二重集計され、RECORD HOLDERS が壊れる。
@@ -185,6 +201,9 @@ async def scan_tournament_metrics(db, tournament_id: int,
             _scope, _owner, _hid = "H", rr["heat_id"], rr["heat_id"]
         elif rr["group_id"] is not None:
             _scope, _owner, _hid = "G", rr["group_id"], None
+        elif rr.get("ta_entry_id") is not None:
+            # タイムアタック：1人走行なのでレース全体をそのエントリーに帰属
+            _scope, _owner, _hid = "A", rr["ta_entry_id"], None
         else:
             _scope, _owner, _hid = "T", rr["ht_group_id"], None
         try:
@@ -198,7 +217,10 @@ async def scan_tournament_metrics(db, tournament_id: int,
         st = await speed_store.load_speeds(db, rr["race_id"])
 
         for m in result.ranking():
-            entry_id = lane_to_entry.get((_scope, _owner, m.start_lane))
+            if _scope == "A":
+                entry_id = _owner  # タイムアタック：レース全体がそのエントリーの記録
+            else:
+                entry_id = lane_to_entry.get((_scope, _owner, m.start_lane))
             if entry_id is None:
                 continue
             lane = m.start_lane

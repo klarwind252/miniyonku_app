@@ -1064,6 +1064,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <th>順位</th><th>レーサー</th>
             {% if is_none_roundrobin %}<th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th>
             {% elif qualifying_type in ('heat_roundrobin','roundrobin') %}<th>勝</th>
+            {% elif qualifying_type == 'time_attack' %}<th>最速タイム</th><th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>
             {% else %}<th>Pt</th>{% if qualifying_type in ('point','order') %}<th style="color:#7f8c8d;text-align:center">出走</th><th style="color:#7f8c8d;text-align:center">完走</th><th style="color:#7f8c8d;text-align:center">完走率</th>{% if m4laps_active and qualifying_type == 'point' %}<th style="color:#7f8c8d;text-align:center">ベスト</th><th style="color:#7f8c8d;text-align:center">Av</th>{% endif %}{% endif %}{% endif %}
           </tr>
         </thead>
@@ -1079,10 +1080,16 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% if is_none_roundrobin %}
             {{ s.wins }}
             {% elif qualifying_type in ('heat_roundrobin', 'roundrobin') %}<span style="background:#2980b9;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:11px">{{ s.wins }}勝</span>
+            {% elif qualifying_type == 'time_attack' %}<span style="font-variant-numeric:tabular-nums;font-weight:bold;color:#5aa3d6;font-size:14px">{{ s.best_str }}</span>
             {% else %}<span style="background:#2980b9;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:11px">{{ s.total_points }}pt</span>{% endif %}
           </td>
           {% if is_none_roundrobin %}
           <td style="color:#e74c3c">{{ s.losses }}</td>
+          {% endif %}
+          {% if qualifying_type == 'time_attack' %}
+          <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.started }}</td>
+          <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.finished }}</td>
+          <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.finish_rate }}%</td>
           {% endif %}
           {% if qualifying_type in ('point', 'order') %}
           <td style="color:#7f8c8d;font-size:11px;text-align:center">{{ s.race_count or 0 }}</td>

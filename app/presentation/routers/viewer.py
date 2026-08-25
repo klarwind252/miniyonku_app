@@ -444,6 +444,11 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         # 算出し、同率順位・同率内の並び順を予選管理画面と完全一致させる
         from app.routers.qualifying import _calc_standings as _cs_order
         standings = [dict(s) for s in await _cs_order(tid, db)]
+    elif qt == "time_attack":
+        # タイムアタック：admin と同じ _ta_standings（ベストタイム昇順）を使う
+        from app.presentation.routers.time_attack import _ta_load, _ta_standings
+        _ta_entries, _ta_runs = await _ta_load(tid, db)
+        standings = _ta_standings(_ta_entries, _ta_runs)
     elif qt == "point":
         async with db.execute(
             """SELECT e.id AS entry_id, r.name, e.advanced,
