@@ -33,7 +33,8 @@
           font-size:14px;font-variant-numeric:tabular-nums}
 .ta-mini{border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;
          padding:6px 9px;font-family:inherit;line-height:1.2}
-.ta-mini.apply{background:#1a56db;color:#fff}
+.ta-mini.decide{background:#1a56db;color:#fff}
+.ta-mini.fetch{background:#0d9488;color:#fff}
 .ta-mini.co{background:#f39c12;color:#fff}
 .ta-mini.cancel{background:#fff;color:#e74c3c;border:1px solid #e6c3c0;padding:5px 8px}
 .ta-mini:disabled{opacity:.45;cursor:not-allowed}
@@ -73,8 +74,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 
 <div style="background:#eef6ff;border:1px solid #b8d9f7;color:#1c5c9c;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.7;margin-bottom:16px">
-  各レーサーの各走行にタイム（秒。例 <strong>10.11</strong>）を入力し「反映」を押します。完走できなかった走行は「CO」で記録します。走行順は任意です。<br>
-  決勝進出は「決勝」列の○で決まります（<strong>⚡自動集計</strong>で上位{{ finalist_n }}名に自動で○が付きます。手動で○/×の切替も可能）。
+  タイムの記録方法は2通りです。走行順は任意です。<br>
+  ・<strong>手入力</strong>：枠にタイム（秒。例 <strong>10.11</strong>）を入力し <strong>[決定]</strong> を押す。<br>
+  {% if m4_on %}・<strong>M4LAPS</strong>：走行後に <strong>[反映]</strong> を押すと、最新の計測タイムが自動で入ります。<br>{% endif %}
+  ・完走できなかった走行は <strong>[CO]</strong>。決勝進出は「決勝」列の○で決まります（<strong>⚡自動集計</strong>で上位{{ finalist_n }}名に自動で○）。
 </div>
 
 {% if grid|length == 0 %}
@@ -113,8 +116,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               </span>
             {% else %}
               <span class="ta-cell">
-                <input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key==='Enter'){taApply(this)}" {% if is_finalized %}disabled{% endif %}>
-                <button class="ta-mini apply" onclick="taApply(this)" {% if is_finalized %}disabled{% endif %}>反映</button>
+                <input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key==='Enter'){taDecide(this)}" {% if is_finalized %}disabled{% endif %}>
+                <button class="ta-mini decide" onclick="taDecide(this)" {% if is_finalized %}disabled{% endif %}>決定</button>
+                {% if m4_on %}<button class="ta-mini fetch" onclick="taFetchM4(this)" title="M4LAPSの最新計測タイムを取り込む" {% if is_finalized %}disabled{% endif %}>反映</button>{% endif %}
                 <button class="ta-mini co" onclick="taCO(this)" {% if is_finalized %}disabled{% endif %}>CO</button>
               </span>
             {% endif %}
@@ -154,6 +158,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 const TA_TID = {{ t.id }};
 const TA_FINALIST_N = {{ finalist_n }};
 const TA_FINALIZED = {{ 'true' if is_finalized else 'false' }};
+const TA_M4ON = {{ 'true' if m4_on else 'false' }};
 
 function taRow(el){ return el.closest('tr'); }
 function taCell(el){ return el.closest('td'); }
@@ -167,7 +172,7 @@ async function taPost(url, body){
   return res.json();
 }
 
-async function taApply(el){
+async function taDecide(el){
   const td = taCell(el), tr = taRow(el);
   const input = td.querySelector('.ta-input');
   const raw = (input.value || '').trim();
@@ -177,6 +182,24 @@ async function taApply(el){
   if(!r.ok){ alert('入力を確認してください（例: 10.11）'); return; }
   renderCellTime(td, r.time_str, false);
   renderRank(r.standings);
+}
+async function taFetchM4(el){
+  const td = taCell(el), tr = taRow(el);
+  const btn = el; const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const res = await fetch(`/admin/tournaments/${TA_TID}/qualifying/time-attack/apply`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ entry_id:+tr.dataset.entry, run_no:+td.dataset.run }) });
+    if(res.status===404){ alert('M4LAPSが利用できません'); btn.disabled=false; btn.textContent=orig; return; }
+    const r = await res.json();
+    if(!r.ok){
+      const msg = r.error==='no_measurement' ? 'M4LAPSに反映できる計測結果がありません（先に走行してください）' : '反映できませんでした';
+      alert(msg); btn.disabled=false; btn.textContent=orig; return;
+    }
+    renderCellTime(td, r.time_str, r.time_str==='CO');
+    renderRank(r.standings);
+  }catch(e){ alert('通信エラー: '+e); btn.disabled=false; btn.textContent=orig; }
 }
 async function taCO(el){
   const td = taCell(el), tr = taRow(el);
@@ -204,10 +227,14 @@ function renderCellTime(td, text, isCo){
     '</span>';
 }
 function renderCellEmpty(td){
+  const m4 = TA_M4ON
+    ? '<button class="ta-mini fetch" onclick="taFetchM4(this)" title="M4LAPSの最新計測タイムを取り込む">反映</button>'
+    : '';
   td.innerHTML =
     '<span class="ta-cell">' +
-      '<input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key===\'Enter\'){taApply(this)}">' +
-      '<button class="ta-mini apply" onclick="taApply(this)">反映</button>' +
+      '<input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key===\'Enter\'){taDecide(this)}">' +
+      '<button class="ta-mini decide" onclick="taDecide(this)">決定</button>' +
+      m4 +
       '<button class="ta-mini co" onclick="taCO(this)">CO</button>' +
     '</span>';
 }
