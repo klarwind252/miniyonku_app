@@ -29,14 +29,14 @@
 .ta-cell{display:inline-flex;align-items:center;gap:6px;justify-content:center;flex-wrap:nowrap}
 .ta-time-val{font-variant-numeric:tabular-nums;font-weight:bold;color:#1a56db;font-size:16px;min-width:52px}
 .ta-time-val.co{color:#d35400}
-.ta-input{width:78px;padding:6px 8px;border:1px solid #cdd4da;border-radius:6px;text-align:center;
+.ta-input{width:56px;padding:6px 6px;border:1px solid #cdd4da;border-radius:6px;text-align:center;
           font-size:14px;font-variant-numeric:tabular-nums}
 .ta-mini{border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;
-         padding:6px 9px;font-family:inherit;line-height:1.2}
-.ta-mini.decide{background:#1a56db;color:#fff}
+         min-width:52px;padding:6px 12px;font-family:inherit;line-height:1.2;text-align:center}
+.ta-mini.decide{background:#6c757d;color:#fff}
 .ta-mini.fetch{background:#0d9488;color:#fff}
 .ta-mini.co{background:#f39c12;color:#fff}
-.ta-mini.cancel{background:#fff;color:#e74c3c;border:1px solid #e6c3c0;padding:5px 8px}
+.ta-mini.cancel{background:#fff;color:#e74c3c;border:1px solid #e6c3c0;min-width:auto;padding:5px 10px}
 .ta-mini:disabled{opacity:.45;cursor:not-allowed}
 </style>
 {% endblock %}
@@ -75,7 +75,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
 <div style="background:#eef6ff;border:1px solid #b8d9f7;color:#1c5c9c;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.7;margin-bottom:16px">
   タイムの記録方法は2通りです。走行順は任意です。<br>
-  ・<strong>手入力</strong>：枠にタイム（秒。例 <strong>10.11</strong>）を入力し <strong>[決定]</strong> を押す。<br>
+  ・<strong>手入力</strong>：枠にタイム（秒。例 <strong>10.115</strong>）を入力し <strong>[決定]</strong> を押す。<br>
   {% if m4_on %}・<strong>M4LAPS</strong>：走行後に <strong>[反映]</strong> を押すと、最新の計測タイムが自動で入ります。<br>{% endif %}
   ・完走できなかった走行は <strong>[CO]</strong>。決勝進出は「決勝」列の○で決まります（<strong>⚡自動集計</strong>で上位{{ finalist_n }}名に自動で○）。
 </div>
@@ -179,7 +179,7 @@ async function taDecide(el){
   if(!raw){ input.focus(); return; }
   const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, {
     entry_id:+tr.dataset.entry, run_no:+td.dataset.run, time:raw });
-  if(!r.ok){ alert('入力を確認してください（例: 10.11）'); return; }
+  if(!r.ok){ alert('入力を確認してください（例: 10.115）'); return; }
   renderCellTime(td, r.time_str, false);
   renderRank(r.standings);
 }

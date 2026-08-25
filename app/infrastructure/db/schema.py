@@ -833,7 +833,8 @@ async def init_db(db_path: str = None):
 
         # ── タイムアタック予選 ──────────────────────────────────
         # time_attack_runs : レーサー×走行回数ごとの記録
-        #   time_cs : 走行タイム（センチ秒＝1/100秒単位, 例 10.11秒→1011）。CO時はNULL。
+        #   time_ms : 走行タイム（ミリ秒＝1/1000秒単位, 例 10.115秒→10115）。CO時はNULL。
+        #             ※他予選のFINISHタイム表示（%.3f＝3桁）と桁を揃えるためミリ秒で保持。
         #   is_co   : 1=完走せず（コースアウト等）。この走行はタイム無し。
         await db.execute("""
         CREATE TABLE IF NOT EXISTS time_attack_runs (
@@ -841,13 +842,21 @@ async def init_db(db_path: str = None):
             tournament_id  INTEGER NOT NULL,
             entry_id       INTEGER NOT NULL,
             run_no         INTEGER NOT NULL,
-            time_cs        INTEGER DEFAULT NULL,
+            time_ms        INTEGER DEFAULT NULL,
             is_co          INTEGER DEFAULT 0,
             created_at     TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE(tournament_id, entry_id, run_no),
             FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
             FOREIGN KEY (entry_id) REFERENCES entries(id)
         )""")
+        # 旧列 time_cs（センチ秒＝2桁）で作成済みのDBは time_ms（ミリ秒＝3桁）へ移行。
+        async with db.execute("PRAGMA table_info(time_attack_runs)") as cur:
+            _ta_cols = {r["name"] async for r in cur}
+        if "time_ms" not in _ta_cols and "time_cs" in _ta_cols:
+            await db.execute("ALTER TABLE time_attack_runs RENAME COLUMN time_cs TO time_ms")
+            # 既存値はセンチ秒なので ×10 してミリ秒へ換算
+            await db.execute("UPDATE time_attack_runs SET time_ms = time_ms * 10 WHERE time_ms IS NOT NULL")
+            print("[DB] migration: time_attack_runs.time_cs -> time_ms (x10)")
 
         # tournaments.ta_status : タイムアタック予選の締め状態（NULL=進行中, 'closed'=予選終了）
         if "ta_status" not in t_cols_o:

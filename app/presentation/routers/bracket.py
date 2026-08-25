@@ -3668,10 +3668,10 @@ async def _get_advanced_entries(tid: int, db: aiosqlite.Connection) -> list[dict
         # タイムアタック：ベストタイム（最小）昇順で決勝シードを決める
         async with db.execute(
             """SELECT e.id AS entry_id, e.racer_id, r.name, e.entry_order,
-                      MIN(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_cs IS NOT NULL
-                               THEN tar.time_cs END) AS best_cs,
+                      MIN(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_ms IS NOT NULL
+                               THEN tar.time_ms END) AS best_ms,
                       COUNT(tar.id) AS started,
-                      SUM(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_cs IS NOT NULL
+                      SUM(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_ms IS NOT NULL
                                THEN 1 ELSE 0 END) AS finished
                FROM entries e
                JOIN racers r ON r.id=e.racer_id
@@ -3683,12 +3683,12 @@ async def _get_advanced_entries(tid: int, db: aiosqlite.Connection) -> list[dict
             _raw = [dict(r) for r in await cur.fetchall()]
 
         def _ta_key(r):
-            has = r["best_cs"] is not None
-            return (0 if has else 1, r["best_cs"] if has else 0,
+            has = r["best_ms"] is not None
+            return (0 if has else 1, r["best_ms"] if has else 0,
                     -(r["finished"] or 0), -(r["started"] or 0), r["entry_order"])
         _raw.sort(key=_ta_key)
         rows = [{"entry_id": r["entry_id"], "racer_id": r["racer_id"], "name": r["name"],
-                 "score1": r["best_cs"] if r["best_cs"] is not None else 9999999,
+                 "score1": r["best_ms"] if r["best_ms"] is not None else 9999999,
                  "score2": 0} for r in _raw]
     else:
         async with db.execute(
@@ -3876,10 +3876,10 @@ async def _get_all_standings(tid: int, db: aiosqlite.Connection) -> list[dict]:
         # タイムアタック：ベストタイム（最小）昇順。未完走(タイム無し)は末尾。
         async with db.execute(
             """SELECT e.id AS entry_id, e.racer_id, r.name, e.entry_order,
-                      MIN(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_cs IS NOT NULL
-                               THEN tar.time_cs END) AS best_cs,
+                      MIN(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_ms IS NOT NULL
+                               THEN tar.time_ms END) AS best_ms,
                       COUNT(tar.id) AS started,
-                      SUM(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_cs IS NOT NULL
+                      SUM(CASE WHEN COALESCE(tar.is_co,0)=0 AND tar.time_ms IS NOT NULL
                                THEN 1 ELSE 0 END) AS finished
                FROM entries e
                JOIN racers r ON r.id=e.racer_id
@@ -3891,14 +3891,14 @@ async def _get_all_standings(tid: int, db: aiosqlite.Connection) -> list[dict]:
             _raw = [dict(r) for r in await cur.fetchall()]
 
         def _ta_key2(r):
-            has = r["best_cs"] is not None
-            return (0 if has else 1, r["best_cs"] if has else 0,
+            has = r["best_ms"] is not None
+            return (0 if has else 1, r["best_ms"] if has else 0,
                     -(r["finished"] or 0), -(r["started"] or 0), r["entry_order"])
         _raw.sort(key=_ta_key2)
         # score1 に「小さいほど上位」のベストタイム（未完走はセンチネル）を格納。
         # 後続の同率処理は score1 の一致で同順位判定するため、そのまま整合する。
         rows = [{"entry_id": r["entry_id"], "racer_id": r["racer_id"], "name": r["name"],
-                 "score1": r["best_cs"] if r["best_cs"] is not None else 9999999,
+                 "score1": r["best_ms"] if r["best_ms"] is not None else 9999999,
                  "score2": 0} for r in _raw]
     else:
         async with db.execute(
