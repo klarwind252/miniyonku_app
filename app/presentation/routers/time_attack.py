@@ -288,10 +288,16 @@ async def time_attack_apply_m4(tid: int, request: Request, db: aiosqlite.Connect
             return JSONResponse({"ok": False, "error": "entry"})
 
     # 最新の計測レースを取得（timing_api のヘルパを再利用）
+    # PIP（ラップタイマー）で選択中のレースがあれば race_id 指定、無ければ最新（None）。
     from app.presentation.routers.timing_api import _pick_race, _ranking_payload
     from app.infrastructure.db.repositories.timing_repository import TimingRaceRepository
+    _rid = data.get("race_id")
+    try:
+        race_id = int(_rid) if _rid not in (None, "") else None
+    except (TypeError, ValueError):
+        race_id = None
     repo = TimingRaceRepository(db)
-    race, result = await _pick_race(db, repo, None)
+    race, result = await _pick_race(db, repo, race_id)
     if result is None:
         return JSONResponse({"ok": False, "error": "no_measurement"})
     ranking = _ranking_payload(result)

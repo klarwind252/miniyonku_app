@@ -26,15 +26,15 @@
 .ta-grid td{padding:8px;border-bottom:1px solid #eef0f2;text-align:center;vertical-align:middle}
 .ta-grid td.name-cell{text-align:left;font-weight:bold;color:#2c3e50;white-space:nowrap}
 .ta-grid tbody tr:nth-child(even){background:#fafbfc}
-.ta-cell{display:inline-flex;align-items:center;gap:6px;justify-content:center;flex-wrap:nowrap}
-.ta-time-val{font-variant-numeric:tabular-nums;font-weight:bold;color:#1a56db;font-size:16px;min-width:52px}
+.ta-cell{display:inline-flex;align-items:center;gap:6px;justify-content:flex-start;flex-wrap:nowrap}
+.ta-time-val{font-variant-numeric:tabular-nums;font-weight:bold;color:#1a56db;font-size:16px;text-align:left}
 .ta-time-val.co{color:#d35400}
-.ta-input{width:56px;padding:6px 6px;border:1px solid #cdd4da;border-radius:6px;text-align:center;
-          font-size:14px;font-variant-numeric:tabular-nums}
+.ta-input{width:44px;padding:6px 5px;border:1px solid #cdd4da;border-radius:6px;text-align:left;
+          font-size:13px;font-variant-numeric:tabular-nums}
 .ta-mini{border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;
          min-width:52px;padding:6px 12px;font-family:inherit;line-height:1.2;text-align:center}
 .ta-mini.decide{background:#6c757d;color:#fff}
-.ta-mini.fetch{background:#0d9488;color:#fff}
+.ta-mini.fetch{background:#1a56db;color:#fff}
 .ta-mini.co{background:#f39c12;color:#fff}
 .ta-mini.cancel{background:#fff;color:#e74c3c;border:1px solid #e6c3c0;min-width:auto;padding:5px 10px}
 .ta-mini:disabled{opacity:.45;cursor:not-allowed}
@@ -188,13 +188,15 @@ async function taFetchM4(el){
   const btn = el; const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '…';
   try{
+    // PIP（ラップタイマー）で選択中のレースがあればそれを、無ければ最新を使う
+    const picked = (typeof m4pipSelectedRaceId === 'function') ? m4pipSelectedRaceId() : null;
     const res = await fetch(`/admin/tournaments/${TA_TID}/qualifying/time-attack/apply`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ entry_id:+tr.dataset.entry, run_no:+td.dataset.run }) });
+      body: JSON.stringify({ entry_id:+tr.dataset.entry, run_no:+td.dataset.run, race_id: picked || null }) });
     if(res.status===404){ alert('M4LAPSが利用できません'); btn.disabled=false; btn.textContent=orig; return; }
     const r = await res.json();
     if(!r.ok){
-      const msg = r.error==='no_measurement' ? 'M4LAPSに反映できる計測結果がありません（先に走行してください）' : '反映できませんでした';
+      const msg = r.error==='no_measurement' ? 'M4LAPSに反映できる計測結果がありません（PIPで結果を選ぶか、先に走行してください）' : '反映できませんでした';
       alert(msg); btn.disabled=false; btn.textContent=orig; return;
     }
     renderCellTime(td, r.time_str, r.time_str==='CO');
