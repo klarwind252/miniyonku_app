@@ -2303,7 +2303,12 @@ async def auto_advanced(tid: int, db: aiosqlite.Connection = Depends(get_db)):
     # 現在の順位取得
     nr = t_dict.get("qualifying_type") == "none_roundrobin"
     rr = t_dict.get("qualifying_type") == "roundrobin"
-    standings = await _calc_standings_none_rr(tid, db) if nr else (await _calc_standings_rr(tid, db) if rr else await _calc_standings(tid, db))
+    if t_dict.get("qualifying_type") == "time_attack":
+        from app.presentation.routers.time_attack import _ta_load, _ta_standings
+        _ta_entries, _ta_runs = await _ta_load(tid, db)
+        standings = _ta_standings(_ta_entries, _ta_runs)
+    else:
+        standings = await _calc_standings_none_rr(tid, db) if nr else (await _calc_standings_rr(tid, db) if rr else await _calc_standings(tid, db))
 
     if not standings:
         return JSONResponse({"ok": False, "error": "standings or finalist_n not set"})

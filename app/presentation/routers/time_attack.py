@@ -57,7 +57,7 @@ async def _ta_load(tid: int, db):
     returns: (entries[list[dict]], runs_map{entry_id: {run_no: {time_cs,is_co}}})
     """
     async with db.execute(
-        """SELECT e.id AS entry_id, e.entry_order, r.name,
+        """SELECT e.id AS entry_id, e.entry_order, e.advanced, r.name,
                   COALESCE(r.yomi,'') AS yomi
            FROM entries e JOIN racers r ON r.id=e.racer_id
            WHERE e.tournament_id=? AND e.status='active'
@@ -99,6 +99,7 @@ def _ta_standings(entries, runs_map):
             "entry_id": e["entry_id"],
             "name": e["name"],
             "entry_order": e["entry_order"],
+            "advanced": e.get("advanced"),
             "started": started,
             "finished": finished,
             "finish_rate": rate,
@@ -120,19 +121,6 @@ def _ta_standings(entries, runs_map):
     for i, r in enumerate(rows):
         r["rank"] = i + 1
     return rows
-
-
-async def _ta_apply_advanced(tid: int, db, finalist_n: int):
-    """順位上位 finalist_n 名に advanced=1、それ以外は NULL。"""
-    entries, runs_map = await _ta_load(tid, db)
-    standings = _ta_standings(entries, runs_map)
-    await db.execute("UPDATE entries SET advanced=NULL WHERE tournament_id=?", (tid,))
-    if finalist_n and finalist_n > 0:
-        for r in standings[:finalist_n]:
-            await db.execute(
-                "UPDATE entries SET advanced=1 WHERE id=? AND tournament_id=?",
-                (r["entry_id"], tid),
-            )
 
 
 def _publish():
@@ -186,7 +174,7 @@ async def time_attack_screen(tid: int, request: Request, db: aiosqlite.Connectio
         "grid": grid,
         "standings": standings,
         "is_finalized": is_finalized,
-        "ta_closed": (t.get("ta_status") == "closed"),
+        "any_adv": any(s.get("advanced") not in (None,) for s in standings),
         "qualifying_labels": QUALIFYING_LABELS,
     })
 
@@ -280,35 +268,3 @@ async def time_attack_cancel(tid: int, request: Request, db: aiosqlite.Connectio
 async def time_attack_standings_json(tid: int, db: aiosqlite.Connection = Depends(get_db)):
     entries, runs_map = await _ta_load(tid, db)
     return JSONResponse({"standings": _ta_standings(entries, runs_map)})
-
-
-# ---- 予選終了 / 再開 ------------------------------------------------------
-@router.post("/{tid}/qualifying/time-attack/close")
-async def time_attack_close(tid: int, db: aiosqlite.Connection = Depends(get_db)):
-    from app.routers.tournaments import _is_result_finalized
-    if await _is_result_finalized(tid, db):
-        return JSONResponse({"ok": False, "error": "finalized"})
-    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
-        t = await cur.fetchone()
-    if not t or dict(t).get("qualifying_type") != "time_attack":
-        return JSONResponse({"ok": False, "error": "type"})
-    finalist_n = calc_finalists("time_attack", dict(t)) or 0
-    async with transaction(db):
-        await _ta_apply_advanced(tid, db, finalist_n)
-        await db.execute(
-            "UPDATE tournaments SET ta_status='closed', status='qualifying' WHERE id=?", (tid,)
-        )
-    _publish()
-    return JSONResponse({"ok": True, "closed": True})
-
-
-@router.post("/{tid}/qualifying/time-attack/reopen")
-async def time_attack_reopen(tid: int, db: aiosqlite.Connection = Depends(get_db)):
-    from app.routers.tournaments import _is_result_finalized
-    if await _is_result_finalized(tid, db):
-        return JSONResponse({"ok": False, "error": "finalized"})
-    async with transaction(db):
-        await db.execute("UPDATE entries SET advanced=NULL WHERE tournament_id=?", (tid,))
-        await db.execute("UPDATE tournaments SET ta_status=NULL WHERE id=?", (tid,))
-    _publish()
-    return JSONResponse({"ok": True, "reopened": True})
