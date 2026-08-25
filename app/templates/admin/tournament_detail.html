@@ -243,6 +243,14 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <td><strong>{{ finalists }}</strong> 名</td></tr>
         {% endif %}
 
+        {% elif t.qualifying_type == 'time_attack' %}
+        {% if finalists %}
+        <tr><td style="color:#636e72;font-size:13px;padding:6px 0">決勝進出予定</td>
+            <td><strong>{{ finalists }}</strong> 名</td></tr>
+        {% endif %}
+        <tr><td style="color:#636e72;font-size:13px;padding:6px 0">走行回数</td>
+            <td><strong>{{ t.qual_ta_runs or 3 }}</strong> 回</td></tr>
+
         {% elif t.qualifying_type not in ('none', None) %}
         {% if finalists %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">決勝進出予定</td>

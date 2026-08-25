@@ -23,6 +23,7 @@ from app.presentation.middleware.m4laps_license import add_m4laps_license
 from app.routers import admin, tournaments
 from app.routers.viewer import router as viewer_router
 from app.routers.qualifying import router as qualifying_router
+from app.presentation.routers.time_attack import router as time_attack_router
 from app.routers.bracket import router as bracket_router
 from app.routers.racers import router as racers_router
 from app.presentation.routers.stores import router as stores_router
@@ -134,6 +135,7 @@ os.makedirs(os.path.join(BASE_DIR, "static", "cert_bg"), exist_ok=True)
 
 app.include_router(admin.router, prefix="/admin")
 app.include_router(qualifying_router, prefix="/admin/tournaments")
+app.include_router(time_attack_router, prefix="/admin/tournaments")
 app.include_router(bracket_router, prefix="/admin/tournaments")
 app.include_router(racers_router, prefix="/admin/racers")
 app.include_router(tournaments.router, prefix="/admin/tournaments")

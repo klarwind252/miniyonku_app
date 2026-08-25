@@ -604,6 +604,9 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     # ヒート（トーナメント）の場合はheat_tournament画面へ
     if dict(t).get("qualifying_type") in HEAT_TOURNAMENT_TYPES:
         return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying/heat-tournament/1", status_code=303)
+    # タイムアタックは専用画面へ
+    if dict(t).get("qualifying_type") == "time_attack":
+        return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying/time-attack", status_code=303)
     standings = await _calc_standings_none_rr(tid, db) if nr else (await _calc_standings_rr(tid, db) if rr else await _calc_standings(tid, db))
     finalist_n = calc_finalists(dict(t).get("qualifying_type",""), dict(t))
 

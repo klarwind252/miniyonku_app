@@ -1,0 +1,235 @@
+{% extends "admin/base.html" %}
+{% block scene %}予選{% endblock %}
+{% block title %}タイムアタック予選 - {{ t.name }}{% endblock %}
+{% block head %}
+<style>
+.ta-wrap { max-width:1100px; }
+.ta-grid { width:100%; border-collapse:collapse; background:#fff; font-size:14px; }
+.ta-grid th, .ta-grid td { border:1px solid #e1e5ea; padding:6px 8px; text-align:center; }
+.ta-grid th { background:#f4f6f8; color:#2c3e50; font-weight:bold; white-space:nowrap; }
+.ta-grid td.name-cell { text-align:left; font-weight:bold; color:#2c3e50; white-space:nowrap; }
+.ta-cell-time { display:inline-flex; align-items:center; gap:6px; justify-content:center; }
+.ta-time-val { font-variant-numeric:tabular-nums; font-weight:bold; color:#1a56db; }
+.ta-time-val.co { color:#d35400; }
+.ta-input { width:76px; padding:5px 6px; border:1px solid #cdd4da; border-radius:6px;
+            text-align:center; font-size:14px; font-variant-numeric:tabular-nums; }
+.ta-btn { border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;
+          padding:5px 9px; font-family:inherit; }
+.ta-btn-apply { background:#1a56db; color:#fff; }
+.ta-btn-co    { background:#f39c12; color:#fff; }
+.ta-btn-cancel{ background:#f0f2f5; color:#e74c3c; border:1px solid #e6c3c0; padding:3px 7px; }
+.ta-btn:disabled { opacity:.45; cursor:not-allowed; }
+.rank-grid { width:100%; border-collapse:collapse; background:#fff; font-size:14px; margin-top:8px; }
+.rank-grid th, .rank-grid td { border:1px solid #e1e5ea; padding:6px 10px; text-align:center; }
+.rank-grid th { background:#f4f6f8; color:#2c3e50; }
+.rank-grid td.rank-name { text-align:left; font-weight:bold; }
+.rank-grid tr.adv td { background:#eafaf1; }
+.rank-grid .fin-badge { background:#27ae60; color:#fff; font-size:11px; font-weight:bold;
+                        padding:2px 8px; border-radius:10px; }
+.section-title { font-weight:bold; color:#2c3e50; margin:18px 0 8px; font-size:16px; }
+.ta-note { background:#eef6ff; border:1px solid #b8d9f7; color:#1c5c9c; border-radius:8px;
+           padding:10px 14px; font-size:13px; line-height:1.7; margin-bottom:12px; }
+.ta-closed-banner { background:#eafaf1; border:2px solid #27ae60; color:#1e8449; font-weight:bold;
+                    border-radius:8px; padding:12px 16px; margin-bottom:14px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="ta-wrap">
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+    <a href="/admin/tournaments/{{ t.id }}" class="btn btn-secondary btn-sm">← レース管理</a>
+    <a href="/admin/tournaments/" class="btn btn-secondary btn-sm">← レース一覧</a>
+    {% if ta_closed %}
+    <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success btn-sm">🏆 決勝管理</a>
+    {% endif %}
+    <span style="margin-left:auto;font-size:13px;color:#636e72">
+      決勝進出人数 <strong>{{ finalist_n }}</strong> 名 ／ 走行回数 <strong>{{ runs }}</strong> 回
+    </span>
+  </div>
+
+  <h1 style="margin:0 0 6px">⏱️ タイムアタック予選</h1>
+  <div style="color:#636e72;font-size:13px;margin-bottom:12px">{{ t.name }}</div>
+
+  {% if ta_closed %}
+  <div class="ta-closed-banner">
+    ✅ 予選を終了しました。上位 {{ finalist_n }} 名が決勝進出です。修正する場合は「予選を再開」してください。
+  </div>
+  {% else %}
+  <div class="ta-note">
+    各レーサーの各走行にタイム（秒。例 <strong>10.11</strong>）を入力し「反映」を押します。
+    完走できなかった走行は「CO」で記録します。走行順は任意です。
+  </div>
+  {% endif %}
+
+  {% if grid|length == 0 %}
+  <div style="background:#fff8e1;border:1px solid #f0c36d;color:#8a6d00;border-radius:8px;padding:14px 16px">
+    エントリーがありません。<a href="/admin/tournaments/{{ t.id }}">レース管理</a>からレーサーをエントリーしてください。
+  </div>
+  {% else %}
+
+  <div class="section-title">走行記録</div>
+  <div style="overflow-x:auto">
+  <table class="ta-grid" id="ta-grid">
+    <thead>
+      <tr>
+        <th style="text-align:left">レーサー名</th>
+        {% for rn in range(1, runs+1) %}<th>{{ rn }}回目</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in grid %}
+      <tr data-entry="{{ row.entry_id }}">
+        <td class="name-cell">{{ row.name }}</td>
+        {% for c in row.cells %}
+        <td data-run="{{ c.run_no }}">
+          {% if c.state == 'time' %}
+            <span class="ta-cell-time">
+              <span class="ta-time-val">{{ c.time_str }}</span>
+              <button class="ta-btn ta-btn-cancel" onclick="taCancel(this)" {% if ta_closed %}disabled{% endif %}>取消</button>
+            </span>
+          {% elif c.state == 'co' %}
+            <span class="ta-cell-time">
+              <span class="ta-time-val co">CO</span>
+              <button class="ta-btn ta-btn-cancel" onclick="taCancel(this)" {% if ta_closed %}disabled{% endif %}>取消</button>
+            </span>
+          {% else %}
+            <span class="ta-cell-time">
+              <input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key==='Enter'){taApply(this)}" {% if ta_closed %}disabled{% endif %}>
+              <button class="ta-btn ta-btn-apply" onclick="taApply(this)" {% if ta_closed %}disabled{% endif %}>反映</button>
+              <button class="ta-btn ta-btn-co" onclick="taCO(this)" {% if ta_closed %}disabled{% endif %}>CO</button>
+            </span>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="section-title">予選順位表</div>
+  <table class="rank-grid" id="rank-grid">
+    <thead>
+      <tr>
+        <th>順位</th><th>レーサー</th><th>最速タイム</th>
+        <th>出走</th><th>完走</th><th>完走率</th><th>決勝</th>
+      </tr>
+    </thead>
+    <tbody><!-- JSで描画 --></tbody>
+  </table>
+
+  <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
+    {% if not ta_closed %}
+    <button class="btn btn-success" onclick="taClose()" {% if is_finalized %}disabled{% endif %}>✅ 予選を終了して決勝進出を確定</button>
+    {% else %}
+    <button class="btn btn-secondary" onclick="taReopen()" {% if is_finalized %}disabled{% endif %}>↩️ 予選を再開</button>
+    <a href="/admin/tournaments/{{ t.id }}/bracket" class="btn btn-success">🏆 決勝管理へ</a>
+    {% endif %}
+  </div>
+
+  {% endif %}
+</div>
+
+<script>
+const TA_TID = {{ t.id }};
+const TA_FINALIST_N = {{ finalist_n }};
+
+function taRow(el){ return el.closest('tr'); }
+function taCell(el){ return el.closest('td'); }
+
+async function taPost(url, body){
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body||{})
+  });
+  return res.json();
+}
+
+async function taApply(el){
+  const td = taCell(el), tr = taRow(el);
+  const input = td.querySelector('.ta-input');
+  const raw = (input.value || '').trim();
+  if(!raw){ input.focus(); return; }
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, {
+    entry_id: +tr.dataset.entry, run_no: +td.dataset.run, time: raw
+  });
+  if(!r.ok){ alert('入力を確認してください（例: 10.11）'); return; }
+  renderCellTime(td, r.time_str, false);
+  renderRank(r.standings);
+}
+
+async function taCO(el){
+  const td = taCell(el), tr = taRow(el);
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run`, {
+    entry_id: +tr.dataset.entry, run_no: +td.dataset.run, co: true
+  });
+  if(!r.ok){ alert('記録に失敗しました'); return; }
+  renderCellTime(td, 'CO', true);
+  renderRank(r.standings);
+}
+
+async function taCancel(el){
+  const td = taCell(el), tr = taRow(el);
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/run/cancel`, {
+    entry_id: +tr.dataset.entry, run_no: +td.dataset.run
+  });
+  if(!r.ok){ alert('取消に失敗しました'); return; }
+  renderCellEmpty(td);
+  renderRank(r.standings);
+}
+
+function renderCellTime(td, text, isCo){
+  const cls = isCo ? 'ta-time-val co' : 'ta-time-val';
+  td.innerHTML =
+    '<span class="ta-cell-time">' +
+      '<span class="'+cls+'">'+text+'</span>' +
+      '<button class="ta-btn ta-btn-cancel" onclick="taCancel(this)">取消</button>' +
+    '</span>';
+}
+function renderCellEmpty(td){
+  td.innerHTML =
+    '<span class="ta-cell-time">' +
+      '<input class="ta-input" type="text" inputmode="decimal" placeholder="秒" onkeydown="if(event.key===\'Enter\'){taApply(this)}">' +
+      '<button class="ta-btn ta-btn-apply" onclick="taApply(this)">反映</button>' +
+      '<button class="ta-btn ta-btn-co" onclick="taCO(this)">CO</button>' +
+    '</span>';
+}
+
+function renderRank(standings){
+  const tb = document.querySelector('#rank-grid tbody');
+  if(!tb || !standings) return;
+  tb.innerHTML = standings.map(function(s, i){
+    const adv = (i < TA_FINALIST_N);
+    return '<tr class="'+(adv?'adv':'')+'">' +
+      '<td>'+s.rank+'</td>' +
+      '<td class="rank-name">'+escapeHtml(s.name)+'</td>' +
+      '<td>'+s.best_str+'</td>' +
+      '<td>'+s.started+'</td>' +
+      '<td>'+s.finished+'</td>' +
+      '<td>'+s.finish_rate+'%</td>' +
+      '<td>'+(adv?'<span class="fin-badge">決勝</span>':'')+'</td>' +
+    '</tr>';
+  }).join('');
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+async function taClose(){
+  if(!confirm('予選を終了し、上位 '+TA_FINALIST_N+' 名を決勝進出として確定します。よろしいですか？')) return;
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/close`);
+  if(r.ok){ location.reload(); } else { alert('確定に失敗しました'); }
+}
+async function taReopen(){
+  if(!confirm('予選を再開します（決勝進出の確定は解除されます）。よろしいですか？')) return;
+  const r = await taPost(`/admin/tournaments/${TA_TID}/qualifying/time-attack/reopen`);
+  if(r.ok){ location.reload(); } else { alert('再開に失敗しました'); }
+}
+
+// 初期描画
+renderRank({{ standings|tojson }});
+</script>
+{% endblock %}

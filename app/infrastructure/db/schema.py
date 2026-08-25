@@ -831,6 +831,29 @@ async def init_db(db_path: str = None):
             FOREIGN KEY (entry_id) REFERENCES entries(id)
         )""")
 
+        # ── タイムアタック予選 ──────────────────────────────────
+        # time_attack_runs : レーサー×走行回数ごとの記録
+        #   time_cs : 走行タイム（センチ秒＝1/100秒単位, 例 10.11秒→1011）。CO時はNULL。
+        #   is_co   : 1=完走せず（コースアウト等）。この走行はタイム無し。
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS time_attack_runs (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id  INTEGER NOT NULL,
+            entry_id       INTEGER NOT NULL,
+            run_no         INTEGER NOT NULL,
+            time_cs        INTEGER DEFAULT NULL,
+            is_co          INTEGER DEFAULT 0,
+            created_at     TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(tournament_id, entry_id, run_no),
+            FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+            FOREIGN KEY (entry_id) REFERENCES entries(id)
+        )""")
+
+        # tournaments.ta_status : タイムアタック予選の締め状態（NULL=進行中, 'closed'=予選終了）
+        if "ta_status" not in t_cols_o:
+            await db.execute("ALTER TABLE tournaments ADD COLUMN ta_status TEXT DEFAULT NULL")
+            print("[DB] migration: tournaments.ta_status added")
+
         # tournaments.order_status : order予選の締め状態（NULL/''=進行中, 'closed'=予選終了）
         if "order_status" not in t_cols_o:
             await db.execute("ALTER TABLE tournaments ADD COLUMN order_status TEXT DEFAULT NULL")
