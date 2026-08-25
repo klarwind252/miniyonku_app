@@ -412,6 +412,8 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
 
     # 予選順位
     standings = []
+    ta_grid = []          # タイムアタックの走行記録グリッド（他形式では空）
+    ta_runs_count = 0
     qt = dict(t).get("qualifying_type", "")
     if qt == "heat_roundrobin":
         # 総当たり：勝数→タイム順で集計
@@ -446,9 +448,26 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         standings = [dict(s) for s in await _cs_order(tid, db)]
     elif qt == "time_attack":
         # タイムアタック：admin と同じ _ta_standings（ベストタイム昇順）を使う
-        from app.presentation.routers.time_attack import _ta_load, _ta_standings
+        from app.presentation.routers.time_attack import _ta_load, _ta_standings, ms_to_str
         _ta_entries, _ta_runs = await _ta_load(tid, db)
         standings = _ta_standings(_ta_entries, _ta_runs)
+        # 走行記録の経過（読み取り専用グリッド）を観覧・公開HTML用に組み立てる
+        _ta_run_count = int(dict(t).get("qual_ta_runs") or 3)
+        ta_runs_count = _ta_run_count
+        ta_grid = []
+        for _e in _ta_entries:
+            _emap = _ta_runs.get(_e["entry_id"], {})
+            _cells = []
+            for _rn in range(1, _ta_run_count + 1):
+                _c = _emap.get(_rn)
+                if _c is None:
+                    _cells.append({"run_no": _rn, "state": "empty"})
+                elif _c["is_co"]:
+                    _cells.append({"run_no": _rn, "state": "co"})
+                else:
+                    _cells.append({"run_no": _rn, "state": "time",
+                                   "time_str": ms_to_str(_c["time_ms"])})
+            ta_grid.append({"entry_id": _e["entry_id"], "name": _e["name"], "cells": _cells})
     elif qt == "point":
         async with db.execute(
             """SELECT e.id AS entry_id, r.name, e.advanced,
@@ -1257,7 +1276,8 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         "heats": heats,
         "heat_lanes": heat_lanes,
         "standings": standings,
-        "record_holders": record_holders,
+        "ta_grid": ta_grid,
+        "ta_runs_count": ta_runs_count,
         "point_leader": point_leader,
         "achievements": achievements,
         "ach_labels": _qrec.labels_from_cfg(_ach_cfg),
