@@ -973,6 +973,16 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         finalists_list = []
     elif qt in HEAT_TOURNAMENT_TYPES:
         finalists_list = await _ht_get_finalists_ordered(tid, db)
+    elif qt == "time_attack":
+        # タイムアタック：○(advanced>=1) のレーサーを予選順位（ベストタイム順）で
+        from app.presentation.routers.time_attack import _ta_load, _ta_standings
+        _tae, _tar = await _ta_load(tid, db)
+        _ta_st = _ta_standings(_tae, _tar)
+        finalists_list = [
+            {"entry_id": st["entry_id"], "name": st["name"], "yomi": "",
+             "entry_order": 0, "seeded": 0, "total_points": 0, "qual_rank": st["rank"]}
+            for st in _ta_st if st.get("advanced") is not None and st["advanced"] >= 1
+        ]
     else:
         if qt == "roundrobin":
             # 勝ち数順（standings と同じ並び）

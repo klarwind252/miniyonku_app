@@ -576,7 +576,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {% if not heats and not ht_rounds_data %}
       {# スケジュール未生成 → エントリー一覧を大きく表示 #}
       <div style="padding:24px 16px">
+        {% if qualifying_type == 'time_attack' %}
+        <div style="color:#7f8c8d;font-size:13px;margin-bottom:16px">タイムアタック（走行順は自由）。記録は右の「📊 予選順位」「⚡ M4LAPS」をご覧ください。</div>
+        {% else %}
         <div style="color:#7f8c8d;font-size:13px;margin-bottom:16px">組み合わせはまだ決定していません</div>
+        {% endif %}
         {% if is_public_html %}
         {# 参加者向けhtml：標準のentry-card（public_html.pyのCSS注入で名前14px/読み仮名10px・横並び。レーサー選択プルダウンのJSも.entry-nameを参照） #}
         <div class="entry-grid">
