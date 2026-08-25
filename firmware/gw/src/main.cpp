@@ -334,6 +334,7 @@ static bool wifi_up() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!s_wifi_was_up) {                       // 接続完了の立ち上がりで1回だけ
       s_wifi_was_up = true;
+      WiFi.setSleep(false);                     // ★AP接続で省電力が戻るのを再無効化（ESP-NOW脱落防止・T-8）
       probe_dns(); gw_adopt_wifi_channel();     // DNS判定＋実ch採用（従来どおり）
     }
     return true;

@@ -120,6 +120,9 @@ static bool begin(uint8_t my_id, uint8_t channel, RecvHandler handler) {
 
   WiFi.mode(WIFI_STA);
   esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_ps(WIFI_PS_NONE);          // ★ESP-NOW安定化：WiFi省電力を無効化。
+                                          //   AP接続時のモデムスリープでESP-NOW受信が
+                                          //   間欠脱落する（＝フラッピング）のを防ぐ（T-8）。
   if (esp_now_init() != ESP_OK) return false;
 
   esp_now_peer_info_t peer = {};
