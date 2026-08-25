@@ -77,6 +77,7 @@ async def init_db(db_path: str = None):
             qual_heat_final         INTEGER DEFAULT 0,
             qual_heat_final_advance INTEGER DEFAULT 1,
             qual_final_advance      INTEGER DEFAULT 2,
+            qual_ta_runs            INTEGER DEFAULT 3,
             created_at              TEXT DEFAULT (datetime('now','localtime'))
         );
         CREATE TABLE IF NOT EXISTS entries (
@@ -225,6 +226,7 @@ async def init_db(db_path: str = None):
             "qual_heat_final": "INTEGER DEFAULT 0",
             "qual_heat_final_advance": "INTEGER DEFAULT 1",
             "qual_final_advance": "INTEGER DEFAULT 2",
+            "qual_ta_runs": "INTEGER DEFAULT 3",
             "point_1st": "INTEGER DEFAULT 3",
             "point_2nd": "INTEGER DEFAULT 2",
             "point_3rd": "INTEGER DEFAULT 1",

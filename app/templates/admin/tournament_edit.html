@@ -112,6 +112,7 @@
           <option value="roundrobin" {% if t.qualifying_type=='roundrobin' %}selected{% endif %}>総当たり</option>
           <option value="order" {% if t.qualifying_type=='order' %}selected{% endif %}>並び順（ポイント制）</option>
           <option value="order_winner" {% if t.qualifying_type=='order_winner' %}selected{% endif %}>並び順（勝ち抜け）</option>
+          <option value="time_attack" {% if t.qualifying_type=='time_attack' %}selected{% endif %}>タイムアタック</option>
         </select>
 
       <!-- ヒート（トーナメント）-->
@@ -424,6 +425,43 @@
           <div id="ow-stages" style="margin-top:6px"></div>
         </div>
       </div>
+
+      <!-- タイムアタック設定 -->
+      <div class="qual-section card {% if t.qualifying_type=='time_attack' %}active{% endif %}"
+           id="sec-time_attack" style="background:transparent;box-shadow:none;border:none;margin-top:6px">
+        <div class="card-body">
+          <div style="margin-bottom:14px;padding:12px 14px;background:#eef6ff;border:1px solid #b8d9f7;border-radius:8px;color:#1c5c9c;font-size:13px;line-height:1.7">
+            ⏱️ 参加者が1人ずつ走行してタイムを計測します。走行順は任意で、各参加者は下記「走行回数」まで走れます（ベストタイムで順位付け）。
+          </div>
+          <div style="font-weight:bold;margin-bottom:12px;color:#2c3e50">📊 決勝進出人数</div>
+          <div class="form-group" style="max-width:320px">
+            <label>上位 何名が決勝へ</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="ta_advance_pick" onchange="syncAdvancePick('ta')"
+                      style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                {% for i in range(3,49) %}<option value="{{ i }}" {% if t.qual_final_advance==i %}selected{% endif %}>{{ i }} 名</option>{% endfor %}
+                <option value="__custom__">自由入力…</option>
+              </select>
+              <input type="number" name="qual_final_advance" id="ta_advance"
+                     value="{{ t.qual_final_advance or 3 }}" min="2" max="999"
+                     oninput="reflectAdvancePick('ta')"
+                     style="width:90px;padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px;text-align:center">
+              <span style="font-size:14px;color:#636e72">名</span>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;border-top:1px solid #dee2e6;padding-top:14px">
+            <div style="font-weight:bold;margin-bottom:8px;color:#2c3e50">🔁 走行回数</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select name="qual_ta_runs" id="ta_runs" style="padding:6px;border:1px solid #dee2e6;border-radius:6px;font-size:14px">
+                {% for i in range(1,6) %}<option value="{{ i }}" {% if (t.qual_ta_runs or 3)==i %}selected{% endif %}>{{ i }} 回</option>{% endfor %}
+              </select>
+              <span style="color:#636e72;font-size:13px">（1人あたりの走行回数：1〜5回）</span>
+            </div>
+          </div>
+          <div class="summary-box active" id="ta-summary"></div>
+        </div>
+      </div>
       </div>{# 予選形式カード（ドロップダウン＋設定）ここまで #}
 
       <hr style="border:none;border-top:1px solid #e9ecef;margin:20px 0">
@@ -617,6 +655,7 @@ function getFinalistCount() {
   }
   if (v === "point") return parseInt(document.getElementById("pt_advance").value) || 2;
   if (v === "roundrobin") return parseInt(document.getElementById("rball_advance").value) || 2;
+  if (v === "time_attack") return parseInt(document.getElementById("ta_advance").value) || 2;
   return null;
 }
 
@@ -754,7 +793,17 @@ function calcPT() {
   document.getElementById(id).innerHTML=`<strong>決勝進出：${adv} 名</strong>（上位${adv}名が決勝トーナメントへ）`;
   updateFinalistValidation();
 }
-function calcAll(){calcHT();calcRR();calcPT();}
+function calcTA() {
+  const el = document.getElementById("ta-summary");
+  if (!el) return;
+  const adv = parseInt(document.getElementById("ta_advance").value) || 2;
+  const runs = parseInt(document.getElementById("ta_runs").value) || 1;
+  el.classList.add("active");
+  el.innerHTML = `<strong>決勝進出：${adv} 名</strong>（ベストタイム上位${adv}名が決勝トーナメントへ）<br>` +
+    `<span style="font-size:13px">1人あたり最大 ${runs} 回走行</span>`;
+  updateFinalistValidation();
+}
+function calcAll(){calcHT();calcRR();calcPT();calcTA();}
 
 // ── 決勝進出人数：プルダウン(既存) ＋ 自由入力(number) の同期 ──
 function _advReflectSelect(prefix){
@@ -781,7 +830,7 @@ function reflectAdvancePick(prefix){
   if(typeof calcAll === 'function') calcAll();
 }
 function initAdvancePicks(){
-  ['pt','rball','od'].forEach(function(p){ _advReflectSelect(p); });
+  ['pt','rball','od','ta'].forEach(function(p){ _advReflectSelect(p); });
 }
 window.__orderRoundMode = "{{ t.order_round_mode or 'free' }}";
 function applyOrderPreset(radio){

@@ -80,6 +80,7 @@ QUALIFYING_LABELS = {
     "roundrobin": "総当たり",
     "order": "並び順（ポイント制）",
     "order_winner": "並び順（勝ち抜け）",
+    "time_attack": "タイムアタック",
 }
 
 
@@ -437,6 +438,7 @@ async def tournament_add(
     qual_heat_final: int = Form(0),
     qual_heat_final_advance: int = Form(1),
     qual_final_advance: int = Form(2),
+    qual_ta_runs: int = Form(3),
     point_1st: int = Form(3),
     point_2nd: int = Form(2),
     point_3rd: int = Form(1),
@@ -466,22 +468,25 @@ async def tournament_add(
         method = None
         deadline = None
 
+    # タイムアタック：走行回数は 1〜5 の範囲に丸める
+    qual_ta_runs = min(5, max(1, qual_ta_runs))
+
     cur_ins = await db.execute(
         """INSERT INTO tournaments
            (name, date, time_slot, time_slot_free, regulation,
             qualifying_type, final_type, lane_count, note, time_schedule,
             qual_heat_count, qual_heat_advance,
             qual_group_count, qual_group_advance,
-            qual_heat_final, qual_heat_final_advance, qual_final_advance,
+            qual_heat_final, qual_heat_final_advance, qual_final_advance, qual_ta_runs,
             point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
             order_round_mode, order_round_count, order_free_max_runs,
             use_racer_master, pre_entry, pre_entry_method, pre_entry_deadline, use_m4laps)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, date, time_slot, time_slot_free, regulation,
          qualifying_type, final_type, lane_count, note, time_schedule,
          qual_heat_count, qual_heat_advance,
          qual_group_count, qual_group_advance,
-         qual_heat_final, qual_heat_final_advance, qual_final_advance,
+         qual_heat_final, qual_heat_final_advance, qual_final_advance, qual_ta_runs,
          point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
          order_round_mode, order_round_count, order_free_max_runs,
          use_racer_master, pre_entry, method, deadline, use_m4laps),
@@ -1726,6 +1731,7 @@ async def tournament_edit_save(
     qual_heat_final: int = Form(0),
     qual_heat_final_advance: int = Form(1),
     qual_final_advance: int = Form(2),
+    qual_ta_runs: int = Form(3),
     point_1st: int = Form(3),
     point_2nd: int = Form(2),
     point_3rd: int = Form(1),
@@ -1778,13 +1784,16 @@ async def tournament_edit_save(
     # 開催日：未入力・不正な値のときは現在値を維持する（誤操作で日付が飛ばないように）
     date = _normalize_date(date) or await _current_date(tid, db)
 
+    # タイムアタック：走行回数は 1〜5 の範囲に丸める
+    qual_ta_runs = min(5, max(1, qual_ta_runs))
+
     await db.execute(
         """UPDATE tournaments SET
            date=?, name=?, time_slot=?, time_slot_free=?, regulation=?,
            qualifying_type=?, final_type=?, note=?, time_schedule=?,
            qual_heat_count=?, qual_heat_advance=?,
            qual_group_count=?, qual_group_advance=?,
-           qual_heat_final=?, qual_heat_final_advance=?, qual_final_advance=?,
+           qual_heat_final=?, qual_heat_final_advance=?, qual_final_advance=?, qual_ta_runs=?,
            point_1st=?, point_2nd=?, point_3rd=?, point_co=?,
            qual_round_count=?, qual_heat_exclude=?,
            order_round_mode=?, order_round_count=?, order_free_max_runs=?, use_racer_master=?, use_m4laps=?
@@ -1793,7 +1802,7 @@ async def tournament_edit_save(
          qualifying_type, final_type, note, time_schedule,
          qual_heat_count, qual_heat_advance,
          qual_group_count, qual_group_advance,
-         qual_heat_final, qual_heat_final_advance, qual_final_advance,
+         qual_heat_final, qual_heat_final_advance, qual_final_advance, qual_ta_runs,
          point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
          order_round_mode, order_round_count, order_free_max_runs, use_racer_master, use_m4laps, tid),
     )

@@ -5,7 +5,7 @@
 //    JOIN転送（/api/timing/join）。S/G（自分の3レーン）ビーム検出。
 //  ＋スタートシーケンス（docs/14 DA11・docs/12.3 状態機械）：
 //    赤ボタン(本体) or リモコンCMD_SIGNAL →
-//    赤点灯 → 最低3秒＋ランダム → 緑点灯(green_t_us記録・F1式) → シグナルへCOMMAND
+//    赤点灯 → 2〜5秒ランダム → 緑点灯(green_t_us記録・F1式) → シグナルへCOMMAND
 //    灰ボタン or CMD_RESET → IDLEへ戻す（消灯）
 //  ⚠ 「レース中か」の意味づけはアプリ（DA1）。GWが持つのは“演出の進行”のみ。
 //  common（protocol/espnow_link/timesync/beam）を呼ぶ。TFTは最小デバッグ表示。
@@ -423,7 +423,7 @@ static void on_signal_pressed() {
   // 演出のみ即実行。HTTPS（レース作成）はここでは一切しない（#20・本関数はESP-NOW
   //  受信コールバック文脈からも呼ばれるため、ブロッキングI/O禁止）。作成はflush時。
   begin_internal_race();                          // 内部rid採番＋参加レーン初期化
-  s_red_dur_ms = 3000 + (esp_random() % 2000);   // 3.0〜5.0秒
+  s_red_dur_ms = 2000 + (esp_random() % 3000);   // 2.0〜5.0秒（DC26・旧3〜5秒）。RCも本関数を通るため同じ
   s_armed_ms   = millis();
   s_state      = ST_ARMED;
   signal_cmd(proto::CMD_RED);

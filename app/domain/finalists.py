@@ -34,7 +34,7 @@ def calc_finalists(qual_type: str, data: dict) -> int | None:
             return hc * fa
         else:
             return hc * gc * gp
-    if qual_type in ("point", "roundrobin", "order"):
+    if qual_type in ("point", "roundrobin", "order", "time_attack"):
         return data.get("qual_final_advance", 2)
     if qual_type == "order_winner":
         # 並び順（勝ち抜け）：最終段階の通過人数（advance_count）＝決勝進出人数

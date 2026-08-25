@@ -39,4 +39,5 @@ QUALIFYING_LABELS = {
     "roundrobin": "総当たり",
     "order": "並び順（ポイント制）",
     "order_winner": "並び順（勝ち抜け）",
+    "time_attack": "タイムアタック",
 }

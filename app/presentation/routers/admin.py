@@ -144,6 +144,7 @@ QUALIFYING_LABELS = {
     "point":          "ポイント",
     "roundrobin":     "総当たり",
     "order":          "並び順（ポイント制）",
+    "time_attack":    "タイムアタック",
 }
 
 
