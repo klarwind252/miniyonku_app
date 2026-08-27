@@ -48,7 +48,7 @@ static uint32_t s_green_off_ms = 0;              // 0=予約なし。緑ONで mi
 //  ※将来「低いブー」にしたい場合は SPT15＋12V昇圧(107608) に差替（保留中）。その時は
 //    ledcWriteTone 版へ戻す。音程固定(2.3kHz「ピー」)は自励式の制約。
 //  配線：GPIO4 →1kΩ→ SS8050(B)／E→GND／C→ブザー(−)／ブザー(＋)→5V（1N4148並列・帯=5V側）。
-static constexpr uint32_t BUZZER_MS = 2000;   // 鳴動長（最終確定：2秒＝緑と同じ・DC30）
+static constexpr uint32_t BUZZER_MS = 500;    // 鳴動長（★仮：0.5秒で試験中。緑は2秒維持。最終確定でDC更新）
 static uint32_t s_buzz_off_ms = 0;            // 0=非鳴動。0以外＝この millis で停止
 
 static bool s_assigned = false;
@@ -79,7 +79,7 @@ static void all_off() {
 static void green_on() {
   set_red(false); set_green(true);
   s_green_off_ms = millis() + GREEN_HOLD_MS;     // 2秒後の自動消灯を予約（DC30）
-  buzzer_on();                                   // 緑と同時にブザー2秒（DC30・自励式UGCM1205）
+  buzzer_on();                                   // 緑と同時にブザー（★仮0.5秒・BUZZER_MS）自励式UGCM1205
 }
 // 非ブロッキング消灯：毎loopで呼ぶ。delay()を使わないのでESP-NOW受信/在圏を止めない
 static void green_tick() {

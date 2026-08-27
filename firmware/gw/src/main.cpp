@@ -98,7 +98,7 @@ static void add_common_headers(HTTPClient& http) {
 
 // ---- fetch_layout の再取得間隔（残課題#14：成功=60s / 失敗=5s のバックオフ）--
 static constexpr uint32_t LAYOUT_OK_MS   = 60000;   // 取得成功後は60秒あける
-static constexpr uint32_t LAYOUT_NG_MS   =  5000;   // 失敗中は5秒で再試行
+static constexpr uint32_t LAYOUT_NG_MS   = 30000;   // ★失敗中は30秒で再試行（旧5秒＝TLSブロック頻発でESP-NOWを邪魔していた・T-9）
 static bool s_layout_ok = false;                    // 直近取得の成否
 
 // ---- 本体ボタン（docs/07.4）-----------------------------------------------
@@ -171,6 +171,10 @@ static bool cmd_nonce_seen(uint8_t src, uint32_t nonce) {
   return false;
 }
 static uint32_t s_armed_ms = 0;         // ARMEDに入った時刻
+// ★CMD_RED再送（灰→赤/初回赤の取りこぼし対策・2026-08-26）
+static constexpr uint32_t RED_RESEND_WINDOW_MS = 400;  // ARMED後この時間だけ赤を再送
+static constexpr uint32_t RED_RESEND_EVERY_MS  = 60;   // 再送間隔（60ms毎＝約6回×3連送）
+static uint32_t s_red_resend_ms = 0;    // 最後にCMD_REDを再送した時刻
 static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（3秒＋ランダム）
 static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）。走行式は0のまま
 
@@ -366,7 +370,7 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
   WiFiClientSecure _c; _c.setInsecure();            // K4：ローカル生成＋CN検証なし
   HTTPClient http;
   http.begin(_c, server_base() + "/api/timing/races");   // #9：DNS可ならホスト名/不可ならIP直
-  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
+  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);                         // Host(IP直時のみ)＋トークン
   http.addHeader("Content-Type", "application/json");
   uint32_t rid = 0;
@@ -385,7 +389,13 @@ static void signal_cmd(uint8_t code) {
   proto::CommandBody c = {};
   c.code = code;
   // 生きているシグナル（SG10 or 予備SG11）へ送る。既定はSG10。
-  mesh::send(proto::PT_COMMAND, s_active_sg_id, &c, sizeof(c));
+  // ★2026-08-25：ブロードキャストはACKが無く単発だと1回のパケットロスで取りこぼす
+  //   （起動直後の初回赤がSGに届かない事象＝T-9）。CMD_RED/GREEN/RESETは受信側で冪等なので
+  //   3連送して確実性を上げる（seqは毎回+1され重複排除に掛からず全て配送される）。
+  //   ⚠ 本関数はESP-NOWコールバック(CMD_RESET)からも呼ばれるため delay() は入れない。
+  for (int i = 0; i < 3; i++) {
+    mesh::send(proto::PT_COMMAND, s_active_sg_id, &c, sizeof(c));
+  }
 }
 
 // ---- 内部レース開始（内部rid採番＋参加レーン/緑/per-raceフラグの初期化）------
@@ -426,6 +436,7 @@ static void on_signal_pressed() {
   begin_internal_race();                          // 内部rid採番＋参加レーン初期化
   s_red_dur_ms = 2000 + (esp_random() % 3000);   // 2.0〜5.0秒（DC26・旧3〜5秒）。RCも本関数を通るため同じ
   s_armed_ms   = millis();
+  s_red_resend_ms = millis();                     // 再送タイマ基点（以後tick_sequenceで再送）
   s_state      = ST_ARMED;
   signal_cmd(proto::CMD_RED);
   s_set_now_req = true;                           // ★即SET要求（実描画はloopで・コールバック文脈のSPIクラッシュ回避）
@@ -462,6 +473,18 @@ static void on_reset_pressed() {
 
 // ARMED経過で緑へ。loopから呼ぶ。緑時刻はRAM保持のみ（POSTしない。flush時に同梱）。
 static void tick_sequence() {
+  // ★2026-08-26：ARMED直後の一定時間、CMD_REDを再送し続ける。
+  //   灰→赤直後などでサーバーTLS試行がloopを一瞬ブロックし、単発（3連送）のCMD_REDを
+  //   SGが取りこぼす事象（初回赤/灰→赤で点灯しない）への対策。SGはCMD_RED冪等なので
+  //   再送は無害。緑遷移（s_red_dur_ms＝2〜5秒）より十分手前で送り終わる。
+  if (s_state == ST_ARMED) {
+    uint32_t since = millis() - s_armed_ms;
+    if (since < RED_RESEND_WINDOW_MS &&
+        (millis() - s_red_resend_ms) >= RED_RESEND_EVERY_MS) {
+      s_red_resend_ms = millis();
+      signal_cmd(proto::CMD_RED);
+    }
+  }
   if (s_state == ST_ARMED && (millis() - s_armed_ms) >= s_red_dur_ms) {
     s_green_t_us = tsync::now_gw_us();          // 緑を出した瞬間＝green_t_us（F1式起点）
     s_state = ST_GREEN;
@@ -510,7 +533,7 @@ static void forward_join(const proto::JoinBody& jb) {
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, server_base() + "/api/timing/join");
-  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
+  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(body);
@@ -798,7 +821,7 @@ static void flush_spool() {
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, url);
-  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
+  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(payload);
@@ -863,7 +886,7 @@ static bool fetch_layout() {
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, server_base() + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
-  http.setConnectTimeout(3000); http.setTimeout(3000);   // サーバー不達でも最長3秒で諦める（loop停止の有限化・2026-08-24e）
+  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);
   int code = http.GET();
   bool ok = false;
