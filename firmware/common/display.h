@@ -380,8 +380,10 @@ static void draw_link_line() {
   s_spr.setTextFont(1);
   s_spr.setTextSize(1);
   s_spr.setTextColor(C_GREY, C_BLACK);   // 接続一覧はグレー（2026-08-24）
-  s_spr.setTextDatum(MC_DATUM);
-  s_spr.drawString(g_status.link, 186, 14);
+  s_spr.setTextDatum(MR_DATUM);          // 中央揃え(MC,186)→右揃えに変更（2026-08-28）
+  // ⚠右端はx=182固定。経過秒の部分更新スプライト領域(x=186〜316,y=2〜40)に
+  //  1pxでも入ると30fpsのdraw_time_field()に消され→4fpsで復活のチカチカが出る。
+  s_spr.drawString(g_status.link, 182, 14);
 }
 
 static void draw_idle() {
