@@ -8,6 +8,7 @@
 //  ピン（docs/12 §12.5 確定・XIAO C3: D0=GPIO2/D1=GPIO3/D2=GPIO4/D3=GPIO5）：
 //    赤灯=D0(GPIO2) / 緑灯=D3(GPIO5) / 手元ボタン=D1(GPIO3) / ブザー=D2(GPIO4)
 //  緑点灯は2秒で自動消灯（GREEN_HOLD_MS・DC30）。GW連動/単独の両経路で共通。
+//  GO時は緑を先に点け、0.05秒後に赤を消す＝赤緑オーバーラップ（GREEN_LEAD_MS・DC32）。暗転の隙間なし。
 //  ブザー（他励式SPT15）は緑と同時に1秒「ブー」（DC27）。1200Hz共振キャリアを約83Hzで
 //    ブツ切り(AM)して低い唸り＝カーレースのホーン風。音量は共振点のまま最大。GW連動/単独両方。
 //  ⚠ LEDは3W・約590mA。配線ミスのまま通電で素子が飛ぶ。まずゲート電圧のみで確認（docs/13.2）。
@@ -41,6 +42,15 @@ static constexpr uint32_t DEBOUNCE_MS = 20;
 static constexpr uint32_t GREEN_HOLD_MS = 2000;  // 緑点灯の保持時間（最終確定：2秒・DC30）
 static uint32_t s_green_off_ms = 0;              // 0=予約なし。緑ONで millis()+GREEN_HOLD_MS
 
+// ── 赤→緑オーバーラップ（DC32・非ブロッキング）────────────────────────
+//  F1の消灯式回避策として「暗転の隙間」を作らない。GO時に緑を先に点け、GREEN_LEAD_MS 後に
+//  赤を消す＝赤と緑が GREEN_LEAD_MS だけ同時点灯（重なり）してから赤が落ちる。
+//  ⚠ GW連動時のみ意味を持つ（直前にCMD_REDで赤が点灯しているため）。単独ボタン運用は
+//    元から赤なし（DA12）なので、この赤消灯予約は「既に消えている赤」への無害な空振り。
+//  ⚠ 計測非干渉：GW連動の計測起点はGW側 green_t_us（DA4/DA13）。SGの赤緑は表示演出のみ。
+static constexpr uint32_t GREEN_LEAD_MS = 50;    // 緑が先行して点く時間＝重なり（0.05秒。0.1秒にするなら100）
+static uint32_t s_red_off_ms = 0;                // 0=予約なし。緑ONで millis()+GREEN_LEAD_MS
+
 // ── SGブザー（DC30/DC31・自励式UGCM1205XP・緑と同時に2秒・非ブロッキング）──
 //  ★2026-08-26：他励式SPT15は5V駆動では音量不足だったため、手持ちの自励式UGCM1205XP
 //    （定格5V・5Vで85dB・共振2.3kHz・発振回路内蔵）を採用（DC31）。自励式ゆえ電圧をかける
@@ -72,12 +82,14 @@ static void buzzer_tick() {
 static void all_off() {
   set_red(false); set_green(false);
   s_green_off_ms = 0;                              // 保留中の緑消灯予約も破棄
+  s_red_off_ms   = 0;                              // 保留中の赤消灯予約も破棄（DC32）
   digitalWrite(PIN_BUZZER, LOW); s_buzz_off_ms = 0;// ブザーも即停止（RESET）
 }
 
 // 緑を点ける唯一の入口（GW連動 CMD_GREEN／単独ボタン の両方からこれを呼ぶ）
 static void green_on() {
-  set_red(false); set_green(true);
+  set_green(true);                               // ★まず緑を点ける（赤はまだ消さない＝重なりを作る・DC32）
+  s_red_off_ms   = millis() + GREEN_LEAD_MS;     // GREEN_LEAD_MS(0.05秒)後に赤を消す（GW連動時のみ実効）
   s_green_off_ms = millis() + GREEN_HOLD_MS;     // 2秒後の自動消灯を予約（DC30）
   buzzer_on();                                   // 緑と同時にブザー（★仮0.5秒・BUZZER_MS）自励式UGCM1205
 }
@@ -86,6 +98,13 @@ static void green_tick() {
   if (s_green_off_ms && (int32_t)(millis() - s_green_off_ms) >= 0) {
     set_green(false);
     s_green_off_ms = 0;
+  }
+}
+// 赤の遅延消灯（DC32・非ブロッキング）：緑ONから GREEN_LEAD_MS 経過で赤を落とす。毎loopで呼ぶ。
+static void red_tick() {
+  if (s_red_off_ms && (int32_t)(millis() - s_red_off_ms) >= 0) {
+    set_red(false);
+    s_red_off_ms = 0;
   }
 }
 
@@ -118,7 +137,8 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
         proto::CommandBody c; memcpy(&c, body, sizeof(c));
         switch (c.code) {                    // GWの指示通りに光る（DA11）
           case proto::CMD_RED:
-            set_red(true); set_green(false); s_green_off_ms = 0;   // 赤中は緑予約を消す
+            set_red(true); set_green(false);
+            s_green_off_ms = 0; s_red_off_ms = 0;                  // 赤中は緑予約/赤消灯予約を消す（DC32）
             Serial.println("[CMD] RED");   break;
           case proto::CMD_GREEN:
             green_on();                                            // 緑ON＋1秒後自動消灯（DC25）
@@ -173,6 +193,7 @@ void loop() {
   chfollow::tick(send_join);   // GWのchへ追従（在圏切れで1..13走査）
   tick_presence();
   green_tick();                // 緑の非ブロッキング自動消灯（DC25）
+  red_tick();                  // 赤の遅延消灯（緑先行・重なり0.05秒／DC32）
   buzzer_tick();               // ブザーの非ブロッキング停止（DC27）
   if (s_btn.pressed()) {                      // (2) 単独：即・緑（DA12）
     green_on();                               // 緑ON＋1秒後自動消灯（DC25）
