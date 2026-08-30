@@ -186,11 +186,22 @@ static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・gre
 //    活性化(1回目通過)＝参加確定。完走は cross ≥ target_laps+1（起点1回ぶん足す）。
 static uint32_t s_internal_rid = 0;
 static bool     s_race_active  = false;
-static uint32_t s_lane_cross[4] = {0,0,0,0};   // index 1..3（0は未使用）
-static bool     s_lane_active[4] = {false,false,false,false};
-// ラップ・合計計算用の打刻（自機S/G・index 1..3）。20260830追加（TFTラップ表示）。
+static uint32_t s_lane_cross[4] = {0,0,0,0};   // index 1..3＝マシン(スタートレーン)。★20260830b：物理レーン→マシンに変更
+static bool     s_lane_active[4] = {false,false,false,false};   // マシンの参加確定（1回目通過で活性）
+// ラップ・合計計算用の打刻（index 1..3）。20260830追加（TFTラップ表示）。
+//  ★20260830b改：index は物理レーンではなく「マシン（＝スタートレーン）」。
+//    TFTのL列は“そのレーンでスタートしたマシン”を追う（レーンチェンジ対応）。
 static uint64_t s_lane_first_us[4] = {0,0,0,0};  // 起点通過（走行式の合計の起点）
 static uint64_t s_lane_last_us[4]  = {0,0,0,0};  // 直近通過（ラップ＝前回との差分）
+// ---- ローテーション追跡（表示・完走判定用／DA7の簡易版・20260830b）---------
+//  物理レーンpのヒットを「どのマシンか」に帰属させる。直前レーンからの遷移を
+//  +1（レーンチェンジ標準）→ 0（LCなし・周回コース）→ +2 の優先順で照合し、
+//  一度観測した遷移(step)は以降そのマシンに固定する。
+//  ⚠ spool（サーバー送信データ）は従来どおり物理レーンのまま＝土管原則は不変。
+//    マシン単位になるのはTFT表示と完走判定だけ。厳密な同定はアプリ側（DA7）。
+static constexpr uint64_t MIN_LAP_US = 1000000ULL; // 1周の最短想定(1s)。未満の再ヒットは別マシンの通過とみなす
+static uint8_t s_m_lastlane[4] = {0,0,0,0};        // マシンmの直前物理レーン（0=未走行）
+static int8_t  s_m_step[4]     = {-1,-1,-1,-1};    // 観測したレーン遷移 0/+1/+2（-1=未確定）
 // s_need_flush：送信要求フラグ。全員完走 or 灰ボタンで立て、loopのtick_flushがHTTPSを実行。
 //   （on_reset_pressed はESP-NOWコールバックからも呼ばれるためHTTPSを直接呼ばない・#20）
 static bool     s_need_flush   = false;
@@ -412,7 +423,8 @@ static void begin_internal_race() {
   s_race_active = true;
   s_green_t_us  = 0;                              // 走行式は0のまま／F1は緑点灯時に上書き
   for (int i = 1; i <= 3; i++) { s_lane_cross[i] = 0; s_lane_active[i] = false;
-                                 s_lane_first_us[i] = 0; s_lane_last_us[i] = 0; }
+                                 s_lane_first_us[i] = 0; s_lane_last_us[i] = 0;
+                                 s_m_lastlane[i] = 0;    s_m_step[i] = -1; }
   disp::run_reset();                              // TFTのラップ表示もクリア（20260830）
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
 }
@@ -1251,26 +1263,52 @@ void loop() {
       Serial.printf("[TA] START rid=%u t=%llu\n",
                     s_internal_rid, (unsigned long long)s_green_t_us);
     }
-    // 参加レーン確定＋周回・ラップ記録（自機S/Gのみ・DA15/DA8）。
-    //   q=2は通過ではないので数えない（張り付きで周回が水増しされるのを防ぐ・20260830）。
+    // マシン帰属＋周回・ラップ記録（自機S/Gのみ・DA15/DA8・20260830b）。
+    //   q=2は通過ではないので数えない（張り付きで周回が水増しされるのを防ぐ）。
+    //   TFTのL列＝「そのレーンでスタートしたマシン」。レーンチェンジしても同じ列に積む。
     if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && s_state != ST_FINISH) {
-      int L = hit.lane;
+      int p = hit.lane;                                    // 物理レーン
       uint64_t t = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // q=1でAが欠けたらBで代用
-      s_lane_active[L] = true;
-      s_lane_cross[L]++;
-      disp::LaneRun& r = disp::g_run[L - 1];
-      if (s_lane_cross[L] == 1) {
-        s_lane_first_us[L] = t;                            // 起点通過（走行式の合計起点）
-      } else if (r.done < disp::MAX_LAPS) {                // 2回目以降＝1周確定
-        r.lap_ms[r.done++] = (uint32_t)((t - s_lane_last_us[L]) / 1000ULL);
+      // ---- ① 走行中マシンへの帰属：直前レーンからの遷移 +1 → 0 → +2 の優先順 ----
+      int m = 0;
+      static const int8_t ORDER[3] = {1, 0, 2};
+      for (int pref = 0; pref < 3 && m == 0; pref++) {
+        for (int c = 1; c <= 3; c++) {
+          if (!s_lane_active[c] || disp::g_run[c - 1].fin) continue;   // 未走行/完走済みは対象外
+          if ((t - s_lane_last_us[c]) < MIN_LAP_US) continue;          // 1秒未満の再ヒットは別マシン
+          if (s_m_step[c] >= 0 && pref > 0) continue;                  // 遷移確定済みは1巡目のみ照合
+          int8_t need = (s_m_step[c] >= 0) ? s_m_step[c] : ORDER[pref];
+          if (((s_m_lastlane[c] - 1 + need) % 3) + 1 == p) {
+            m = c;
+            if (s_m_step[c] < 0) s_m_step[c] = need;                   // 初観測の遷移を固定
+            break;
+          }
+        }
       }
-      s_lane_last_us[L] = t;
-      // 完走判定：起点1回＋規定周回（既存 maybe_autocomplete と同条件）
-      if (!r.fin && s_lane_cross[L] >= (uint32_t)s_target_laps + 1) {
-        r.fin = true;                                      // このレーンは完走（TFTにFIN表示）
-        uint64_t start = s_green_t_us ? s_green_t_us : s_lane_first_us[L];
-        r.total_ms = (uint32_t)((t - start) / 1000ULL);    // F1式=緑起点／走行式=初回通過起点
-        Serial.printf("[SEQ] L%d 完走 total=%.2fs\n", L, r.total_ms / 1000.0);
+      // ---- ② どの走行中マシンにも合わない → そのレーンのマシンのスタート ----
+      if (m == 0 && !s_lane_active[p]) m = p;
+      if (m != 0) {
+        s_lane_active[m] = true;
+        s_lane_cross[m]++;
+        s_m_lastlane[m] = (uint8_t)p;
+        disp::LaneRun& r = disp::g_run[m - 1];
+        if (s_lane_cross[m] == 1) {
+          s_lane_first_us[m] = t;                          // 起点通過（走行式の合計起点）
+        } else if (r.done < disp::MAX_LAPS) {              // 2回目以降＝1周確定
+          r.lap_ms[r.done++] = (uint32_t)((t - s_lane_last_us[m]) / 1000ULL);
+          Serial.printf("[LAP] M%d lap%u=%.2fs (lane%d)\n", m, (unsigned)r.done,
+                        r.lap_ms[r.done - 1] / 1000.0, p);
+        }
+        s_lane_last_us[m] = t;
+        // 完走判定：起点1回＋規定周回（maybe_autocomplete と同条件・マシン単位）
+        if (!r.fin && s_lane_cross[m] >= (uint32_t)s_target_laps + 1) {
+          r.fin = true;                                    // このマシンは完走（TFTにFIN表示）
+          uint64_t start = s_green_t_us ? s_green_t_us : s_lane_first_us[m];
+          r.total_ms = (uint32_t)((t - start) / 1000ULL);  // F1式=緑起点／走行式=初回通過起点
+          Serial.printf("[SEQ] M%d 完走 total=%.2fs\n", m, r.total_ms / 1000.0);
+        }
+      } else {
+        Serial.printf("[SG] 帰属不能 lane=%u（表示のみスキップ・記録は継続）\n", p);
       }
     }
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
