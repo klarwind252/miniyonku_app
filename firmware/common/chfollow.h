@@ -24,7 +24,7 @@ namespace chfollow {
 using JoinSender = void (*)();   // 現chでJOINを1本撒くコールバック（機種ごとのkindを含む）
 
 // 走査パラメータ（GWは2sごと在席ビーコン＋JOIN即応なので短い滞在で拾える）。
-static constexpr uint32_t SWEEP_AFTER_MS = 4000;   // 在圏が切れたと見なすまで
+static constexpr uint32_t SWEEP_AFTER_MS = 12000;  // 在圏切れ判定（GWビーコン2s×6本の余裕。GW側の数秒停止で走査に入らない・2026-08-24）
 static constexpr uint32_t SWEEP_DWELL_MS = 500;    // 1chあたりの滞在（JOIN撒いて待つ）
 
 // 起動時の初手ch：前回学習値（NVS "m4cfg"/"ch"）→無ければ def（=ブートストラップ）。
@@ -49,12 +49,19 @@ inline void tick(JoinSender send_join) {
     return;
   }
 
-  // 在圏が切れた → 走査
+  // 在圏が切れた → 走査。ただし最初の1滞在は「現chのままJOIN再送」（2026-08-24）。
+  //   GWが一時的に黙っていただけなら現chで即復帰でき、無駄なch離脱をしない。
   persisted = false;
-  if (!sweeping) { sweeping = true; last_hop = nowm - SWEEP_DWELL_MS; }  // 即1hop目
+  static bool first_dwell = false;
+  if (!sweeping) {
+    sweeping = true; first_dwell = true;
+    last_hop = nowm;
+    if (send_join) send_join();          // 現chで即JOIN（chは動かさない）
+    return;
+  }
   if (nowm - last_hop < SWEEP_DWELL_MS) return;
   last_hop = nowm;
-
+  if (first_dwell) { first_dwell = false; }
   uint8_t next = (uint8_t)((mesh::channel() % 13) + 1);   // 1..13 を巡回
   mesh::set_channel(next);
   if (send_join) send_join();            // GWの即HEARTBEATを誘発し、正chで在圏回復
