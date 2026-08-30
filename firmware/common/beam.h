@@ -40,6 +40,7 @@ struct Hit {
   uint64_t t_a_us;    // A遮断µs（自分時計）
   uint64_t t_b_us;    // B遮断µs（0=取れず）
   uint8_t  quality;   // 0=両取得 / 1=片ビーム欠 / 2=両ビーム欠(張り付き・A1)
+  uint8_t  miss;      // q=1時どちらが欠けたか：1=A欠け(Bのみ) / 2=B欠け(Aのみ) / 0=該当なし（20260830c）
 };
 
 // ---- 張り付き(A1)監視用の状態（レーンごと）--------------------------------
@@ -120,6 +121,7 @@ static bool poll_stick(Hit& out) {
       out.t_a_us  = t;                    // 張り付き検知時刻（参考値）
       out.t_b_us  = 0;
       out.quality = 2;                    // A1：両ビーム欠（張り付き）
+      out.miss    = 0;
       // エッジ由来の未確定分は捨てる（張り付き中の片エッジは通過ではない）
       noInterrupts();
       s_a_edge[i] = 0; s_b_edge[i] = 0;
@@ -151,6 +153,7 @@ static bool poll(Hit& out) {
     out.t_a_us  = a;
     out.t_b_us  = b;
     out.quality = have_both ? 0 : 1;
+    out.miss    = have_both ? 0 : (a ? 2 : 1);   // Aのみ有=B欠け(2) / Bのみ有=A欠け(1)
 
     noInterrupts();
     s_a_edge[i] = 0; s_b_edge[i] = 0;

@@ -84,6 +84,7 @@ static void enqueue_event(const beam::Hit& hit) {
     //   それ以外は S4 に従い未同期なら 3 で上書き。
     p.body.quality = (hit.quality == 2) ? 2
                      : (tsync::is_synced() ? hit.quality : 3);
+    p.body.miss    = hit.miss;   // 片ビーム欠のときA/Bどちらか（20260830c）
     p.body._pad    = 0;
     p.body.t_us    = tsync::to_gw_us(hit.t_a_us);            // GW時刻へ換算（S3）
     p.body.t_us_b  = hit.t_b_us ? tsync::to_gw_us(hit.t_b_us) : 0;

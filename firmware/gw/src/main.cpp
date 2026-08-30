@@ -243,20 +243,37 @@ static void ridmap_store(uint32_t internal, uint32_t server) {
 //  C1 Lostは give-up通知(PT_LOST_NOTICE)で立て、灰リセットまで出しっぱなし。
 static bool     s_race_q2 = false;  static uint8_t s_race_q2_src = 0;  // A1：両ビーム欠(q=2)
 static bool     s_race_q1 = false;  static uint8_t s_race_q1_src = 0;  // A2：片ビーム欠(q=1)
+static uint8_t  s_race_q2_lane = 0;                                    // A1発生レーン（1..3・20260830c）
+static uint8_t  s_race_q1_lane = 0;                                    // A2発生レーン（1..3）
+static uint8_t  s_race_q1_miss = 0;                                    // A2でどちら欠け：1=A/2=B
 static bool     s_beam_bad = false;  // Beam×：片/両ビーム欠を検知したら保持（灰リセットで解除）
 static uint32_t s_last_q3_ms     = 0;   // B1：未同期打刻(q=3)を最後に受けた時刻→Sync×(自動復帰)
 static uint32_t s_post_err_until = 0;   // 24.4⑤：灰ボタン後3秒だけA1/A2を出す窓(millis基準)
 static uint8_t  s_lost_src       = 0;   // C1：give-up通知の発生SQ(Lostラベル用・24.14)
 
 // 受信/自機の通過qualityを per-raceフラグへ反映（A1/A2/Sync集約の入口）。
-static inline void note_quality(uint8_t q, uint8_t src) {
-  if (q == 2)      { if (!s_race_q2) { s_race_q2 = true; s_race_q2_src = src; } }
-  else if (q == 1) { if (!s_race_q1) { s_race_q1 = true; s_race_q1_src = src; } }
+//  lane/miss を添えて「どのレーンのA/Bか」まで保持する（20260830c）。
+static inline void note_quality(uint8_t q, uint8_t src, uint8_t lane = 0, uint8_t miss = 0) {
+  if (q == 2)      { if (!s_race_q2) { s_race_q2 = true; s_race_q2_src = src; s_race_q2_lane = lane; } }
+  else if (q == 1) { if (!s_race_q1) { s_race_q1 = true; s_race_q1_src = src; s_race_q1_lane = lane; s_race_q1_miss = miss; } }
   if (q == 1 || q == 2) s_beam_bad = true;   // 片/両ビーム欠でBeam×（灰リセットまで保持）
   else if (q == 3) { s_last_q3_ms = millis(); }
 }
 
-// ---- 排他運用（GW/RC/SG は各ペア1台のみ・在席テーブル）----------------------
+// ビーム欠エラーのラベル生成：「SQ0 L1 A」等（機体名＋レーン＋A/B）。20260830c。
+//  src=node_id（0..5=SQ / 6,7=GW）。lane=1..3。miss=1(A欠け)/2(B欠け)/0(不明)。
+static void build_beam_label(char* out, size_t n, uint8_t src, uint8_t lane, uint8_t miss) {
+  const char* kind = (src <= 5) ? "SQ" : "GW";
+  char ab[3] = "";
+  if (miss == 1) strcpy(ab, "A");
+  else if (miss == 2) strcpy(ab, "B");
+  if (lane >= 1 && lane <= 3) {
+    if (ab[0]) snprintf(out, n, "%s%u L%u %s", kind, src, lane, ab);
+    else       snprintf(out, n, "%s%u L%u", kind, src, lane);
+  } else {
+    snprintf(out, n, "%s%u", kind, src);
+  }
+}
 //  方針（本改修）：GW6/7・RC8/9・SG10/11 は「どちらか1台だけ電源ON」で運用する。
 //    同種が2台“生きている”ことを検知したら排他ロックし、新規スタートを受け付けない
 //    （既存の「GW2台オン検知」思想＝docs/14 §14.11 を RC/SG にも統合）。
@@ -427,6 +444,7 @@ static void begin_internal_race() {
                                  s_m_lastlane[i] = 0;    s_m_step[i] = -1; }
   disp::run_reset();                              // TFTのラップ表示もクリア（20260830）
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
+  s_race_q2_lane = 0; s_race_q1_lane = 0; s_race_q1_miss = 0;   // A/B・レーンもclear（20260830c）
 }
 
 // tick_display を介さず SET 画面を即時に1回描くための前方宣言（赤押下の即応用）。
@@ -652,7 +670,7 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
         mesh::send_ack(proto::PT_EVENT_ACK, h.src, h.seq);   // ingest前ACK（S5）
         RawEvent e{ h.src, h.boot_id, h.seq, b.lane, b.quality, b.t_us, b.t_us_b };
         spool_append(e);
-        note_quality(b.quality, h.src);   // A1/A2/Sync集約（27章）
+        note_quality(b.quality, h.src, b.lane, b.miss);   // A1/A2/Sync集約（27章・A/Bまで）
         Serial.printf("[EV] src=SQ%u lane=%u q=%u t=%llu\n",
                       h.src, b.lane, b.quality, (unsigned long long)b.t_us);
       }
@@ -1187,11 +1205,11 @@ static void tick_display() {
       // F-2：描画は配列順。enumの「最後尾」意図どおり A1→A2→Lost の順に積む。
       if (a1) {
         errs[cnt].kind = disp::ERR_SENSOR_BOTH;                       // A1 両ビーム欠
-        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_race_q2_src); cnt++;
+        build_beam_label(errs[cnt].label, sizeof(errs[cnt].label), s_race_q2_src, s_race_q2_lane, 0); cnt++;
       }
       if (a2 && cnt < 3) {
         errs[cnt].kind = disp::ERR_SPEED_ONLY;                        // A2 片ビーム欠
-        snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_race_q1_src); cnt++;
+        build_beam_label(errs[cnt].label, sizeof(errs[cnt].label), s_race_q1_src, s_race_q1_lane, s_race_q1_miss); cnt++;
       }
       if (disp::g_status.lost && cnt < 3) {
         errs[cnt].kind = disp::ERR_SECTOR_COMM;                       // C1（最後尾・出しっぱなし）
@@ -1314,7 +1332,7 @@ void loop() {
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };
     spool_append(e);
-    note_quality(hit.quality, (uint8_t)NODE_ID);   // 自機S/GのA1/A2も拾う（27章）
+    note_quality(hit.quality, (uint8_t)NODE_ID, hit.lane, hit.miss);   // 自機S/GのA1/A2も拾う（27章・A/Bまで）
     Serial.printf("[SG] lane=%u q=%u rid=%u cross=%u\n",
                   hit.lane, hit.quality, s_internal_rid,
                   (hit.lane>=1&&hit.lane<=3)?s_lane_cross[hit.lane]:0);

@@ -595,12 +595,12 @@ static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
       out[n++] = "2) floor W-sensor";
       out[n++] = "3) wiring / stray light";
       break;
-    case ERR_SPEED_ONLY:  // A2：片ビーム欠(速度未計測)・24.6（label=SQ/レーン）
-      out[n++] = "! SPEED NOT MEASURED";
-      out[n++] = "One beam missing.";
-      out[n++] = "1) clean floor";
+    case ERR_SPEED_ONLY:  // A2：片ビーム欠(速度未計測)・24.6（label=SQ/レーン/AB）
+      out[n++] = "! BEAM NOT RECEIVED";
+      out[n++] = "Clean the floor slit.";
+      out[n++] = "1) clean floor hole";
       out[n++] = "2) floor sensor";
-      out[n++] = "3) ceiling LED";
+      out[n++] = "3) ceiling LED aim";
       break;
     case ERR_RC_DUP:      // リモコン2台検知（本改修で追加・GW2台と同思想）
       out[n++] = "! REMOTE x2";
@@ -629,7 +629,7 @@ static void err_summary_line(const ErrItem& e, char* out, size_t n) {
     case ERR_NODE_LOST: snprintf(out, n, "- %s no response", e.label); break;
     case ERR_BEAM_CUT:  snprintf(out, n, "- %s beam cut", e.label); break;
     case ERR_SENSOR_BOTH: snprintf(out, n, "- %s dual sensor fault", e.label); break;
-    case ERR_SPEED_ONLY:  snprintf(out, n, "- %s speed not measured", e.label); break;
+    case ERR_SPEED_ONLY:  snprintf(out, n, "- %s beam not received (clean slit)", e.label); break;
     case ERR_RC_DUP:    snprintf(out, n, "- remote x2 (power off 1)"); break;
     case ERR_SG_DUP:    snprintf(out, n, "- signal x2 (power off 1)"); break;
     case ERR_SECTOR_COMM: snprintf(out, n, "- %s comm lost (1 dropped)", e.label); break;
@@ -650,11 +650,13 @@ static void draw_error(const ErrItem* errs, int cnt) {
     int lh = (font == 4) ? 30 : 22;
     int y = 8;
     for (int i = 0; i < n; i++) { s_spr.drawString(lines[i], 8, y); y += lh; }
-    // ノード離脱/ビーム切れは1行目右側にlabel（SQ名/レーン）を重ねて出す
+    // ラベル（機体/レーン/AB）を1行目右側に重ねて出す：離脱・ビーム切れ・A1・A2
     if (cnt == 1 && errs[0].label[0] &&
-        (errs[0].kind == ERR_NODE_LOST || errs[0].kind == ERR_BEAM_CUT)) {
+        (errs[0].kind == ERR_NODE_LOST || errs[0].kind == ERR_BEAM_CUT ||
+         errs[0].kind == ERR_SENSOR_BOTH || errs[0].kind == ERR_SPEED_ONLY)) {
+      s_spr.setTextFont(2);   // ラベルは小さめ（"SQ0 L1 A"が収まるように）
       s_spr.setTextDatum(TR_DATUM);
-      s_spr.drawString(errs[0].label, W - 8, 8);
+      s_spr.drawString(errs[0].label, W - 8, 10);
       s_spr.setTextDatum(TL_DATUM);
     }
   } else {

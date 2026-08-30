@@ -102,7 +102,8 @@ struct JoinAckBody {
 struct EventBody {
   uint8_t  lane;         // 物理レーン 1..3
   uint8_t  quality;      // 上記
-  uint16_t _pad;
+  uint8_t  miss;         // q=1時どちらが欠けたか：1=A欠け/2=B欠け/0=該当なし（20260830c・旧_padの1byte流用）
+  uint8_t  _pad;
   uint64_t t_us;         // A素子の打刻（GW時刻・µs）
   uint64_t t_us_b;       // B素子の打刻（µs・無ければ0）
 };
