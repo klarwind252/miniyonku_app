@@ -63,6 +63,19 @@ struct Status {
   char link[48]  = "-";     // 接続中の機材ID一覧（main側が在席から生成）
 };
 
+// ---- レーン別 走行データ（ON TRACK/FINISHのラップ表示用・main側が更新）------
+//  docs/20.3-20.4：レーン枠内にラップ縦テーブル＋周回x/y＋完走合計を出すための器。
+//  main.cpp が自機S/G通過のたびに書き込み、begin_internal_race で全消去する。
+static constexpr int MAX_LAPS = 9;               // docs/14 DA15：周回は最大9
+struct LaneRun {
+  uint8_t  done     = 0;      // 確定したラップ数（0..MAX_LAPS）
+  bool     fin      = false;  // 規定周回を走り切った＝このレーンは完走
+  uint32_t lap_ms[MAX_LAPS] = {0};  // 各周のラップ(ms)
+  uint32_t total_ms = 0;      // 完走時の合計(ms)。F1式=緑起点／走行式=初回通過起点
+};
+static LaneRun g_run[3];      // index 0..2 = L1..L3
+static inline void run_reset() { for (int i = 0; i < 3; i++) g_run[i] = LaneRun(); }
+
 // ---- エラー種別（docs/20.5 優先順位）---------------------------------------
 //  ⚠ RC/SG重複（ERR_RC_DUP/ERR_SG_DUP）は本改修で追加した新種別。
 //     docs/20章追記（文言確定）にはまだ無いので、確定日本語文言は後日そこへ追記すること。
@@ -450,24 +463,45 @@ static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
   s_spr.drawString(t, W - 8, 8);
   draw_link_line();   // 上段中央に接続機材ID一覧（ON TRACKとタイムの間）
 
-  // 3レーン枠（枠線＝レーン色）。中身のラップは実データ流し込みで拡張。
+  // 3レーン枠（枠線＝レーン色）。周回カウンタとラップは g_run の実データを描く。
   int lane_w = (W - 16) / 3;
+  int row_h  = (laps <= 3) ? 24 : (laps <= 6) ? 20 : 16;   // docs/20.3：周回数で段階縮小
   for (int i = 0; i < 3; i++) {
     int x = 8 + i * lane_w;
+    const LaneRun& r = g_run[i];
     s_spr.drawRect(x, 40, lane_w - 4, BODY_H - 48, lane_color(i + 1));
     s_spr.setTextDatum(TL_DATUM);
     s_spr.setTextFont(2);
     char h[12]; snprintf(h, sizeof(h), "L%d", i + 1);
     s_spr.setTextColor(C_WHITE, C_BLACK);
     s_spr.drawString(h, x + 4, 44);
+    // 周回カウンタ x/y（完走したら FIN 表示・レーン色）
     s_spr.setTextDatum(TR_DATUM);
-    char p[12]; snprintf(p, sizeof(p), "0/%d", laps);
+    char p[12];
+    if (r.fin) snprintf(p, sizeof(p), "FIN");
+    else       snprintf(p, sizeof(p), "%u/%d", (unsigned)r.done, laps);
     s_spr.setTextColor(lane_color(i + 1), C_BLACK);
     s_spr.drawString(p, x + lane_w - 8, 44);
+    // ラップ縦テーブル（周番号=灰・小 / タイム=白・右揃え）
+    int y = 44 + row_h;
+    for (int k = 0; k < r.done && k < MAX_LAPS; k++) {
+      if (y + row_h > 40 + (BODY_H - 48)) break;           // 枠からはみ出さない
+      char num[4]; snprintf(num, sizeof(num), "%d", k + 1);
+      s_spr.setTextDatum(TL_DATUM);
+      s_spr.setTextColor(C_GREY, C_BLACK);
+      s_spr.drawString(num, x + 6, y);
+      char lt[12]; snprintf(lt, sizeof(lt), "%.2f", r.lap_ms[k] / 1000.0);
+      s_spr.setTextDatum(TR_DATUM);
+      s_spr.setTextColor(C_WHITE, C_BLACK);
+      s_spr.drawString(lt, x + lane_w - 8, y);
+      y += row_h;
+    }
   }
 }
 
 // ===== 計測終了(FINISH)画面（docs/20.4）====================================
+//  各枠：L番号 → 合計タイム（中央・大きく）→ 各周ラップ縦テーブル。
+//  完走レーンは合計を表示、未完走（DNF等）は「--.-」のまま。
 static void draw_finish(int laps) {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
   s_spr.setTextDatum(ML_DATUM);
@@ -477,18 +511,43 @@ static void draw_finish(int laps) {
   s_spr.drawString("FINISH", 24, 12);
 
   int lane_w = (W - 16) / 3;
+  int row_h  = (laps <= 3) ? 20 : (laps <= 6) ? 18 : 16;   // docs/20.4：段階縮小
   for (int i = 0; i < 3; i++) {
     int x = 8 + i * lane_w;
+    const LaneRun& r = g_run[i];
     s_spr.drawRect(x, 30, lane_w - 4, BODY_H - 38, lane_color(i + 1));
     s_spr.setTextDatum(TL_DATUM);
     s_spr.setTextFont(2);
     char h[12]; snprintf(h, sizeof(h), "L%d", i + 1);
     s_spr.setTextColor(C_WHITE, C_BLACK);
     s_spr.drawString(h, x + 4, 34);
-    // 合計タイム（中央・大きく）はプレースホルダ
+    // 合計タイム（中央・大きく）。完走のみ実値、未完走は "--.-"
     s_spr.setTextDatum(MC_DATUM);
     s_spr.setTextFont(4);
-    s_spr.drawString("--.-", x + (lane_w - 4) / 2, 70);
+    char tot[12];
+    if (r.fin) {
+      if (r.total_ms >= 100000) snprintf(tot, sizeof(tot), "%.1f", r.total_ms / 1000.0);
+      else                      snprintf(tot, sizeof(tot), "%.2f", r.total_ms / 1000.0);
+    } else {
+      snprintf(tot, sizeof(tot), "--.-");
+    }
+    s_spr.setTextColor(r.fin ? C_WHITE : C_GREY, C_BLACK);
+    s_spr.drawString(tot, x + (lane_w - 4) / 2, 62);
+    // 各周ラップ縦テーブル
+    s_spr.setTextFont(2);
+    int y = 82;
+    for (int k = 0; k < r.done && k < MAX_LAPS; k++) {
+      if (y + row_h > 30 + (BODY_H - 38)) break;
+      char num[4]; snprintf(num, sizeof(num), "%d", k + 1);
+      s_spr.setTextDatum(TL_DATUM);
+      s_spr.setTextColor(C_GREY, C_BLACK);
+      s_spr.drawString(num, x + 6, y);
+      char lt[12]; snprintf(lt, sizeof(lt), "%.2f", r.lap_ms[k] / 1000.0);
+      s_spr.setTextDatum(TR_DATUM);
+      s_spr.setTextColor(C_WHITE, C_BLACK);
+      s_spr.drawString(lt, x + lane_w - 8, y);
+      y += row_h;
+    }
   }
 }
 

@@ -143,7 +143,7 @@ static inline void buzzer_error_edge(bool err_now) {
 }
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
-enum GwState { ST_SPLASH, ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE };
+enum GwState { ST_SPLASH, ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE, ST_FINISH };
 static GwState s_state = ST_IDLE;
 static uint32_t s_splash_ms = 0;                 // スプラッシュ開始時刻（ST_SPLASH中）
 static constexpr uint32_t SPLASH_MS = 3200;      // スプラッシュ総時間（締めの大拡大ぶん延長）
@@ -188,6 +188,9 @@ static uint32_t s_internal_rid = 0;
 static bool     s_race_active  = false;
 static uint32_t s_lane_cross[4] = {0,0,0,0};   // index 1..3（0は未使用）
 static bool     s_lane_active[4] = {false,false,false,false};
+// ラップ・合計計算用の打刻（自機S/G・index 1..3）。20260830追加（TFTラップ表示）。
+static uint64_t s_lane_first_us[4] = {0,0,0,0};  // 起点通過（走行式の合計の起点）
+static uint64_t s_lane_last_us[4]  = {0,0,0,0};  // 直近通過（ラップ＝前回との差分）
 // s_need_flush：送信要求フラグ。全員完走 or 灰ボタンで立て、loopのtick_flushがHTTPSを実行。
 //   （on_reset_pressed はESP-NOWコールバックからも呼ばれるためHTTPSを直接呼ばない・#20）
 static bool     s_need_flush   = false;
@@ -408,7 +411,9 @@ static void begin_internal_race() {
   if (s_internal_rid == 0) s_internal_rid = 1;   // wrap回避（0は「未開始」の意味に予約）
   s_race_active = true;
   s_green_t_us  = 0;                              // 走行式は0のまま／F1は緑点灯時に上書き
-  for (int i = 1; i <= 3; i++) { s_lane_cross[i] = 0; s_lane_active[i] = false; }
+  for (int i = 1; i <= 3; i++) { s_lane_cross[i] = 0; s_lane_active[i] = false;
+                                 s_lane_first_us[i] = 0; s_lane_last_us[i] = 0; }
+  disp::run_reset();                              // TFTのラップ表示もクリア（20260830）
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
 }
 
@@ -854,10 +859,10 @@ static void maybe_autocomplete() {
   }
   if (!(any && all)) return;
 
-  Serial.printf("[SEQ] 全員完走 rid=%u -> 自動送信\n", s_internal_rid);
+  Serial.printf("[SEQ] 全員完走 rid=%u -> FINISH表示＋自動送信\n", s_internal_rid);
   s_race_active   = false;        // レースを閉じる
   s_need_flush    = true;         // 送信はloopのtick_flushが実行
-  s_state         = ST_IDLE;      // 待機へ
+  s_state         = ST_FINISH;    // 計測終了(FINISH)画面へ（灰リセットで待機に戻る・20260830）
   s_sg_beeped     = false;
   s_green_t_us    = 0;
   s_post_err_until = millis() + 3000;   // 24.4⑤：A1/A2を3秒だけ表示
@@ -1207,6 +1212,10 @@ static void tick_display() {
       s_show_ontrack = true;      // 以降、経過秒フィールドを約30fpsで重ねる
       break;
     }
+    case ST_FINISH:
+      disp::draw_finish(s_target_laps);   // 合計＋各周ラップ（docs/20.4・20260830実装）
+      s_show_ontrack = false;             // 経過秒カウントは消す（docs/20.4）
+      break;
   }
   buzzer_error_edge(false);              // エラー無し＝立ち上がり検出をリセット（再発時にまた1回鳴る）
   disp::commit();                        // ステータスバーを重ねて一括転送
@@ -1229,11 +1238,40 @@ void loop() {
     static uint32_t self_seq = 0;
     // 走行式(赤ボタン未使用)：最初のS/G通過で内部レースを開始する（F1式は既にactive）。
     //   これで s_internal_rid が採番され、以降の自機/SQイベントが同じ内部ridで刻まれる。
-    if (!s_race_active) begin_internal_race();
-    // 参加レーン確定＋周回カウント（自機S/Gのみ・DA15/DA8）。
-    if (hit.lane >= 1 && hit.lane <= 3) {
-      s_lane_active[hit.lane] = true;
-      s_lane_cross[hit.lane]++;
+    // FINISH表示中は新レースを起こさない（余走の通過は完走レースのridのまま記録され、
+    //   FINISH画面のラップ表示も保持される。次レースは灰リセット後・20260830）。
+    if (!s_race_active && s_state != ST_FINISH) begin_internal_race();
+    bool was_idle_hit = (s_state == ST_IDLE);   // 通過ピッ判定用（遷移前の状態を保持）
+    // 走行式(TA)：待機のまま最初の「正常通過(q=0/1)」が来たら ON TRACK＋計測開始。
+    //   q=2（張り付き＝A1：故障・断線・CO）は通過ではないのでスタートさせない（20260830）。
+    if (s_state == ST_IDLE && hit.quality != 2) {
+      s_green_t_us = hit.t_a_us ? hit.t_a_us : tsync::now_gw_us();
+      s_state      = ST_RACE;          // TFTを ON TRACK に切替
+      render_ontrack_now();            // 緑同様、即時に計測中画面を描く
+      Serial.printf("[TA] START rid=%u t=%llu\n",
+                    s_internal_rid, (unsigned long long)s_green_t_us);
+    }
+    // 参加レーン確定＋周回・ラップ記録（自機S/Gのみ・DA15/DA8）。
+    //   q=2は通過ではないので数えない（張り付きで周回が水増しされるのを防ぐ・20260830）。
+    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && s_state != ST_FINISH) {
+      int L = hit.lane;
+      uint64_t t = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // q=1でAが欠けたらBで代用
+      s_lane_active[L] = true;
+      s_lane_cross[L]++;
+      disp::LaneRun& r = disp::g_run[L - 1];
+      if (s_lane_cross[L] == 1) {
+        s_lane_first_us[L] = t;                            // 起点通過（走行式の合計起点）
+      } else if (r.done < disp::MAX_LAPS) {                // 2回目以降＝1周確定
+        r.lap_ms[r.done++] = (uint32_t)((t - s_lane_last_us[L]) / 1000ULL);
+      }
+      s_lane_last_us[L] = t;
+      // 完走判定：起点1回＋規定周回（既存 maybe_autocomplete と同条件）
+      if (!r.fin && s_lane_cross[L] >= (uint32_t)s_target_laps + 1) {
+        r.fin = true;                                      // このレーンは完走（TFTにFIN表示）
+        uint64_t start = s_green_t_us ? s_green_t_us : s_lane_first_us[L];
+        r.total_ms = (uint32_t)((t - start) / 1000ULL);    // F1式=緑起点／走行式=初回通過起点
+        Serial.printf("[SEQ] L%d 完走 total=%.2fs\n", L, r.total_ms / 1000.0);
+      }
     }
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };
@@ -1242,7 +1280,7 @@ void loop() {
     Serial.printf("[SG] lane=%u q=%u rid=%u cross=%u\n",
                   hit.lane, hit.quality, s_internal_rid,
                   (hit.lane>=1&&hit.lane<=3)?s_lane_cross[hit.lane]:0);
-    if (s_state == ST_IDLE && !s_sg_beeped) {  // 待機中の「最初の」S/G通過のみ 60ms「ピッ」（29章）
+    if (was_idle_hit && !s_sg_beeped) {  // 待機からの「最初の」S/G通過のみ 60ms「ピッ」（29章・TA開始時も鳴る）
       buzzer_beep();
       s_sg_beeped = true;                       // 以降は灰リセットまで鳴らさない（TA周回の毎回鳴り防止）
     }
