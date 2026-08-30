@@ -916,17 +916,15 @@ static bool fetch_layout() {
 }
 
 // ---- fetch_layout の呼び出し間隔管理（#14：成功60s / 失敗5s）---------------
-// レイアウト取得は「起動後に1回だけ」（要望2026-08-24）。定期取得は廃止。
-//   起動直後はWiFi未接続のことが多いので、接続できるまでは数秒間隔で試し、
-//   1回成功したら以降は取りに行かない（TLS試行でESP-NOWを巻き込まない）。
 static void tick_fetch_layout() {
-  if (s_state != ST_IDLE) return;      // SET〜計測中は通信しない
-  static bool done = false;            // 1回成功したら終了
-  if (done) return;
+  if (s_state != ST_IDLE) return;   // SET〜計測中は通信で止めない（描画・ボタン最優先・2026-08-24e）
   static uint32_t last = 0;
-  if (last != 0 && (millis() - last) < 5000) return;   // 未取得のうちは5秒間隔で再試行
-  last = millis();
-  if (fetch_layout()) { s_layout_ok = true; done = true; Serial.println("[LAYOUT] 起動時取得 完了（以降は取得しない）"); }
+  static bool first = true;
+  uint32_t interval = s_layout_ok ? LAYOUT_OK_MS : LAYOUT_NG_MS;
+  if (!first && (millis() - last) < interval) return;
+  first = false;
+  last  = millis();
+  s_layout_ok = fetch_layout();
 }
 
 // ---- 本体ボタン読み取り ----------------------------------------------------
