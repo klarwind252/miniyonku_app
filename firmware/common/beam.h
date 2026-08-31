@@ -42,6 +42,10 @@ static inline uint8_t mask() { return s_mask; }
 //  A-B穴間隔は 30mm（docs/05・20260804変更確定）。最低想定 3m/s → A→B は最大10ms。
 static constexpr uint32_t DEBOUNCE_US  = 1500;   // 跳ね除去（遮断幅19msより十分小）
 static constexpr uint32_t PAIR_WAIT_US = 12000;  // A→B待ち猶予(30mm/3m/s=10ms+余裕)。超えたら片ビーム(q=1)
+// 20260831h：1通過確定後の不応期。A/Bが割れて確定しても、対の残り物や車体長ぶんの
+//   遮断残響（最長75ms程度）を新規通過として二重カウントしないよう締め出す。
+//   地点間の最短到達(MIN_LAP_US=1s)より十分短い100msに設定（隣地点の正規通過は締め出さない）。
+static constexpr uint32_t REFRACTORY_US = 100000; // 100ms（対確定後の同レーン締め出し）
 // 24.5 A1：両ビーム欠（LED破損・センサー破損・光軸ズレ・CO停車・外乱光の感度飽和）。
 //   遮断(LOW)が STICK_US 継続したら「張り付き」＝異常として quality=2 を1回発火。
 //   3秒＝READY感知不能エラー／A1故障判定の共通しきい値（20260831b）。
@@ -61,6 +65,10 @@ struct Hit {
 //  遮断が始まった時刻を保持。STICK_US 継続で quality=2 を1回発火。復帰で解除。
 static uint64_t s_block_since[LANES] = {0};   // 0=非遮断 / 非0=遮断開始µs
 static bool     s_stick_fired[LANES] = {false}; // このブロック区間で発火済みか
+// 20260831h：1通過(A/B対)確定後の不応期。A→Bが割れて確定した直後に、対の残り物や
+//   3cm由来の遅延エッジを「新しい通過」として二重カウントしないための締め出し窓。
+//   poll確定時に now_us()+REFRACTORY_US を入れ、これを過ぎるまで同レーンの新規発火を捨てる。
+static uint64_t s_refractory_until[LANES] = {0};
 
 // ---- ISR用の生状態（レーンごと・volatile）---------------------------------
 static volatile uint64_t s_a_edge[LANES] = {0};
@@ -215,6 +223,15 @@ static bool poll(Hit& out) {
 
     if (a == 0 && b == 0) continue;
 
+    // 20260831h：不応期中（直前の対確定直後）は、対の残り物や車体残響を新規通過に
+    //   しない。エッジを読み捨ててクリアし、二重カウント／誤レーン記録を止める。
+    if (now_us() < s_refractory_until[i]) {
+      noInterrupts(); s_a_edge[i] = 0; s_b_edge[i] = 0; interrupts();
+      continue;
+    }
+
+    // 対待ち：先に来たエッジ（A優先。無ければB）を起点に PAIR_WAIT_US 窓で相方を待つ。
+    //   窓内に両方揃えば have_both、窓を過ぎたら片ビーム(q=1)で確定（Aが無ければBで代用）。
     uint64_t first = a ? a : b;
     bool have_both = (a != 0 && b != 0);
     if (!have_both && (now_us() - first) < PAIR_WAIT_US) continue; // まだ対を待つ
@@ -225,9 +242,11 @@ static bool poll(Hit& out) {
     out.quality = have_both ? 0 : 1;
     out.miss    = have_both ? 0 : (a ? 2 : 1);   // Aのみ有=B欠け(2) / Bのみ有=A欠け(1)
 
+    // この通過を確定。両edgeをクリアし、不応期を張って以後の残響を締め出す（20260831h）。
     noInterrupts();
     s_a_edge[i] = 0; s_b_edge[i] = 0;
     interrupts();
+    s_refractory_until[i] = now_us() + REFRACTORY_US;
     return true;
   }
   return false;

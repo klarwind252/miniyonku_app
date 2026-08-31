@@ -266,6 +266,11 @@ static bool     s_nobeam_latched   = false;
 //   画面いっぱいのエラーを出している間は true。赤ボタン（本体/リモコン）を全面禁止する。
 //   tick_display のエラー描画パスで毎フレーム更新（エラーが消えれば false）。灰は常に有効。
 static bool     s_err_screen = false;
+// 全画面エラーの「灰による強制解除」フラグ（20260831g）：どのエラー画面でも灰を押したら
+//   true になり、原因（全断/排他/感知不能/A1/A2/Lost）が継続していてもエラー描画をスキップして
+//   通常画面へ抜ける＝強制運用を可能にする。全エラー条件が一度healthyに戻ったフレームで
+//   自動的に false に戻り、次に新しく起きたエラーは通常どおり再表示される。
+static bool     s_err_ack    = false;
 static uint8_t  s_nobeam_src  = 0xFF;   // 発生機体（NODE_ID=自機 / 0..5=SQ）
 static uint8_t  s_nobeam_lane = 0;      // レーン1..3
 static uint8_t  s_nobeam_miss = 0;      // 1=A/2=B/3=両方
@@ -532,6 +537,7 @@ static void on_reset_pressed() {
   s_race_active = false;        // 現レースを閉じる（次のS/G通過は新しい内部レースになる）
   s_beam_bad   = false;         // Beam×も待機復帰でクリア
   s_nobeam_latched = false; s_nobeam_src = 0xFF; s_nobeam_lane = 0; s_nobeam_miss = 0;  // 感知不能ラッチ解除（20260831c）
+  s_err_ack = true;             // 20260831g：どの全画面エラーでも灰で強制解除→通常画面へ抜ける（強制運用）
   s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
   signal_cmd(proto::CMD_RESET);
@@ -1226,7 +1232,10 @@ static void tick_display() {
 
   // 排他検知（GW/RC/SG）。gw_dup/rc_dup/sg_dup を更新し、生存SGも確定する。
   bool conflict = eval_exclusivity();
-  if (conflict) {
+  // 20260831g：このフレームで「何らかの全画面エラー条件」が生きているか。
+  //   灰ack の自動リセット判定に使う（条件が全て消えたフレームで ack を落とす）。
+  bool err_cond_live = conflict;
+  if (conflict && !s_err_ack) {   // 20260831g：灰でackされていれば排他でも描画せず素通り（強制運用）
     // 排他エラーは通常画面より優先して全面表示（優先順位：GW > SG > RC）。
     disp::ErrItem errs[3]; int cnt = 0;   // 既定でarg_i=0/label空。kindのみ下で設定。
     if (disp::g_status.gw_dup) errs[cnt++].kind = disp::ERR_GW_DUP;
@@ -1247,7 +1256,7 @@ static void tick_display() {
     // READY感知不能：ライブ検知したらラッチON（自動では消えない・灰で解除・20260831c）。
     //   自機GWレーン→SEレーンの順で最初の1件をラッチ。全断（TX疑い）はラッチ対象外
     //   （従来どおりライブ表示：直れば消える）。ラッチ中は赤/ビームを別所でブロック済み。
-    if (!s_nobeam_latched) {
+    if (!s_nobeam_latched && !s_err_ack) {   // 20260831g：灰ack中は新規ラッチを起こさない
       uint8_t ll = 0, lm = 0;
       if (!beam::all_stuck() && beam::first_stuck(ll, lm)) {         // 自機GW
         s_nobeam_latched = true; s_nobeam_src = (uint8_t)NODE_ID;
@@ -1267,6 +1276,10 @@ static void tick_display() {
         Serial.printf("[NOBEAM] latched src=%u lane=%u miss=%u (press GRAY)\n",
                       s_nobeam_src, s_nobeam_lane, s_nobeam_miss);
     }
+    // 20260831g：ラッチ中、または（灰ackで抑止している最中も）生の個別張り付きが
+    //   続いていれば「エラー条件は生きている」とみなし、ack を自動リセットさせない。
+    //   any_stuck=自機の張り付き / node_stuck_now=SEの張り付き（7秒失効・既算出）。
+    if (s_nobeam_latched || beam::any_stuck() || node_stuck_now) err_cond_live = true;
     // ラッチ中はこの専用エラー画面を出し続ける（他のIDLEエラーより優先）。灰でのみ解除。
     if (s_nobeam_latched) {
       disp::ErrItem e1[1];
@@ -1296,7 +1309,8 @@ static void tick_display() {
       nlv_src = s2; node_all_live = true;
     }
     if (node_all_live) alldown = true;                          // SEの全断もライブでTX疑い表示
-    if (disp::g_status.lost || a1 || a2 || alldown) {
+    if (disp::g_status.lost || a1 || a2 || alldown) err_cond_live = true;  // 20260831g：ack自動リセット判定
+    if ((disp::g_status.lost || a1 || a2 || alldown) && !s_err_ack) {  // 20260831g：灰ackで素通り
       disp::ErrItem errs[4]; int cnt = 0;
       // F-2：描画は配列順。全断(TX疑い)→A1→A2→Lost の順に積む。
       if (alldown) {
@@ -1329,6 +1343,13 @@ static void tick_display() {
     }
   }
   s_err_screen = false;           // ここに到達＝全画面エラー無し。赤ボタン解禁（20260831e）
+  buzzer_error_edge(false);       // 20260831g：エラー面を出していない＝ブザーエッジをリセット。
+                                  //   灰ackでスキップ中もここを通るため、原因が直って再発した時に
+                                  //   確実に「無→有」エッジが立って2秒鳴る（取りこぼし防止）。
+  // 20260831g：全エラー条件が消えた（=err_cond_liveがfalse）フレームで灰ackを解除。
+  //   これにより「一度healthyに戻ってから再発した新しいエラー」は通常どおり再表示される。
+  //   逆に原因が継続している間は ack を保持し、灰で抜けた画面へ戻らない（強制運用を継続）。
+  if (!err_cond_live) s_err_ack = false;
 
   switch (s_state) {
     case ST_IDLE:
