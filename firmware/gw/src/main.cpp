@@ -56,6 +56,15 @@
 #ifndef DEFAULT_TARGET_LAPS
 #define DEFAULT_TARGET_LAPS 3
 #endif
+// 20260831i：signalなし（走行式）の合計タイム起点モード。
+//   (い) START_MODE_SHARED=1（既定）：最初に通過した1台の時刻を全車共通の起点にする。
+//        → 後からスタートした車のタイムも「最初の1台の初通過」から測る（ユーザー確定・20260831）。
+//   (あ) START_MODE_SHARED=0：各車が自分の初通過(s_lane_first_us[m])を起点にする（DA4走行式の原形）。
+//   ★将来 (あ) に戻す可能性あり（ユーザー指示・忘れないこと）。戻すときはここを 0 にするだけ。
+//   ※signalあり（F1式・緑起点）はこのスイッチと無関係に常に緑時刻が全車共通起点。
+#ifndef START_MODE_SHARED
+#define START_MODE_SHARED 1
+#endif
 static uint32_t s_layout_id   = DEFAULT_LAYOUT_ID;    // 現在のレイアウトID（起動既定→将来アプリ追従）
 static int      s_target_laps = DEFAULT_TARGET_LAPS;  // 現在の周回数（fetch_layoutで更新）
 static int      s_node_need   = 0;   // レイアウト要求ノード数（fetch_layoutのnode_count・0=未取得で「-」表示）
@@ -177,6 +186,16 @@ static constexpr uint32_t RED_RESEND_EVERY_MS  = 60;   // 再送間隔（60ms毎
 static uint32_t s_red_resend_ms = 0;    // 最後にCMD_REDを再送した時刻
 static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（3秒＋ランダム）
 static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）。走行式は0のまま
+// 20260831i：走行式（signalなし）の全車共通起点＝「最初に通過した1台の初通過時刻」。
+//   START_MODE_SHARED=1（い）で使用。最初の正常通過(ST_IDLE)で1回だけ立て、灰リセットで0へ。
+//   s_green_t_us（緑の有無＝F1/走行式の判別を兼ねる）とは役割を分けて濁らせない。
+static uint64_t s_start_shared_us = 0;
+// 20260831i：TFT右上の経過タイム／各種計測に使う「レース全体の起点」を返す。
+//   緑があればF1式（緑時刻）、無ければ走行式の共通起点(s_start_shared_us)。どちらも無ければ0。
+//   これで走行式(い)でもTFT右上のカウントが最初の1台の通過から進む。
+static inline uint64_t race_start_us() {
+  return s_green_t_us ? s_green_t_us : s_start_shared_us;
+}
 
 // ---- レース識別・参加レーン（20260821改修）--------------------------------
 //  s_internal_rid：GW内部の連番。スプール各行に刻む“取り違え防止用”のID。サーバーの
@@ -201,7 +220,7 @@ static uint64_t s_lane_last_us[4]  = {0,0,0,0};  // 直近通過（ラップ＝�
 //    マシン単位になるのはTFT表示と完走判定だけ。厳密な同定はアプリ側（DA7）。
 static constexpr uint64_t MIN_LAP_US = 1000000ULL; // 1周の最短想定(1s)。未満の再ヒットは別マシンの通過とみなす
 static uint8_t s_m_lastlane[4] = {0,0,0,0};        // マシンmの直前物理レーン（0=未走行）
-static int8_t  s_m_step[4]     = {-1,-1,-1,-1};    // 観測したレーン遷移 0/+1/+2（-1=未確定）
+// ※s_m_step（遷移学習 0/+1/+2）は20260831jで廃止。本コースはLC=+1固定（誤学習が誤レーン記録の根因だった）。
 // s_need_flush：送信要求フラグ。全員完走 or 灰ボタンで立て、loopのtick_flushがHTTPSを実行。
 //   （on_reset_pressed はESP-NOWコールバックからも呼ばれるためHTTPSを直接呼ばない・#20）
 static bool     s_need_flush   = false;
@@ -468,9 +487,10 @@ static void begin_internal_race() {
   if (s_internal_rid == 0) s_internal_rid = 1;   // wrap回避（0は「未開始」の意味に予約）
   s_race_active = true;
   s_green_t_us  = 0;                              // 走行式は0のまま／F1は緑点灯時に上書き
+  s_start_shared_us = 0;                          // 20260831i：走行式の共通起点も新レースでクリア
   for (int i = 1; i <= 3; i++) { s_lane_cross[i] = 0; s_lane_active[i] = false;
                                  s_lane_first_us[i] = 0; s_lane_last_us[i] = 0;
-                                 s_m_lastlane[i] = 0;    s_m_step[i] = -1; }
+                                 s_m_lastlane[i] = 0; }   // s_m_stepは20260831jで廃止
   disp::run_reset();                              // TFTのラップ表示もクリア（20260830）
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
   s_race_q2_lane = 0; s_race_q1_lane = 0; s_race_q1_miss = 0; s_race_q2_miss = 0;   // A/B・レーンもclear（20260830c）
@@ -540,6 +560,7 @@ static void on_reset_pressed() {
   s_err_ack = true;             // 20260831g：どの全画面エラーでも灰で強制解除→通常画面へ抜ける（強制運用）
   s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
+  s_start_shared_us = 0;        // 20260831i：走行式の共通起点も灰リセットでクリア
   signal_cmd(proto::CMD_RESET);
   Serial.println("[SEQ] RESET -> IDLE (flush queued if data)");
 }
@@ -941,6 +962,7 @@ static void maybe_autocomplete() {
   s_state         = ST_FINISH;    // 計測終了(FINISH)画面へ（灰リセットで待機に戻る・20260830）
   s_sg_beeped     = false;
   s_green_t_us    = 0;
+  s_start_shared_us = 0;          // 20260831i：合計(total_ms)は各マシン完走時に保存済みなので安全
   s_post_err_until = millis() + 3000;   // 24.4⑤：A1/A2を3秒だけ表示
   signal_cmd(proto::CMD_RESET);         // シグナル消灯（念のため）
 }
@@ -1131,7 +1153,7 @@ static void tick_time_field() {
   static uint32_t last_t = 0;
   if (millis() - last_t < TIME_FIELD_MS) return;      // 約30fpsに間引き
   last_t = millis();
-  uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
+  uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
   disp::draw_time_field(elapsed, /*hundredths=*/false);  // コンマ1秒（右上・滑らか描画）
 }
 
@@ -1152,7 +1174,7 @@ static void render_set_now() {
 //  ⚠公式タイムは green_t_us(µs)基準。この描画タイミングは計測精度に影響しない。
 static void render_ontrack_now() {
   if (!disp::ready()) return;
-  uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
+  uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
   disp::draw_ontrack(elapsed, /*blink=*/true, s_target_laps);
   s_show_ontrack = true;        // 以降、経過秒フィールドを約30fpsで重ねる
   disp::commit();               // ステータスバーを重ねて即転送
@@ -1365,7 +1387,7 @@ static void tick_display() {
       break;
     case ST_GREEN:
     case ST_RACE: {
-      uint32_t elapsed = s_green_t_us ? (uint32_t)((tsync::now_gw_us() - s_green_t_us) / 1000ULL) : 0;
+      uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
       disp::draw_ontrack(elapsed, blink, s_target_laps);
       s_show_ontrack = true;      // 以降、経過秒フィールドを約30fpsで重ねる
       break;
@@ -1403,11 +1425,13 @@ void loop() {
     // 走行式(TA)：待機のまま最初の「正常通過(q=0/1)」が来たら ON TRACK＋計測開始。
     //   q=2（張り付き＝A1：故障・断線・CO）は通過ではないのでスタートさせない（20260830）。
     if (s_state == ST_IDLE && hit.quality != 2) {
-      s_green_t_us = hit.t_a_us ? hit.t_a_us : tsync::now_gw_us();
+      // 20260831i：走行式のTAスタート。s_green_t_us（緑時刻）は立てない（DA4の判別を濁さない）。
+      //   代わりに s_start_shared_us（最初の1台の初通過＝全車共通起点・(い)）を1回だけ立てる。
+      if (!s_start_shared_us) s_start_shared_us = hit.t_a_us ? hit.t_a_us : tsync::now_gw_us();
       s_state      = ST_RACE;          // TFTを ON TRACK に切替
       render_ontrack_now();            // 緑同様、即時に計測中画面を描く
       Serial.printf("[TA] START rid=%u t=%llu\n",
-                    s_internal_rid, (unsigned long long)s_green_t_us);
+                    s_internal_rid, (unsigned long long)s_start_shared_us);
     }
     // マシン帰属＋周回・ラップ記録（自機S/Gのみ・DA15/DA8・20260830b）。
     //   q=2は通過ではないので数えない（張り付きで周回が水増しされるのを防ぐ）。
@@ -1415,32 +1439,46 @@ void loop() {
     if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && s_state != ST_FINISH) {
       int p = hit.lane;                                    // 物理レーン
       uint64_t t = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // q=1でAが欠けたらBで代用
-      // ---- ① 走行中マシンへの帰属：直前レーンからの遷移 +1 → 0 → +2 の優先順 ----
-      int m = 0;
-      static const int8_t ORDER[3] = {1, 0, 2};
-      for (int pref = 0; pref < 3 && m == 0; pref++) {
+      // ---- ① 帰属（20260831j 全面改訂）：本コースは LC=+1 固定（1→2→3→1・ユーザー確定）----
+      //  旧実装の遷移学習(ORDER{1,0,2}・s_m_step)は、1ゲート取りこぼしで +2/0 を誤学習・永久固定し、
+      //  以後の帰属崩壊→幽霊マシン誕生→「実際と異なるレーンに記録」の根本原因だったため廃止。
+      //  不変量：全車+1巡回＆スタートレーン相異 → 同一周回数の車同士は期待レーンが被らない。
+      int  m = 0;
+      bool resync = false;
+      // (1) 通常帰属：期待レーン(直前レーン+1)が一致する走行中マシン（時間ガードあり）
+      for (int c = 1; c <= 3; c++) {
+        if (!s_lane_active[c] || disp::g_run[c - 1].fin) continue;   // 未走行/完走済みは対象外
+        if ((t - s_lane_last_us[c]) < MIN_LAP_US) continue;          // 1秒未満の再ヒットは対象外
+        if (((s_m_lastlane[c] - 1 + 1) % 3) + 1 == p) { m = c; break; }
+      }
+      // (2) 出走登録（0周目）：どのマシンにも合わず、そのレーンのマシンが未活性なら新規エントリー。
+      //     signalあり=緑後の0周目／signalなし=時差スタートの初通過。どちらもここで参加確定。
+      if (m == 0 && !s_lane_active[p]) m = p;
+      // (3) 再同期救済：+1候補なし＆エントリー不可（レーン活性済み）のとき、
+      //     「1ゲート取りこぼした車（期待+2の位置）」が唯一に定まるなら同一車として再同期。
+      //     A/B両欠けは保険構造上まれだが、起きても幽霊マシンを生まず追跡を維持する。
+      if (m == 0) {
+        int cand = 0;
         for (int c = 1; c <= 3; c++) {
-          if (!s_lane_active[c] || disp::g_run[c - 1].fin) continue;   // 未走行/完走済みは対象外
-          if ((t - s_lane_last_us[c]) < MIN_LAP_US) continue;          // 1秒未満の再ヒットは別マシン
-          if (s_m_step[c] >= 0 && pref > 0) continue;                  // 遷移確定済みは1巡目のみ照合
-          int8_t need = (s_m_step[c] >= 0) ? s_m_step[c] : ORDER[pref];
-          if (((s_m_lastlane[c] - 1 + need) % 3) + 1 == p) {
-            m = c;
-            if (s_m_step[c] < 0) s_m_step[c] = need;                   // 初観測の遷移を固定
-            break;
+          if (!s_lane_active[c] || disp::g_run[c - 1].fin) continue;
+          if ((t - s_lane_last_us[c]) < MIN_LAP_US) continue;
+          if (((s_m_lastlane[c] - 1 + 2) % 3) + 1 == p) {
+            if (cand) { cand = -1; break; }                          // 複数候補=曖昧→救済しない
+            cand = c;
           }
         }
+        if (cand > 0) { m = cand; resync = true;
+          Serial.printf("[SG] 再同期 M%d：1ゲート取りこぼしを補完 lane=%d\n", m, p); }
       }
-      // ---- ② どの走行中マシンにも合わない → そのレーンのマシンのスタート ----
-      if (m == 0 && !s_lane_active[p]) m = p;
       if (m != 0) {
         s_lane_active[m] = true;
-        s_lane_cross[m]++;
+        s_lane_cross[m] += resync ? 2 : 1;   // 再同期＝取りこぼしゲート分も加算し完走位置を維持（20260831j）
         s_m_lastlane[m] = (uint8_t)p;
         disp::LaneRun& r = disp::g_run[m - 1];
         if (s_lane_cross[m] == 1) {
           s_lane_first_us[m] = t;                          // 起点通過（走行式の合計起点）
         } else if (r.done < disp::MAX_LAPS) {              // 2回目以降＝1周確定
+          //  ※再同期時は前回検知からの実測差＝2区間ぶんが1エントリに載る（捏造せず実測のまま・20260831j）
           r.lap_ms[r.done++] = (uint32_t)((t - s_lane_last_us[m]) / 1000ULL);
           Serial.printf("[LAP] M%d lap%u=%.2fs (lane%d)\n", m, (unsigned)r.done,
                         r.lap_ms[r.done - 1] / 1000.0, p);
@@ -1449,7 +1487,22 @@ void loop() {
         // 完走判定：起点1回＋規定周回（maybe_autocomplete と同条件・マシン単位）
         if (!r.fin && s_lane_cross[m] >= (uint32_t)s_target_laps + 1) {
           r.fin = true;                                    // このマシンは完走（TFTにFIN表示）
-          uint64_t start = s_green_t_us ? s_green_t_us : s_lane_first_us[m];
+          // 20260831i：合計タイムの起点。
+          //   signalあり（F1式）：s_green_t_us=緑時刻（全車共通）。
+          //   signalなし（走行式）：START_MODE_SHARED に従う。
+          //     (い=1)：s_start_shared_us（最初の1台の初通過）を全車共通起点にする【既定・ユーザー確定】
+          //     (あ=0)：各車 s_lane_first_us[m]（自分の初通過）を起点にする【将来戻す可能性・要見直し】
+          uint64_t start;
+          if (s_green_t_us) {
+            start = s_green_t_us;                         // F1式：緑起点（最優先・全車共通）
+          } else {
+#if START_MODE_SHARED
+            start = s_start_shared_us ? s_start_shared_us // (い)：最初の1台の初通過を全車共通に
+                                      : s_lane_first_us[m];
+#else
+            start = s_lane_first_us[m];                   // (あ)：各車それぞれの初通過
+#endif
+          }
           r.total_ms = (uint32_t)((t - start) / 1000ULL);  // F1式=緑起点／走行式=初回通過起点
           Serial.printf("[SEQ] M%d 完走 total=%.2fs\n", m, r.total_ms / 1000.0);
         }
