@@ -108,6 +108,14 @@ struct EventBody {
   uint64_t t_us_b;       // B素子の打刻（µs・無ければ0）
 };
 
+// HEARTBEAT付帯ボディ（任意・20260831）：ノードのビーム健全性ライブ通知。
+//   旧ファームはボディ無しHEARTBEATを送る＝GWは body_len で互換判定する。
+//   READY中のSQセンサー不通をGWのTFTにライブ表示するために使う（GW側と同じ扱い）。
+struct BeamStatBody {
+  uint8_t stuck_bits;   // bit0=L1..bit2=L3：500ms以上張り付き中（=感知不能）
+  uint8_t miss[3];      // 各レーンの側：0=なし / 1=Aのみ / 2=Bのみ / 3=両方
+};
+
 // SYNC：往復で片道遅延とオフセットを推定（中継禁止）。
 struct SyncBody {
   uint64_t t_req_us;     // 要求送信時刻（要求元時計）

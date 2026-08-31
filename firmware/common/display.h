@@ -86,7 +86,9 @@ enum ErrKind {
   ERR_SENSOR_BOTH,   // A1：両ビーム欠(Wセンサー不良/CO/外乱光)・24.6
   ERR_SPEED_ONLY,    // A2：片ビーム欠(速度未計測)・24.6
   ERR_RC_DUP, ERR_SG_DUP,
-  ERR_SECTOR_COMM    // C1：セクター通信不良(Lost)・24.14・最後尾
+  ERR_SECTOR_COMM,   // C1：セクター通信不良(Lost)・24.14・最後尾
+  ERR_ALL_BEAM,      // 全ビーム断＝TX共通系(LED電源/38kHz)疑い（20260830c追加）
+  ERR_READY_NOBEAM   // READY中の感知不能（1レーンでも受光できていない・20260831）
 };
 
 struct ErrItem {
@@ -436,7 +438,7 @@ static void draw_set(bool /*blink 未使用*/) {
   // 本体領域（バーを除く全面）を黒で塗り、中央に SET だけを大書きする。
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
   s_spr.setTextDatum(MC_DATUM);
-  s_spr.setTextColor(C_ONTRK, C_BLACK);       // 赤系＝これから始まる合図
+  s_spr.setTextColor(C_FINISH, C_BLACK);      // 黄＝SET（赤押下受付の合図・20260831要望）
   // font4(約26px)を size4 で拡大し、本体中央に大書き（英字入りフォントはfont4系のみ）。
   s_spr.setTextFont(4);
   s_spr.setTextSize(4);
@@ -618,6 +620,20 @@ static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
       out[n++] = "1) restart S/G & node";
       out[n++] = "2) replace if persists";
       break;
+    case ERR_ALL_BEAM:    // 全ビーム断（TX共通系疑い・20260830c）
+      out[n++] = "! ALL BEAMS DOWN";
+      out[n++] = "TX side suspected.";
+      out[n++] = "1) LED 5V power";
+      out[n++] = "2) 38kHz drive (GPIO25)";
+      out[n++] = "3) ambient IR / wiring";
+      break;
+    case ERR_READY_NOBEAM: // READY感知不能（label=機体/レーン/AB・20260831）
+      out[n++] = "! NO BEAM RECEIVED";
+      out[n++] = "Sensor not detecting.";
+      out[n++] = "1) align floor sensor";
+      out[n++] = "2) clean floor slit";
+      out[n++] = "3) ceiling LED aim";
+      break;
   }
 }
 
@@ -633,6 +649,8 @@ static void err_summary_line(const ErrItem& e, char* out, size_t n) {
     case ERR_RC_DUP:    snprintf(out, n, "- remote x2 (power off 1)"); break;
     case ERR_SG_DUP:    snprintf(out, n, "- signal x2 (power off 1)"); break;
     case ERR_SECTOR_COMM: snprintf(out, n, "- %s comm lost (1 dropped)", e.label); break;
+    case ERR_ALL_BEAM:    snprintf(out, n, "- ALL beams down (check TX/LED)"); break;
+    case ERR_READY_NOBEAM: snprintf(out, n, "- %s no beam (align sensor)", e.label); break;
   }
 }
 
@@ -653,7 +671,8 @@ static void draw_error(const ErrItem* errs, int cnt) {
     // ラベル（機体/レーン/AB）を1行目右側に重ねて出す：離脱・ビーム切れ・A1・A2
     if (cnt == 1 && errs[0].label[0] &&
         (errs[0].kind == ERR_NODE_LOST || errs[0].kind == ERR_BEAM_CUT ||
-         errs[0].kind == ERR_SENSOR_BOTH || errs[0].kind == ERR_SPEED_ONLY)) {
+         errs[0].kind == ERR_SENSOR_BOTH || errs[0].kind == ERR_SPEED_ONLY ||
+         errs[0].kind == ERR_READY_NOBEAM)) {
       s_spr.setTextFont(2);   // ラベルは小さめ（"SQ0 L1 A"が収まるように）
       s_spr.setTextDatum(TR_DATUM);
       s_spr.drawString(errs[0].label, W - 8, 10);

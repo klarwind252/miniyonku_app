@@ -140,7 +140,18 @@ static void tick_presence() {
   last = nowm;
 
   if (!s_assigned) send_join();
-  else             mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
+  else {
+    // HEARTBEATにビーム健全性を付帯（READY中のセンサー不通をGWにライブ表示させる・20260831）
+    proto::BeamStatBody bs{};
+    for (int i = 0; i < beam::LANES; i++) {
+      if (beam::lane_on(i) && beam::lane_stuck(i)) {
+        bs.stuck_bits |= (uint8_t)(1 << i);
+        bool a = beam::raw_a_blocked(i), b = beam::raw_b_blocked(i);
+        bs.miss[i] = (a && b) ? 3 : (a ? 1 : 2);
+      }
+    }
+    mesh::send(proto::PT_HEARTBEAT, 6, &bs, sizeof(bs));
+  }
 }
 
 void setup() {
@@ -167,11 +178,21 @@ void loop() {
     enqueue_event(hit);
     uint8_t q = (hit.quality == 2) ? 2
                 : (tsync::is_synced() ? hit.quality : 3);
-    Serial.printf("[EV] lane=%u q=%u tA=%llu tB=%llu%s\n",
+    const char* ab = (hit.miss == 1) ? " A" : (hit.miss == 2) ? " B" : "";
+    Serial.printf("[EV] lane=%u q=%u tA=%llu tB=%llu%s%s\n",
                   hit.lane, q,
                   (unsigned long long)hit.t_a_us,
                   (unsigned long long)hit.t_b_us,
-                  (q == 2) ? " STICK(A1)" : "");
+                  (q == 2) ? " STICK(A1)" : "", ab);
+  }
+  // 全ビーム断のローカル警告（TX共通系＝LED 5V/38kHz 疑い・5秒ごと・20260830d）
+  //   GW側TFTにも「SQx ALL BEAMS DOWN」が出る（全レーンのq=2到達で判定）。
+  {
+    static uint32_t s_last_alldown_ms = 0;
+    if (beam::all_stuck() && (millis() - s_last_alldown_ms) >= 5000) {
+      s_last_alldown_ms = millis();
+      Serial.println("[BEAM] ALL STUCK -> TX side suspected (LED 5V / 38kHz / wiring)");
+    }
   }
   service_pending();
 }

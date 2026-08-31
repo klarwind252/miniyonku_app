@@ -116,7 +116,7 @@ static constexpr uint32_t OVERRIDE_HOLD_MS = 3000;  // 灰3秒超で封じ強制
 //  ⚠非ブロッキング：loopをdelayで止めない（millis管理で消灯）。計測中・エラー面では鳴らさない。
 static constexpr int      PIN_BUZZER = 12;   // ストラップだが実機で書込み/起動OK確認済(20260811)
 static constexpr uint32_t BUZZER_MS  = 60;   // 鳴動長（80→40→20→60で実機比較し確定）
-static constexpr uint32_t BUZZER_ERR_MS = 1000;  // エラー発生時の「ピー」（1秒・1回だけ）
+static constexpr uint32_t BUZZER_ERR_MS = 2000;  // エラー発生時の「ピー」（2秒・1回だけ・20260831）
 static uint32_t s_buzz_off_ms = 0;           // 0=消灯中／非0=この millis で消灯予定
 static bool     s_sg_beeped   = false;       // ST_IDLE中に既にS/G通過ピッを鳴らしたか（TAの毎回鳴り防止・灰リセットで復活）
 static inline void buzzer_start(uint32_t ms) {   // 非ブロッキング開始（ms鳴らす）
@@ -244,17 +244,41 @@ static void ridmap_store(uint32_t internal, uint32_t server) {
 static bool     s_race_q2 = false;  static uint8_t s_race_q2_src = 0;  // A1：両ビーム欠(q=2)
 static bool     s_race_q1 = false;  static uint8_t s_race_q1_src = 0;  // A2：片ビーム欠(q=1)
 static uint8_t  s_race_q2_lane = 0;                                    // A1発生レーン（1..3・20260830c）
+static uint8_t  s_race_q2_miss = 0;                                    // A1でどちら側の張り付きか：1=A/2=B/3=両方
 static uint8_t  s_race_q1_lane = 0;                                    // A2発生レーン（1..3）
 static uint8_t  s_race_q1_miss = 0;                                    // A2でどちら欠け：1=A/2=B
+// srcごとの q=2 発生レーンbit（bit0=L1..bit2=L3）。全3bit揃ったノードは
+//   「全ビーム断＝TX共通系(LED電源/38kHz)疑い」としてGWのTFTに出す（20260830d・SE対応）。
+static uint8_t  s_q2_lane_bits[proto::NODE_ID_MAX + 1] = {0};
+static uint8_t  s_alldown_src = 0xFF;                                  // 全断に達したsrc（0xFF=なし）
+// ノードのライブビーム健全性（HEARTBEAT付帯・20260831）。7秒無更新で失効扱い。
+static uint8_t  s_node_stuck_bits[proto::NODE_ID_MAX + 1] = {0};       // bit0=L1..bit2=L3
+static uint8_t  s_node_stuck_miss[proto::NODE_ID_MAX + 1][3] = {{0}};  // 各レーンのA/B側
+static uint32_t s_node_stuck_ms[proto::NODE_ID_MAX + 1] = {0};         // 最終受信millis
 static bool     s_beam_bad = false;  // Beam×：片/両ビーム欠を検知したら保持（灰リセットで解除）
 static uint32_t s_last_q3_ms     = 0;   // B1：未同期打刻(q=3)を最後に受けた時刻→Sync×(自動復帰)
 static uint32_t s_post_err_until = 0;   // 24.4⑤：灰ボタン後3秒だけA1/A2を出す窓(millis基準)
+// READY感知不能ラッチ（20260831c）：READYで3秒感知不能を検知したらONで固定。
+//   ラッチ中は赤ボタン・ビーム計測を一切禁止し、エラー画面を出しっぱなし。灰で解除。
+//   自動では消えない（原因が直っても灰を押すまでラッチ継続）。
+static bool     s_nobeam_latched   = false;
+// 全画面エラー表示中フラグ（20260831e）：排他重複・全ビーム断・感知不能ラッチ等、
+//   画面いっぱいのエラーを出している間は true。赤ボタン（本体/リモコン）を全面禁止する。
+//   tick_display のエラー描画パスで毎フレーム更新（エラーが消えれば false）。灰は常に有効。
+static bool     s_err_screen = false;
+static uint8_t  s_nobeam_src  = 0xFF;   // 発生機体（NODE_ID=自機 / 0..5=SQ）
+static uint8_t  s_nobeam_lane = 0;      // レーン1..3
+static uint8_t  s_nobeam_miss = 0;      // 1=A/2=B/3=両方
 static uint8_t  s_lost_src       = 0;   // C1：give-up通知の発生SQ(Lostラベル用・24.14)
 
 // 受信/自機の通過qualityを per-raceフラグへ反映（A1/A2/Sync集約の入口）。
 //  lane/miss を添えて「どのレーンのA/Bか」まで保持する（20260830c）。
 static inline void note_quality(uint8_t q, uint8_t src, uint8_t lane = 0, uint8_t miss = 0) {
-  if (q == 2)      { if (!s_race_q2) { s_race_q2 = true; s_race_q2_src = src; s_race_q2_lane = lane; } }
+  if (q == 2)      { if (!s_race_q2) { s_race_q2 = true; s_race_q2_src = src; s_race_q2_lane = lane; s_race_q2_miss = miss; }
+                     if (lane >= 1 && lane <= 3 && src <= proto::NODE_ID_MAX) {   // 全断検知（20260830d）
+                       s_q2_lane_bits[src] |= (uint8_t)(1 << (lane - 1));
+                       if (s_q2_lane_bits[src] == 0x07) s_alldown_src = src;
+                     } }
   else if (q == 1) { if (!s_race_q1) { s_race_q1 = true; s_race_q1_src = src; s_race_q1_lane = lane; s_race_q1_miss = miss; } }
   if (q == 1 || q == 2) s_beam_bad = true;   // 片/両ビーム欠でBeam×（灰リセットまで保持）
   else if (q == 3) { s_last_q3_ms = millis(); }
@@ -444,7 +468,8 @@ static void begin_internal_race() {
                                  s_m_lastlane[i] = 0;    s_m_step[i] = -1; }
   disp::run_reset();                              // TFTのラップ表示もクリア（20260830）
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
-  s_race_q2_lane = 0; s_race_q1_lane = 0; s_race_q1_miss = 0;   // A/B・レーンもclear（20260830c）
+  s_race_q2_lane = 0; s_race_q1_lane = 0; s_race_q1_miss = 0; s_race_q2_miss = 0;   // A/B・レーンもclear（20260830c）
+  memset(s_q2_lane_bits, 0, sizeof(s_q2_lane_bits)); s_alldown_src = 0xFF;          // ノード全断もclear（20260830d）
 }
 
 // tick_display を介さず SET 画面を即時に1回描くための前方宣言（赤押下の即応用）。
@@ -455,6 +480,12 @@ static void render_ontrack_now();
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
   if (s_state == ST_SPLASH) { s_state = ST_IDLE; Serial.println("[SPLASH] skip -> READY"); return; }
+  // 全画面エラー表示中（排他重複・全ビーム断・感知不能ラッチ等）は赤を全面禁止（20260831e）。
+  //   本体・リモコン両方この関数を通るので一括で効く。解除は灰ボタンのみ。
+  if (s_err_screen || s_nobeam_latched) {
+    Serial.println("[SEQ] blocked: error screen active (press GRAY)");
+    return;
+  }
   // docs要望2026-08-24b：赤を受け付けるのは READY(待機=ST_IDLE) のときだけ。
   //   計測中・ARMED・GREEN・RACE、および走行式レース活性中は赤を無視する。
   //   やり直しは従来どおり「灰(RESET)→赤」の順。
@@ -500,6 +531,7 @@ static void on_reset_pressed() {
   s_state      = ST_IDLE;
   s_race_active = false;        // 現レースを閉じる（次のS/G通過は新しい内部レースになる）
   s_beam_bad   = false;         // Beam×も待機復帰でクリア
+  s_nobeam_latched = false; s_nobeam_src = 0xFF; s_nobeam_lane = 0; s_nobeam_miss = 0;  // 感知不能ラッチ解除（20260831c）
   s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
   signal_cmd(proto::CMD_RESET);
@@ -710,7 +742,15 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
       Serial.printf("[LOSTNOTE] src=SQ%u\n", h.src);
     } break;
 
-    case proto::PT_HEARTBEAT: break;
+    case proto::PT_HEARTBEAT: {
+      // ビーム健全性の付帯ボディがあれば取り込む（旧ファームはボディ無し・20260831）
+      if (body_len >= (int)sizeof(proto::BeamStatBody) && h.src <= proto::NODE_ID_MAX) {
+        proto::BeamStatBody b; memcpy(&b, body, sizeof(b));
+        s_node_stuck_bits[h.src] = b.stuck_bits;
+        memcpy(s_node_stuck_miss[h.src], b.miss, sizeof(b.miss));
+        s_node_stuck_ms[h.src] = millis();
+      }
+    } break;
     default: break;
   }
 }
@@ -1169,7 +1209,13 @@ static void tick_display() {
     }
     if (n == 0) { d[0] = '-'; d[1] = 0; }
   }
-  disp::g_status.beam_ok = !s_beam_bad;   // 片/両ビーム欠を一度でも受けたら×（灰リセットで復帰）
+  // Beamバー：ラッチ（片/両ビーム欠を一度でも受けたら×・灰で復帰）に加え、
+  //   「いま」3秒以上張り付いているレーンがあれば×＝ライブ判定（20260830c）。
+  //   SE（SQ）のライブ張り付き（HEARTBEAT付帯・7秒失効）も全数判定に含める（20260831）。
+  bool node_stuck_now = false;
+  for (uint8_t s2 = 0; s2 <= 5; s2++)
+    if (s_node_stuck_bits[s2] != 0 && (millis() - s_node_stuck_ms[s2]) <= 7000) { node_stuck_now = true; break; }
+  disp::g_status.beam_ok = !s_beam_bad && !beam::any_stuck() && !node_stuck_now;
   // unsent は各機能側から順次代入予定。
 
   // Sync集約（B1/24.11・27章）：自機未同期 or 直近q=3受信 で Sync×（自動復帰型）。
@@ -1189,7 +1235,8 @@ static void tick_display() {
     disp::draw_error(errs, cnt);
     disp::commit();               // ステータスバーを重ねて転送
     s_show_ontrack = false;       // エラー面の上に経過秒を重ねない
-    buzzer_error_edge(true);      // エラー発生の立ち上がりで1秒1回
+    s_err_screen = true;          // 赤ボタン全面禁止（20260831e）
+    buzzer_error_edge(true);      // エラー発生の立ち上がりで2秒1回
     return;
   }
 
@@ -1197,31 +1244,91 @@ static void tick_display() {
   //   C1 Lost は灰リセットまで出しっぱなし。A1/A2 は灰ボタン後3秒だけ。いずれも待機(ST_IDLE)で出す。
   //   排他系(GW/RC/SG重複)は上で return 済みなので、ここは A1/A2/Lost に絞れる（errs枠溢れ回避・27.3）。
   if (s_state == ST_IDLE) {
+    // READY感知不能：ライブ検知したらラッチON（自動では消えない・灰で解除・20260831c）。
+    //   自機GWレーン→SEレーンの順で最初の1件をラッチ。全断（TX疑い）はラッチ対象外
+    //   （従来どおりライブ表示：直れば消える）。ラッチ中は赤/ビームを別所でブロック済み。
+    if (!s_nobeam_latched) {
+      uint8_t ll = 0, lm = 0;
+      if (!beam::all_stuck() && beam::first_stuck(ll, lm)) {         // 自機GW
+        s_nobeam_latched = true; s_nobeam_src = (uint8_t)NODE_ID;
+        s_nobeam_lane = ll; s_nobeam_miss = lm;
+      } else {                                                        // SE（HEARTBEAT・7秒失効）
+        for (uint8_t s2 = 0; s2 <= 5 && !s_nobeam_latched; s2++) {
+          if (s_node_stuck_bits[s2] == 0 || s_node_stuck_bits[s2] == 0x07) continue;  // 0x07は全断→対象外
+          if ((millis() - s_node_stuck_ms[s2]) > 7000) continue;
+          for (int L = 0; L < 3; L++)
+            if (s_node_stuck_bits[s2] & (1 << L)) {
+              s_nobeam_latched = true; s_nobeam_src = s2;
+              s_nobeam_lane = (uint8_t)(L + 1); s_nobeam_miss = s_node_stuck_miss[s2][L]; break;
+            }
+        }
+      }
+      if (s_nobeam_latched)
+        Serial.printf("[NOBEAM] latched src=%u lane=%u miss=%u (press GRAY)\n",
+                      s_nobeam_src, s_nobeam_lane, s_nobeam_miss);
+    }
+    // ラッチ中はこの専用エラー画面を出し続ける（他のIDLEエラーより優先）。灰でのみ解除。
+    if (s_nobeam_latched) {
+      disp::ErrItem e1[1];
+      e1[0].kind = disp::ERR_READY_NOBEAM;
+      build_beam_label(e1[0].label, sizeof(e1[0].label), s_nobeam_src, s_nobeam_lane,
+                       (s_nobeam_miss == 3) ? 0 : s_nobeam_miss);
+      disp::draw_error(e1, 1);
+      disp::commit();
+      s_show_ontrack = false;
+      s_err_screen = true;       // 赤ボタン全面禁止（20260831e）
+      buzzer_error_edge(true);   // ラッチした瞬間に2秒「ピー」1回（立ち上がり検出）
+      return;
+    }
+
     bool show_post = ((int32_t)(s_post_err_until - millis()) > 0);   // wrap安全な残時間判定
     bool a1 = show_post && s_race_q2;
     bool a2 = show_post && s_race_q1;
-    if (disp::g_status.lost || a1 || a2) {
-      disp::ErrItem errs[3]; int cnt = 0;
-      // F-2：描画は配列順。enumの「最後尾」意図どおり A1→A2→Lost の順に積む。
-      if (a1) {
-        errs[cnt].kind = disp::ERR_SENSOR_BOTH;                       // A1 両ビーム欠
-        build_beam_label(errs[cnt].label, sizeof(errs[cnt].label), s_race_q2_src, s_race_q2_lane, 0); cnt++;
+    bool alldown_self = beam::all_stuck();                     // 自機GW（ライブ・20260830c）
+    bool alldown_node = show_post && (s_alldown_src != 0xFF);  // SQ等ノード（per-race・20260830d）
+    bool alldown = alldown_self || alldown_node;
+    // （感知不能の個別レーンは上のラッチで処理済み。ここでは全断＝TX疑いのみ扱う）
+    // ノード（SE）の全断だけライブ検知（個別レーンはラッチ側・20260831c）。
+    uint8_t nlv_src = 0xFF; bool node_all_live = false;
+    for (uint8_t s2 = 0; s2 <= 5 && !node_all_live; s2++) {
+      if (s_node_stuck_bits[s2] != 0x07) continue;
+      if ((millis() - s_node_stuck_ms[s2]) > 7000) continue;   // 失効（切断・復旧）
+      nlv_src = s2; node_all_live = true;
+    }
+    if (node_all_live) alldown = true;                          // SEの全断もライブでTX疑い表示
+    if (disp::g_status.lost || a1 || a2 || alldown) {
+      disp::ErrItem errs[4]; int cnt = 0;
+      // F-2：描画は配列順。全断(TX疑い)→A1→A2→Lost の順に積む。
+      if (alldown) {
+        errs[cnt].kind = disp::ERR_ALL_BEAM;                          // 全ビーム断（TX側疑い）
+        if (alldown_self)          snprintf(errs[cnt].label, sizeof(errs[cnt].label), "GW%u", (unsigned)NODE_ID);
+        else if (node_all_live)    snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", nlv_src);
+        else                       snprintf(errs[cnt].label, sizeof(errs[cnt].label), "%s%u",
+                                            (s_alldown_src <= 5) ? "SQ" : "GW", s_alldown_src);
+        cnt++;
       }
-      if (a2 && cnt < 3) {
+      if (a1 && cnt < 4) {
+        errs[cnt].kind = disp::ERR_SENSOR_BOTH;                       // A1 両ビーム欠
+        build_beam_label(errs[cnt].label, sizeof(errs[cnt].label), s_race_q2_src, s_race_q2_lane,
+                         (s_race_q2_miss == 3) ? 0 : s_race_q2_miss); cnt++;
+      }
+      if (a2 && cnt < 4) {
         errs[cnt].kind = disp::ERR_SPEED_ONLY;                        // A2 片ビーム欠
         build_beam_label(errs[cnt].label, sizeof(errs[cnt].label), s_race_q1_src, s_race_q1_lane, s_race_q1_miss); cnt++;
       }
-      if (disp::g_status.lost && cnt < 3) {
+      if (disp::g_status.lost && cnt < 4) {
         errs[cnt].kind = disp::ERR_SECTOR_COMM;                       // C1（最後尾・出しっぱなし）
         snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_lost_src); cnt++;
       }
       disp::draw_error(errs, cnt);
       disp::commit();
       s_show_ontrack = false;     // エラー面の上に経過秒を重ねない
-      buzzer_error_edge(true);    // エラー発生の立ち上がりで1秒1回
+      s_err_screen = true;        // 赤ボタン全面禁止（20260831e）
+      buzzer_error_edge(true);    // エラー発生の立ち上がりで2秒1回
       return;
     }
   }
+  s_err_screen = false;           // ここに到達＝全画面エラー無し。赤ボタン解禁（20260831e）
 
   switch (s_state) {
     case ST_IDLE:
@@ -1261,8 +1368,8 @@ void loop() {
 
   beam::Hit hit;
   int drain = 0;
-  if (s_state == ST_SPLASH) {                 // スプラッシュ中はビームを捨てるだけ（書込み無し・loop解放）
-    while (drain++ < 8 && beam::poll(hit)) { /* discard */ }
+  if (s_state == ST_SPLASH || s_nobeam_latched) {  // スプラッシュ中/感知不能ラッチ中はビームを捨てるだけ
+    while (drain++ < 8 && beam::poll(hit)) { /* discard */ }  //   （計測開始も周回記録もしない・20260831c）
   } else
   while (drain++ < 8 && beam::poll(hit)) {   // 1周8件まで（浮きGPIO洪水でloopを占有させない）
     static uint32_t self_seq = 0;
