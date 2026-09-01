@@ -215,6 +215,16 @@ static bool     s_lane_active[4] = {false,false,false,false};   // マシンの�
 //    TFTのL列は“そのレーンでスタートしたマシン”を追う（レーンチェンジ対応）。
 static uint64_t s_lane_first_us[4] = {0,0,0,0};  // 起点通過（走行式の合計の起点）
 static uint64_t s_lane_last_us[4]  = {0,0,0,0};  // 直近通過（ラップ＝前回との差分）
+// ---- 本日のベスト（20260901e・案A＝GW自己完結／電源ON毎に揮発・時間系のみ）----------
+//  ★採用条件（マシン単体で判定・台数も発進方式も不問）：そのマシンが“過不足なく”完走したこと。
+//    過不足なし＝再同期(取りこぼし+2)を使わず、クロス数=target+1・ラップ数=target が一致。
+//    → 3台中1台だけ完走でも、その1台が綺麗なら採用。取りこぼし/DNFは非採用（発進方式は問わない）。
+//  ⚠ 速度(Av./Max)はGWでは算出しない（時刻送出のみ・§2.2）→ draw_idle側で「-」据置き。
+//  ⚠ 灰リセット(RESET)では消さない＝1電源セッション通しての“本日”。消えるのは電源OFFのみ。
+static uint32_t s_best_total_ms   = 0;   // 完走total_msの最小（0=未記録）
+static uint8_t  s_best_total_lane = 0;   // それを出したマシン(=スタートレーン) 1..3（0=無）
+static uint32_t s_best_lap_ms     = 0;   // 確定ラップの最小（0=未記録）
+static uint8_t  s_best_lap_lane   = 0;
 // ---- ローテーション追跡（表示・完走判定用／DA7の簡易版・20260830b）---------
 //  物理レーンpのヒットを「どのマシンか」に帰属させる。直前レーンからの遷移を
 //  +1（レーンチェンジ標準）→ 0（LCなし・周回コース）→ +2 の優先順で照合し、
@@ -223,6 +233,7 @@ static uint64_t s_lane_last_us[4]  = {0,0,0,0};  // 直近通過（ラップ＝�
 //    マシン単位になるのはTFT表示と完走判定だけ。厳密な同定はアプリ側（DA7）。
 static constexpr uint64_t MIN_LAP_US = 1000000ULL; // 1周の最短想定(1s)。未満の再ヒットは別マシンの通過とみなす
 static uint8_t s_m_lastlane[4] = {0,0,0,0};        // マシンmの直前物理レーン（0=未走行）
+static bool    s_m_clean[4]    = {true,true,true,true}; // 20260901d：そのマシンが取りこぼし(再同期)無しで走れているか（本日のベスト採用判定用）
 // ※s_m_step（遷移学習 0/+1/+2）は20260831jで廃止。本コースはLC=+1固定（誤学習が誤レーン記録の根因だった）。
 // s_need_flush：送信要求フラグ。全員完走 or 灰ボタンで立て、loopのtick_flushがHTTPSを実行。
 //   （on_reset_pressed はESP-NOWコールバックからも呼ばれるためHTTPSを直接呼ばない・#20）
@@ -493,7 +504,7 @@ static void begin_internal_race() {
   s_start_shared_us = 0;                          // 20260831i：走行式の共通起点も新レースでクリア
   for (int i = 1; i <= 3; i++) { s_lane_cross[i] = 0; s_lane_active[i] = false;
                                  s_lane_first_us[i] = 0; s_lane_last_us[i] = 0;
-                                 s_m_lastlane[i] = 0; }   // s_m_stepは20260831jで廃止
+                                 s_m_lastlane[i] = 0; s_m_clean[i] = true; }   // s_m_stepは20260831jで廃止（s_m_cleanは20260901d）
   disp::run_reset();                              // TFTのラップ表示もクリア（20260830）
   s_race_q2 = false; s_race_q1 = false;          // 24.4：A1/A2 per-raceフラグをclear
   s_race_q2_lane = 0; s_race_q1_lane = 0; s_race_q1_miss = 0; s_race_q2_miss = 0;   // A/B・レーンもclear（20260830c）
@@ -1223,6 +1234,11 @@ static void tick_display() {
   // ステータス更新（NODE充足は残課題#8で実数へ。今はJOIN実数の反映口のみ用意）
   disp::g_status.wifi_ok = (WiFi.status() == WL_CONNECTED);
   disp::g_status.ch      = g_channel;
+  // 20260901：本日のベストをREADY(draw_idle)へ渡す（0=未記録→「-」表示）。
+  disp::g_status.best_total_ms   = s_best_total_ms;
+  disp::g_status.best_total_lane = s_best_total_lane;
+  disp::g_status.best_lap_ms     = s_best_lap_ms;
+  disp::g_status.best_lap_lane   = s_best_lap_lane;
   // Node充足：実JOIN中のSQ(0..5)数を数え、必要数はレイアウト由来(s_node_need)。
   //   need>0 のときだけ have/need を突合（need=0＝レイアウト未取得は「Nd-/-」表示）。
   {
@@ -1517,6 +1533,7 @@ void loop() {
       if (m > 0) {                        // m=-1（完走後惰走）は記録破棄・生PUSHのみ（20260831k）
         s_lane_active[m] = true;
         s_lane_cross[m] += resync ? 2 : 1;   // 再同期＝取りこぼしゲート分も加算し完走位置を維持（20260831j）
+        if (resync) s_m_clean[m] = false;    // 20260901d：不足(取りこぼし)ありのマシンはベスト非採用
         s_m_lastlane[m] = (uint8_t)p;
         disp::LaneRun& r = disp::g_run[m - 1];
         if (s_lane_cross[m] == 1) {
@@ -1549,6 +1566,30 @@ void loop() {
           }
           r.total_ms = (uint32_t)((t - start) / 1000ULL);  // F1式=緑起点／走行式=初回通過起点
           Serial.printf("[SEQ] M%d 完走 total=%.2fs\n", m, r.total_ms / 1000.0);
+          // 20260901e：本日のベスト採用（マシン単体・台数も発進方式も不問）。
+          //  条件＝過不足なく完走：取りこぼし無し(s_m_clean)かつ
+          //   クロス数==target+1・ラップ数==target が丁度一致（不足を弾く。過剰は不応期100ms/MIN_LAP1sで既に抑止）。
+          bool best_ok = s_m_clean[m]
+                       && (s_lane_cross[m] == (uint32_t)s_target_laps + 1)
+                       && (r.done == (uint8_t)s_target_laps);
+          if (best_ok) {
+            if (s_best_total_ms == 0 || r.total_ms < s_best_total_ms) {
+              s_best_total_ms = r.total_ms; s_best_total_lane = (uint8_t)m;
+              Serial.printf("[BEST] total %.2fs (M%d) ★過不足なし完走\n", r.total_ms / 1000.0, m);
+            }
+            for (int k = 0; k < r.done && k < disp::MAX_LAPS; k++) {
+              uint32_t lap = r.lap_ms[k];
+              if (lap > 0 && (s_best_lap_ms == 0 || lap < s_best_lap_ms)) {
+                s_best_lap_ms = lap; s_best_lap_lane = (uint8_t)m;
+                Serial.printf("[BEST] lap %.2fs (M%d)\n", lap / 1000.0, m);
+              }
+            }
+          } else {
+            Serial.printf("[BEST] 非採用 M%d (clean=%d cross=%u/%d done=%u/%d)\n",
+                          m, (int)s_m_clean[m],
+                          (unsigned)s_lane_cross[m], s_target_laps + 1,
+                          (unsigned)r.done, s_target_laps);
+          }
         }
       } else if (m == 0) {
         Serial.printf("[SG] 帰属不能 lane=%u（表示のみスキップ・記録は継続）\n", p);

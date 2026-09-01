@@ -61,6 +61,10 @@ struct Status {
   bool sync_ok    = true;   // 時刻同期完了（B1・24.11。false=未同期でSync x）
   bool lost       = false;  // あきらめ(give up)発生（C1・24.14。true=Lost x・灰リセットまで保持）
   char link[48]  = "-";     // 接続中の機材ID一覧（main側が在席から生成）
+  // 20260901：本日のベスト（案A＝GW自己完結／電源ON毎に揮発。0=未記録→draw_idleは「-」）。
+  //  時間系のみGWが自前で持つ。速度(Av./Max)はアプリ側担当のため保持しない。
+  uint32_t best_total_ms   = 0; uint8_t best_total_lane = 0;  // 完走合計の最小＋達成レーン(1..3)
+  uint32_t best_lap_ms     = 0; uint8_t best_lap_lane   = 0;  // 単周ラップの最小＋達成レーン(1..3)
 };
 
 // ---- レーン別 走行データ（ON TRACK/FINISHのラップ表示用・main側が更新）------
@@ -413,18 +417,50 @@ static void draw_idle() {
   s_spr.setTextDatum(TR_DATUM);
   s_spr.drawString("TODAY BEST", W - 8, 12);
 
-  // ベスト4行（Total/Av./Lap/Max）。実データはAPI取得後に差し替え。
-  const char* rows[4] = {"Total", "Av.", "Lap", "Max"};
-  s_spr.setTextDatum(TL_DATUM);
+  // 本日のベスト4行（20260901）。Total/Lap は GW自己完結の実値（電源ON毎に揮発）、
+  //  Av./Max は速度＝アプリ側担当のため常時「-」据置き（案A）。未記録も「-」。
+  //  各行：ラベル(左) / 数値(右揃え) / 単位 / レーン番号(右端・レーン色)。
+  //  ⚠ 座標・フォントは docs/20.6 のとおり実機で追い込む前提（TFT_eSPI組込みフォント）。
+  struct BRow { const char* label; uint32_t ms; uint8_t lane; bool is_speed; const char* unit; };
+  const BRow rows[4] = {
+    { "Total", g_status.best_total_ms, g_status.best_total_lane, false, "s"   },
+    { "Av.",   0,                      0,                        true,  "m/s" },
+    { "Lap",   g_status.best_lap_ms,   g_status.best_lap_lane,   false, "s"   },
+    { "Max",   0,                      0,                        true,  "m/s" },
+  };
+  const int COL_VAL_R  = W - 84;   // 数値の右端
+  const int COL_UNIT_R = W - 44;   // 単位の右端
+  const int COL_LANE_R = W - 8;    // レーン番号の右端（レーン色）
   int y = 60;
   for (int i = 0; i < 4; i++) {
-    s_spr.setTextFont(i == 0 ? 4 : 2);
-    s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.drawString(rows[i], 16, y);
-    s_spr.setTextDatum(TR_DATUM);
-    s_spr.drawString("-", W - 40, y);     // WiFi切れ/未取得は「-」
+    const BRow& rw = rows[i];
+    const bool big = (i == 0);     // Total行だけ大きく（docs/20.2）
+    // ラベル（左）
     s_spr.setTextDatum(TL_DATUM);
-    y += (i == 0 ? 40 : 34);
+    s_spr.setTextColor(C_WHITE, C_BLACK);
+    s_spr.setTextFont(big ? 4 : 2);
+    s_spr.drawString(rw.label, 16, y);
+    // 数値（右揃え）。速度2行と未記録は「-」。100秒以上は %.1f で桁あふれ回避。
+    char val[12];
+    if (rw.is_speed || rw.ms == 0)      snprintf(val, sizeof(val), "-");
+    else if (rw.ms >= 100000)           snprintf(val, sizeof(val), "%.1f", rw.ms / 1000.0);
+    else                                snprintf(val, sizeof(val), "%.2f", rw.ms / 1000.0);
+    s_spr.setTextDatum(TR_DATUM);
+    s_spr.setTextColor(C_WHITE, C_BLACK);
+    s_spr.setTextFont(big ? 4 : 2);
+    s_spr.drawString(val, COL_VAL_R, y);
+    // 単位（数値の右）
+    s_spr.setTextFont(big ? 2 : 1);
+    s_spr.setTextColor(C_WHITE, C_BLACK);
+    s_spr.drawString(rw.unit, COL_UNIT_R, y + (big ? 10 : 4));
+    // レーン番号（右端・レーン色）。実値がある時間系の行だけ。
+    if (!rw.is_speed && rw.ms > 0 && rw.lane >= 1 && rw.lane <= 3) {
+      char ln[4]; snprintf(ln, sizeof(ln), "L%u", rw.lane);
+      s_spr.setTextFont(2);
+      s_spr.setTextColor(lane_color(rw.lane), C_BLACK);
+      s_spr.drawString(ln, COL_LANE_R, y + (big ? 6 : 1));
+    }
+    y += big ? 40 : 34;
   }
   draw_link_line();   // 上段中央に接続機材ID一覧
 }
