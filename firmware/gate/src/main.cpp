@@ -67,6 +67,13 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
           s_pending[i].used = false;                   // 受領確認 → 外す
     } break;
 
+    case proto::PT_HEARTBEAT: {
+      // 20260831k：GWビーコン付帯の計測中フラグを取り込む（「計測中はch走査禁止」）。
+      //   旧GW(ボディ無し)は body_len=0 なので読まない＝後方互換。GW6/GW7のみ採用。
+      if ((h.src == 6 || h.src == 7) && body_len >= 1)
+        chfollow::note_gw_racing(body[0] != 0);
+    } break;
+
     default: break;
   }
 }

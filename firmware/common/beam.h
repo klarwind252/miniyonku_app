@@ -41,7 +41,10 @@ static inline uint8_t mask() { return s_mask; }
 //  最短遮断は 2.0〜8.0 m/s で 19〜75ms（docs/01）。跳ねはµsオーダ。
 //  A-B穴間隔は 30mm（docs/05・20260804変更確定）。最低想定 3m/s → A→B は最大10ms。
 static constexpr uint32_t DEBOUNCE_US  = 1500;   // 跳ね除去（遮断幅19msより十分小）
-static constexpr uint32_t PAIR_WAIT_US = 12000;  // A→B待ち猶予(30mm/3m/s=10ms+余裕)。超えたら片ビーム(q=1)
+// 20260831k：速度域は 1〜10m/s（ユーザー確定）。最高10m/s→A→B 3ms／最低1m/s→A→B 30ms。
+//   対待ちは最低速側で決まる。40ms=30ms+余裕10ms（どんなに遅くても速度計測を成立させる）。
+//   不応期(REFRACTORY_US=100ms)＞40ms・地点間最短(MIN_LAP_US=1s)≫40ms で整合済み。
+static constexpr uint32_t PAIR_WAIT_US = 40000;  // A→B待ち猶予(30mm/1m/s=30ms+余裕)。超えたら片ビーム(q=1)
 // 20260831h：1通過確定後の不応期。A/Bが割れて確定しても、対の残り物や車体長ぶんの
 //   遮断残響（最長75ms程度）を新規通過として二重カウントしないよう締め出す。
 //   地点間の最短到達(MIN_LAP_US=1s)より十分短い100msに設定（隣地点の正規通過は締め出さない）。
@@ -59,6 +62,7 @@ struct Hit {
   uint64_t t_b_us;    // B遮断µs（0=取れず）
   uint8_t  quality;   // 0=両取得 / 1=片ビーム欠 / 2=両ビーム欠(張り付き・A1)
   uint8_t  miss;      // q=1時どちらが欠けたか：1=A欠け(Bのみ) / 2=B欠け(Aのみ) / 0=該当なし（20260830c）
+  bool     reverse;   // 逆走（B→A順）＝TFT計測対象外。20260831k。両ビーム取得時のみ判定可
 };
 
 // ---- 張り付き(A1)監視用の状態（レーンごと）--------------------------------
@@ -165,6 +169,7 @@ static bool poll_stick(Hit& out) {
       out.t_b_us  = 0;
       out.quality = 2;                    // A1：両ビーム欠（張り付き）
       out.miss    = (a_blk && b_blk) ? 3 : (a_blk ? 1 : 2);   // どちら側の張り付きか
+      out.reverse = false;                // 張り付きは逆走ではない（20260831k）
       // エッジ由来の未確定分は捨てる（張り付き中の片エッジは通過ではない）
       noInterrupts();
       s_a_edge[i] = 0; s_b_edge[i] = 0;
@@ -241,6 +246,10 @@ static bool poll(Hit& out) {
     out.t_b_us  = b;
     out.quality = have_both ? 0 : 1;
     out.miss    = have_both ? 0 : (a ? 2 : 1);   // Aのみ有=B欠け(2) / Bのみ有=A欠け(1)
+    // 逆走判定（20260831k）：両ビーム取得時のみ。物理的にB素子が先に遮断＝B→A順なら逆走。
+    //   正走は A先→B後（t_a<t_b）。逆走は t_b<t_a。片ビーム(q=1)は順序不明＝判定しない(false)。
+    //   TFT計測はGW側で reverse を見て除外。生データ(spool)はそのままPUSH（アプリで再判定）。
+    out.reverse = (have_both && b < a);
 
     // この通過を確定。両edgeをクリアし、不応期を張って以後の残響を締め出す（20260831h）。
     noInterrupts();

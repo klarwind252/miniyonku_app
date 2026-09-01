@@ -180,6 +180,9 @@ static bool cmd_nonce_seen(uint8_t src, uint32_t nonce) {
   return false;
 }
 static uint32_t s_armed_ms = 0;         // ARMEDに入った時刻
+// 20260831k：シグナル二度押しガード時間。ARMED成立からこの時間内の再受付を弾く。
+//   赤の最短点灯(s_red_dur_ms=2s)より十分短く、かつ人間の誤連打(数百ms)を吸収する400ms。
+static constexpr uint32_t SIGNAL_GUARD_MS = 400;
 // ★CMD_RED再送（灰→赤/初回赤の取りこぼし対策・2026-08-26）
 static constexpr uint32_t RED_RESEND_WINDOW_MS = 400;  // ARMED後この時間だけ赤を再送
 static constexpr uint32_t RED_RESEND_EVERY_MS  = 60;   // 再送間隔（60ms毎＝約6回×3連送）
@@ -505,6 +508,15 @@ static void render_ontrack_now();
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
   if (s_state == ST_SPLASH) { s_state = ST_IDLE; Serial.println("[SPLASH] skip -> READY"); return; }
+  // 20260831k：二度押しガード（経路非依存）。本体ISRデバウンス・リモコンnonce冪等に加え、
+  //   受付関数自体でも直近受付から SIGNAL_GUARD_MS 以内の再入を弾く。状態遷移の隙間や
+  //   別経路の重複でも「SETが二度発火／ARMEDが二重開始」しないための最後の砦。
+  static uint32_t s_last_signal_ms = 0;
+  uint32_t nowm = millis();
+  if (s_last_signal_ms != 0 && (nowm - s_last_signal_ms) < SIGNAL_GUARD_MS) {
+    Serial.println("[SEQ] ignored: double-press guard");
+    return;
+  }
   // 全画面エラー表示中（排他重複・全ビーム断・感知不能ラッチ等）は赤を全面禁止（20260831e）。
   //   本体・リモコン両方この関数を通るので一括で効く。解除は灰ボタンのみ。
   if (s_err_screen || s_nobeam_latched) {
@@ -529,6 +541,7 @@ static void on_signal_pressed() {
   s_armed_ms   = millis();
   s_red_resend_ms = millis();                     // 再送タイマ基点（以後tick_sequenceで再送）
   s_state      = ST_ARMED;
+  s_last_signal_ms = nowm;                        // 20260831k：受付成立→二度押しガード起点
   signal_cmd(proto::CMD_RED);
   s_set_now_req = true;                           // ★即SET要求（実描画はloopで・コールバック文脈のSPIクラッシュ回避）
   Serial.printf("[SEQ] ARMED rid=%u red=%ums\n", s_internal_rid, s_red_dur_ms);
@@ -741,7 +754,11 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
         // ch追従（状態B）：JOINを受けたら即・在席ビーコンを撒き返す。走査中のノードが
         //   正chに乗った瞬間に在圏を検知でき、ロックが速い（HTTPS転送は下で従来どおり）。
         //   これはESP-NOWのみ・非スロットル（サーバー連打抑止=join_rate_okとは別経路）。
-        mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, nullptr, 0);
+        {
+          proto::GwBeatBody gb = {};   // 20260831k：即応ビーコンにも計測中フラグを付帯
+          gb.racing = (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) ? 1 : 0;
+          mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, &gb, sizeof(gb));
+        }
         forward_join(jb);
       }
     } break;
@@ -1057,7 +1074,10 @@ static void tick_gw_presence() {
   static uint32_t last = 0;
   if (millis() - last < GW_BEACON_MS) return;
   last = millis();
-  mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, nullptr, 0);
+  // 20260831k：ビーコンに計測中フラグを付帯（SEの「計測中はch走査禁止」用・後方互換）。
+  proto::GwBeatBody gb = {};
+  gb.racing = (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) ? 1 : 0;
+  mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, &gb, sizeof(gb));
 }
 
 // ---- 接続機材ロスター（設営確認用・2026-08-24）--------------------------------
@@ -1247,9 +1267,13 @@ static void tick_display() {
   // unsent は各機能側から順次代入予定。
 
   // Sync集約（B1/24.11・27章）：自機未同期 or 直近q=3受信 で Sync×（自動復帰型）。
+  //  20260831k：同期ズレの表示は READY(ST_IDLE) のときだけ（ユーザー確定）。
+  //   計測中(ARMED/GREEN/RACE/FINISH)は Sync:OK 扱いにして赤バーを出さない。
+  //   ※SEの時刻ズレ自体はアプリ側が生データで判定・放棄するので、走行中に画面を汚さない。
   {
     bool recent_q3 = (s_last_q3_ms != 0) && (millis() - s_last_q3_ms < 10000);
-    disp::g_status.sync_ok = tsync::is_synced() && !recent_q3;
+    bool synced    = tsync::is_synced() && !recent_q3;
+    disp::g_status.sync_ok = (s_state == ST_IDLE) ? synced : true;
   }
 
   // 排他検知（GW/RC/SG）。gw_dup/rc_dup/sg_dup を更新し、生存SGも確定する。
@@ -1436,7 +1460,9 @@ void loop() {
     // マシン帰属＋周回・ラップ記録（自機S/Gのみ・DA15/DA8・20260830b）。
     //   q=2は通過ではないので数えない（張り付きで周回が水増しされるのを防ぐ）。
     //   TFTのL列＝「そのレーンでスタートしたマシン」。レーンチェンジしても同じ列に積む。
-    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && s_state != ST_FINISH) {
+    // 20260831k：逆走(B→A)はTFT計測対象外＝帰属・ラップに使わない。ただし生データは後段でPUSH。
+    //   quality!=2（張り付き除外）に加え、!hit.reverse（逆走除外）を条件に追加。
+    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && !hit.reverse && s_state != ST_FINISH) {
       int p = hit.lane;                                    // 物理レーン
       uint64_t t = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // q=1でAが欠けたらBで代用
       // ---- ① 帰属（20260831j 全面改訂）：本コースは LC=+1 固定（1→2→3→1・ユーザー確定）----
@@ -1453,6 +1479,24 @@ void loop() {
       }
       // (2) 出走登録（0周目）：どのマシンにも合わず、そのレーンのマシンが未活性なら新規エントリー。
       //     signalあり=緑後の0周目／signalなし=時差スタートの初通過。どちらもここで参加確定。
+      //     ただし完走後の惰走を新規マシンと誤認しないよう、先に(2.5)で吸収する（20260831k）。
+      if (m == 0) {
+        // (2.5) 完走後の惰走吸収：完走済みマシンが走り続けてゲートを踏むと、+1/+2 の期待レーンに
+        //   合致するが (1)(3) では fin 除外され、そのまま(2)で幽霊マシンとして登録されてしまう。
+        //   完走マシンの最後の通過レーンから +1/+2 に合致する通過は「完走後通過」として記録破棄。
+        for (int c = 1; c <= 3; c++) {
+          if (!s_lane_active[c] || !disp::g_run[c - 1].fin) continue;   // 完走済みのみ対象
+          if ((t - s_lane_last_us[c]) < MIN_LAP_US) continue;
+          int d1 = ((s_m_lastlane[c] - 1 + 1) % 3) + 1;
+          int d2 = ((s_m_lastlane[c] - 1 + 2) % 3) + 1;
+          if (p == d1 || p == d2) {
+            s_m_lastlane[c] = (uint8_t)p; s_lane_last_us[c] = t;        // 位置だけ進めて追従継続
+            Serial.printf("[SG] 完走後の惰走を無視 M%d lane=%d\n", c, p);
+            m = -1;                                                     // 記録破棄マーク
+            break;
+          }
+        }
+      }
       if (m == 0 && !s_lane_active[p]) m = p;
       // (3) 再同期救済：+1候補なし＆エントリー不可（レーン活性済み）のとき、
       //     「1ゲート取りこぼした車（期待+2の位置）」が唯一に定まるなら同一車として再同期。
@@ -1470,7 +1514,7 @@ void loop() {
         if (cand > 0) { m = cand; resync = true;
           Serial.printf("[SG] 再同期 M%d：1ゲート取りこぼしを補完 lane=%d\n", m, p); }
       }
-      if (m != 0) {
+      if (m > 0) {                        // m=-1（完走後惰走）は記録破棄・生PUSHのみ（20260831k）
         s_lane_active[m] = true;
         s_lane_cross[m] += resync ? 2 : 1;   // 再同期＝取りこぼしゲート分も加算し完走位置を維持（20260831j）
         s_m_lastlane[m] = (uint8_t)p;
@@ -1506,9 +1550,12 @@ void loop() {
           r.total_ms = (uint32_t)((t - start) / 1000ULL);  // F1式=緑起点／走行式=初回通過起点
           Serial.printf("[SEQ] M%d 完走 total=%.2fs\n", m, r.total_ms / 1000.0);
         }
-      } else {
+      } else if (m == 0) {
         Serial.printf("[SG] 帰属不能 lane=%u（表示のみスキップ・記録は継続）\n", p);
       }
+    }
+    if (hit.reverse) {   // 20260831k：逆走はTFT計測から除外済み。生データはこの後PUSHされる。
+      Serial.printf("[SG] 逆走(B->A)検知 lane=%u（TFT対象外・生データはPUSH）\n", hit.lane);
     }
     RawEvent e{ (uint8_t)NODE_ID, mesh::boot_id(), ++self_seq,
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };

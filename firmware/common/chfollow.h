@@ -27,6 +27,16 @@ using JoinSender = void (*)();   // 現chでJOINを1本撒くコールバック�
 static constexpr uint32_t SWEEP_AFTER_MS = 12000;  // 在圏切れ判定（GWビーコン2s×6本の余裕。GW側の数秒停止で走査に入らない・2026-08-24）
 static constexpr uint32_t SWEEP_DWELL_MS = 500;    // 1chあたりの滞在（JOIN撒いて待つ）
 
+// 20260831k：GW計測中ラッチ（「計測中はch走査禁止」・ユーザー確定）。
+//  GWビーコン付帯の racing フラグを note_gw_racing() で記憶。在圏が切れても、
+//  最後に聞いた状態が計測中なら RACING_HOLD_MS の間は走査を保留する（無駄なch離脱を抑止）。
+//  保持上限を設ける理由：レース中にGWが再起動しchが変わると、SEはもうGWの声を聞けない。
+//  我慢し続けると永遠に再接続できないため、60秒無音＝異常とみなして走査を再開する（安全弁）。
+static bool     s_gw_racing    = false;
+static uint32_t s_gw_racing_ms = 0;
+static constexpr uint32_t RACING_HOLD_MS = 60000;
+inline void note_gw_racing(bool racing) { s_gw_racing = racing; s_gw_racing_ms = millis(); }
+
 // 起動時の初手ch：前回学習値（NVS "m4cfg"/"ch"）→無ければ def（=ブートストラップ）。
 inline uint8_t initial_channel(uint8_t def) { return cfg::load_channel(def); }
 
@@ -49,6 +59,12 @@ inline void tick(JoinSender send_join) {
     return;
   }
 
+  // 在圏が切れた → 走査。ただし20260831k：GWが計測中(最後に聞いた状態)なら保留。
+  //   READYに戻ったビーコン(racing=0)を受ければ即・通常動作へ。60秒無音で安全弁解除。
+  if (s_gw_racing && (nowm - s_gw_racing_ms) < RACING_HOLD_MS) {
+    sweeping = false;                    // 保留中は走査状態も持ち越さない（次回は最初から）
+    return;
+  }
   // 在圏が切れた → 走査。ただし最初の1滞在は「現chのままJOIN再送」（2026-08-24）。
   //   GWが一時的に黙っていただけなら現chで即復帰でき、無駄なch離脱をしない。
   persisted = false;

@@ -116,6 +116,12 @@ struct BeamStatBody {
   uint8_t miss[3];      // 各レーンの側：0=なし / 1=Aのみ / 2=Bのみ / 3=両方
 };
 
+// GW在席ビーコンの任意ボディ（20260831k）。旧GWはボディ無し（body_len=0）で送るため
+//  受信側は body_len>=1 のときだけ読む＝後方互換。SEはこれで「計測中はch走査禁止」を実現。
+struct GwBeatBody {
+  uint8_t racing;       // 1=計測中(ARMED/GREEN/RACE)：ノードは在圏切れでもch走査を保留
+};
+
 // SYNC：往復で片道遅延とオフセットを推定（中継禁止）。
 struct SyncBody {
   uint64_t t_req_us;     // 要求送信時刻（要求元時計）
