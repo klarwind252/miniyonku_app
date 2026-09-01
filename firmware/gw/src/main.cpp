@@ -1174,6 +1174,9 @@ void setup() {
 //  s_show_ontrack：いまフルフレーム層にON TRACK画面が出ているか（tick_displayが4fpsで更新）。
 //   これがtrueのときだけ経過秒フィールドを上に重ねる（エラー面の上に重ねない保険）。
 static bool s_show_ontrack = false;
+// 20260901f：フル画面再描画(4fps)直後に右上カウンタを1回“強制repaint”して、
+//  250ms周期のヒッチ（カウントが一瞬止まって見える＝カクつき）を潰すためのワンショット。
+static bool s_time_force   = false;
 static constexpr uint32_t TIME_FIELD_MS = 16;   // 約60fps（より滑らか・2026-08-24）
 
 // 経過秒フィールドだけを高頻度で部分更新する（案B）。loop()から毎周回呼ぶ。
@@ -1182,7 +1185,8 @@ static constexpr uint32_t TIME_FIELD_MS = 16;   // 約60fps（より滑らか・
 static void tick_time_field() {
   if (!s_show_ontrack) return;                        // ON TRACK表示中のみ
   static uint32_t last_t = 0;
-  if (millis() - last_t < TIME_FIELD_MS) return;      // 約30fpsに間引き
+  if (!s_time_force && (millis() - last_t < TIME_FIELD_MS)) return;  // 通常は間引き／フル再描画直後は強制
+  s_time_force = false;
   last_t = millis();
   uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
   disp::draw_time_field(elapsed, /*hundredths=*/false);  // コンマ1秒（右上・滑らか描画）
@@ -1208,6 +1212,7 @@ static void render_ontrack_now() {
   uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
   disp::draw_ontrack(elapsed, /*blink=*/true, s_target_laps);
   s_show_ontrack = true;        // 以降、経過秒フィールドを約30fpsで重ねる
+  s_time_force   = true;        // 20260901f：即repaintでフル描画直後の隙を無くす
   disp::commit();               // ステータスバーを重ねて即転送
 }
 
@@ -1427,9 +1432,26 @@ static void tick_display() {
       break;
     case ST_GREEN:
     case ST_RACE: {
+      // 20260901g：カクつき根治。ON TRACK中はフル画面(320x240≒150KB)の転送を毎250ms行わず、
+      //  「ラップ確定/完走の内容が変わった時」だけフル再描画する。変化の無いフレームは
+      //  フル転送を一切打たず、右上カウンタ(小スプライト・tick_time_field)だけを更新＝滑らか。
+      //  ⚠従来は毎250msに150KBを転送→その数十msだけカウンタが凍り、周期的ヒッチに見えていた。
+      //  ● は点滅をやめ常時点灯（点滅のたびフル転送するとヒッチが復活するため）。
+      //  公式タイムはµs確定＝この間引きは計測精度に一切無関係。
+      static uint32_t ot_sig_prev = 0xFFFFFFFFu;
+      uint32_t sig = 0;
+      for (int i = 0; i < 3; i++)
+        sig = sig * 131u + (uint32_t)disp::g_run[i].done * 2u + (disp::g_run[i].fin ? 1u : 0u);
+      if (sig == ot_sig_prev && s_show_ontrack) {
+        // 変化なし＆既にON TRACK表示中：フル転送を打たない（ヒッチの元を断つ）。
+        //  右上カウンタは tick_time_field が毎ループ滑らかに更新し続ける。
+        return;
+      }
+      ot_sig_prev = sig;
       uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
-      disp::draw_ontrack(elapsed, blink, s_target_laps);
-      s_show_ontrack = true;      // 以降、経過秒フィールドを約30fpsで重ねる
+      disp::draw_ontrack(elapsed, /*blink=*/true, s_target_laps);   // ●は常時点灯（点滅でフル転送しない）
+      s_show_ontrack = true;      // 以降、経過秒フィールドを重ね続ける
+      s_time_force   = true;      // 20260901f：フル再描画の直後に右上カウンタを強制repaint
       break;
     }
     case ST_FINISH:

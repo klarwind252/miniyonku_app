@@ -7,13 +7,15 @@
 //
 //  ⚠実機なしのため座標・フォント・折り返しは docs/20.6 のとおり実機で追い込む前提。
 //    本モジュールは「型・状態切替・確定エラー文言」までを実装（see docs/20章追記）。
-//  ⚠この時点では当日ベストAPI(20.2)・ラップテーブル(20.3/20.4)の中身描画は
-//    プレースホルダ。数値の流し込みは残課題#8（レイアウト動的送信）とセットで拡張する。
+//  ⚠当日ベスト(20.2)：Total/Lap は GW自己完結の実値を描画（20260901・案A／電源ON毎に揮発）。
+//    Av./Max は速度＝アプリ側担当のため「-」据置き（案Bで埋める余地）。
+//    ラップテーブル(20.3/20.4)は g_run の実データを描画済み（DC37）。
 // ============================================================================
 #pragma once
 #include <Arduino.h>
 #include <math.h>
 #include <TFT_eSPI.h>
+#include "jpfont.h"        // 20260901h：日本語エラー文言用サブセットフォント（1bit・自動生成）
 #ifdef LOGO_B
   #include "logo_onedafull.h"
 #else
@@ -392,7 +394,7 @@ static void draw_status_bar() {
 }
 
 // ===== 待機(IDLE)画面（docs/20.2）==========================================
-//  当日ベスト4行はプレースホルダ（WiFi切れ時は「-」）。数値流し込みは後続。
+//  当日ベスト4行：Total/Lap は実値（20260901・案A）。Av./Max と未記録は「-」。
 // 接続中の機材ID一覧を上段中央に固定表示（READY/ON TRACK共通・フォント1・白・2026-08-24）。
 //  READYなら「READY」と「TODAY BEST」の間、ON TRACKなら「ON TRACK」とタイムの間。
 static void draw_link_line() {
@@ -597,78 +599,122 @@ static void draw_finish(int laps) {
 //    差し替え時は「行数・改行位置」を docs の確定文言に一致させること。
 
 // 単一エラーの本文行（ASCIIプレースホルダ。日本語はフォント導入後に差し替え）
+// ===== 日本語1bitフォント描画（jpfontサブセット・20260901h）=====================
+//  UTF-8文字列をデコードして s_spr に前景色で描く（背景は黒地に透過）。数字/英字も同梱。
+//  ⚠ エラー画面の静止テキスト専用。数字・右上カウンタ・ステータスバーは従来の内蔵フォント。
+static int jp_find(uint32_t cp) {                 // GLYPHSはcp昇順→二分探索
+  int lo = 0, hi = (int)jpf::COUNT - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1; uint16_t c = jpf::GLYPHS[mid].cp;
+    if (c == cp) return mid;
+    if (c < cp) lo = mid + 1; else hi = mid - 1;
+  }
+  return -1;
+}
+static constexpr int JP_LINE_H = jpf::CELL_H + 3;   // 行送り
+// x,yは行の左上。戻り値=描画後のペンX。
+static int jp_draw_string(int x, int y, const char* str, uint16_t color) {
+  int penx = x;
+  const uint8_t* pp = (const uint8_t*)str;
+  while (*pp) {
+    uint32_t cp; uint8_t b = *pp;
+    if (b < 0x80) { cp = b; pp += 1; }
+    else if ((b >> 5) == 0x6) { cp = ((uint32_t)(b & 0x1F) << 6) | (pp[1] & 0x3F); pp += 2; }
+    else if ((b >> 4) == 0xE) { cp = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)(pp[1] & 0x3F) << 6) | (pp[2] & 0x3F); pp += 3; }
+    else { pp += 1; continue; }
+    int gi = jp_find(cp);
+    if (gi < 0 && cp == 0x26A0) gi = jp_find('!');   // ⚠は未収録→「!」（生成側で代替済みだが保険）
+    if (gi < 0) { penx += jpf::CELL_H / 2; continue; }
+    const jpf::Glyph& g = jpf::GLYPHS[gi];
+    int bpr = (g.w + 7) >> 3;
+    const uint8_t* bm = &jpf::BITS[g.off];
+    for (int r = 0; r < jpf::CELL_H; r++)
+      for (int c = 0; c < g.w; c++)
+        if (bm[r * bpr + (c >> 3)] & (0x80 >> (c & 7)))
+          s_spr.drawPixel(penx + c, y + r, color);
+    penx += g.adv;
+  }
+  return penx;
+}
 static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
   n = 0;
   switch (e.kind) {
-    case ERR_GW_DUP:      // docs 20.5.2(1) GW2台検知（最優先）
-      out[n++] = "! GW x2 DETECTED";
-      out[n++] = "Two GWs are running.";
-      out[n++] = "Power OFF one of them.";
+    case ERR_GW_DUP:
+      out[n++] = "⚠ GW 2台 検知";
+      out[n++] = "GWが2台同時に";
+      out[n++] = "動いています。";
+      out[n++] = "どちらか1台の";
+      out[n++] = "電源を切ってください。";
       break;
-    case ERR_SEND_FAIL:   // docs 20.5.2(2) 送信失敗（データ保持を明記）
-      out[n++] = "! SEND FAILED";
-      out[n++] = "Server unreachable.";
-      out[n++] = "Data is retained.";
-      out[n++] = "Check WiFi / signal.";
-      out[n++] = "Auto-resend on idle.";
+    case ERR_SEND_FAIL:
+      out[n++] = "⚠ 送信失敗";
+      out[n++] = "サーバーに届きません。";
+      out[n++] = "データは保持しています。";
+      out[n++] = "WiFi・電波を確認。";
+      out[n++] = "待機画面で自動再送します。";
       break;
-    case ERR_NODE_LOST:   // docs 20.5.2(3) ノード離脱（label=SQ名）
-      out[n++] = "! NODE NO RESPONSE";
-      out[n++] = "No reply for 10s.";
-      out[n++] = "1) power/battery";
-      out[n++] = "2) restart";
-      out[n++] = "3) reposition";
+    case ERR_NODE_LOST:
+      out[n++] = "⚠ 応答なし";
+      out[n++] = "ゲートが10秒間";
+      out[n++] = "無応答です。";
+      out[n++] = "①電源・電池を確認";
+      out[n++] = "②再起動";
+      out[n++] = "③改善なければ位置調整";
       break;
-    case ERR_BEAM_CUT:    // docs 20.5.2(4) ビーム切れ（label=レーン）
-      out[n++] = "! BEAM CUT";
-      out[n++] = "Optical axis lost.";
-      out[n++] = "1) LED aim/height";
-      out[n++] = "2) clean slit";
-      out[n++] = "3) swap LED";
+    case ERR_BEAM_CUT:
+      out[n++] = "⚠ ビーム切れ";
+      out[n++] = "光軸が切れています。";
+      out[n++] = "①LEDの向き・高さ";
+      out[n++] = "②スリットの汚れ";
+      out[n++] = "③LED差し替え";
       break;
-    case ERR_SENSOR_BOTH: // A1：両ビーム欠(Wセンサー不良/CO/外乱光)・24.6（label=SQ/レーン）
-      out[n++] = "! DUAL SENSOR FAULT";
-      out[n++] = "Both beams blocked.";
-      out[n++] = "1) ceiling LED";
-      out[n++] = "2) floor W-sensor";
-      out[n++] = "3) wiring / stray light";
+    case ERR_SENSOR_BOTH:
+      out[n++] = "⚠ 両センサー異常";
+      out[n++] = "両方のビームが遮断。";
+      out[n++] = "①天井LED";
+      out[n++] = "②床のWセンサー";
+      out[n++] = "③配線・外乱光";
       break;
-    case ERR_SPEED_ONLY:  // A2：片ビーム欠(速度未計測)・24.6（label=SQ/レーン/AB）
-      out[n++] = "! BEAM NOT RECEIVED";
-      out[n++] = "Clean the floor slit.";
-      out[n++] = "1) clean floor hole";
-      out[n++] = "2) floor sensor";
-      out[n++] = "3) ceiling LED aim";
+    case ERR_SPEED_ONLY:
+      out[n++] = "⚠ ビーム未受信";
+      out[n++] = "床スリットを清掃。";
+      out[n++] = "①床穴の清掃";
+      out[n++] = "②床センサー";
+      out[n++] = "③天井LEDの向き";
       break;
-    case ERR_RC_DUP:      // リモコン2台検知（本改修で追加・GW2台と同思想）
-      out[n++] = "! REMOTE x2";
-      out[n++] = "Two remotes are on.";
-      out[n++] = "Power OFF one of them.";
+    case ERR_RC_DUP:
+      out[n++] = "⚠ リモコン 2台 検知";
+      out[n++] = "リモコンが2台同時に";
+      out[n++] = "動いています。";
+      out[n++] = "どちらか1台の";
+      out[n++] = "電源を切ってください。";
       break;
-    case ERR_SG_DUP:      // シグナル2台検知（本改修で追加・GW2台と同思想）
-      out[n++] = "! SIGNAL x2";
-      out[n++] = "Two signals are on.";
-      out[n++] = "Power OFF one of them.";
+    case ERR_SG_DUP:
+      out[n++] = "⚠ シグナル 2台 検知";
+      out[n++] = "シグナルが2台同時に";
+      out[n++] = "動いています。";
+      out[n++] = "どちらか1台の";
+      out[n++] = "電源を切ってください。";
       break;
-    case ERR_SECTOR_COMM: // C1：セクター通信不良(Lost)・24.14（label=SQ名）
-      out[n++] = "! SECTOR COMM LOST";
-      out[n++] = "Data did not arrive.";
-      out[n++] = "1) restart S/G & node";
-      out[n++] = "2) replace if persists";
+    case ERR_SECTOR_COMM:
+      out[n++] = "⚠ セクター通信不良";
+      out[n++] = "データが届きません。";
+      out[n++] = "①S/Gとノード再起動";
+      out[n++] = "②直らなければ交換";
       break;
-    case ERR_ALL_BEAM:    // 全ビーム断（TX共通系疑い・20260830c）
-      out[n++] = "! ALL BEAMS DOWN";
-      out[n++] = "TX side suspected.";
-      out[n++] = "1) LED 5V power";
-      out[n++] = "2) 38kHz drive (GPIO25)";
-      out[n++] = "3) ambient IR / wiring";
+    case ERR_ALL_BEAM:
+      out[n++] = "⚠ 全ビーム断";
+      out[n++] = "送信側の疑い。";
+      out[n++] = "①LED 5V電源";
+      out[n++] = "②38kHz駆動(GPIO25)";
+      out[n++] = "③外乱赤外・配線";
       break;
-    case ERR_READY_NOBEAM: // READY感知不能（label=機体/レーン/AB・20260831）
-      out[n++] = "! NO BEAM RECEIVED";
-      out[n++] = "Sensor not detecting.";
-      out[n++] = "1) align floor sensor";
-      out[n++] = "2) clean floor slit";
-      out[n++] = "3) ceiling LED aim";
+    case ERR_READY_NOBEAM:
+      out[n++] = "⚠ 受光できていません";
+      out[n++] = "センサー未検出。";
+      out[n++] = "①床センサーの調整";
+      out[n++] = "②床スリット清掃";
+      out[n++] = "③天井LEDの向き";
       break;
   }
 }
@@ -676,54 +722,45 @@ static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
 // 複数時の1行要約（docs 20.5.2(5) の固定順・ASCIIプレースホルダ）
 static void err_summary_line(const ErrItem& e, char* out, size_t n) {
   switch (e.kind) {
-    case ERR_GW_DUP:    snprintf(out, n, "- GW x2 detected (power off 1)"); break;
-    case ERR_SEND_FAIL: snprintf(out, n, "- send failed (%d held)", e.arg_i); break;
-    case ERR_NODE_LOST: snprintf(out, n, "- %s no response", e.label); break;
-    case ERR_BEAM_CUT:  snprintf(out, n, "- %s beam cut", e.label); break;
-    case ERR_SENSOR_BOTH: snprintf(out, n, "- %s dual sensor fault", e.label); break;
-    case ERR_SPEED_ONLY:  snprintf(out, n, "- %s beam not received (clean slit)", e.label); break;
-    case ERR_RC_DUP:    snprintf(out, n, "- remote x2 (power off 1)"); break;
-    case ERR_SG_DUP:    snprintf(out, n, "- signal x2 (power off 1)"); break;
-    case ERR_SECTOR_COMM: snprintf(out, n, "- %s comm lost (1 dropped)", e.label); break;
-    case ERR_ALL_BEAM:    snprintf(out, n, "- ALL beams down (check TX/LED)"); break;
-    case ERR_READY_NOBEAM: snprintf(out, n, "- %s no beam (align sensor)", e.label); break;
+    case ERR_GW_DUP: snprintf(out, n, "・GW2台検知（1台切る）"); break;
+    case ERR_SEND_FAIL: snprintf(out, n, "・送信失敗（%d件保持）", e.arg_i); break;
+    case ERR_NODE_LOST: snprintf(out, n, "・%s 応答なし", e.label); break;
+    case ERR_BEAM_CUT: snprintf(out, n, "・%s ビーム切れ", e.label); break;
+    case ERR_SENSOR_BOTH: snprintf(out, n, "・%s 両センサー異常", e.label); break;
+    case ERR_SPEED_ONLY: snprintf(out, n, "・%s ビーム未受信", e.label); break;
+    case ERR_RC_DUP: snprintf(out, n, "・リモコン2台検知（1台切る）"); break;
+    case ERR_SG_DUP: snprintf(out, n, "・シグナル2台検知（1台切る）"); break;
+    case ERR_SECTOR_COMM: snprintf(out, n, "・%s 通信不良", e.label); break;
+    case ERR_ALL_BEAM: snprintf(out, n, "・全ビーム断（送信側確認）"); break;
+    case ERR_READY_NOBEAM: snprintf(out, n, "・%s 受光なし", e.label); break;
   }
 }
 
 //  errs：優先順位順に積んだ配列。cnt=1なら単一詳細、>=2なら複数箇条書き。
 static void draw_error(const ErrItem* errs, int cnt) {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
-  s_spr.setTextColor(C_FINISH, C_BLACK);   // 黄色文字（docs/20.5）
-  s_spr.setTextDatum(TL_DATUM);
-
   if (cnt <= 1) {
     const char* lines[6]; int n = 0;
     if (cnt == 1) err_lines_single(errs[0], lines, n);
-    int font = (n <= 5) ? 4 : 2;           // 入りきらなければ縮小（20.1）
-    s_spr.setTextFont(font);
-    int lh = (font == 4) ? 30 : 22;
     int y = 8;
-    for (int i = 0; i < n; i++) { s_spr.drawString(lines[i], 8, y); y += lh; }
-    // ラベル（機体/レーン/AB）を1行目右側に重ねて出す：離脱・ビーム切れ・A1・A2
+    for (int i = 0; i < n; i++) { jp_draw_string(8, y, lines[i], C_FINISH); y += JP_LINE_H; }
+    // ラベル（機体/レーン/AB）を1行目右側に（ASCII＝内蔵フォント）：離脱・ビーム切れ・A1・A2・READY感知不能
     if (cnt == 1 && errs[0].label[0] &&
         (errs[0].kind == ERR_NODE_LOST || errs[0].kind == ERR_BEAM_CUT ||
          errs[0].kind == ERR_SENSOR_BOTH || errs[0].kind == ERR_SPEED_ONLY ||
          errs[0].kind == ERR_READY_NOBEAM)) {
-      s_spr.setTextFont(2);   // ラベルは小さめ（"SQ0 L1 A"が収まるように）
+      s_spr.setTextFont(2);
+      s_spr.setTextColor(C_FINISH, C_BLACK);
       s_spr.setTextDatum(TR_DATUM);
       s_spr.drawString(errs[0].label, W - 8, 10);
       s_spr.setTextDatum(TL_DATUM);
     }
   } else {
-    s_spr.setTextFont(4);
-    s_spr.drawString("! MULTIPLE ERRORS", 8, 8);
-    int font = (cnt <= 4) ? 4 : 2;
-    s_spr.setTextFont(font);
-    int lh = (font == 4) ? 30 : 22;
-    int y = 44;
+    jp_draw_string(8, 8, "⚠ 複数のエラー", C_FINISH);
+    int y = 8 + JP_LINE_H;
     for (int i = 0; i < cnt; i++) {
-      char line[48]; err_summary_line(errs[i], line, sizeof(line));
-      s_spr.drawString(line, 8, y); y += lh;
+      char line[64]; err_summary_line(errs[i], line, sizeof(line));
+      jp_draw_string(8, y, line, C_FINISH); y += JP_LINE_H;
     }
   }
 }
