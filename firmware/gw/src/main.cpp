@@ -1186,10 +1186,17 @@ static void tick_time_field() {
   if (!s_show_ontrack) return;                        // ON TRACK表示中のみ
   static uint32_t last_t = 0;
   if (!s_time_force && (millis() - last_t < TIME_FIELD_MS)) return;  // 通常は間引き／フル再描画直後は強制
-  s_time_force = false;
   last_t = millis();
   uint32_t elapsed = race_start_us() ? (uint32_t)((tsync::now_gw_us() - race_start_us()) / 1000ULL) : 0;  // 20260831i：緑or共通起点
-  disp::draw_time_field(elapsed, /*hundredths=*/false);  // コンマ1秒（右上・滑らか描画）
+  // 20260901i：表示値(0.1s)が変わった時だけ転送する。従来は約60回/秒の全push＝同じ絵を6回連続で
+  //  転送していた（SPI浪費）。値の切替(100ms)に同期した10回/秒へ＝SPI 1/6・歩進も均一で安定。
+  //  フル再描画直後の強制repaint(s_time_force)は値が同じでも必ず通す。
+  static uint32_t s_shown_ds = 0xFFFFFFFFu;
+  uint32_t ds = elapsed / 100u;               // 0.1秒単位の表示値
+  if (!s_time_force && ds == s_shown_ds) return;
+  s_shown_ds = ds;
+  s_time_force = false;
+  disp::draw_time_field(elapsed, /*hundredths=*/false);  // コンマ1秒（右上）
 }
 
 // ---- SET画面の即時描画（赤押下の即応・tick_displayの250msゲートを迂回）------
@@ -1216,6 +1223,23 @@ static void render_ontrack_now() {
   disp::commit();               // ステータスバーを重ねて即転送
 }
 
+// ---- 20260901i：静止画面の再描画抑止（パフォーマンス）------------------------
+//  READY/SET/FINISH/エラーは静止画面なのに、従来は内容不変でも毎250msに全画面
+//  (320x240≒150KB)を作り直してSPI転送していた＝CPU/SPI/電力の純粋な無駄（発熱源・23章）。
+//  「描く内容を全部ハッシュ」し、変化した時だけ描画・転送する。
+//  ⚠ ON TRACKは20260901gの専用間引き（g_runのみ監視・計測中はバー凍結）をそのまま維持。
+static uint32_t fnv1a(const void* p, size_t n, uint32_t h = 2166136261u) {
+  const uint8_t* b = (const uint8_t*)p;
+  while (n--) { h ^= *b++; h *= 16777619u; }
+  return h;
+}
+static uint32_t s_frame_sig_prev = 0;
+//  状態＋g_status全域（バーの全項目・ID一覧・READYの本日ベスト）を含む共通シグネチャ。
+//  g_status/g_runはstatic(ゼロ初期化)なのでパディングは常に0＝ハッシュは決定的。
+static uint32_t frame_sig_base() {
+  uint32_t h = fnv1a(&s_state, sizeof(s_state));
+  return fnv1a(&disp::g_status, sizeof(disp::g_status), h);
+}
 // ---- TFT描画：状態機械に同期して画面を切り替える（docs/20・12.3）----------
 //  ステータスバーの○×はここで g_status に反映してから各画面を描く。
 static void tick_display() {
@@ -1308,8 +1332,13 @@ static void tick_display() {
     if (disp::g_status.gw_dup) errs[cnt++].kind = disp::ERR_GW_DUP;
     if (disp::g_status.sg_dup) errs[cnt++].kind = disp::ERR_SG_DUP;
     if (disp::g_status.rc_dup) errs[cnt++].kind = disp::ERR_RC_DUP;
-    disp::draw_error(errs, cnt);
-    disp::commit();               // ステータスバーを重ねて転送
+    // 20260901i：内容が変わった時だけ描画（エラー表示中も毎250msの150KB転送をしない）
+    uint32_t esig = fnv1a(errs, sizeof(disp::ErrItem) * cnt, frame_sig_base() ^ 0xE1u);
+    if (esig != s_frame_sig_prev) {
+      s_frame_sig_prev = esig;
+      disp::draw_error(errs, cnt);
+      disp::commit();             // ステータスバーを重ねて転送
+    }
     s_show_ontrack = false;       // エラー面の上に経過秒を重ねない
     s_err_screen = true;          // 赤ボタン全面禁止（20260831e）
     buzzer_error_edge(true);      // エラー発生の立ち上がりで2秒1回
@@ -1401,8 +1430,13 @@ static void tick_display() {
         errs[cnt].kind = disp::ERR_SECTOR_COMM;                       // C1（最後尾・出しっぱなし）
         snprintf(errs[cnt].label, sizeof(errs[cnt].label), "SQ%u", s_lost_src); cnt++;
       }
-      disp::draw_error(errs, cnt);
-      disp::commit();
+      // 20260901i：内容が変わった時だけ描画（同上）
+      uint32_t esig = fnv1a(errs, sizeof(disp::ErrItem) * cnt, frame_sig_base() ^ 0xE2u);
+      if (esig != s_frame_sig_prev) {
+        s_frame_sig_prev = esig;
+        disp::draw_error(errs, cnt);
+        disp::commit();
+      }
       s_show_ontrack = false;     // エラー面の上に経過秒を重ねない
       s_err_screen = true;        // 赤ボタン全面禁止（20260831e）
       buzzer_error_edge(true);    // エラー発生の立ち上がりで2秒1回
@@ -1419,17 +1453,27 @@ static void tick_display() {
   if (!err_cond_live) s_err_ack = false;
 
   switch (s_state) {
-    case ST_IDLE:
+    case ST_IDLE: {
+      // 20260901i：READYは静止画面。内容(状態＋g_status＝バー全項目/ID一覧/本日ベスト)が
+      //  変わらない限り再描画・転送しない（従来は常時4fpsで150KB転送＝純無駄・発熱源）。
+      uint32_t sig = frame_sig_base();
+      if (sig == s_frame_sig_prev) { s_show_ontrack = false; return; }
+      s_frame_sig_prev = sig;
       disp::draw_idle();
       s_show_ontrack = false;
       break;
-    case ST_ARMED:
+    }
+    case ST_ARMED: {
       // 赤押下を受け付けた「間」を埋める SET 画面（docs/20.6）。
       //   READY(待機)から即切り替わることで、押下が通ったことを視認できる。
-      //   緑点灯(ST_GREEN)へ移るまでこの表示。blinkで「GET READY」ドットを点滅。
+      //   20260901i：SETは静止画面（blinkは2026-08-24bで未使用）。変化時のみ描画・転送。
+      uint32_t sig = frame_sig_base();
+      if (sig == s_frame_sig_prev) { s_show_ontrack = false; return; }
+      s_frame_sig_prev = sig;
       disp::draw_set(blink);
       s_show_ontrack = false;
       break;
+    }
     case ST_GREEN:
     case ST_RACE: {
       // 20260901g：カクつき根治。ON TRACK中はフル画面(320x240≒150KB)の転送を毎250ms行わず、
@@ -1454,10 +1498,17 @@ static void tick_display() {
       s_time_force   = true;      // 20260901f：フル再描画の直後に右上カウンタを強制repaint
       break;
     }
-    case ST_FINISH:
+    case ST_FINISH: {
+      // 20260901i：FINISHも静止画面。結果(g_run)・周回数・バーが不変なら転送しない。
+      //  FINISH中の余走は結果を上書きしない仕様＝g_run不変＝自然にスキップされる。
+      uint32_t sig = fnv1a(disp::g_run, sizeof(disp::g_run),
+                           fnv1a(&s_target_laps, sizeof(s_target_laps), frame_sig_base()));
+      if (sig == s_frame_sig_prev) { s_show_ontrack = false; return; }
+      s_frame_sig_prev = sig;
       disp::draw_finish(s_target_laps);   // 合計＋各周ラップ（docs/20.4・20260830実装）
       s_show_ontrack = false;             // 経過秒カウントは消す（docs/20.4）
       break;
+    }
   }
   buzzer_error_edge(false);              // エラー無し＝立ち上がり検出をリセット（再発時にまた1回鳴る）
   disp::commit();                        // ステータスバーを重ねて一括転送
