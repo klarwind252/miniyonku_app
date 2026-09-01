@@ -324,14 +324,15 @@ static inline void note_quality(uint8_t q, uint8_t src, uint8_t lane = 0, uint8_
 
 // ビーム欠エラーのラベル生成：「SQ0 L1 A」等（機体名＋レーン＋A/B）。20260830c。
 //  src=node_id（0..5=SQ / 6,7=GW）。lane=1..3。miss=1(A欠け)/2(B欠け)/0(不明)。
+// 20260901j：本文へ差し込む日本語ラベルを作る（例「GW6 レーン1 センサーA」）。
+//  機体名(GW6/SQ0..)は英数字のまま。lane→レーンN、miss(1/2)→センサーA/B。
 static void build_beam_label(char* out, size_t n, uint8_t src, uint8_t lane, uint8_t miss) {
   const char* kind = (src <= 5) ? "SQ" : "GW";
-  char ab[3] = "";
-  if (miss == 1) strcpy(ab, "A");
-  else if (miss == 2) strcpy(ab, "B");
   if (lane >= 1 && lane <= 3) {
-    if (ab[0]) snprintf(out, n, "%s%u L%u %s", kind, src, lane, ab);
-    else       snprintf(out, n, "%s%u L%u", kind, src, lane);
+    if (miss == 1)      snprintf(out, n, "%s%u レーン%u センサーA", kind, src, lane);
+    else if (miss == 2) snprintf(out, n, "%s%u レーン%u センサーB", kind, src, lane);
+    else if (miss == 3) snprintf(out, n, "%s%u レーン%u センサーAB", kind, src, lane);  // 20260901k：両側
+    else                snprintf(out, n, "%s%u レーン%u", kind, src, lane);
   } else {
     snprintf(out, n, "%s%u", kind, src);
   }
@@ -1381,7 +1382,7 @@ static void tick_display() {
       disp::ErrItem e1[1];
       e1[0].kind = disp::ERR_READY_NOBEAM;
       build_beam_label(e1[0].label, sizeof(e1[0].label), s_nobeam_src, s_nobeam_lane,
-                       (s_nobeam_miss == 3) ? 0 : s_nobeam_miss);
+                       s_nobeam_miss);   // 20260901k：miss=3(両側)→センサーAB
       disp::draw_error(e1, 1);
       disp::commit();
       s_show_ontrack = false;
@@ -1420,7 +1421,7 @@ static void tick_display() {
       if (a1 && cnt < 4) {
         errs[cnt].kind = disp::ERR_SENSOR_BOTH;                       // A1 両ビーム欠
         build_beam_label(errs[cnt].label, sizeof(errs[cnt].label), s_race_q2_src, s_race_q2_lane,
-                         (s_race_q2_miss == 3) ? 0 : s_race_q2_miss); cnt++;
+                         s_race_q2_miss); cnt++;   // 20260901k：miss=3(両側)→センサーAB
       }
       if (a2 && cnt < 4) {
         errs[cnt].kind = disp::ERR_SPEED_ONLY;                        // A2 片ビーム欠

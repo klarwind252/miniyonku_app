@@ -100,7 +100,7 @@ enum ErrKind {
 struct ErrItem {
   ErrKind kind;
   int  arg_i = 0;        // ノードID or レーン番号 or 保持件数
-  char label[16] = {0};  // "SQ3" / "L2" 等（該当時）
+  char label[40] = {0};  // 20260901j：本文差し込み用の日本語ラベル（例「GW6 レーン1 センサーA」）
 };
 
 // ---- 共有状態（main側が随時更新する。バー描画がこれを読む）----------------
@@ -419,50 +419,46 @@ static void draw_idle() {
   s_spr.setTextDatum(TR_DATUM);
   s_spr.drawString("TODAY BEST", W - 8, 12);
 
-  // 本日のベスト4行（20260901）。Total/Lap は GW自己完結の実値（電源ON毎に揮発）、
-  //  Av./Max は速度＝アプリ側担当のため常時「-」据置き（案A）。未記録も「-」。
-  //  各行：ラベル(左) / 数値(右揃え) / 単位 / レーン番号(右端・レーン色)。
-  //  ⚠ 座標・フォントは docs/20.6 のとおり実機で追い込む前提（TFT_eSPI組込みフォント）。
-  struct BRow { const char* label; uint32_t ms; uint8_t lane; bool is_speed; const char* unit; };
-  const BRow rows[4] = {
-    { "Total", g_status.best_total_ms, g_status.best_total_lane, false, "s"   },
-    { "Av.",   0,                      0,                        true,  "m/s" },
-    { "Lap",   g_status.best_lap_ms,   g_status.best_lap_lane,   false, "s"   },
-    { "Max",   0,                      0,                        true,  "m/s" },
+  // 本日のベスト（20260901j：速度2行(Av./Max)は削除。Total/Lap の2行を大きく・空間を使う）。
+  //  Total/Lap は GW自己完結の実値（電源ON毎に揮発／過不足なく完走したF1式・走行式問わず）。
+  //  未記録は「-」。各行：ラベル(左) / 数値(右) / 単位 / レーン色L番号(右端)。実機で座標追い込み前提。
+  struct BRow { const char* label; uint32_t ms; uint8_t lane; };
+  const BRow rows[2] = {
+    { "Total", g_status.best_total_ms, g_status.best_total_lane },
+    { "Lap",   g_status.best_lap_ms,   g_status.best_lap_lane   },
   };
-  const int COL_VAL_R  = W - 84;   // 数値の右端
+  const int COL_VAL_R  = W - 78;   // 数値の右端
   const int COL_UNIT_R = W - 44;   // 単位の右端
   const int COL_LANE_R = W - 8;    // レーン番号の右端（レーン色）
-  int y = 60;
-  for (int i = 0; i < 4; i++) {
+  int y = 66;
+  for (int i = 0; i < 2; i++) {
     const BRow& rw = rows[i];
-    const bool big = (i == 0);     // Total行だけ大きく（docs/20.2）
-    // ラベル（左）
+    // ラベル（左・大きく font4）
     s_spr.setTextDatum(TL_DATUM);
     s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.setTextFont(big ? 4 : 2);
-    s_spr.drawString(rw.label, 16, y);
-    // 数値（右揃え）。速度2行と未記録は「-」。100秒以上は %.1f で桁あふれ回避。
+    s_spr.setTextFont(4);
+    s_spr.drawString(rw.label, 16, y + 6);
+    // 数値（右揃え・font4 を size2 で拡大＝空いた縦空間を使って大きく）
     char val[12];
-    if (rw.is_speed || rw.ms == 0)      snprintf(val, sizeof(val), "-");
-    else if (rw.ms >= 100000)           snprintf(val, sizeof(val), "%.1f", rw.ms / 1000.0);
-    else                                snprintf(val, sizeof(val), "%.2f", rw.ms / 1000.0);
+    if (rw.ms == 0)            snprintf(val, sizeof(val), "-");
+    else if (rw.ms >= 100000)  snprintf(val, sizeof(val), "%.1f", rw.ms / 1000.0);
+    else                       snprintf(val, sizeof(val), "%.2f", rw.ms / 1000.0);
     s_spr.setTextDatum(TR_DATUM);
     s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.setTextFont(big ? 4 : 2);
+    s_spr.setTextFont(4); s_spr.setTextSize(2);
     s_spr.drawString(val, COL_VAL_R, y);
-    // 単位（数値の右）
-    s_spr.setTextFont(big ? 2 : 1);
-    s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.drawString(rw.unit, COL_UNIT_R, y + (big ? 10 : 4));
-    // レーン番号（右端・レーン色）。実値がある時間系の行だけ。
-    if (!rw.is_speed && rw.ms > 0 && rw.lane >= 1 && rw.lane <= 3) {
+    s_spr.setTextSize(1);
+    // 単位
+    s_spr.setTextFont(4);
+    s_spr.drawString("s", COL_UNIT_R, y + 20);
+    // レーン番号（右端・レーン色）。実値がある行のみ。
+    if (rw.ms > 0 && rw.lane >= 1 && rw.lane <= 3) {
       char ln[4]; snprintf(ln, sizeof(ln), "L%u", rw.lane);
-      s_spr.setTextFont(2);
+      s_spr.setTextFont(4);
       s_spr.setTextColor(lane_color(rw.lane), C_BLACK);
-      s_spr.drawString(ln, COL_LANE_R, y + (big ? 6 : 1));
+      s_spr.drawString(ln, COL_LANE_R, y + 14);
     }
-    y += big ? 40 : 34;
+    y += 78;   // 2行ぶんで空間を広く使う
   }
   draw_link_line();   // 上段中央に接続機材ID一覧
 }
@@ -636,85 +632,78 @@ static int jp_draw_string(int x, int y, const char* str, uint16_t color) {
   }
   return penx;
 }
-static void err_lines_single(const ErrItem& e, const char* out[6], int& n) {
+// 20260901j：単一エラー本文。ゲート/レーン/センサーA-Bは e.label（例「GW6 レーン1 センサーA」）
+//  を本文へ差し込む（%s）。ラベル無しのkindは固定文。書き込み先はcaller提供のバッファ。
+static void err_lines_single(const ErrItem& e, char out[6][64], int& n) {
   n = 0;
   switch (e.kind) {
     case ERR_GW_DUP:
-      out[n++] = "⚠ GW 2台 検知";
-      out[n++] = "GWが2台同時に";
-      out[n++] = "動いています。";
-      out[n++] = "どちらか1台の";
-      out[n++] = "電源を切ってください。";
+      snprintf(out[n++], 64, "⚠ GW 2台 検知");
+      snprintf(out[n++], 64, "GWが2台同時に");
+      snprintf(out[n++], 64, "動いています。");
+      snprintf(out[n++], 64, "どちらか1台の");
+      snprintf(out[n++], 64, "電源を切ってください。");
       break;
     case ERR_SEND_FAIL:
-      out[n++] = "⚠ 送信失敗";
-      out[n++] = "サーバーに届きません。";
-      out[n++] = "データは保持しています。";
-      out[n++] = "WiFi・電波を確認。";
-      out[n++] = "待機画面で自動再送します。";
+      snprintf(out[n++], 64, "⚠ 送信失敗");
+      snprintf(out[n++], 64, "サーバーに届きません。");
+      snprintf(out[n++], 64, "データは保持しています。");
+      snprintf(out[n++], 64, "WiFi・電波を確認。");
+      snprintf(out[n++], 64, "待機画面で自動再送します。");
       break;
     case ERR_NODE_LOST:
-      out[n++] = "⚠ 応答なし";
-      out[n++] = "ゲートが10秒間";
-      out[n++] = "無応答です。";
-      out[n++] = "①電源・電池を確認";
-      out[n++] = "②再起動";
-      out[n++] = "③改善なければ位置調整";
+      snprintf(out[n++], 64, "⚠ %s が応答なし", e.label);
+      snprintf(out[n++], 64, "10秒間 無応答です。");
+      snprintf(out[n++], 64, "①電源・電池を確認");
+      snprintf(out[n++], 64, "②再起動");
+      snprintf(out[n++], 64, "③改善なければ位置調整");
       break;
     case ERR_BEAM_CUT:
-      out[n++] = "⚠ ビーム切れ";
-      out[n++] = "光軸が切れています。";
-      out[n++] = "①LEDの向き・高さ";
-      out[n++] = "②スリットの汚れ";
-      out[n++] = "③LED差し替え";
+      snprintf(out[n++], 64, "⚠ %s 光軸切れ", e.label);
+      snprintf(out[n++], 64, "光軸が切れています。");
+      snprintf(out[n++], 64, "①LEDの向き・高さ");
+      snprintf(out[n++], 64, "②スリットの汚れ");
+      snprintf(out[n++], 64, "③LED差し替え");
       break;
     case ERR_SENSOR_BOTH:
-      out[n++] = "⚠ 両センサー異常";
-      out[n++] = "両方のビームが遮断。";
-      out[n++] = "①天井LED";
-      out[n++] = "②床のWセンサー";
-      out[n++] = "③配線・外乱光";
+      // 20260901k：A2(片側)と同一体裁に統一。違いはラベルの センサーA/B/AB だけ。
+      snprintf(out[n++], 64, "⚠ %s 異常", e.label);
+      snprintf(out[n++], 64, "①床センサーの清掃");
+      snprintf(out[n++], 64, "②天井LED破損確認");
       break;
     case ERR_SPEED_ONLY:
-      out[n++] = "⚠ ビーム未受信";
-      out[n++] = "床スリットを清掃。";
-      out[n++] = "①床穴の清掃";
-      out[n++] = "②床センサー";
-      out[n++] = "③天井LEDの向き";
+      snprintf(out[n++], 64, "⚠ %s 異常", e.label);
+      snprintf(out[n++], 64, "①床センサーの清掃");
+      snprintf(out[n++], 64, "②天井LED破損確認");
       break;
     case ERR_RC_DUP:
-      out[n++] = "⚠ リモコン 2台 検知";
-      out[n++] = "リモコンが2台同時に";
-      out[n++] = "動いています。";
-      out[n++] = "どちらか1台の";
-      out[n++] = "電源を切ってください。";
+      snprintf(out[n++], 64, "⚠ リモコン 2台 検知");
+      snprintf(out[n++], 64, "リモコンが2台同時に");
+      snprintf(out[n++], 64, "動いています。");
+      snprintf(out[n++], 64, "どちらか1台の");
+      snprintf(out[n++], 64, "電源を切ってください。");
       break;
     case ERR_SG_DUP:
-      out[n++] = "⚠ シグナル 2台 検知";
-      out[n++] = "シグナルが2台同時に";
-      out[n++] = "動いています。";
-      out[n++] = "どちらか1台の";
-      out[n++] = "電源を切ってください。";
+      snprintf(out[n++], 64, "⚠ シグナル 2台 検知");
+      snprintf(out[n++], 64, "シグナルが2台同時に");
+      snprintf(out[n++], 64, "動いています。");
+      snprintf(out[n++], 64, "どちらか1台の");
+      snprintf(out[n++], 64, "電源を切ってください。");
       break;
     case ERR_SECTOR_COMM:
-      out[n++] = "⚠ セクター通信不良";
-      out[n++] = "データが届きません。";
-      out[n++] = "①S/Gとノード再起動";
-      out[n++] = "②直らなければ交換";
+      snprintf(out[n++], 64, "⚠ %s 通信不良", e.label);
+      snprintf(out[n++], 64, "SEと通信できません");
+      snprintf(out[n++], 64, "全端末再起動");
       break;
     case ERR_ALL_BEAM:
-      out[n++] = "⚠ 全ビーム断";
-      out[n++] = "送信側の疑い。";
-      out[n++] = "①LED 5V電源";
-      out[n++] = "②38kHz駆動(GPIO25)";
-      out[n++] = "③外乱赤外・配線";
+      snprintf(out[n++], 64, "⚠ %s 全ビーム断", e.label);
+      snprintf(out[n++], 64, "断線・基盤損傷の疑い");
+      snprintf(out[n++], 64, "外乱光を対策");
       break;
     case ERR_READY_NOBEAM:
-      out[n++] = "⚠ 受光できていません";
-      out[n++] = "センサー未検出。";
-      out[n++] = "①床センサーの調整";
-      out[n++] = "②床スリット清掃";
-      out[n++] = "③天井LEDの向き";
+      snprintf(out[n++], 64, "⚠ %s 受光なし", e.label);
+      snprintf(out[n++], 64, "①床センサーの清掃");
+      snprintf(out[n++], 64, "②天井LED破損確認");
       break;
   }
 }
@@ -726,8 +715,8 @@ static void err_summary_line(const ErrItem& e, char* out, size_t n) {
     case ERR_SEND_FAIL: snprintf(out, n, "・送信失敗（%d件保持）", e.arg_i); break;
     case ERR_NODE_LOST: snprintf(out, n, "・%s 応答なし", e.label); break;
     case ERR_BEAM_CUT: snprintf(out, n, "・%s ビーム切れ", e.label); break;
-    case ERR_SENSOR_BOTH: snprintf(out, n, "・%s 両センサー異常", e.label); break;
-    case ERR_SPEED_ONLY: snprintf(out, n, "・%s ビーム未受信", e.label); break;
+    case ERR_SENSOR_BOTH: snprintf(out, n, "・%s 異常", e.label); break;
+    case ERR_SPEED_ONLY: snprintf(out, n, "・%s 異常", e.label); break;
     case ERR_RC_DUP: snprintf(out, n, "・リモコン2台検知（1台切る）"); break;
     case ERR_SG_DUP: snprintf(out, n, "・シグナル2台検知（1台切る）"); break;
     case ERR_SECTOR_COMM: snprintf(out, n, "・%s 通信不良", e.label); break;
@@ -740,26 +729,16 @@ static void err_summary_line(const ErrItem& e, char* out, size_t n) {
 static void draw_error(const ErrItem* errs, int cnt) {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
   if (cnt <= 1) {
-    const char* lines[6]; int n = 0;
+    char lines[6][64]; int n = 0;
     if (cnt == 1) err_lines_single(errs[0], lines, n);
     int y = 8;
     for (int i = 0; i < n; i++) { jp_draw_string(8, y, lines[i], C_FINISH); y += JP_LINE_H; }
-    // ラベル（機体/レーン/AB）を1行目右側に（ASCII＝内蔵フォント）：離脱・ビーム切れ・A1・A2・READY感知不能
-    if (cnt == 1 && errs[0].label[0] &&
-        (errs[0].kind == ERR_NODE_LOST || errs[0].kind == ERR_BEAM_CUT ||
-         errs[0].kind == ERR_SENSOR_BOTH || errs[0].kind == ERR_SPEED_ONLY ||
-         errs[0].kind == ERR_READY_NOBEAM)) {
-      s_spr.setTextFont(2);
-      s_spr.setTextColor(C_FINISH, C_BLACK);
-      s_spr.setTextDatum(TR_DATUM);
-      s_spr.drawString(errs[0].label, W - 8, 10);
-      s_spr.setTextDatum(TL_DATUM);
-    }
+    // 20260901j：機体/レーン/センサーは本文へ差し込んだので、右上ラベルは廃止。
   } else {
     jp_draw_string(8, 8, "⚠ 複数のエラー", C_FINISH);
     int y = 8 + JP_LINE_H;
     for (int i = 0; i < cnt; i++) {
-      char line[64]; err_summary_line(errs[i], line, sizeof(line));
+      char line[80]; err_summary_line(errs[i], line, sizeof(line));
       jp_draw_string(8, y, line, C_FINISH); y += JP_LINE_H;
     }
   }
