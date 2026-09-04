@@ -43,12 +43,18 @@ static inline uint8_t mask() { return s_mask; }
 static constexpr uint32_t DEBOUNCE_US  = 1500;   // 跳ね除去（遮断幅19msより十分小）
 // 20260831k：速度域は 1〜10m/s（ユーザー確定）。最高10m/s→A→B 3ms／最低1m/s→A→B 30ms。
 //   対待ちは最低速側で決まる。40ms=30ms+余裕10ms（どんなに遅くても速度計測を成立させる）。
-//   不応期(REFRACTORY_US=100ms)＞40ms・地点間最短(MIN_LAP_US=1s)≫40ms で整合済み。
+//   通過中ラッチ(CLEAR_US=70ms・改修⑤)＞40ms・地点間最短(MIN_LAP_US=1s)≫40ms で整合済み。
 static constexpr uint32_t PAIR_WAIT_US = 40000;  // A→B待ち猶予(30mm/1m/s=30ms+余裕)。超えたら片ビーム(q=1)
-// 20260831h：1通過確定後の不応期。A/Bが割れて確定しても、対の残り物や車体長ぶんの
-//   遮断残響（最長75ms程度）を新規通過として二重カウントしないよう締め出す。
-//   地点間の最短到達(MIN_LAP_US=1s)より十分短い100msに設定（隣地点の正規通過は締め出さない）。
-static constexpr uint32_t REFRACTORY_US = 100000; // 100ms（対確定後の同レーン締め出し）
+// 20260904 改修⑤（案B・ビーム開ラッチ）：旧・固定不応期(REFRACTORY_US=100ms)を廃止。
+//   固定時間だと低速(1〜1.5m/s)で車体長(150mm)を覆いきれず、車体後部の隙間や空洞シャーシ
+//   (実測：150mm中10mm前後の空洞)の後端エッジを「別の通過」＝ファントムとして誤確定していた
+//   （TFTはMIN_LAP 1sで弾くがspool→サーバーには幽霊イベントが流入＝誤レーン/幽霊周回の根）。
+//   対策：先頭ペア確定後そのレーンを「通過中」ラッチし、生ビームが CLEAR_US 連続で開くまで
+//   再武装しない。空洞の隙間で一瞬開いても再遮断で計測をリセット＝1台を1通過に束ねる。
+//   速度に自動追従（速い車は即再武装／遅い車は通過し切るまで保持）。
+//   CLEAR_US=70ms 根拠：空洞10mm÷最低速1m/s=10ms開きの7倍マージン。70ms開くには70mm@1m/s
+//   必要＝空洞では起こり得ない。次周のMIN_LAP_US(1s)≫70msで正規通過は一切潰さない。
+static constexpr uint32_t CLEAR_US = 70000;  // 70ms（通過中ラッチの再武装しきい値・案B）
 // 24.5 A1：両ビーム欠（LED破損・センサー破損・光軸ズレ・CO停車・外乱光の感度飽和）。
 //   遮断(LOW)が STICK_US 継続したら「張り付き」＝異常として quality=2 を1回発火。
 //   3秒＝READY感知不能エラー／A1故障判定の共通しきい値（20260831b）。
@@ -69,10 +75,10 @@ struct Hit {
 //  遮断が始まった時刻を保持。STICK_US 継続で quality=2 を1回発火。復帰で解除。
 static uint64_t s_block_since[LANES] = {0};   // 0=非遮断 / 非0=遮断開始µs
 static bool     s_stick_fired[LANES] = {false}; // このブロック区間で発火済みか
-// 20260831h：1通過(A/B対)確定後の不応期。A→Bが割れて確定した直後に、対の残り物や
-//   3cm由来の遅延エッジを「新しい通過」として二重カウントしないための締め出し窓。
-//   poll確定時に now_us()+REFRACTORY_US を入れ、これを過ぎるまで同レーンの新規発火を捨てる。
-static uint64_t s_refractory_until[LANES] = {0};
+// 20260904 改修⑤（案B）：通過中ラッチ。先頭ペア確定でONにし、生ビームが CLEAR_US 連続で
+//   開くまで再武装しない。ラッチ中に溜まったエッジ（同一車の残響・空洞後端）は捨てる。
+static bool     s_pass_latched[LANES] = {false};  // true=通過中（再武装待ち）
+static uint64_t s_open_since[LANES]   = {0};       // 生ビーム両方openになった時刻µs（0=まだ遮断中）
 
 // ---- ISR用の生状態（レーンごと・volatile）---------------------------------
 static volatile uint64_t s_a_edge[LANES] = {0};
@@ -220,26 +226,38 @@ static bool poll(Hit& out) {
   // A1張り付きを先に判定（異常は通過確定より優先して知らせる）
   if (poll_stick(out)) return true;
 
+  uint64_t t = now_us();
   for (int i = 0; i < LANES; i++) {
     if (!lane_on(i)) continue;            // マスク外レーンは見ない（20260830c）
+
+    // 20260904 改修⑤（案B）：通過中ラッチ。先頭ペア確定後、生ビームが CLEAR_US 連続で
+    //   開くまで再武装しない。空洞シャーシの隙間で一瞬開いても、その後の再遮断で
+    //   open_since をリセット＝1台を1通過に束ねる（速度に自動追従）。
+    if (s_pass_latched[i]) {
+      bool a_blk = raw_a_blocked(i), b_blk = raw_b_blocked(i);
+      if (a_blk || b_blk) {
+        s_open_since[i] = 0;                        // まだ車体（or 空洞後端）がいる→開き計測やり直し
+      } else if (s_open_since[i] == 0) {
+        s_open_since[i] = t;                        // 両方開いた瞬間から連続開を計測開始
+      } else if (t - s_open_since[i] >= CLEAR_US) {
+        s_pass_latched[i] = false; s_open_since[i] = 0;   // 連続開が続いた→再武装
+      }
+      // ラッチ中に溜まったエッジは通過ではない（同一車の残響・空洞）→読み捨てる
+      noInterrupts(); s_a_edge[i] = 0; s_b_edge[i] = 0; interrupts();
+      continue;
+    }
+
     noInterrupts();
     uint64_t a = s_a_edge[i], b = s_b_edge[i];
     interrupts();
 
     if (a == 0 && b == 0) continue;
 
-    // 20260831h：不応期中（直前の対確定直後）は、対の残り物や車体残響を新規通過に
-    //   しない。エッジを読み捨ててクリアし、二重カウント／誤レーン記録を止める。
-    if (now_us() < s_refractory_until[i]) {
-      noInterrupts(); s_a_edge[i] = 0; s_b_edge[i] = 0; interrupts();
-      continue;
-    }
-
     // 対待ち：先に来たエッジ（A優先。無ければB）を起点に PAIR_WAIT_US 窓で相方を待つ。
     //   窓内に両方揃えば have_both、窓を過ぎたら片ビーム(q=1)で確定（Aが無ければBで代用）。
     uint64_t first = a ? a : b;
     bool have_both = (a != 0 && b != 0);
-    if (!have_both && (now_us() - first) < PAIR_WAIT_US) continue; // まだ対を待つ
+    if (!have_both && (t - first) < PAIR_WAIT_US) continue; // まだ対を待つ
 
     out.lane    = (uint8_t)(i + 1);
     out.t_a_us  = a;
@@ -251,14 +269,29 @@ static bool poll(Hit& out) {
     //   TFT計測はGW側で reverse を見て除外。生データ(spool)はそのままPUSH（アプリで再判定）。
     out.reverse = (have_both && b < a);
 
-    // この通過を確定。両edgeをクリアし、不応期を張って以後の残響を締め出す（20260831h）。
+    // この通過を確定。両edgeをクリアし、通過中ラッチON（再武装はビーム連続開で・案B）。
     noInterrupts();
     s_a_edge[i] = 0; s_b_edge[i] = 0;
     interrupts();
-    s_refractory_until[i] = now_us() + REFRACTORY_US;
+    s_pass_latched[i] = true; s_open_since[i] = 0;
     return true;
   }
   return false;
+}
+
+// ---- 20260904 改修④①：ビーム状態の全クリア（RESETで残留を一掃）------------
+//  RESET(灰)直後に、残留エッジ・進行中の張り付きタイマ・通過中ラッチが新しい内部レースを
+//  誤って起動させないよう、全レーンの検出状態をリセットする。on_reset_pressed から呼ぶ。
+static void flush() {
+  noInterrupts();
+  for (int i = 0; i < LANES; i++) { s_a_edge[i] = 0; s_b_edge[i] = 0; }
+  interrupts();
+  for (int i = 0; i < LANES; i++) {
+    s_block_since[i]  = 0;
+    s_stick_fired[i]  = false;
+    s_pass_latched[i] = false;
+    s_open_since[i]   = 0;
+  }
 }
 
 } // namespace beam

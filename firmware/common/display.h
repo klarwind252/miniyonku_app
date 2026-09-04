@@ -88,7 +88,12 @@ static inline void run_reset() { for (int i = 0; i < 3; i++) g_run[i] = LaneRun(
 //  ⚠ A1/A2/C1（ERR_SENSOR_BOTH/ERR_SPEED_ONLY/ERR_SECTOR_COMM）は 24.5/24.6/24.14 で確定。
 //     優先順位（20.5.2＋24.14）：GW2台 > 送信失敗 > ノード離脱 > ビーム切れ/A1 > A2 > SG重複 > RC重複 > C1
 enum ErrKind {
-  ERR_GW_DUP=0, ERR_SEND_FAIL, ERR_NODE_LOST, ERR_BEAM_CUT,
+  // 20260904 改修③：ERR_SEND_FAIL / ERR_NODE_LOST / ERR_BEAM_CUT は文言だけあって
+  //   main.cpp から一度もインスタンス化されない死に配線だったため削除（送信失敗は
+  //   全画面に出さない方針で確定。ノード離脱はバーのSQ n/m、光軸切れはBeam:NG＋
+  //   READY感知不能/A1/A2/全ビーム断でカバー）。優先順位はif文の並び順で実装され
+  //   enum数値には依存しないため、後続の値が繰り上がっても他エラーに影響なし。
+  ERR_GW_DUP=0,
   ERR_SENSOR_BOTH,   // A1：両ビーム欠(Wセンサー不良/CO/外乱光)・24.6
   ERR_SPEED_ONLY,    // A2：片ビーム欠(速度未計測)・24.6
   ERR_RC_DUP, ERR_SG_DUP,
@@ -644,27 +649,7 @@ static void err_lines_single(const ErrItem& e, char out[6][64], int& n) {
       snprintf(out[n++], 64, "どちらか1台の");
       snprintf(out[n++], 64, "電源を切ってください。");
       break;
-    case ERR_SEND_FAIL:
-      snprintf(out[n++], 64, "⚠ 送信失敗");
-      snprintf(out[n++], 64, "サーバーに届きません。");
-      snprintf(out[n++], 64, "データは保持しています。");
-      snprintf(out[n++], 64, "WiFi・電波を確認。");
-      snprintf(out[n++], 64, "待機画面で自動再送します。");
-      break;
-    case ERR_NODE_LOST:
-      snprintf(out[n++], 64, "⚠ %s が応答なし", e.label);
-      snprintf(out[n++], 64, "10秒間 無応答です。");
-      snprintf(out[n++], 64, "①電源・電池を確認");
-      snprintf(out[n++], 64, "②再起動");
-      snprintf(out[n++], 64, "③改善なければ位置調整");
-      break;
-    case ERR_BEAM_CUT:
-      snprintf(out[n++], 64, "⚠ %s 光軸切れ", e.label);
-      snprintf(out[n++], 64, "光軸が切れています。");
-      snprintf(out[n++], 64, "①LEDの向き・高さ");
-      snprintf(out[n++], 64, "②スリットの汚れ");
-      snprintf(out[n++], 64, "③LED差し替え");
-      break;
+    // 20260904 改修③：ERR_SEND_FAIL / ERR_NODE_LOST / ERR_BEAM_CUT のcaseを削除
     case ERR_SENSOR_BOTH:
       // 20260901k：A2(片側)と同一体裁に統一。違いはラベルの センサーA/B/AB だけ。
       snprintf(out[n++], 64, "⚠ %s 異常", e.label);
@@ -712,9 +697,7 @@ static void err_lines_single(const ErrItem& e, char out[6][64], int& n) {
 static void err_summary_line(const ErrItem& e, char* out, size_t n) {
   switch (e.kind) {
     case ERR_GW_DUP: snprintf(out, n, "・GW2台検知（1台切る）"); break;
-    case ERR_SEND_FAIL: snprintf(out, n, "・送信失敗（%d件保持）", e.arg_i); break;
-    case ERR_NODE_LOST: snprintf(out, n, "・%s 応答なし", e.label); break;
-    case ERR_BEAM_CUT: snprintf(out, n, "・%s ビーム切れ", e.label); break;
+    // 20260904 改修③：ERR_SEND_FAIL / ERR_NODE_LOST / ERR_BEAM_CUT の要約行を削除
     case ERR_SENSOR_BOTH: snprintf(out, n, "・%s 異常", e.label); break;
     case ERR_SPEED_ONLY: snprintf(out, n, "・%s 異常", e.label); break;
     case ERR_RC_DUP: snprintf(out, n, "・リモコン2台検知（1台切る）"); break;

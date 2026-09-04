@@ -114,11 +114,9 @@ static bool s_layout_ok = false;                    // 直近取得の成否
 static constexpr int PIN_BTN_RED  = 26;   // 赤 SIGNAL（押下LOW・内部プルアップ）
 static constexpr int PIN_BTN_GRAY = 27;   // 灰 RESET
 static constexpr uint32_t DEBOUNCE_MS   = 20;
-static constexpr uint32_t RESET_HOLD_MS = 600;   // RESETは600ms長押し（docs/12 S9）
-// 24.3(1-e)：送信失敗中に灰ボタンを OVERRIDE_HOLD_MS 長押しすると「封じ強制解除」。
-//   長時間WiFi不通時、運営が承知の上で次レースへ進むための緊急解除（灰ボタン起点で
-//   既存操作と衝突しない。データはスプールに残るのでD1で後日後送り可能）。
-static constexpr uint32_t OVERRIDE_HOLD_MS = 3000;  // 灰3秒超で封じ強制解除
+// 20260904 改修①：長押しは一切使わない。灰＝単押し即RESETのみ（tick_buttonsで実装済み）。
+//   旧 RESET_HOLD_MS(600ms長押し)・OVERRIDE_HOLD_MS(灰3秒で封じ強制解除) は未使用の死に定義
+//   だったため削除。関連する「長押し」前提のコメントも本改修で撤去した。
 
 // ---- ブザー（29章／GPIO12・自励式109800・実機確定 20260811）--------------
 //  待機中(ST_IDLE)にGW自身のS/Gを車が通過した瞬間だけ 60ms「ピッ」。自励式ゆえHIGH/LOWのみ。
@@ -246,9 +244,10 @@ struct RawEvent {
 };
 
 static const char* SPOOL = "/spool.jsonl";
-// 24.3(1-e)：送信失敗中は「次の赤ボタン(新レース開始)を封じる」安全フラグ。
-//   flush_spool 成功でクリア、失敗でセット。灰3秒長押し(緊急解除)でも手動クリア可。
-static bool s_send_blocked = false;
+// 20260904 改修⑨：s_send_blocked（送信失敗で次レース封じ）を撤去。
+//   どこからも読まれない書き込み専用の死にフラグで、実際には何も封じていなかった。
+//   唯一の手動解除「灰3秒長押し」も改修①で廃止済み。送信失敗しても止めずに続ける
+//   （改修②：WiFi不通はスプールして続行）方針と相反するため完全削除した。
 
 // ---- 内部rid → サーバーrace_id の対応表（flush時に確定・20260821）----------
 //  同じ内部ridの2回目以降のflush（100件超で分割送信）では既に作ったサーバーrace_idを
@@ -567,9 +566,12 @@ static void on_reset_pressed() {
   // 24.3：灰ボタン押下時、スプールに溜まっていれば送信（空なら何もしない）。
   //   ⚠ 本関数はESP-NOWコールバック(CMD_RESET)からも呼ばれるため、ここでHTTPSは
   //     しない。送信要求(s_need_flush)だけ立て、実送信は loop の tick_flush が行う(#20)。
-  //   WiFi不通時は tick_flush 内で送らず、データはスプールに残る（消えない）。
   bool was_idle = (s_state == ST_IDLE);   // F-1：この灰が「走行終了」か「待機での確認」かを区別
-  if (spool_has_data()) s_need_flush = true;
+  // 20260904 改修②：WiFi未接続なら PUSH挙動ごとスキップ（A案・ユーザー確定）。
+  //   s_need_flush を立てず、tick_flush の再試行ループにも入れない。データはspoolに
+  //   残し（消さない）、次回の灰押下時にWiFiが繋がっていれば送出する。旧仕様は
+  //   要求を立てっぱなしで1.5秒毎に wifi_up() を空振りポーリングし続けていた。
+  if (wifi_up() && spool_has_data()) s_need_flush = true;
 
   // 24.4⑤：待機画面に入った直後、3秒間だけA1/A2エラーを表示する窓を開く。
   s_post_err_until = millis() + 3000;
@@ -580,6 +582,8 @@ static void on_reset_pressed() {
 
   s_state      = ST_IDLE;
   s_race_active = false;        // 現レースを閉じる（次のS/G通過は新しい内部レースになる）
+  beam::flush();                // 20260904 改修④①：残留エッジ・張り付きタイマ・通過中ラッチを一掃。
+                                //   居座り車/残響でRESET直後に内部レースが誤起動＋誤ビープするのを防ぐ。
   s_beam_bad   = false;         // Beam×も待機復帰でクリア
   s_nobeam_latched = false; s_nobeam_src = 0xFF; s_nobeam_lane = 0; s_nobeam_miss = 0;  // 感知不能ラッチ解除（20260831c）
   s_err_ack = true;             // 20260831g：どの全画面エラーでも灰で強制解除→通常画面へ抜ける（強制運用）
@@ -720,8 +724,13 @@ static void spool_append(const RawEvent& e) {
   doc["src_boot_id"] = e.src_boot;
   doc["seq"]         = e.seq;
   doc["lane"]        = e.lane;
-  doc["t_us"]        = e.t_us;
-  if (e.t_us_b) doc["t_us_b"] = e.t_us_b;
+  // 20260904 改修⑥：A欠け(miss=1)は e.t_us(=t_a_us)=0 のまま送るとサーバーの ORDER BY t_us で
+  //   全通過の先頭にソートされ、周回・セクター構築を壊していた（TFTはB時刻に代用するので
+  //   表示は正常＝アプリ側だけ壊れる厄介系）。対策：A欠け時は t_us をB時刻へ寄せ、
+  //   t_us_b は両ビーム取得時のみ載せる（片ビームは速度算出不可＝サーバー側で「—」表示）。
+  uint64_t t_use = e.t_us ? e.t_us : e.t_us_b;       // A欠けはBで代用（順序を正す）
+  doc["t_us"]        = t_use;
+  if (e.t_us && e.t_us_b) doc["t_us_b"] = e.t_us_b;  // 両ビーム揃ったときだけB時刻を送る
   doc["quality"]     = e.quality;
   // 24.3(1-c)＋20260821：race_id は「受信した瞬間」の“内部rid”を刻む。サーバーの
   //   race_id は flush 時に採番して s_ridmap で翻訳するので、受信〜送信間の再起動等で
@@ -917,7 +926,6 @@ static void flush_spool() {
     server_id = create_race(/*with_green=*/group_green != 0, group_green);  // ここで初めてサーバー作成
     if (server_id == 0) {                            // WiFi/TLS失敗：送らずデータは残す
       Serial.println("[POST] create_race 失敗（データ保持・再試行）");
-      s_send_blocked = true;
       return;
     }
     ridmap_store(group_rid, server_id);
@@ -960,13 +968,11 @@ static void flush_spool() {
 
   if (code != 200) {
     Serial.printf("[POST] events 失敗 code=%d\n", code);
-    s_send_blocked = true;              // 1-e：送信失敗→次レース封じ
     return;
   }
 
   // 送信成功：送った group_rid の行を（最大100件ぶん）スプールから除去。
   rewrite_spool_drop_group(group_rid, n);
-  s_send_blocked = false;              // 1-e：送信成功→封じ解除
   Serial.printf("[POST] race=%u %d件 送信%s\n", server_id, n, capped ? "（続きあり・同rid）" : "");
 }
 
@@ -985,9 +991,13 @@ static void maybe_autocomplete() {
   }
   if (!(any && all)) return;
 
-  Serial.printf("[SEQ] 全員完走 rid=%u -> FINISH表示＋自動送信\n", s_internal_rid);
+  Serial.printf("[SEQ] 全員完走 rid=%u -> FINISH表示%s\n", s_internal_rid,
+                wifi_up() ? "＋自動送信" : "（WiFi未接続・送信は次の灰で）");
   s_race_active   = false;        // レースを閉じる
-  s_need_flush    = true;         // 送信はloopのtick_flushが実行
+  // 20260904 改修②：WiFi未接続なら自動送信も立てない（FINISH中の空振りポーリング回避）。
+  //   データはspoolに保持され、FINISH→灰でIDLE復帰時に on_reset_pressed が
+  //   WiFi接続済みなら送出する（A案・全契機で一貫）。
+  s_need_flush    = wifi_up();    // 送信はloopのtick_flushが実行
   s_state         = ST_FINISH;    // 計測終了(FINISH)画面へ（灰リセットで待機に戻る・20260830）
   s_sg_beeped     = false;
   s_green_t_us    = 0;
@@ -999,14 +1009,14 @@ static void maybe_autocomplete() {
 // ---- 送信要求の実行（loop文脈・HTTPSはここだけ・#20）------------------------
 //  s_need_flush が立っている間、throttleしつつ flush_spool を回す。flush_spool は
 //  1回で1グループ(最大100件)送るので、スプールが空になるまで複数tickで送り切る。
-//  失敗（s_send_blocked）時は要求を残したまま再試行（灰3秒長押しで封じ解除も可）。
+//  送信失敗時は要求を残したまま再試行する（データはスプールに保持され消えない）。
 static void tick_flush() {
   if (!s_need_flush) return;
   static uint32_t last = 0;
   if (millis() - last < 1500) return;      // 1.5秒に1回まで（TLS連打防止）
   last = millis();
   if (!spool_has_data()) { s_need_flush = false; return; }
-  flush_spool();                            // 1グループ送信（失敗ならs_send_blocked）
+  flush_spool();                            // 1グループ送信（失敗ならデータ保持・再試行）
   if (!spool_has_data()) s_need_flush = false;   // 送り切ったら要求解除
 }
 
@@ -1350,35 +1360,38 @@ static void tick_display() {
   //   C1 Lost は灰リセットまで出しっぱなし。A1/A2 は灰ボタン後3秒だけ。いずれも待機(ST_IDLE)で出す。
   //   排他系(GW/RC/SG重複)は上で return 済みなので、ここは A1/A2/Lost に絞れる（errs枠溢れ回避・27.3）。
   if (s_state == ST_IDLE) {
-    // READY感知不能：ライブ検知したらラッチON（自動では消えない・灰で解除・20260831c）。
-    //   自機GWレーン→SEレーンの順で最初の1件をラッチ。全断（TX疑い）はラッチ対象外
-    //   （従来どおりライブ表示：直れば消える）。ラッチ中は赤/ビームを別所でブロック済み。
-    if (!s_nobeam_latched && !s_err_ack) {   // 20260831g：灰ack中は新規ラッチを起こさない
-      uint8_t ll = 0, lm = 0;
-      if (!beam::all_stuck() && beam::first_stuck(ll, lm)) {         // 自機GW
-        s_nobeam_latched = true; s_nobeam_src = (uint8_t)NODE_ID;
-        s_nobeam_lane = ll; s_nobeam_miss = lm;
-      } else {                                                        // SE（HEARTBEAT・7秒失効）
-        for (uint8_t s2 = 0; s2 <= 5 && !s_nobeam_latched; s2++) {
-          if (s_node_stuck_bits[s2] == 0 || s_node_stuck_bits[s2] == 0x07) continue;  // 0x07は全断→対象外
-          if ((millis() - s_node_stuck_ms[s2]) > 7000) continue;
-          for (int L = 0; L < 3; L++)
-            if (s_node_stuck_bits[s2] & (1 << L)) {
-              s_nobeam_latched = true; s_nobeam_src = s2;
-              s_nobeam_lane = (uint8_t)(L + 1); s_nobeam_miss = s_node_stuck_miss[s2][L]; break;
-            }
-        }
+    // 20260904 改修⑧（案Z）：READY感知不能を「ラッチ・灰必須」→「ライブ追従」に変更。
+    //   毎フレーム物理状態を評価し、張り付き中だけ表示（直れば自動で消える＝Beamバー等と統一）。
+    //   ブザーは物理状態の立ち上がりで1回のみ（buzzer_error_edgeが false→true でのみ鳴動）。
+    //   復帰まで再鳴動しない。s_nobeam_latched はライブ状態として set/clear し、赤ロック・
+    //   ビーム破棄・灰クリアの既存参照はそのまま活かす（全断＝TX疑いはラッチ対象外で従来どおり）。
+    bool nobeam_now = false;
+    uint8_t ll = 0, lm = 0;
+    if (!beam::all_stuck() && beam::first_stuck(ll, lm)) {          // 自機GW
+      nobeam_now = true; s_nobeam_src = (uint8_t)NODE_ID;
+      s_nobeam_lane = ll; s_nobeam_miss = lm;
+    } else {                                                        // SE（HEARTBEAT・7秒失効）
+      for (uint8_t s2 = 0; s2 <= 5 && !nobeam_now; s2++) {
+        if (s_node_stuck_bits[s2] == 0 || s_node_stuck_bits[s2] == 0x07) continue;  // 0x07は全断→対象外
+        if ((millis() - s_node_stuck_ms[s2]) > 7000) continue;
+        for (int L = 0; L < 3; L++)
+          if (s_node_stuck_bits[s2] & (1 << L)) {
+            nobeam_now = true; s_nobeam_src = s2;
+            s_nobeam_lane = (uint8_t)(L + 1); s_nobeam_miss = s_node_stuck_miss[s2][L]; break;
+          }
       }
-      if (s_nobeam_latched)
-        Serial.printf("[NOBEAM] latched src=%u lane=%u miss=%u (press GRAY)\n",
-                      s_nobeam_src, s_nobeam_lane, s_nobeam_miss);
     }
-    // 20260831g：ラッチ中、または（灰ackで抑止している最中も）生の個別張り付きが
-    //   続いていれば「エラー条件は生きている」とみなし、ack を自動リセットさせない。
-    //   any_stuck=自機の張り付き / node_stuck_now=SEの張り付き（7秒失効・既算出）。
-    if (s_nobeam_latched || beam::any_stuck() || node_stuck_now) err_cond_live = true;
-    // ラッチ中はこの専用エラー画面を出し続ける（他のIDLEエラーより優先）。灰でのみ解除。
-    if (s_nobeam_latched) {
+    static bool s_nobeam_prev = false;
+    if (nobeam_now && !s_nobeam_prev)
+      Serial.printf("[NOBEAM] live src=%u lane=%u miss=%u\n",
+                    s_nobeam_src, s_nobeam_lane, s_nobeam_miss);
+    s_nobeam_prev    = nobeam_now;
+    s_nobeam_latched = nobeam_now;      // ★ライブ追従（直れば自動false・案Z）
+    if (nobeam_now) err_cond_live = true;
+    // 張り付き中だけ専用エラー画面（他のIDLEエラーより優先）。灰ackで一時的に隠すのは
+    //   従来の強制運用を踏襲（物理復帰でも自動で消える）。ブザーは他エラーと同じく
+    //   描画ブロック内でbuzzer_error_edge(true)＝立ち上がり1回のみ（共有エッジ状態を壊さない）。
+    if (nobeam_now && !s_err_ack) {
       disp::ErrItem e1[1];
       e1[0].kind = disp::ERR_READY_NOBEAM;
       build_beam_label(e1[0].label, sizeof(e1[0].label), s_nobeam_src, s_nobeam_lane,
@@ -1387,9 +1400,10 @@ static void tick_display() {
       disp::commit();
       s_show_ontrack = false;
       s_err_screen = true;       // 赤ボタン全面禁止（20260831e）
-      buzzer_error_edge(true);   // ラッチした瞬間に2秒「ピー」1回（立ち上がり検出）
+      buzzer_error_edge(true);   // 立ち上がりで2秒「ピー」1回・復帰まで再鳴動しない（案Z）
       return;
     }
+
 
     bool show_post = ((int32_t)(s_post_err_until - millis()) > 0);   // wrap安全な残時間判定
     bool a1 = show_post && s_race_q2;
@@ -1534,7 +1548,10 @@ void loop() {
     //   これで s_internal_rid が採番され、以降の自機/SQイベントが同じ内部ridで刻まれる。
     // FINISH表示中は新レースを起こさない（余走の通過は完走レースのridのまま記録され、
     //   FINISH画面のラップ表示も保持される。次レースは灰リセット後・20260830）。
-    if (!s_race_active && s_state != ST_FINISH) begin_internal_race();
+    // 20260904 改修④②：q=2（張り付き＝故障・断線・居座り）では内部レースを開始しない。
+    //   通過ではないものでレースが始まると、TFTはREADYのまま内部だけ計測中になる（表示≠内部）。
+    //   このガードで「READYなのに内部だけ計測中」を根治（RESET有無に関係なく）。
+    if (!s_race_active && s_state != ST_FINISH && hit.quality != 2) begin_internal_race();
     bool was_idle_hit = (s_state == ST_IDLE);   // 通過ピッ判定用（遷移前の状態を保持）
     // 走行式(TA)：待機のまま最初の「正常通過(q=0/1)」が来たら ON TRACK＋計測開始。
     //   q=2（張り付き＝A1：故障・断線・CO）は通過ではないのでスタートさせない（20260830）。
@@ -1676,8 +1693,10 @@ void loop() {
                 hit.lane, hit.quality, hit.t_a_us, hit.t_b_us };
     spool_append(e);
     note_quality(hit.quality, (uint8_t)NODE_ID, hit.lane, hit.miss);   // 自機S/GのA1/A2も拾う（27章・A/Bまで）
-    Serial.printf("[SG] lane=%u q=%u rid=%u cross=%u\n",
-                  hit.lane, hit.quality, s_internal_rid,
+    // 20260904 改修⑦：miss を追記（1=A欠け/2=B欠け/3=両欠け/0=両取得）。実機でq=1の
+    //   A欠け・B欠け分布を集計し、「速度が出ない」の主因が光学(穴B)か別要因かを切り分ける。
+    Serial.printf("[SG] lane=%u q=%u miss=%u rid=%u cross=%u\n",
+                  hit.lane, hit.quality, hit.miss, s_internal_rid,
                   (hit.lane>=1&&hit.lane<=3)?s_lane_cross[hit.lane]:0);
     if (was_idle_hit && !s_sg_beeped) {  // 待機からの「最初の」S/G通過のみ 60ms「ピッ」（29章・TA開始時も鳴る）
       buzzer_beep();

@@ -93,8 +93,15 @@ static void enqueue_event(const beam::Hit& hit) {
                      : (tsync::is_synced() ? hit.quality : 3);
     p.body.miss    = hit.miss;   // 片ビーム欠のときA/Bどちらか（20260830c）
     p.body._pad    = 0;
-    p.body.t_us    = tsync::to_gw_us(hit.t_a_us);            // GW時刻へ換算（S3）
-    p.body.t_us_b  = hit.t_b_us ? tsync::to_gw_us(hit.t_b_us) : 0;
+    // 20260904 改修⑥：A欠け(miss=1)は hit.t_a_us=0。旧実装は tsync::to_gw_us(0) を通して
+    //   同期オフセットぶんの非0値を t_us に載せ、サーバーの ORDER BY t_us を壊していた
+    //   （gwの素の0よりタチが悪い）。A欠け時は t_us をB時刻へ寄せ、t_us_b は両ビーム取得
+    //   時のみ載せる（片ビームは速度算出不可＝サーバー側で「—」表示）。gw/spool_appendと統一。
+    {
+      uint64_t ta = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // A欠けはBで代用（順序を正す）
+      p.body.t_us   = tsync::to_gw_us(ta);                  // GW時刻へ換算（S3）
+      p.body.t_us_b = (hit.t_a_us && hit.t_b_us) ? tsync::to_gw_us(hit.t_b_us) : 0;
+    }
     return;
   }
   Serial.println("[WARN] pending full");
