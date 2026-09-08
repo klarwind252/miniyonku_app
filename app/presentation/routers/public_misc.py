@@ -271,6 +271,36 @@ async def public_gate_auth(request: Request):
     return Response(status_code=401, headers={"Cache-Control": "no-store"})
 
 
+@router.get("/api/pub-content")
+async def public_gate_content(request: Request):
+    """観覧内容の本体を返す（サーバー側で観覧クッキーを検証。無効なら 401）。
+
+    nginx が配信する index.html は内容を持たないシェルで、実際の観覧内容は
+    必ずここを通る。よって
+      - 12時間経過／強制失効／世代リセット後は、開きっぱなしのタブも次回
+        ポーリング（最大30秒）で 401 を受けて /enter（失効ページ）へ遷移する
+      - URL直打ち・curl・保存済みURL・PWA のどれでも、有効クッキーが無ければ
+        内容は取得できない（nginx の設定変更に依存しない）
+    """
+    import hashlib, os
+    from fastapi.responses import Response
+    from app.services.public_html import gated_content_path
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    if state != "valid":
+        return Response(status_code=401, headers={"Cache-Control": "no-store"})
+    path = gated_content_path(store)
+    if not path or not os.path.isfile(path):
+        return Response("観覧内容がまだ生成されていません。", status_code=503,
+                        media_type="text/plain; charset=utf-8", headers={"Cache-Control": "no-store"})
+    with open(path, "rb") as f:
+        body = f.read()
+    etag = '"' + hashlib.sha1(body).hexdigest()[:20] + '"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-store"})
+    return Response(body, media_type="text/html; charset=utf-8",
+                    headers={"ETag": etag, "Cache-Control": "no-store"})
+
+
 @router.get("/api/pub-handoff")
 async def public_gate_handoff(request: Request):
     """PWA 用の引き継ぎトークンを返す（有効クッキー保持時のみ）。"""

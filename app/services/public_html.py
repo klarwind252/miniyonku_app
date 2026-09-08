@@ -186,6 +186,9 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _enter_url = (f"/{slug}/enter" if slug else "/enter")
     _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
     _status_url = (f"/{slug}/api/pub-status" if slug else "/api/pub-status")
+    _handoff_url = (f"/{slug}/api/pub-handoff" if slug else "/api/pub-handoff")
+    _manifest_url = (f"/{slug}/api/pub-manifest" if slug else "/api/pub-manifest")
+    _content_url = (f"/{slug}/api/pub-content" if slug else "/api/pub-content")
     _history_url = (f"/{slug}/api/history" if slug else "/api/history")
     patched = patched.replace("__HISTORYURL__", _history_url)
     _races_url = (f"/{slug}/api/races" if slug else "/api/races")
@@ -203,6 +206,10 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   var CHECK_MS = 30000;             // 30秒ごとに「更新の有無」だけ確認する
   var ENTER = "__ENTERURL__";
   var STATUS = "__STATUSURL__";
+  var HANDOFF = "__HANDOFFURL__";
+  var MANIFEST = "__MANIFESTURL__";
+  var CONTENT = "__CONTENTURL__";   // 観覧内容（サーバーでクッキー検証してから返す）
+  var handoffDone = false;
 
   function issued(){ try { return parseInt(localStorage.getItem(KEY)||"0",10)||0; } catch(e){ return 0; } }
   function expired(){ var t=issued(); return (!t) || (Date.now()-t > TTL); }
@@ -211,6 +218,57 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
              || window.navigator.standalone === true;
     } catch(e){ return false; }
+  }
+  function evict(){
+    // サーバーが失効と判定：ページ内容ごと破棄し、サーバー描画の失効ページへ。
+    // （オーバーレイだけだと開発者ツールで剥がせるため、DOMから消す）
+    try { localStorage.setItem(KEY, "0"); } catch(e){}
+    try { location.replace(ENTER); } catch(e){ showOverlay(); }
+  }
+  var deadlineTimer = null;
+  function scheduleDeadline(expiresAt){
+    // 期限の絶対時刻ちょうどに /enter へ遷移する保険タイマー。
+    // バックグラウンドでポーリングが止められていても、復帰した瞬間に発火する。
+    // （端末時計がずれていても、遷移先の /enter がサーバー時刻で再判定するので安全）
+    try {
+      if(deadlineTimer){ clearTimeout(deadlineTimer); deadlineTimer = null; }
+      if(!expiresAt) return;
+      var ms = expiresAt * 1000 - Date.now() + 1500;
+      if(ms < 0) ms = 0;
+      if(ms > 2147000000) ms = 2147000000;
+      deadlineTimer = setTimeout(evict, ms);
+    } catch(e){}
+  }
+  function showDeadline(expiresAt){
+    // 観覧期限を画面下部に常時表示（PWA・ブラウザ共通）。期限の見える化＋不具合切り分け用。
+    try {
+      var el = document.getElementById('m4-gate-exp');
+      if(!el){
+        el = document.createElement('div');
+        el.id = 'm4-gate-exp';
+        el.style.cssText = 'position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:9998;'
+          + 'background:rgba(20,24,33,.82);color:#cfd8e3;font-size:11px;padding:5px 12px;border-radius:999px;'
+          + 'font-family:sans-serif;letter-spacing:.02em;pointer-events:none;white-space:nowrap;';
+        document.body.appendChild(el);
+      }
+      if(!expiresAt){ el.textContent = '観覧期限: 未取得'; return; }
+      var d = new Date(expiresAt * 1000);
+      var z = function(n){ return (n<10?'0':'')+n; };
+      el.textContent = '観覧期限 ' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + z(d.getHours()) + ':' + z(d.getMinutes())
+        + ' まで' + (isStandalone() ? '（アプリ）' : '');
+    } catch(e){}
+  }
+  function attachHandoffManifest(){
+    // iOS PWA 用：有効な間に manifest を「引き継ぎトークン付き」に差し替える。
+    // ホーム画面追加時にこの manifest が読まれ、PWA はブラウザと同じ期限を引き継ぐ。
+    if(handoffDone) return;
+    fetch(HANDOFF, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+      if(!j || !j.ok || !j.h) return;
+      var link = document.querySelector('link[rel="manifest"]');
+      if(!link){ link = document.createElement('link'); link.rel = 'manifest'; document.head.appendChild(link); }
+      link.href = MANIFEST + '?h=' + encodeURIComponent(j.h);
+      handoffDone = true;
+    }).catch(function(){});
   }
   function showOverlay(){
     if(document.getElementById("m4-expired")) return;
@@ -221,7 +279,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     // 旧実装のPWA向け「更新」ボタン（/enter?src=rescan で無条件延長）はサーバー側
     // 24時間ゲート導入に伴い廃止。PWA・ブラウザとも「最新QRの再スキャン」に統一する。
     var pwaNote = isStandalone()
-      ? '<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.7">ホーム画面アイコンの有効期限も切れています。<br>カメラでQRコードを読み取るとブラウザで観覧できます。</div>'
+      ? '<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.7">ホーム画面アイコンの有効期限も切れています。<br>ブラウザで会場のQRコードを読み直し、必要なら「ホーム画面に追加」をやり直してください。</div>'
       : '';
     ov.innerHTML=head
       +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>'
@@ -366,10 +424,11 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     // 通信失敗時のみ従来のローカル判定にフォールバック（オフラインで即失効させない）。
     fetch(STATUS, {cache:'no-store'}).then(function(r){ return r.json(); }).then(function(j){
       if(j && j.gate && j.state !== 'valid'){
-        try { localStorage.setItem(KEY, "0"); } catch(e){}
-        showOverlay();
+        evict();
         return;
       }
+      if(j && j.gate){ showDeadline(j.expires_at || 0); scheduleDeadline(j.expires_at || 0); }
+      attachHandoffManifest();
       fetchContent();
     }).catch(function(){
       if(expired()){ showOverlay(); return; }
@@ -382,11 +441,12 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     var headers = {};
     if(lastTag) headers['If-None-Match'] = lastTag;
 
-    fetch(location.pathname + location.search, {
+    fetch(CONTENT, {
       method: 'GET',
       cache: 'no-store',
       headers: headers
     }).then(function(res){
+      if(res.status === 401 || res.status === 403){ evict(); return null; }
       if(res.status === 304){
         // 変更なし（ETagが一致）。ボディも返らないため最も軽い。
         return null;
@@ -435,8 +495,11 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   // 初回に基準値（ETag/ハッシュ）を取得してから、定期チェックを開始する
   check();
   setInterval(check, CHECK_MS);
+  // バックグラウンドからの復帰・戻る操作でのbfcache復元時は、次のポーリングを待たず即判定
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) check(); });
+  window.addEventListener('pageshow', function(ev){ if(ev.persisted) check(); });
 })();
-</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__M4FINAL__", "true" if is_finalized else "false")
+</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__M4FINAL__", "true" if is_finalized else "false")
 
     # bracket レイアウト＋線描画JSを再注入（admin と同一ロジックを保持したものを使用）。
     # connector_js 内で window._bracketDrawConnectors と init() が定義され、ページ内の
@@ -1667,7 +1730,7 @@ async def export_current_html(db=None) -> bool:
         print(f"[public_html] patched ({len(html)} bytes), publishing...", flush=True)
 
         if IS_CLOUD:
-            result = _write_local_html(html, out_dir)
+            result = _write_local_html(html, out_dir, slug, store)
         else:
             bucket = settings.get("public_html_gcs_bucket", "").strip()
             result = await _upload_to_gcs(html, bucket)
@@ -1676,21 +1739,103 @@ async def export_current_html(db=None) -> bool:
         return result
 
 
-def _write_local_html(html: str, out_dir: str) -> bool:
-    """クラウド版：参加者向けHTMLを out_dir/index.html へ書き出す（nginx 直接配信用）。"""
+CONTENT_FILENAME = "content.html"
+
+
+def gated_content_path(store) -> str:
+    """観覧内容本体の保存先。【nginx の公開ディレクトリの外】に置く。
+    公開ディレクトリ内に置くと /content.html を直接取得できてしまうため、
+    店舗DBと同じデータディレクトリに pub_content_<slug>.html として保存する。"""
+    import os
+    try:
+        from app.models.database import DB_PATH
+    except Exception:
+        DB_PATH = ""
+    db_path = (getattr(store, "db_path", "") if store is not None else "") or DB_PATH
+    base_dir = os.path.dirname(os.path.abspath(db_path)) if db_path else ""
+    slug = (getattr(store, "slug", "") if store is not None else "") or "default"
+    return os.path.join(base_dir, f"pub_content_{slug}.html") if base_dir else ""
+
+
+def _build_shell_html(full_html: str, slug: str) -> str:
+    """nginx が静的配信する index.html（＝内容を一切持たないシェル）を生成する。
+
+    観覧内容は /api/pub-content がサーバー側で観覧クッキーを検証してから返す。
+    これにより、URL直打ち・curl・保存済みURL・PWA・開きっぱなしのタブのどれで
+    あっても「有効な観覧許可が無ければ内容は一切取得できない」がアプリ側だけで
+    成立する（nginx の auth_request 設定に依存しない）。
+    <head> の manifest / アイコン / テーマ色は本体から引き継ぎ、PWA追加時の見え方を保つ。
+    """
+    import re as _re
+    pfx = ("/" + slug) if slug else ""
+    head_keep = ""
+    for tag in _re.findall(r'<(?:link|meta)[^>]*>', full_html, flags=_re.IGNORECASE):
+        tl = tag.lower()
+        if ('rel="manifest"' in tl or "rel='manifest'" in tl
+                or "apple-touch-icon" in tl or "apple-mobile-web-app" in tl
+                or 'name="theme-color"' in tl or "name='theme-color'" in tl
+                or 'rel="icon"' in tl or "rel='icon'" in tl):
+            head_keep += tag
+    m = _re.search(r'<title>(.*?)</title>', full_html, flags=_re.IGNORECASE | _re.DOTALL)
+    title = m.group(1) if m else "観覧画面"
+    return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>{title}</title>{head_keep}
+<style>html,body{{margin:0;background:#141821;color:#cfd8e3;font-family:sans-serif}}
+#m4-shell{{min-height:100vh;display:flex;align-items:center;justify-content:center;font-size:14px;opacity:.8}}</style>
+</head><body><div id="m4-shell">読み込み中…</div>
+<script>
+(function(){{
+  var CONTENT = "{pfx}/api/pub-content";
+  var ENTER = "{pfx}/enter";
+  function fail(){{ try {{ location.replace(ENTER); }} catch(e) {{}} }}
+  fetch(CONTENT, {{cache:'no-store', credentials:'same-origin'}}).then(function(r){{
+    if(r.status !== 200) {{ fail(); return null; }}
+    return r.text();
+  }}).then(function(html){{
+    if(!html) return;
+    // 本体HTMLで文書を置き換える（内蔵スクリプトも実行される）
+    document.open(); document.write(html); document.close();
+  }}).catch(function(){{
+    var el = document.getElementById('m4-shell');
+    if(el) el.textContent = '通信できません。電波状況を確認して再読み込みしてください。';
+  }});
+}})();
+</script><noscript>この画面の表示には JavaScript が必要です。</noscript></body></html>"""
+
+
+def _write_local_html(html: str, out_dir: str, slug: str = "", store=None) -> bool:
+    """クラウド版：参加者向けHTMLを書き出す。
+
+    - gated_content_path(store) : 観覧内容の本体（公開ディレクトリ外。
+                                  /api/pub-content がクッキー検証後に返す）
+    - out_dir/index.html        : 内容を持たないシェル（nginx 直接配信。誰が取得しても無害）
+    """
     import os
     if not out_dir:
         print("[public_html] PUBLIC_HTML_DIR が未設定です。", flush=True)
         return False
+    gated = gated_content_path(store)
+    if not gated:
+        print("[public_html] 観覧内容の保存先を解決できません（DBパス未設定）。", flush=True)
+        return False
     try:
         os.makedirs(out_dir, exist_ok=True)
-        # 一時ファイルへ書いてから rename（配信中の半端な読み取りを防ぐ）
-        tmp = os.path.join(out_dir, ".index.html.tmp")
-        dst = os.path.join(out_dir, "index.html")
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(html)
-        os.replace(tmp, dst)
-        print(f"[public_html] wrote {dst}", flush=True)
+        os.makedirs(os.path.dirname(gated), exist_ok=True)
+        targets = ((gated, html), (os.path.join(out_dir, "index.html"), _build_shell_html(html, slug)))
+        for dst, body in targets:
+            # 一時ファイルへ書いてから rename（配信中の半端な読み取りを防ぐ）
+            tmp = dst + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(body)
+            os.replace(tmp, dst)
+            print(f"[public_html] wrote {dst}", flush=True)
+        # 旧版が公開ディレクトリに置いた content.html が残っていれば削除（漏洩防止）
+        stale = os.path.join(out_dir, CONTENT_FILENAME)
+        if os.path.isfile(stale):
+            os.remove(stale)
         return True
     except Exception as e:
         print(f"[public_html] local write error: {e}", flush=True)
