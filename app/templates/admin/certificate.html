@@ -147,6 +147,7 @@ const TEMPLATES = [
     name: {{ tpl.name | tojson }},
     paper_size: {{ tpl.paper_size | tojson }},
     orientation: {{ tpl.orientation | tojson }},
+    apply_ranks: {{ (tpl.apply_ranks or '') | tojson }},
     layout: (function(){ var l = {{ tpl.layout | tojson }}; return (l && typeof l === 'object') ? l : {}; })()
   },
   {% endfor %}
@@ -166,6 +167,7 @@ const MM2PX = 3.7795;
 
   <label>テンプレート</label>
   <select id="tplSelect" onchange="applyTemplate()">
+    <option value="auto">自動（適用範囲で振り分け）</option>
     {% for tpl in cert_templates %}
     <option value="{{ tpl.id }}">{{ tpl.name }}（{{ tpl.paper_size }}{% if tpl.orientation=='landscape' %}横{% else %}縦{% endif %}）</option>
     {% endfor %}
@@ -181,11 +183,37 @@ const MM2PX = 3.7795;
 // ============================================================
 // メイン
 // ============================================================
+function parseRanks(raw) {
+  return String(raw || '').split(',').map(x => parseInt(x.trim(), 10)).filter(n => n>=1 && n<=3);
+}
+function templateForRank(rank) {
+  for (const t of TEMPLATES) { if (parseRanks(t.apply_ranks).includes(rank)) return t; }
+  return null;
+}
+
 function applyTemplate() {
-  const tid = +document.getElementById('tplSelect').value;
-  const tpl = TEMPLATES.find(t => t.id === tid);
-  renderPages(tpl || null);
-  setPrintPageSize(tpl || null);
+  const val = document.getElementById('tplSelect').value;
+  if (val === 'auto') {
+    renderPagesAuto();
+  } else {
+    const tid = +val;
+    const tpl = TEMPLATES.find(t => t.id === tid);
+    renderPages(tpl || null);
+    setPrintPageSize(tpl || null);
+  }
+}
+
+// 順位ごとに割り当てられたテンプレートで描画（適用範囲＝apply_ranks）
+function renderPagesAuto() {
+  const container = document.getElementById('pages');
+  container.innerHTML = '';
+  let firstTpl = null;
+  RANKS.forEach(r => {
+    const tpl = templateForRank(r.rank) || (TEMPLATES[0] || null);
+    if (!firstTpl) firstTpl = tpl;
+    if (tpl) container.appendChild(renderTemplatePage(r, tpl));
+  });
+  setPrintPageSize(firstTpl);
 }
 
 function renderPages(tpl) {
@@ -312,9 +340,8 @@ function setPrintPageSize(tpl) {
 // ============================================================
 (function() {
   const sel = document.getElementById('tplSelect');
-  if (TEMPLATES.length > 0) {
-    sel.value = TEMPLATES[0].id;
-  }
+  // 既定は「自動（適用範囲で振り分け）」
+  sel.value = 'auto';
   applyTemplate();
 })();
 </script>

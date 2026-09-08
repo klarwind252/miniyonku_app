@@ -265,26 +265,42 @@
 {% endblock %}
 
 {% block content %}
+{#- 編集/新規/エラー再表示で値を共通化 -#}
+{%- set _is_edit = (tpl is not none) -%}
+{%- set _st = form_state if form_state is defined else None -%}
+{%- set _name  = (_st.name        if _st else (tpl.name        if tpl else 'デフォルト')) -%}
+{%- set _paper = (_st.paper_size  if _st else (tpl.paper_size  if tpl else 'A4')) -%}
+{%- set _orient= (_st.orientation if _st else (tpl.orientation if tpl else 'portrait')) -%}
+{%- set _apply = (_st.apply_ranks if _st else (tpl.apply_ranks_list if tpl else [])) -%}
+{%- set _tid   = (tpl.id if tpl else None) -%}
+{%- set _taken = taken_ranks if taken_ranks is defined else {} -%}
 <div class="editor-page">
 
   {% if request.query_params.get('saved') %}
   <div class="save-toast" id="saveToast">✅ 保存しました</div>
   {% endif %}
 
+  {% if err_msg %}
+  <div style="background:#c0392b;color:#fff;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px;font-weight:bold">
+    ⚠️ {{ err_msg }}
+  </div>
+  {% endif %}
+
   <!-- 上バー -->
   <div class="editor-topbar">
-    <h1>🏅 賞状テンプレート編集{% if tpl %} — {{ tpl.name }}{% endif %}<span class="dirty-mark" id="dirtyMark">● 未保存</span></h1>
+    <h1>🏅 賞状テンプレート編集{% if _is_edit %} — {{ _name }}{% endif %}<span class="dirty-mark" id="dirtyMark">● 未保存</span></h1>
     <button class="tbtn tbtn-secondary" onclick="goBack()">← 戻る</button>
     <button class="tbtn tbtn-primary" onclick="saveAll()">💾 保存</button>
   </div>
 
   <!-- 保存フォーム（非表示） -->
   <form id="saveForm" method="post"
-        action="/admin/settings/certificate-templates/{% if tpl %}{{ tpl.id }}/update{% else %}create{% endif %}"
+        action="/admin/settings/certificate-templates/{% if _is_edit %}{{ _tid }}/update{% else %}create{% endif %}"
         style="display:none">
-    <input type="hidden" name="name"        id="f_name"        value="{{ tpl.name if tpl else 'デフォルト' }}">
-    <input type="hidden" name="paper_size"  id="f_paper"       value="{{ tpl.paper_size if tpl else 'A4' }}">
-    <input type="hidden" name="orientation" id="f_orient"      value="{{ tpl.orientation if tpl else 'portrait' }}">
+    <input type="hidden" name="name"        id="f_name"        value="{{ _name }}">
+    <input type="hidden" name="paper_size"  id="f_paper"       value="{{ _paper }}">
+    <input type="hidden" name="orientation" id="f_orient"      value="{{ _orient }}">
+    <input type="hidden" name="apply_ranks" id="f_applyranks"  value="{{ _apply|join(',') }}">
     <input type="hidden" name="layout_json" id="f_layout">
   </form>
 
@@ -298,7 +314,27 @@
         <!-- テンプレート名 -->
         <div>
           <div class="left-section-title">テンプレート名</div>
-          <input class="left-input" id="tplName" type="text" value="{{ tpl.name if tpl else 'デフォルト' }}">
+          <input class="left-input" id="tplName" type="text" value="{{ _name }}">
+        </div>
+
+        <!-- 適用範囲（この賞状を使う順位。1順位につき1テンプレートのみ） -->
+        <div>
+          <div class="left-section-title">適用範囲</div>
+          <div id="applyRanksBox" style="display:flex;flex-direction:column;gap:4px">
+            {% for r in [1,2,3] %}
+            {%- set _rname = {1:'1位',2:'2位',3:'3位'}[r] -%}
+            {%- set _taken_by = _taken.get(r) -%}
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;{% if _taken_by %}opacity:.55{% endif %}">
+              <input type="checkbox" class="apply-rank-cb" value="{{ r }}"
+                     {% if r in _apply %}checked{% endif %}
+                     {% if _taken_by %}disabled data-taken-by="{{ _taken_by }}"{% endif %}
+                     onchange="updateApplyRanks()">
+              <span>{{ _rname }}</span>
+              {% if _taken_by %}<span style="font-size:11px;color:#e67e22">（「{{ _taken_by }}」が使用中）</span>{% endif %}
+            </label>
+            {% endfor %}
+          </div>
+          <div style="font-size:11px;color:#7f8c8d;margin-top:4px">複数選択できます。同じ順位は1つのテンプレートにのみ割り当てできます。</div>
         </div>
 
         <!-- 用紙設定 -->
@@ -306,13 +342,13 @@
           <div class="left-section-title">用紙サイズ</div>
           <select class="left-select" id="tplPaper" onchange="updateCanvasSize()">
             {% for s in ['A4','A5','A6','B4','B5','B6','ハガキ','L判'] %}
-            <option value="{{ s }}" {% if tpl and tpl.paper_size == s %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if _paper == s %}selected{% endif %}>{{ s }}</option>
             {% endfor %}
           </select>
           <div class="left-section-title" style="margin-top:6px">用紙向き</div>
           <select class="left-select" id="tplOrient" onchange="updateCanvasSize()">
-            <option value="portrait"  {% if not tpl or tpl.orientation=='portrait'  %}selected{% endif %}>縦</option>
-            <option value="landscape" {% if tpl and tpl.orientation=='landscape' %}selected{% endif %}>横</option>
+            <option value="portrait"  {% if _orient=='portrait'  %}selected{% endif %}>縦</option>
+            <option value="landscape" {% if _orient=='landscape' %}selected{% endif %}>横</option>
           </select>
         </div>
 
@@ -382,7 +418,7 @@
 // ============================================================
 // 定数
 // ============================================================
-const TPL_ID = {{ tpl.id if tpl else 'null' }};
+const TPL_ID = {{ _tid if _tid else 'null' }};
 
 // 用紙サイズ定義 [幅mm, 高さmm] @96dpi: 1mm = 3.7795px
 const PAPER_SIZES = {
@@ -408,8 +444,9 @@ function getCanvasSize() {
 
 // DB保存済みレイアウト（Python側でパース済みオブジェクトを直接埋め込む）
 const SAVED = (function() {
-  {% if tpl and tpl.layout and tpl.layout %}
-  const obj = {{ tpl.layout | tojson }};
+  {% set _lay = (_st.layout if _st else (tpl.layout if tpl else None)) %}
+  {% if _lay %}
+  const obj = {{ _lay | tojson }};
   if (obj && typeof obj === 'object' && Object.keys(obj).length > 0) return obj;
   {% endif %}
   return null;
@@ -1107,9 +1144,20 @@ function saveAll() {
   document.getElementById('f_name').value   = document.getElementById('tplName').value;
   document.getElementById('f_paper').value  = document.getElementById('tplPaper').value;
   document.getElementById('f_orient').value = document.getElementById('tplOrient').value;
+  document.getElementById('f_applyranks').value = collectApplyRanks();
   document.getElementById('f_layout').value = JSON.stringify(layout);
   isSubmitting = true;   // 送信時は未保存警告を出さない
   document.getElementById('saveForm').submit();
+}
+
+// 適用範囲（チェック済みの順位をCSVで返す）
+function collectApplyRanks() {
+  return Array.from(document.querySelectorAll('.apply-rank-cb:checked'))
+              .map(cb => cb.value).join(',');
+}
+function updateApplyRanks() {
+  const el = document.getElementById('f_applyranks');
+  if (el) el.value = collectApplyRanks();
 }
 
 // ============================================================
@@ -1128,6 +1176,7 @@ function currentSnapshot() {
     name:   document.getElementById('tplName').value,
     paper:  document.getElementById('tplPaper').value,
     orient: document.getElementById('tplOrient').value,
+    apply:  collectApplyRanks(),
     bg:     bgUrl,
     objs:   objs
   });

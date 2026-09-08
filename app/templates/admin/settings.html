@@ -401,7 +401,10 @@
           <div class="template-row">
             <div class="template-icon">📄</div>
             <div class="template-info">
-              <div class="template-name">{{ tpl.name }}</div>
+              <div class="template-name">{{ tpl.name }}
+                {%- set _ar = (tpl.apply_ranks or '') -%}
+                {% if _ar %}<span style="font-size:11px;font-weight:normal;color:#2980b9;margin-left:6px">適用: {{ _ar.replace('1','1位').replace('2','2位').replace('3','3位') }}</span>{% else %}<span style="font-size:11px;font-weight:normal;color:#e67e22;margin-left:6px">適用範囲 未設定</span>{% endif %}
+              </div>
               <div class="template-meta">{{ tpl.paper_size }} / {% if tpl.orientation == 'portrait' %}縦{% else %}横{% endif %} — 更新: {{ tpl.updated_at[:10] if tpl.updated_at else '—' }}</div>
             </div>
             <div class="template-actions">

@@ -1887,7 +1887,7 @@ async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Conne
     # テンプレート一覧を取得（layout_jsonをPythonオブジェクトとしてパース済みで渡す）
     import json as _json
     async with db.execute(
-        "SELECT id, name, paper_size, orientation, layout_json FROM certificate_templates ORDER BY id"
+        "SELECT id, name, paper_size, orientation, apply_ranks, layout_json FROM certificate_templates ORDER BY id"
     ) as cur:
         raw_templates = await cur.fetchall()
 

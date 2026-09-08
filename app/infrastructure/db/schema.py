@@ -460,6 +460,7 @@ async def init_db(db_path: str = None):
                         name        TEXT NOT NULL,
                         paper_size  TEXT DEFAULT 'A4',
                         orientation TEXT DEFAULT 'portrait',
+                        apply_ranks TEXT DEFAULT '',
                         layout_json TEXT DEFAULT '{}',
                         created_at  TEXT DEFAULT (datetime('now','localtime')),
                         updated_at  TEXT DEFAULT (datetime('now','localtime'))
@@ -470,6 +471,28 @@ async def init_db(db_path: str = None):
                     VALUES ('デフォルト', 'A4', 'portrait')
                 """)
                 print("[DB] migration: certificate_templates created")
+
+        # certificate_templates.apply_ranks（適用範囲：この賞状を使う順位。"1,2,3" 形式のCSV）
+        async with db.execute("PRAGMA table_info(certificate_templates)") as cur:
+            _cert_cols = [r["name"] for r in await cur.fetchall()]
+        if "apply_ranks" not in _cert_cols:
+            await db.execute("ALTER TABLE certificate_templates ADD COLUMN apply_ranks TEXT DEFAULT ''")
+            print("[DB] migration: certificate_templates.apply_ranks added")
+        # 既存データが全て未設定なら、最小IDのテンプレートに 1,2,3 を割り当て（従来動作を維持）
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM certificate_templates "
+            "WHERE apply_ranks IS NOT NULL AND TRIM(apply_ranks) <> ''"
+        ) as cur:
+            _assigned = (await cur.fetchone())["n"]
+        if _assigned == 0:
+            async with db.execute("SELECT MIN(id) AS mid FROM certificate_templates") as cur:
+                _row = await cur.fetchone()
+            _mid = _row["mid"] if _row else None
+            if _mid is not None:
+                await db.execute(
+                    "UPDATE certificate_templates SET apply_ranks='1,2,3' WHERE id=?", (_mid,)
+                )
+                print(f"[DB] migration: certificate_templates.apply_ranks backfilled (id={_mid} -> 1,2,3)")
 
         # post_templates テーブル（ポストテンプレート管理）
         async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='post_templates'") as cur:
