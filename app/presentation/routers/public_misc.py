@@ -134,6 +134,8 @@ location.replace({base!r});
         return HTMLResponse(html)
 
     def _blocked_page(pwa: bool, reason: str = "") -> HTMLResponse:
+        import html as _html
+        reason_safe = _html.escape(reason)[:80]  # 表示専用・エスケープ＋長さ制限
         # 失効：localStorage も 0 に落とし、観覧ページ側のローカル判定も確実に失効させる
         extra = ("<div style=\"margin-top:14px;font-size:12px;opacity:.75;line-height:1.7\">"
                  "ホーム画面アイコンの有効期限も切れています。<br>"
@@ -148,7 +150,7 @@ location.replace({base!r});
   <div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>
   <div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>新たに12時間観覧できます</div>
   {extra}
-  <div style="margin-top:20px;font-size:11px;opacity:.45">code: {reason}</div>
+  <div style="margin-top:20px;font-size:11px;opacity:.45">code: {reason_safe}</div>
 </div>
 <script>try {{ localStorage.setItem({key!r}, "0"); }} catch(e) {{}}</script>
 </body></html>"""
@@ -199,15 +201,25 @@ location.replace({base!r});
         # 通過はさせるが延長はしない
         return _pass_page(keep_js)
 
-    if is_pwa and state == "none":
-        # PWAアイコンの初回起動（クッキーが一度も無い）だけは初回発行を認める
+    if is_pwa and state == "none" and _renewal_allowed():
+        # PWAアイコンの初回起動（クッキーが一度も無い）は、発行可能な時間帯の
+        # ときだけ初回発行する。
+        # 【重要】iOS の PWA は Safari とは別の独立した Cookie ストアを持ち、
+        # 未使用7日で Cookie を自動削除する。さらに利用者がサイトデータを消せば
+        # 任意に state=="none" を作れる。この分岐を無条件発行にすると、
+        # 「PWA を開くたび／消すたびに新しい12時間がもらえる」抜け穴になり、
+        # 強制失効も営業時間ゲートも回避されてしまう（実際に回避が確認された）。
+        # そのため _renewal_allowed() を必須条件にして、通常の /enter と同じ
+        # 統制下に置く。営業時間外・発行不可時は下の失効処理に落とす。
         return _issue(_pass_page(renew_js))
 
     # 発行不可時間帯かつ有効クッキー無し → 失効（延長させない）
     # 理由コード: CLOSED=営業時間外 / COOKIE_<state>=クッキー状態 / SRC_<src>
+    # 反射を避けるため src は既知値のみ採用（未知値は "OTHER"）。
+    src_tag = src.upper() if src in ("pwa", "rescan") else ("OTHER" if src else "")
     reason = "CLOSED+COOKIE_" + state.upper()
-    if src:
-        reason += "+SRC_" + src.upper()
+    if src_tag:
+        reason += "+SRC_" + src_tag
     return _blocked_page(pwa=(is_pwa or src == "rescan"), reason=reason)
 
 
