@@ -166,6 +166,24 @@ async def startup():
             await fix_bracket_slots_on_startup(st.db_path)
             print(f"[APP] 店舗 init: id={st.id} slug='{st.slug or '(default)'}' "
                   f"name={st.name} db={st.db_path}", flush=True)
+        # 参加者向けHTMLを起動時に全店舗ぶん再書き出しする。
+        # デプロイ直後に、旧版で書き出された index.html（24時間ゲートJSが
+        # 入っていない版）が配信され続けるのを防ぐ（デプロイ＋再起動だけで最新化）。
+        async def _republish_all_stores():
+            from app.services.public_html import export_current_html
+            from app.store_context import current_store
+            for st2 in registry.list_stores():
+                token = current_store.set(st2)
+                try:
+                    await export_current_html()
+                except Exception as e:
+                    print(f"[APP] startup republish error "
+                          f"(store={st2.slug or 'default'}): {e}", flush=True)
+                finally:
+                    current_store.reset(token)
+        import asyncio as _aio
+        app.state._startup_republish = _aio.create_task(_republish_all_stores())
+
         # DB自動バックアップ（毎晩03:30 JST・14世代保持）をクラウド版で開始
         from app.services import backup_scheduler
         backup_scheduler.launch()

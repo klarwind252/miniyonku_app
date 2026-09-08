@@ -13,6 +13,7 @@ import threading
 import time
 
 _WINDOW = 90            # この秒数内に心拍のあった端末を「現在接続中」とみなす
+_MAX_META_PER_STORE = 2000   # 端末メタの店舗別上限（メモリ枯渇＝DoS対策）
 _lock = threading.Lock()
 
 _live: dict = {}        # (store_id, tid) -> {cid: last_seen_ts}
@@ -42,6 +43,13 @@ def record_hit(store_id, tid, cid: str, ua: str = "") -> None:
             _meta[store_id] = md
         m = md.get(cid)
         if m is None:
+            # 新規端末を追加する前に、上限超過なら最も古い心拍のものから間引く。
+            # /api/telop は公開エンドポイントのため、ランダムcidの大量送信で
+            # メタが無限に膨らむのを防ぐ（DoS対策）。
+            if len(md) >= _MAX_META_PER_STORE:
+                overflow = len(md) - _MAX_META_PER_STORE + 1
+                for old_cid in sorted(md, key=lambda c: md[c].get("last", 0))[:overflow]:
+                    md.pop(old_cid, None)
             m = {"first": now, "last": now, "tid": tid, "ua": _summarize_ua(ua), "hits": 0}
             md[cid] = m
         m["last"] = now
@@ -62,7 +70,8 @@ def record_hit(store_id, tid, cid: str, ua: str = "") -> None:
         if u is None:
             u = set()
             _uniq[key] = u
-        u.add(cid)
+        if len(u) < _MAX_META_PER_STORE:
+            u.add(cid)   # 上限到達後は頭打ち（DoS対策・延べ人数は概算で十分）
         cur = len(d)
         if cur > _peak.get(key, 0):
             _peak[key] = cur
