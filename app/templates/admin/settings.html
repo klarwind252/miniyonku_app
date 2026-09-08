@@ -818,6 +818,16 @@
       }
 
       // QR＋見出し＋URL＋中央ロゴを合成して PNG をダウンロードする共通関数
+      // ダウンロードQR画像の「下に印字する文字列」用。
+      // レーサー用QRは /enter を踏むと即リダイレクトするため、印字は
+      // リダイレクト先（/enter を除いたベースURL）にする。末尾スラッシュも整える。
+      function _displayUrl(url) {
+        var u = (url || '').trim();
+        u = u.replace(/\/enter(?:\?[^#]*)?(?:#.*)?$/, '/');   // 末尾 /enter（?・# 付き含む）→ /
+        u = u.replace(/\/{2,}$/, '/');                          // 連続スラッシュを1つに
+        return u;
+      }
+
       function _renderQrCanvas(srcEl, caption, url, logo, fileBase) {
         // 内容に合わせてキャンバスサイズを決める（余白を最小化）
         var qrSize = 1300, side = 70;
@@ -834,7 +844,8 @@
         // 行数を先に計測して高さを確定
         var m = document.createElement('canvas').getContext('2d');
         m.font = capFont; var capLines = caption ? _splitLines(m, caption, textMaxW) : [];
-        m.font = urlFont; var urlLines = _splitLines(m, url, textMaxW);
+        var _disp = _displayUrl(url);
+        m.font = urlFont; var urlLines = _splitLines(m, _disp, textMaxW);
 
         var capBlockH = capLines.length ? capLines.length * capLH : 0;
         var urlBlockH = urlLines.length * urlLH;
