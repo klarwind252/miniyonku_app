@@ -277,6 +277,22 @@ async def participant_enter(request: Request):
     QRが固定である以上、サーバーは「QRを読んだ」と「同じURLを開いた」を区別できない。
     そのため被害は 12時間TTL＋世代リセット（手動／毎晩）で限定する。
     """
+    # --- ゲートAPIの同居 ---
+    # nginx が /enter は確実にアプリへ中継している（QRが動く＝中継されている）ことを
+    # 利用し、観覧内容・状態確認・引き継ぎ・manifest も /enter?api=... で提供する。
+    # サーバーごとの nginx 設定差（/api/pub-* を中継していない等）に依存しない。
+    api = request.query_params.get("api", "")
+    if api == "content":
+        return await public_gate_content(request)
+    if api == "status":
+        return await public_gate_status(request)
+    if api == "auth":
+        return await public_gate_auth(request)
+    if api == "handoff":
+        return await public_gate_handoff(request)
+    if api == "manifest":
+        return await public_gate_manifest(request)
+
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
     src = request.query_params.get("src", "")
     is_pwa = (src == "pwa")

@@ -187,10 +187,12 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     # 発行しない ?src=expired を必ず付ける。
     _enter_url = (f"/{slug}/enter?src=expired" if slug else "/enter?src=expired")
     _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
-    _status_url = (f"/{slug}/api/pub-status" if slug else "/api/pub-status")
-    _handoff_url = (f"/{slug}/api/pub-handoff" if slug else "/api/pub-handoff")
-    _manifest_url = (f"/{slug}/api/pub-manifest" if slug else "/api/pub-manifest")
-    _content_url = (f"/{slug}/api/pub-content" if slug else "/api/pub-content")
+    # ゲートAPIは全て /enter?api=... で呼ぶ（/enter は QR が動く＝nginx が確実に中継している）
+    _pfx_e = (f"/{slug}" if slug else "")
+    _status_url = f"{_pfx_e}/enter?api=status"
+    _handoff_url = f"{_pfx_e}/enter?api=handoff"
+    _manifest_url = f"{_pfx_e}/enter?api=manifest"
+    _content_url = f"{_pfx_e}/enter?api=content"
     _history_url = (f"/{slug}/api/history" if slug else "/api/history")
     patched = patched.replace("__HISTORYURL__", _history_url)
     _races_url = (f"/{slug}/api/races" if slug else "/api/races")
@@ -268,7 +270,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       if(!j || !j.ok || !j.h) return;
       var link = document.querySelector('link[rel="manifest"]');
       if(!link){ link = document.createElement('link'); link.rel = 'manifest'; document.head.appendChild(link); }
-      link.href = MANIFEST + '?h=' + encodeURIComponent(j.h);
+      link.href = MANIFEST + (MANIFEST.indexOf('?') >= 0 ? '&' : '?') + 'h=' + encodeURIComponent(j.h);
       handoffDone = true;
     }).catch(function(){});
   }
@@ -1790,7 +1792,7 @@ def _build_shell_html(full_html: str, slug: str) -> str:
 </head><body><div id="m4-shell">読み込み中…</div>
 <script>
 (function(){{
-  var CONTENT = "{pfx}/api/pub-content";
+  var CONTENT = "{pfx}/enter?api=content";
   var ENTER = "{pfx}/enter?src=expired";
   function fail(){{ try {{ location.replace(ENTER); }} catch(e) {{}} }}
   fetch(CONTENT, {{cache:'no-store', credentials:'same-origin'}}).then(function(r){{
