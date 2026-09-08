@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import secrets as _secrets
 import sqlite3
 import time
 
@@ -46,12 +47,50 @@ TTL_SEC = 12 * 60 * 60
 _SIG_LEN = 16  # 署名の16進表現の使用桁数（64bit相当・用途上十分）
 
 
+_SIGN_KEY = "pub_gate_secret"
+
+
 def secret_for(store) -> str:
-    """署名鍵の元になるシークレット文字列。空文字ならゲート無効。"""
+    """署名鍵の元になるシークレット文字列。
+
+    優先順: 店舗 admin_token → 環境変数 ADMIN_TOKEN → 店舗DBに自動生成した
+    永続シークレット（app_settings 'pub_gate_secret'）。
+    従来は admin_token/環境変数が無いとゲート自体が無効（フェイルオープン）に
+    なっていたが、それでは設定漏れ＝無制限公開になるため、DBに自動生成した
+    シークレットを最終フォールバックとして必ずゲートを有効化する。
+    """
     tok = getattr(store, "admin_token", "") if store is not None else ""
     if tok:
         return str(tok)
-    return os.environ.get("ADMIN_TOKEN", "") or ""
+    env = os.environ.get("ADMIN_TOKEN", "") or ""
+    if env:
+        return env
+    return _get_or_create_setting(db_path_for(store), _SIGN_KEY, 32)
+
+
+def _get_or_create_setting(db_path: str, key: str, nbytes: int) -> str:
+    """app_settings の key を読み、無ければランダム値を生成して保存して返す。"""
+    if not db_path:
+        return ""
+    try:
+        con = sqlite3.connect(db_path, timeout=5)
+        try:
+            con.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)")
+            row = con.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+            if row and row[0]:
+                return str(row[0])
+            val = _secrets.token_urlsafe(nbytes)
+            con.execute(
+                "INSERT INTO app_settings(key, value) VALUES(?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, val),
+            )
+            con.commit()
+            return val
+        finally:
+            con.close()
+    except Exception:
+        return ""
 
 
 def _key(secret: str) -> bytes:
@@ -182,3 +221,41 @@ def check_cookie_value(secret: str, epoch: int, value: str | None,
     if ts > t + 300:
         return ("invalid", 0)
     return ("valid", remain)
+
+
+# ---------------- PWA 引き継ぎトークン（handoff） ----------------
+# iOS の PWA は Safari と独立した Cookie ストアを持つため、ブラウザで得た観覧許可を
+# そのまま PWA に渡す手段が必要。観覧ページは有効なうちに /api/pub-handoff で
+# 「発行時刻 ts を署名した引き継ぎトークン」を受け取り、manifest の start_url に
+# 埋め込む。PWA 初回起動時に /enter?h=<token> でクッキーを発行するが、
+# その発行時刻は元の ts をそのまま使う＝ブラウザ側と同じ期限で切れる。
+# つまり PWA は「期限を引き継ぐ」だけで、決して新しい12時間を得られない。
+
+def issue_handoff(secret: str, epoch: int, issued_ts: int) -> str:
+    return f"{int(issued_ts)}.{_sign(secret, f'ho:{epoch}:{int(issued_ts)}')}"
+
+
+def verify_handoff(secret: str, epoch: int, token: str | None,
+                   now: float | None = None) -> int:
+    """引き継ぎトークンを検証し、元の発行時刻 ts を返す（不正・期限切れは 0）。"""
+    if not token or not secret:
+        return 0
+    try:
+        ts_s, sig = token.split(".", 1)
+        ts = int(ts_s)
+    except Exception:
+        return 0
+    if not hmac.compare_digest(_sign(secret, f"ho:{epoch}:{ts}"), sig):
+        return 0
+    t = now if now is not None else time.time()
+    if ts + TTL_SEC <= t or ts > t + 300:
+        return 0
+    return ts
+
+
+def cookie_issued_ts(value: str | None) -> int:
+    """クッキー値から発行時刻を取り出す（検証はしない。表示・引き継ぎ用）。"""
+    try:
+        return int((value or "").split(".", 1)[0])
+    except Exception:
+        return 0

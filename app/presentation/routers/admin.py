@@ -195,10 +195,8 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     public_html_gcp_project = proj_row["value"] if proj_row else ""
 
     # 参加者向けURL（クラウド=VPSライブ配信 / オンプレ=GCS）
-    # レーサー用QRは固定URL（/enter・k無し）で運用する。印刷・常設したQRを
-    # 差し替えずに使い続けられることを優先し、24時間制限は
-    #   サーバー署名クッキー（TTL）＋発行可否（営業時間設定）＋世代リセット
-    # で担保する（public_misc.participant_enter / pub_gate 参照）。
+    # レーサー用QRは従来どおり固定URL /enter（差し替え不要）。12時間制限は
+    # サーバー署名クッキー（TTL）＋世代リセット＋PWA引き継ぎで担保する。
     def _enter_url_with_k(_base: str, _pfx: str, _store) -> str:
         return f"{_base}{_pfx}/enter" if _base else ""
 
@@ -504,9 +502,9 @@ async def pub_gate_reset_page(request: Request):
 <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box;">
   <div style="font-size:20px;font-weight:bold;margin-bottom:10px">レーサー観覧アクセスの強制失効</div>
   <div style="font-size:14px;line-height:1.8;opacity:.85;margin-bottom:22px">
-    実行すると、発行済みの<b>全端末</b>の観覧許可が即時無効になり、<br>
+    実行すると、発行済みの<b>全端末</b>の観覧許可（ホーム画面アイコン含む）が即時無効になり、<br>
     観覧中の端末は約30秒以内に失効画面へ切り替わります。<br>
-    QRコードは固定のため差し替え不要です（受付時間内の再スキャンで復帰できます）。
+    QRコードは固定のため差し替え不要です（QRの再スキャンで復帰できます）。
   </div>
   <button id="go" style="border:0;cursor:pointer;background:#c0392b;color:#fff;padding:14px 30px;border-radius:8px;font-size:16px;font-weight:bold">強制失効を実行する</button>
   <div id="out" style="margin-top:18px;font-size:14px;min-height:1.5em"></div>

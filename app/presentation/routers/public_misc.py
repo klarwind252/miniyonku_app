@@ -66,161 +66,247 @@ async def public_telop(request: Request, cid: str = "", tid: int = 0,
     )
 
 
-@router.get("/enter")
-async def participant_enter(request: Request):
-    """参加者向け入口（QRが指すURL）。
+# ---------------------------------------------------------------------------
+# 参加者向け観覧の入口（固定QR＋サーバー署名ゲート）
+# ---------------------------------------------------------------------------
+# 想定するあらゆるアクセス経路と、それぞれの扱い（設計の一覧）:
+#
+#   1. 会場の固定QRをカメラで読む            → /enter                  … 12時間発行（再スキャンのたびに更新）
+#   2. /enter をURL直打ち・履歴・ブックマーク → /enter                  … QRと同じURLのため区別不能＝同じく発行
+#                                                                           （固定QRの原理的限界。12時間TTLと
+#                                                                            世代リセットで被害を限定）
+#   3. 観覧トップ /<slug>/ の履歴・ブックマーク→ 静的HTML               … 有効クッキーが無ければ失効（発行なし）
+#   4. 共有リンク（LINE等）                  → /enter                  … 2と同じ
+#   5. 観覧ページの直接URL（/ や /<slug>/）  → nginx 静的配信          … nginx auth_request で /api/pub-auth を
+#                                                                           照会させ、無効なら401（deploy/ 参照）。
+#                                                                           JSも30秒ごと＋復帰時にサーバー判定
+#   6. iOS PWA（独立Cookieストア）           → /enter?h=<引き継ぎ>     … ブラウザの発行時刻を引き継ぐ。新規12時間
+#                                                                           は絶対に得られない。期限後は再インストール
+#   7. Android PWA / デスクトップPWA          → /enter?src=pwa          … Chromeと同一Cookie。有効なら通過、無効は失効
+#   8. 旧manifestのPWA（/enter?src=pwa）     → 同上                    … 有効クッキーが無ければ失効（再インストール）
+#   9. シークレット/プライベートモード       → クッキー無し             … 秘密パスを読まない限り失効
+#  10. 別ブラウザ・別端末                     → クッキー無し             … 同上
+#  11. 端末時計の改竄 / localStorage改竄      → 無効                     … 判定はサーバー時刻・サーバー署名
+#  12. 強制失効（管理画面／毎晩3:30）         → 世代+1                   … 発行済み全クッキー・全引き継ぎが即無効
+#  13. /enter 連打                            → IP毎レート制限          … 抑止
+#  14. 開きっぱなしのタブ                     → 30秒ポーリング＋復帰時   … 期限到来で /enter へ遷移（内容を破棄）
+#  15. 署名トークン ?k=（旧方式）             → 廃止                     … 受け付けない
+#
+# 「/enter のURLを知っていれば再取得できる」のは固定QRの原理的限界。
+# その被害は 12時間TTL＋毎晩の世代リセット＋手動の強制失効で限定する。
 
-    案②（サーバー署名方式・pub_gate 参照）:
-      レーサー用QRは /enter?k=<署名トークン> を指す。k は時刻窓ごとに自動更新され、
-      サーバーは「現在」と「1つ前」の窓の k のみ受理する（過去URLの使い回しは
-      最長48時間で必ず失効）。有効な k で通過した端末には署名付きクッキー
-      （発行時刻＋HMAC、有効24時間）を発行し、観覧ページは /api/pub-status で
-      サーバー判定を受けて期限切れなら自動更新を停止する。
+import threading as _threading
+import time as _time
+_enter_rl_lock = _threading.Lock()
+_enter_rl: dict = {}   # ip -> [count, window_start]
+_ENTER_RL_MAX = 30     # 1分あたり /enter/<秘密> の試行上限（IP毎）
 
-    従来の localStorage 記録（案①）はオフライン時のフォールバック判定用として
-    引き続き書き込む（正の判定はサーバー側が担う）。
 
-    PWA（ホーム画面アイコン起動 ?src=pwa）の扱い:
-      - クッキーが有効 → そのまま通過（※延長はしない）
-      - クッキーが全く無い（そのアイコンの初回起動）→ 初回のみ発行して通過
-      - クッキーが期限切れ → 失効ページ（カメラで最新QRを読むよう案内）
-      これにより「アイコンをタップするだけで24時間が無限に延長される」問題と、
-      期限切れオーバーレイの更新ボタン（?src=rescan）による無条件延長を廃止する。
+def _rate_limited(ip: str) -> bool:
+    now = _time.time()
+    with _enter_rl_lock:
+        c = _enter_rl.get(ip)
+        if c is None or now - c[1] > 60:
+            _enter_rl[ip] = [1, now]
+            if len(_enter_rl) > 5000:   # メモリ上限（古いものから間引き）
+                for k in sorted(_enter_rl, key=lambda x: _enter_rl[x][1])[:1000]:
+                    _enter_rl.pop(k, None)
+            return False
+        c[0] += 1
+        return c[0] > _ENTER_RL_MAX
 
-    secret（店舗 admin_token / 環境変数 ADMIN_TOKEN）が未設定の環境では
-    ゲート無効＝従来どおりの動作（後方互換）。
-    """
+
+def _client_ip(request: Request) -> str:
+    xf = request.headers.get("x-forwarded-for", "")
+    if xf:
+        return xf.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+def _enter_common(request: Request):
+    """/enter 系で共通に使う文脈をまとめて返す。"""
     from app.services import pub_gate
-
     store = getattr(request.state, "store", None)
     slug = store.slug if store else ""
     base = f"/{slug}/" if slug else "/"
     key = f"m4_pub_issued_{slug or 'default'}"
-    src = request.query_params.get("src", "")
-    is_pwa = (src == "pwa")
-
+    dbp = pub_gate.db_path_for(store)
     secret = pub_gate.secret_for(store)
-    epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
+    epoch = pub_gate.get_epoch(dbp)
+    cname = pub_gate.cookie_name(slug)
+    state, _ = pub_gate.check_cookie_value(secret, epoch, request.cookies.get(cname))
+    return pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state
 
-    def _renewal_allowed() -> bool:
-        """新たな24時間を発行してよいか（＝実質「会場でスキャンできる時間帯か」）。
 
-        QRは固定運用（印刷・常設）のため、URL自体では「本物の再スキャン」と
-        「履歴・ブックマークからの開き直し」を区別できない。そこで発行可否を
-        店舗の営業時間設定（restrict_hours / access_start / access_end）に委ねる:
-          - 営業時間制限が有効な店舗 → 営業時間内のみ発行（時間外は既存の
-            有効クッキーで通過はできるが、延長はされない）
-          - 制限なし → 常時発行（従来どおり）
-        これにより、営業時間外に自宅からURLを開き直しても延長できず、
-        発行済みの24時間が切れた時点で必ず失効する。
-        """
-        try:
-            if store is not None and getattr(store, "restrict_hours", False):
-                from app import registry
-                return bool(registry.is_store_open(store))
-        except Exception:
-            pass
-        return True
-
-    def _pass_page(set_js: str) -> HTMLResponse:
-        html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+def _pass_page(base: str, key: str, renew: bool) -> HTMLResponse:
+    if renew:
+        set_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
+    else:
+        set_js = f"""try {{
+  if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
+}} catch(e) {{}}"""
+    html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
 <title>読み込み中…</title></head><body>
 <p style="font-family:sans-serif;text-align:center;margin-top:40vh;color:#555">読み込み中…</p>
 <script>
 {set_js}
 location.replace({base!r});
 </script></body></html>"""
-        return HTMLResponse(html)
+    resp = HTMLResponse(html)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
 
-    def _blocked_page(pwa: bool, reason: str = "") -> HTMLResponse:
-        import html as _html
-        reason_safe = _html.escape(reason)[:80]  # 表示専用・エスケープ＋長さ制限
-        # 失効：localStorage も 0 に落とし、観覧ページ側のローカル判定も確実に失効させる
-        extra = ("<div style=\"margin-top:14px;font-size:12px;opacity:.75;line-height:1.7\">"
-                 "ホーム画面アイコンの有効期限も切れています。<br>"
-                 "カメラでQRコードを読み取るとブラウザで観覧できます。"
-                 "</div>") if pwa else ""
-        html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+
+def _blocked_page(key: str, pwa: bool, reason: str = "") -> HTMLResponse:
+    import html as _html
+    reason_safe = _html.escape(reason)[:80]
+    extra = ("<div style=\"margin-top:14px;font-size:12px;opacity:.75;line-height:1.7\">"
+             "ホーム画面アイコンの有効期限も切れています。<br>"
+             "ブラウザで会場のQRコードを読み直し、必要なら<br>「ホーム画面に追加」をやり直してください。"
+             "</div>") if pwa else ""
+    html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
 <title>有効期限切れ</title></head>
 <body style="margin:0;background:#141821;color:#fff;font-family:sans-serif;">
 <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box;">
   <div style="font-size:22px;font-weight:bold;margin-bottom:14px">観覧の有効期限が切れました</div>
   <div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>
-  <div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>新たに12時間観覧できます</div>
+  <div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>新たに12時間観覧できます</div>
   {extra}
   <div style="margin-top:20px;font-size:11px;opacity:.45">code: {reason_safe}</div>
 </div>
 <script>try {{ localStorage.setItem({key!r}, "0"); }} catch(e) {{}}</script>
 </body></html>"""
-        return HTMLResponse(html, status_code=403)
+    resp = HTMLResponse(html, status_code=403)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
 
-    # ---- ゲート無効（secret 未設定）：従来動作（後方互換） ----
-    if not secret:
-        if is_pwa:
-            set_js = f"""try {{
-  if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
-}} catch(e) {{}}"""
-        else:
-            set_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
-        return _pass_page(set_js)
 
-    # ---- ゲート有効 ----
-    k = request.query_params.get("k", "")
-    cname = pub_gate.cookie_name(slug)
-    state, _remain = pub_gate.check_cookie_value(secret, epoch, request.cookies.get(cname))
-    _fwd_proto = request.headers.get("x-forwarded-proto", "")
-    secure = (request.url.scheme == "https") or (_fwd_proto == "https")
+def _issue(request: Request, resp: HTMLResponse, cname: str, secret: str,
+           epoch: int, issued_ts: float | None = None) -> HTMLResponse:
+    from app.services import pub_gate
+    fwd = request.headers.get("x-forwarded-proto", "")
+    secure = (request.url.scheme == "https") or (fwd == "https")
+    val = pub_gate.issue_cookie_value(secret, epoch, issued_ts)
+    # 引き継ぎ発行（issued_ts 指定）は残り時間ぶんだけの max_age にする
+    remain = pub_gate.TTL_SEC
+    if issued_ts is not None:
+        remain = max(1, int(issued_ts + pub_gate.TTL_SEC - _time.time()))
+    resp.set_cookie(cname, val, max_age=remain, path="/",
+                    httponly=True, samesite="lax", secure=secure)
+    return resp
 
-    def _issue(resp: HTMLResponse) -> HTMLResponse:
-        resp.set_cookie(
-            cname, pub_gate.issue_cookie_value(secret, epoch),
-            max_age=pub_gate.TTL_SEC, path="/",
-            httponly=True, samesite="lax", secure=secure,
-        )
-        return resp
 
-    renew_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
-    keep_js = f"""try {{
-  if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
-}} catch(e) {{}}"""
+def _hours_ok(store) -> bool:
+    """営業時間制限が有効な店舗では、時間外は新規発行しない（追加の縛り。任意）。"""
+    try:
+        if store is not None and getattr(store, "restrict_hours", False):
+            from app import registry
+            return bool(registry.is_store_open(store))
+    except Exception:
+        pass
+    return True
 
-    if pub_gate.verify_qr_token(secret, epoch, k):
-        # 署名トークン付きURL（任意運用・常に有効）：新たな24時間を発行
-        return _issue(_pass_page(renew_js))
 
-    if _renewal_allowed() and not is_pwa:
-        # 固定QRのスキャン（および同URLの開き直し）：発行可能時間帯なら
-        # 新たな24時間を発行する。QRが固定である以上、URLだけでは再スキャンと
-        # 開き直しを区別できないため、可否は営業時間設定＋世代リセットで統制する。
-        return _issue(_pass_page(renew_js))
+@router.get("/enter")
+async def participant_enter(request: Request):
+    """固定QRが指す入口（従来どおり /enter）。
 
+    ルール:
+      - ブラウザで /enter を開く（＝QRを読んだ）: 12時間を発行（再スキャンのたびに更新）
+        ※営業時間制限が有効な店舗では時間外は発行しない（有効クッキーの通過のみ）
+      - PWA 引き継ぎ ?h=<token>: ブラウザ側の発行時刻をそのまま引き継ぐ（延長なし）
+      - PWA 起動 ?src=pwa: 有効クッキーがあれば通過。無ければ失効（発行しない）
+        → アイコンを開くだけでは決して延長されない
+    QRが固定である以上、サーバーは「QRを読んだ」と「同じURLを開いた」を区別できない。
+    そのため被害は 12時間TTL＋世代リセット（手動／毎晩）で限定する。
+    """
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    src = request.query_params.get("src", "")
+    is_pwa = (src == "pwa")
+
+    # PWA 引き継ぎ：発行時刻を引き継いだクッキーを出す（期限は元と同じ）
+    h = request.query_params.get("h", "")
+    if h:
+        ts = pub_gate.verify_handoff(secret, epoch, h)
+        if ts:
+            return _issue(request, _pass_page(base, key, renew=False), cname, secret, epoch, issued_ts=ts)
+        if state == "valid":
+            return _pass_page(base, key, renew=False)
+        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper())
+
+    if is_pwa or src == "rescan":
+        # PWA アイコン起動／旧「更新」ボタン：発行は絶対にしない
+        if state == "valid":
+            return _pass_page(base, key, renew=False)
+        return _blocked_page(key, True, "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src.upper())
+
+    # ブラウザからの /enter（＝固定QRのスキャン）
+    if _rate_limited(_client_ip(request)):
+        return _blocked_page(key, False, "RATE_LIMIT")
+    if not _hours_ok(store):
+        if state == "valid":
+            return _pass_page(base, key, renew=False)
+        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper())
+    return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+
+
+@router.get("/api/pub-auth")
+async def public_gate_auth(request: Request):
+    """nginx auth_request 用。有効クッキーなら 204、無効なら 401。
+
+    参加者向け静的HTML（/ や /<slug>/）を nginx が配信する前にこのエンドポイントを
+    照会させることで、直接URL・curl・保存済みURLからの取得もサーバー側で遮断する。
+    設定例は deploy/nginx_pub_gate.conf.example を参照。
+    """
+    from fastapi.responses import Response
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
     if state == "valid":
-        # 有効期間内の再訪（PWAアイコン起動・時間外の開き直し等）：
-        # 通過はさせるが延長はしない
-        return _pass_page(keep_js)
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return Response(status_code=401, headers={"Cache-Control": "no-store"})
 
-    if is_pwa and state == "none" and _renewal_allowed():
-        # PWAアイコンの初回起動（クッキーが一度も無い）は、発行可能な時間帯の
-        # ときだけ初回発行する。
-        # 【重要】iOS の PWA は Safari とは別の独立した Cookie ストアを持ち、
-        # 未使用7日で Cookie を自動削除する。さらに利用者がサイトデータを消せば
-        # 任意に state=="none" を作れる。この分岐を無条件発行にすると、
-        # 「PWA を開くたび／消すたびに新しい12時間がもらえる」抜け穴になり、
-        # 強制失効も営業時間ゲートも回避されてしまう（実際に回避が確認された）。
-        # そのため _renewal_allowed() を必須条件にして、通常の /enter と同じ
-        # 統制下に置く。営業時間外・発行不可時は下の失効処理に落とす。
-        return _issue(_pass_page(renew_js))
 
-    # 発行不可時間帯かつ有効クッキー無し → 失効（延長させない）
-    # 理由コード: CLOSED=営業時間外 / COOKIE_<state>=クッキー状態 / SRC_<src>
-    # 反射を避けるため src は既知値のみ採用（未知値は "OTHER"）。
-    src_tag = src.upper() if src in ("pwa", "rescan") else ("OTHER" if src else "")
-    reason = "CLOSED+COOKIE_" + state.upper()
-    if src_tag:
-        reason += "+SRC_" + src_tag
-    return _blocked_page(pwa=(is_pwa or src == "rescan"), reason=reason)
+@router.get("/api/pub-handoff")
+async def public_gate_handoff(request: Request):
+    """PWA 用の引き継ぎトークンを返す（有効クッキー保持時のみ）。"""
+    from fastapi.responses import JSONResponse
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    if state != "valid":
+        return JSONResponse({"ok": False}, status_code=401, headers={"Cache-Control": "no-store"})
+    ts = pub_gate.cookie_issued_ts(request.cookies.get(cname))
+    return JSONResponse({"ok": True, "h": pub_gate.issue_handoff(secret, epoch, ts)},
+                        headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/pub-manifest")
+async def public_gate_manifest(request: Request):
+    """参加者用の動的 manifest。start_url に引き継ぎトークン h を埋める。
+
+    観覧ページのJSが有効な間に <link rel=manifest> をこのURLに差し替える。
+    iOS はホーム画面追加時に manifest を読むため、追加された PWA の start_url は
+    /enter?h=<token>&src=pwa となり、初回起動でブラウザと同じ期限のクッキーを得る。
+    """
+    from fastapi.responses import JSONResponse, Response
+    from app.core.config import IS_CLOUD
+    if not IS_CLOUD:
+        return Response(status_code=404)
+    from app import pwa
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    settings = pwa.get_pwa_settings(request)
+    data = pwa.build_manifest_dict("html", settings, slug=slug)
+    h = request.query_params.get("h", "")
+    pfx = ("/" + slug) if slug else ""
+    if h and pub_gate.verify_handoff(secret, epoch, h):
+        data["start_url"] = f"{pfx}/enter?h={h}&src=pwa"
+    else:
+        data["start_url"] = f"{pfx}/enter?src=pwa"
+    return JSONResponse(data, media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/pub-status")
@@ -243,7 +329,9 @@ async def public_gate_status(request: Request):
         epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
         cval = request.cookies.get(pub_gate.cookie_name(slug))
         state, remain = pub_gate.check_cookie_value(secret, epoch, cval)
-        payload = {"gate": True, "state": state, "remain": remain}
+        import time as _t
+        payload = {"gate": True, "state": state, "remain": remain,
+                   "expires_at": int(_t.time() + remain) if state == "valid" else 0}
         if request.query_params.get("debug") == "1":
             payload["debug"] = {
                 "slug": slug or "default",
