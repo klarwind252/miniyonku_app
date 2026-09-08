@@ -544,6 +544,52 @@ async def pub_gate_reset(request: Request):
     return JSONResponse({"ok": True, "epoch": new_epoch})
 
 
+@router.get("/pub-gate/diag")
+async def pub_gate_diag(request: Request):
+    """観覧ゲートの自己診断（サーバー構成の食い違いを一発で見つける）。
+
+    アプリが「どこに index.html（シェル）を書いたか」「本体をどこに置いたか」
+    「今そのファイルがシェルになっているか」「世代・署名鍵の出所」を返す。
+    nginx の root がここと違う場合、nginx は別の古い index.html を配り続ける。
+    """
+    import os, time as _t
+    from fastapi.responses import JSONResponse
+    from app.services import pub_gate as _pg
+    from app.services.public_html import gated_content_path
+    from app.config import IS_CLOUD, PUBLIC_HTML_DIR
+    store = getattr(request.state, "store", None)
+    out_dir = (getattr(store, "public_dir", None) if store is not None else None) or PUBLIC_HTML_DIR
+    idx = os.path.join(out_dir, "index.html") if out_dir else ""
+    gated = gated_content_path(store)
+    def _info(path):
+        if not path or not os.path.isfile(path):
+            return {"path": path, "exists": False}
+        st = os.stat(path)
+        head = open(path, "r", encoding="utf-8", errors="ignore").read(4000)
+        return {"path": path, "exists": True, "bytes": st.st_size,
+                "mtime": _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(st.st_mtime)),
+                "is_shell": ("m4-shell" in head),
+                "has_expired_redirect": ("enter?src=expired" in head)}
+    dbp = _pg.db_path_for(store)
+    tok = getattr(store, "admin_token", "") if store is not None else ""
+    secret_src = "store.admin_token" if tok else ("env ADMIN_TOKEN" if os.environ.get("ADMIN_TOKEN") else "db(pub_gate_secret)")
+    return JSONResponse({
+        "ok": True,
+        "is_cloud": IS_CLOUD,
+        "store": {"slug": (store.slug if store else "") or "default", "id": getattr(store, "id", None)},
+        "public_dir_app_writes_to": out_dir,
+        "index_html": _info(idx),
+        "gated_content": _info(gated),
+        "stale_content_in_webroot": os.path.isfile(os.path.join(out_dir, "content.html")) if out_dir else False,
+        "db_path": dbp,
+        "epoch": _pg.get_epoch(dbp),
+        "secret_source": secret_src,
+        "ttl_sec": _pg.TTL_SEC,
+        "hint": ("index_html.is_shell が false なら旧版HTML。exists が false なら nginx の root と "
+                 "public_dir_app_writes_to が食い違っている可能性。ブラウザの view-source と見比べること。"),
+    }, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/pub-gate/devices")
 async def pub_gate_devices(request: Request):
     """現在アクセス有効なレーサー観覧端末の一覧を返す（管理画面の「有効端末の確認」）。
