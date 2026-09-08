@@ -224,8 +224,8 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       ? '<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.7">ホーム画面アイコンの有効期限も切れています。<br>カメラでQRコードを読み取るとブラウザで観覧できます。</div>'
       : '';
     ov.innerHTML=head
-      +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場に掲示されている<br><b>最新のQRコード</b>をもう一度スキャンしてください。</div>'
-      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>新たに24時間観覧できます</div>'
+      +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>'
+      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>新たに24時間観覧できます</div>'
       +pwaNote;
     document.body.appendChild(ov);
   }
@@ -1235,7 +1235,14 @@ window.addEventListener('load', function(){
 })();
 </script>"""
 
-    patched = patched.replace('</body>', expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + racer_stats_js + '</body>', 1)
+    # 旧版JSで開きっぱなしのタブを一度だけフルリロードさせる不可視マーカー。
+    # 旧版の更新検知は「構造世代印」（.schedule-table の個数を含む）が変わると
+    # location.reload() する。非表示の空 .schedule-table を恒久的に置くことで、
+    # 旧版基準と必ず世代が食い違い、旧タブは次回ポーリングで新HTML（ゲートJS入り）
+    # に置き換わる。新版クライアントには常に同じ形で見えるため無害（表示なし・
+    # 行数0なので世代印は以後安定する）。
+    _migrate_marker = '<div style="display:none" aria-hidden="true"><table class="schedule-table"></table></div>'
+    patched = patched.replace('</body>', _migrate_marker + expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + racer_stats_js + '</body>', 1)
 
     # スラッグ店舗: 公開HTMLは内部レンダリング（StoreResolver の応答書き換えを通らない）
     # で生成されるため、本文に残るクォート直後の絶対パス（例: /api/race-asset の画像、
