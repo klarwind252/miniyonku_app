@@ -25,7 +25,7 @@ _uniq: dict = {}        # (store_id, tid) -> set(cid)
 _meta: dict = {}
 
 
-def record_hit(store_id, tid, cid: str, ua: str = "") -> None:
+def record_hit(store_id, tid, cid: str, ua: str = "", via: str = "") -> None:
     """参加者htmlからの心拍を1件記録する。cid が空なら無視（＝viewや無効値）。"""
     if not cid:
         return
@@ -55,6 +55,8 @@ def record_hit(store_id, tid, cid: str, ua: str = "") -> None:
         m["last"] = now
         m["tid"] = tid
         m["hits"] = m.get("hits", 0) + 1
+        if via:
+            m["via"] = via
         if ua:
             m["ua"] = _summarize_ua(ua)
         d = _live.get(key)
@@ -166,6 +168,7 @@ def live_devices(store_id, window: int | None = None) -> list[dict]:
                     "last": m.get("last", 0),
                     "ua": m.get("ua", ""),
                     "hits": m.get("hits", 0),
+                    "via": m.get("via", ""),
                     "idle": int(idle),
                 })
     out.sort(key=lambda x: x["last"], reverse=True)

@@ -919,7 +919,7 @@
           <div id="pubGateDevWrap" style="display:none;margin-top:14px">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
               <span id="pubGateDevSummary" style="font-size:13px;font-weight:bold;color:#2c3e50"></span>
-              <span style="font-size:11px;color:#95a5a6">※直近90秒以内に観覧ページを開いている端末（ブラウザ単位）。個人情報は含みません。</span>
+              <span style="font-size:11px;color:#95a5a6">※直近90秒以内に観覧ページを開いている端末（ブラウザ単位）。個人情報は含みません。「認証」が<b>スタッフ</b>の端末は admin/view でログイン済みのため強制失効の対象外です（会場ディスプレイ等）。</span>
             </div>
             <div style="overflow-x:auto">
               <table id="pubGateDevTable" style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
@@ -928,6 +928,7 @@
                     <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">#</th>
                     <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">端末</th>
                     <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">端末ID</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">認証</th>
                     <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">大会</th>
                     <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">初回接続</th>
                     <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">最終確認</th>
@@ -983,7 +984,7 @@
                 var list = j.devices || [];
                 summ.textContent = '現在アクセス有効：' + j.count + ' 台';
                 if(list.length === 0){
-                  body.innerHTML = '<tr><td colspan="6" style="padding:14px;text-align:center;color:#95a5a6">現在アクセス中の端末はありません</td></tr>';
+                  body.innerHTML = '<tr><td colspan="7" style="padding:14px;text-align:center;color:#95a5a6">現在アクセス中の端末はありません</td></tr>';
                   return;
                 }
                 var rows = '';
@@ -994,6 +995,9 @@
                     + '<td style="padding:6px 8px;color:#95a5a6">' + (i+1) + '</td>'
                     + '<td style="padding:6px 8px">' + _pgEsc(d.ua || '不明') + '</td>'
                     + '<td style="padding:6px 8px;font-family:monospace;color:#636e72">' + _pgEsc(cidShort) + '</td>'
+                    + '<td style="padding:6px 8px">' + (d.via === 'staff'
+                        ? '<span style="color:#c0392b;font-weight:bold">スタッフ</span>'
+                        : (d.via === 'pub' ? '参加者' : '—')) + '</td>'
                     + '<td style="padding:6px 8px">' + _pgEsc(tidLabel) + '</td>'
                     + '<td style="padding:6px 8px;white-space:nowrap">' + _pgFmtTime(d.first) + '</td>'
                     + '<td style="padding:6px 8px;white-space:nowrap">' + _pgFmtTime(d.last)

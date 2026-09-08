@@ -565,11 +565,12 @@ async def pub_gate_diag(request: Request):
         if not path or not os.path.isfile(path):
             return {"path": path, "exists": False}
         st = os.stat(path)
-        head = open(path, "r", encoding="utf-8", errors="ignore").read(4000)
+        body = open(path, "r", encoding="utf-8", errors="ignore").read()
         return {"path": path, "exists": True, "bytes": st.st_size,
                 "mtime": _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(st.st_mtime)),
-                "is_shell": ("m4-shell" in head),
-                "has_expired_redirect": ("enter?src=expired" in head)}
+                "is_shell": ("m4-shell" in body[:4000]),
+                "has_expired_redirect": ("enter?src=expired" in body),
+                "uses_enter_api": ("enter?api=content" in body)}
     dbp = _pg.db_path_for(store)
     tok = getattr(store, "admin_token", "") if store is not None else ""
     secret_src = "store.admin_token" if tok else ("env ADMIN_TOKEN" if os.environ.get("ADMIN_TOKEN") else "db(pub_gate_secret)")

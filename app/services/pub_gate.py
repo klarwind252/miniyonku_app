@@ -259,3 +259,28 @@ def cookie_issued_ts(value: str | None) -> int:
         return int((value or "").split(".", 1)[0])
     except Exception:
         return 0
+
+
+# ---------------- 失効画面のカメラ読み取り用トークン（scan） ----------------
+# 「ページ内から /enter へ遷移する」経路は、旧版クライアントの自動再発行ループを
+# 塞ぐために発行を拒否する（Sec-Fetch-Site: same-origin を見る）。
+# 失効画面のカメラ読み取りだけは正規の再スキャンなので、サーバーが失効画面に
+# 埋め込んだ短命トークン（10分窓・現在と1つ前）を付けて /enter?scan=<token> で通す。
+SCAN_WINDOW_SEC = 10 * 60
+
+
+def scan_token(secret: str, epoch: int, now: float | None = None) -> str:
+    win = int((now if now is not None else time.time()) // SCAN_WINDOW_SEC)
+    return _sign(secret, f"scan:{epoch}:{win}")
+
+
+def verify_scan_token(secret: str, epoch: int, token: str | None,
+                      now: float | None = None) -> bool:
+    if not token or not secret:
+        return False
+    t = now if now is not None else time.time()
+    win = int(t // SCAN_WINDOW_SEC)
+    for w in (win, win - 1):
+        if hmac.compare_digest(_sign(secret, f"scan:{epoch}:{w}"), token):
+            return True
+    return False

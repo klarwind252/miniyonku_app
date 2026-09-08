@@ -99,7 +99,9 @@ async def public_telop(request: Request, cid: str = "", tid: int = 0,
             store = getattr(request.state, "store", None)
             sid = getattr(store, "id", 0)
             ua = request.headers.get("user-agent", "")
-            access_stats.record_hit(sid, tid, cid, ua)
+            # どの認証で通ったか（切り分け用）: スタッフ(admin/view)クッキー or 参加者クッキー
+            via = "staff" if _staff_ok(request) else "pub"
+            access_stats.record_hit(sid, tid, cid, ua, via)
         except Exception:
             pass
 
@@ -189,6 +191,15 @@ def _enter_common(request: Request):
     return pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state
 
 
+def _scan_url(request: Request) -> str:
+    """失効画面のカメラ読み取り成功時に踏むURL（短命トークン付き）。"""
+    from app.services import pub_gate
+    store = getattr(request.state, "store", None)
+    secret = pub_gate.secret_for(store)
+    epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
+    return _enter_path(request) + "?scan=" + pub_gate.scan_token(secret, epoch)
+
+
 def _enter_path(request: Request) -> str:
     store = getattr(request.state, "store", None)
     slug = store.slug if store else ""
@@ -209,7 +220,7 @@ def _pass_page(base: str, key: str, renew: bool) -> HTMLResponse:
 <p style="font-family:sans-serif;text-align:center;margin-top:40vh;color:#555">読み込み中…</p>
 <script>
 {set_js}
-location.replace({base!r});
+location.replace({base!r} + "?v=" + Date.now());
 </script></body></html>"""
     resp = HTMLResponse(html)
     resp.headers["Cache-Control"] = "no-store"
@@ -256,6 +267,7 @@ html,body{margin:0;background:#141821;color:#fff;font-family:sans-serif}
 try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
 (function(){
   var ENTER = __ENTER__;              // 発行URL（QRのURLと同じ）
+  var SCAN = __SCAN__;                // カメラ読み取り成功時の遷移先（短命トークン付き）
   var JSQR_URL = ENTER + "?api=jsqr"; // 代替デコーダ（BarcodeDetector非対応ブラウザ用）
   var scanEl = document.getElementById('scan');
   var video = document.getElementById('v');
@@ -278,8 +290,8 @@ try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
   function accept(text){
     stop();
     if (!isVenueQr(text)) { setErr('会場のQRコードではありません。もう一度お試しください。'); return; }
-    // QRのURLを「踏む」：発行され、観覧画面へ戻る（PWA内でもそのまま有効になる）
-    location.replace(ENTER);
+    // 正規の再スキャンとして発行を受け、観覧画面へ戻る（PWA内でもそのまま有効になる）
+    location.replace(SCAN);
   }
 
   function stop(){
@@ -350,7 +362,8 @@ try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
 </body></html>"""
 
 
-def _blocked_page(key: str, pwa: bool, reason: str = "", enter_url: str = "/enter") -> HTMLResponse:
+def _blocked_page(key: str, pwa: bool, reason: str = "", enter_url: str = "/enter",
+                  scan_url: str = "") -> HTMLResponse:
     """失効ページ。ページ内でカメラを起動して会場QRを読み直せる（iOS/iPadOS/Android/PC共通）。
 
     - 読み取ったURLが「このサイトの /enter」のときだけ、そのURLへ遷移して発行を受ける
@@ -367,7 +380,8 @@ def _blocked_page(key: str, pwa: bool, reason: str = "", enter_url: str = "/ente
             .replace("__PWA_NOTE__", note)
             .replace("__REASON__", reason_safe)
             .replace("__KEY__", _json.dumps(key))
-            .replace("__ENTER__", _json.dumps(enter_url)))
+            .replace("__ENTER__", _json.dumps(enter_url))
+            .replace("__SCAN__", _json.dumps(scan_url or enter_url)))
     resp = HTMLResponse(html, status_code=403)
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"
@@ -449,7 +463,7 @@ async def participant_enter(request: Request):
             return _issue(request, _pass_page(base, key, renew=False), cname, secret, epoch, issued_ts=ts)
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(), enter_url=_enter_path(request))
+        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(), enter_url=_enter_path(request), scan_url=_scan_url(request))
 
     if src:
         # src 付き（PWAアイコン起動 ?src=pwa／失効遷移 ?src=expired／旧更新ボタン ?src=rescan）
@@ -458,15 +472,37 @@ async def participant_enter(request: Request):
         src_tag = src.upper() if src in ("pwa", "expired", "rescan") else "OTHER"
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, is_pwa or src == "rescan", "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag, enter_url=_enter_path(request))
+        return _blocked_page(key, is_pwa or src == "rescan", "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag, enter_url=_enter_path(request), scan_url=_scan_url(request))
 
-    # ブラウザからの /enter（＝固定QRのスキャン）
+    # ---- ページ内からの遷移は発行しない ----
+    # 旧版の観覧ページ／旧シェルが失効時に素の /enter へ location.replace する作りだった
+    # ため、「失効 → /enter → 即再発行 → 表示」の無限ループが成立していた
+    # （iOS PWA は旧ページを独自キャッシュから開くので、サーバーを更新しても残る）。
+    # QRスキャン・URL直打ち・外部リンクは Sec-Fetch-Site: none / cross-site で届き、
+    # ページ内遷移は same-origin / same-site で届く。後者には発行しない。
+    # 失効画面のカメラ読み取りは ?scan=<短命トークン> を付けて正規経路として通す。
+    scan = request.query_params.get("scan", "")
+    if pub_gate.verify_scan_token(secret, epoch, scan):
+        return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+    sfs = request.headers.get("sec-fetch-site", "").lower()
+    from_page = sfs in ("same-origin", "same-site")
+    if not sfs:
+        # Sec-Fetch 非対応ブラウザ向けフォールバック：Referer が自サイトならページ内遷移
+        ref = request.headers.get("referer", "")
+        host = request.headers.get("host", "")
+        from_page = bool(ref) and bool(host) and (("://" + host + "/") in ref or ref.endswith("://" + host))
+    if from_page:
+        if state == "valid":
+            return _pass_page(base, key, renew=False)
+        return _blocked_page(key, is_pwa, "NO_ISSUE+COOKIE_" + state.upper() + "+FROM_PAGE", enter_url=_enter_path(request), scan_url=_scan_url(request))
+
+    # 外部からの /enter（＝固定QRのスキャン／URL直打ち）
     if _rate_limited(_client_ip(request)):
-        return _blocked_page(key, False, "RATE_LIMIT", enter_url=_enter_path(request))
+        return _blocked_page(key, False, "RATE_LIMIT", enter_url=_enter_path(request), scan_url=_scan_url(request))
     if not _hours_ok(store):
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_url=_enter_path(request))
+        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_url=_enter_path(request), scan_url=_scan_url(request))
     return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
 
 
@@ -605,11 +641,9 @@ async def serve_logo():
 
 
 @router.get("/api/race-asset/{tid}/{kind}/{seq}")
-async def serve_race_asset(tid: int, kind: str, seq: int, request: Request,
+async def serve_race_asset(tid: int, kind: str, seq: int,
                            db: aiosqlite.Connection = Depends(get_db)):
-    """レース情報の画像を配信HTMLとは別URLで返す（参加者クッキー or スタッフ認証が必要）。"""
-    if not _content_allowed(request):
-        return _deny_content(request)
+    """レース情報の画像を配信HTMLとは別URLで返す。公開（トークン不要）。"""
     if kind not in ("course", "schedule", "remarks"):
         return Response(status_code=404)
     async with db.execute(
@@ -643,9 +677,7 @@ _HISTORY_TTL = 60        # 集計は結果確定時しか変わらないため60
 
 @router.get("/api/history", response_class=HTMLResponse)
 async def public_history(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページ（参加者クッキー or スタッフ認証が必要）。"""
-    if not _content_allowed(request):
-        return _deny_content(request)
+    """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページを返す（公開）。"""
     import time as _time
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
@@ -741,9 +773,7 @@ async def _races_batch(db, licensed, *, f_from, f_to, f_reg, offset, limit):
 
 @router.get("/api/races", response_class=HTMLResponse)
 async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """レース結果一覧の初回ページ（参加者クッキー or スタッフ認証が必要）。"""
-    if not _content_allowed(request):
-        return _deny_content(request)
+    """レース結果一覧の初回ページ。以降はスクロールで /api/races/fragment を読む。"""
     import time as _time
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
@@ -786,9 +816,7 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
 
 @router.get("/api/races/fragment", response_class=HTMLResponse)
 async def public_races_fragment(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """スクロール追記用のカード断片（参加者クッキー or スタッフ認証が必要）。"""
-    if not _content_allowed(request):
-        return _deny_content(request)
+    """スクロール追記用のカード断片（cardのHTMLのみ）を返す。"""
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
     prefix = (f"/{slug}" if slug else "")
@@ -815,10 +843,8 @@ async def public_races_fragment(request: Request, db: aiosqlite.Connection = Dep
 @router.get("/api/history/racer/{racer_id}")
 async def public_history_racer(racer_id: int, request: Request,
                                db: aiosqlite.Connection = Depends(get_db)):
-    """1レーサーの大会別成績（過去成績ページの詳細）をJSONで返す（参加者クッキー or スタッフ認証が必要）。"""
+    """1レーサーの大会別成績（過去成績ページの詳細）をJSONで返す（公開）。"""
     from fastapi.responses import JSONResponse
-    if not _content_allowed(request):
-        return _deny_content(request)
     r = await _RacerService(db).achievements(racer_id, "1900-01-01", "")
     if not r:
         return JSONResponse({"ok": False}, status_code=404)
