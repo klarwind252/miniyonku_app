@@ -183,7 +183,9 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 
     # 有効期限ゲート（24時間）＋自動更新（更新検知時のみ反映）スクリプト
     _slug_key = (slug or "default")
-    _enter_url = (f"/{slug}/enter" if slug else "/enter")
+    # 失効時の遷移先。素の /enter は「QRを踏んだ」扱いで再発行されてしまうため、
+    # 発行しない ?src=expired を必ず付ける。
+    _enter_url = (f"/{slug}/enter?src=expired" if slug else "/enter?src=expired")
     _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
     _status_url = (f"/{slug}/api/pub-status" if slug else "/api/pub-status")
     _handoff_url = (f"/{slug}/api/pub-handoff" if slug else "/api/pub-handoff")
@@ -1789,7 +1791,7 @@ def _build_shell_html(full_html: str, slug: str) -> str:
 <script>
 (function(){{
   var CONTENT = "{pfx}/api/pub-content";
-  var ENTER = "{pfx}/enter";
+  var ENTER = "{pfx}/enter?src=expired";
   function fail(){{ try {{ location.replace(ENTER); }} catch(e) {{}} }}
   fetch(CONTENT, {{cache:'no-store', credentials:'same-origin'}}).then(function(r){{
     if(r.status !== 200) {{ fail(); return null; }}

@@ -240,11 +240,14 @@ async def participant_enter(request: Request):
             return _pass_page(base, key, renew=False)
         return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper())
 
-    if is_pwa or src == "rescan":
-        # PWA アイコン起動／旧「更新」ボタン：発行は絶対にしない
+    if src:
+        # src 付き（PWAアイコン起動 ?src=pwa／失効遷移 ?src=expired／旧更新ボタン ?src=rescan）
+        # は【絶対に発行しない】。発行できるのは src 無しの /enter（＝QRのURLそのもの）だけ。
+        # ※失効時のページ遷移先を素の /enter にすると、その場で再発行されて失効が無意味になる。
+        src_tag = src.upper() if src in ("pwa", "expired", "rescan") else "OTHER"
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, True, "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src.upper())
+        return _blocked_page(key, is_pwa or src == "rescan", "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag)
 
     # ブラウザからの /enter（＝固定QRのスキャン）
     if _rate_limited(_client_ip(request)):
