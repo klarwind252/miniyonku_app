@@ -189,6 +189,12 @@ def _enter_common(request: Request):
     return pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state
 
 
+def _enter_path(request: Request) -> str:
+    store = getattr(request.state, "store", None)
+    slug = store.slug if store else ""
+    return f"/{slug}/enter" if slug else "/enter"
+
+
 def _pass_page(base: str, key: str, renew: bool) -> HTMLResponse:
     if renew:
         set_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
@@ -211,27 +217,157 @@ location.replace({base!r});
     return resp
 
 
-def _blocked_page(key: str, pwa: bool, reason: str = "") -> HTMLResponse:
-    import html as _html
-    reason_safe = _html.escape(reason)[:80]
-    extra = ("<div style=\"margin-top:14px;font-size:12px;opacity:.75;line-height:1.7\">"
-             "ホーム画面アイコンの有効期限も切れています。<br>"
-             "ブラウザで会場のQRコードを読み直し、必要なら<br>「ホーム画面に追加」をやり直してください。"
-             "</div>") if pwa else ""
-    html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+_BLOCKED_TPL = r"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>有効期限切れ</title></head>
-<body style="margin:0;background:#141821;color:#fff;font-family:sans-serif;">
-<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box;">
-  <div style="font-size:22px;font-weight:bold;margin-bottom:14px">観覧の有効期限が切れました</div>
-  <div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>
-  <div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>新たに12時間観覧できます</div>
-  {extra}
-  <div style="margin-top:20px;font-size:11px;opacity:.45">code: {reason_safe}</div>
+<title>有効期限切れ</title>
+<style>
+html,body{margin:0;background:#141821;color:#fff;font-family:sans-serif}
+.wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box}
+.ttl{font-size:22px;font-weight:bold;margin-bottom:14px}
+.msg{font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9}
+.btn{border:0;cursor:pointer;background:#e74c3c;color:#fff;padding:16px 30px;border-radius:12px;font-size:17px;font-weight:bold;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.btn:active{transform:scale(.98)}
+.note{margin-top:16px;font-size:12px;opacity:.7;line-height:1.7}
+.code{margin-top:20px;font-size:11px;opacity:.45}
+#scan{display:none;position:fixed;inset:0;background:#000;z-index:100}
+#scan video{width:100%;height:100%;object-fit:cover}
+#scan .frame{position:absolute;left:50%;top:50%;width:min(70vw,320px);height:min(70vw,320px);transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+#scan .hint{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 84px);text-align:center;font-size:15px;color:#fff;text-shadow:0 1px 3px #000}
+#scan .close{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);border:0;background:rgba(255,255,255,.15);color:#fff;padding:12px 28px;border-radius:999px;font-size:15px}
+#err{color:#ffb4a8;font-size:13px;margin-top:12px;min-height:1.4em}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="ttl">観覧の有効期限が切れました</div>
+  <div class="msg">会場のQRコードをもう一度読み取ると<br>新たに12時間観覧できます。</div>
+  <button class="btn" id="scanBtn" type="button">📷 カメラでQRコードを読み取る</button>
+  <div id="err"></div>
+  __PWA_NOTE__
+  <div class="code">code: __REASON__</div>
 </div>
-<script>try {{ localStorage.setItem({key!r}, "0"); }} catch(e) {{}}</script>
+<div id="scan">
+  <video id="v" playsinline autoplay muted></video>
+  <div class="frame"></div>
+  <div class="hint">枠内に会場のQRコードを合わせてください</div>
+  <button class="close" id="closeBtn" type="button">閉じる</button>
+</div>
+<script>
+try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
+(function(){
+  var ENTER = __ENTER__;              // 発行URL（QRのURLと同じ）
+  var JSQR_URL = ENTER + "?api=jsqr"; // 代替デコーダ（BarcodeDetector非対応ブラウザ用）
+  var scanEl = document.getElementById('scan');
+  var video = document.getElementById('v');
+  var err = document.getElementById('err');
+  var stream = null, running = false, detector = null, jsqrLoaded = false;
+  var canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', {willReadFrequently:true});
+
+  function setErr(t){ err.textContent = t || ''; }
+
+  function isVenueQr(text){
+    try {
+      var u = new URL(text, location.href);
+      if (u.origin !== location.origin) return false;
+      var p = u.pathname.replace(/\/+$/, '');
+      var e = ENTER.replace(/\/+$/, '');
+      return p === e;
+    } catch(e){ return false; }
+  }
+
+  function accept(text){
+    stop();
+    if (!isVenueQr(text)) { setErr('会場のQRコードではありません。もう一度お試しください。'); return; }
+    // QRのURLを「踏む」：発行され、観覧画面へ戻る（PWA内でもそのまま有効になる）
+    location.replace(ENTER);
+  }
+
+  function stop(){
+    running = false;
+    try { if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); } catch(e){}
+    stream = null; scanEl.style.display = 'none';
+  }
+
+  function loadJsQR(cb){
+    if (window.jsQR) { jsqrLoaded = true; cb(); return; }
+    var sc = document.createElement('script');
+    sc.src = JSQR_URL; sc.onload = function(){ jsqrLoaded = !!window.jsQR; cb(); };
+    sc.onerror = function(){ cb(); };
+    document.head.appendChild(sc);
+  }
+
+  function tick(){
+    if (!running) return;
+    if (video.readyState >= 2 && video.videoWidth) {
+      if (detector) {
+        detector.detect(video).then(function(codes){
+          if (!running) return;
+          if (codes && codes.length && codes[0].rawValue) { accept(codes[0].rawValue); return; }
+          requestAnimationFrame(tick);
+        }).catch(function(){ requestAnimationFrame(tick); });
+        return;
+      }
+      if (jsqrLoaded) {
+        var w = video.videoWidth, h = video.videoHeight, s = 640 / Math.max(w, h);
+        canvas.width = Math.round(w * s); canvas.height = Math.round(h * s);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var r = window.jsQR(img.data, img.width, img.height, {inversionAttempts:'dontInvert'});
+        if (r && r.data) { accept(r.data); return; }
+      }
+    }
+    setTimeout(function(){ requestAnimationFrame(tick); }, 80);
+  }
+
+  function start(){
+    setErr('');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setErr('このブラウザではカメラを使えません。カメラアプリでQRコードを読み取ってください。'); return;
+    }
+    var prep = function(){
+      navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false}).then(function(st){
+        stream = st; video.srcObject = st; scanEl.style.display = 'block'; running = true;
+        var p = video.play(); if (p && p.catch) p.catch(function(){});
+        requestAnimationFrame(tick);
+      }).catch(function(e){
+        var n = (e && e.name) || '';
+        if (n === 'NotAllowedError' || n === 'SecurityError') setErr('カメラの使用が許可されていません。ブラウザの設定でこのサイトのカメラを許可してください。');
+        else if (n === 'NotFoundError') setErr('カメラが見つかりません。');
+        else setErr('カメラを起動できませんでした（' + n + '）。');
+      });
+    };
+    if ('BarcodeDetector' in window) {
+      try { detector = new window.BarcodeDetector({formats:['qr_code']}); } catch(e){ detector = null; }
+    }
+    if (detector) prep(); else loadJsQR(prep);
+  }
+
+  document.getElementById('scanBtn').addEventListener('click', start);
+  document.getElementById('closeBtn').addEventListener('click', stop);
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) stop(); });
+})();
+</script>
 </body></html>"""
+
+
+def _blocked_page(key: str, pwa: bool, reason: str = "", enter_url: str = "/enter") -> HTMLResponse:
+    """失効ページ。ページ内でカメラを起動して会場QRを読み直せる（iOS/iPadOS/Android/PC共通）。
+
+    - 読み取ったURLが「このサイトの /enter」のときだけ、そのURLへ遷移して発行を受ける
+      （他サイトや別パスのQRは拒否。読み取り内容でXSSにならないよう URL API で検証のみ）
+    - 読み取りは BarcodeDetector（対応ブラウザ）→ 非対応なら jsQR（/enter?api=jsqr）で代替
+    - PWA（ホーム画面アイコン）内で読み取れば、そのPWAのCookieに直接発行されるため
+      「ブラウザで読み直してアイコンを追加し直す」手間が不要になる
+    """
+    import html as _html, json as _json
+    reason_safe = _html.escape(reason)[:80]
+    note = ('<div class="note">ホーム画面アイコンからでも、上のボタンでそのまま読み取り直せます。</div>' if pwa
+            else '<div class="note">カメラアプリで読み取っても構いません。</div>')
+    html = (_BLOCKED_TPL
+            .replace("__PWA_NOTE__", note)
+            .replace("__REASON__", reason_safe)
+            .replace("__KEY__", _json.dumps(key))
+            .replace("__ENTER__", _json.dumps(enter_url)))
     resp = HTMLResponse(html, status_code=403)
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"
@@ -292,6 +428,14 @@ async def participant_enter(request: Request):
         return await public_gate_handoff(request)
     if api == "manifest":
         return await public_gate_manifest(request)
+    if api == "jsqr":
+        import os
+        from fastapi.responses import FileResponse, Response
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static", "vendor", "jsqr.min.js")
+        if not os.path.isfile(path):
+            return Response(status_code=404)
+        return FileResponse(path, media_type="application/javascript",
+                            headers={"Cache-Control": "public, max-age=86400"})
 
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
     src = request.query_params.get("src", "")
@@ -305,7 +449,7 @@ async def participant_enter(request: Request):
             return _issue(request, _pass_page(base, key, renew=False), cname, secret, epoch, issued_ts=ts)
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper())
+        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(), enter_url=_enter_path(request))
 
     if src:
         # src 付き（PWAアイコン起動 ?src=pwa／失効遷移 ?src=expired／旧更新ボタン ?src=rescan）
@@ -314,15 +458,15 @@ async def participant_enter(request: Request):
         src_tag = src.upper() if src in ("pwa", "expired", "rescan") else "OTHER"
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, is_pwa or src == "rescan", "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag)
+        return _blocked_page(key, is_pwa or src == "rescan", "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag, enter_url=_enter_path(request))
 
     # ブラウザからの /enter（＝固定QRのスキャン）
     if _rate_limited(_client_ip(request)):
-        return _blocked_page(key, False, "RATE_LIMIT")
+        return _blocked_page(key, False, "RATE_LIMIT", enter_url=_enter_path(request))
     if not _hours_ok(store):
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper())
+        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_url=_enter_path(request))
     return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
 
 
