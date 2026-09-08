@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import sqlite3
 import time
 
 # QRトークンの時刻窓（この間隔でQRの中身が自動更新される）
@@ -62,22 +63,78 @@ def _sign(secret: str, msg: str) -> str:
     return hmac.new(_key(secret), msg.encode("utf-8"), hashlib.sha256).hexdigest()[:_SIG_LEN]
 
 
+# ---------------- 世代（epoch）＝強制失効スイッチ ----------------
+# 署名メッセージに世代番号を混ぜる。管理画面から世代を+1すると、発行済みの
+# 全クッキーと表示中QRの k が「その瞬間に」全端末で無効になる（強制排除）。
+# 世代は各店舗DBの app_settings('pub_gate_epoch') に保存する。
+
+_EPOCH_KEY = "pub_gate_epoch"
+
+
+def db_path_for(store) -> str:
+    """店舗のDBパス（単一構成は既定DB）。取れなければ空文字＝世代0扱い。"""
+    p = getattr(store, "db_path", "") if store is not None else ""
+    if p:
+        return str(p)
+    try:
+        from app.models.database import DB_PATH
+        return str(DB_PATH)
+    except Exception:
+        return ""
+
+
+def get_epoch(db_path: str) -> int:
+    """現在の世代番号（未設定・読取不可は 0）。同期・軽量読み取り。"""
+    if not db_path or not os.path.exists(db_path):
+        return 0
+    try:
+        con = sqlite3.connect(db_path, timeout=3)
+        try:
+            row = con.execute(
+                "SELECT value FROM app_settings WHERE key=?", (_EPOCH_KEY,)
+            ).fetchone()
+            return int(row[0]) if row and row[0] else 0
+        finally:
+            con.close()
+    except Exception:
+        return 0
+
+
+def bump_epoch(db_path: str) -> int:
+    """世代を+1して新しい世代番号を返す（＝全端末の即時強制失効）。"""
+    cur = get_epoch(db_path)
+    new = cur + 1
+    con = sqlite3.connect(db_path, timeout=5)
+    try:
+        con.execute(
+            "INSERT INTO app_settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (_EPOCH_KEY, str(new)),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return new
+
+
 # ---------------- QRトークン（k） ----------------
 
-def qr_token(secret: str, now: float | None = None) -> str:
-    """現在の時刻窓に対応するQRトークン。"""
+def qr_token(secret: str, epoch: int = 0, now: float | None = None) -> str:
+    """現在の時刻窓（＋世代）に対応するQRトークン。"""
     win = int((now if now is not None else time.time()) // WINDOW_SEC)
-    return _sign(secret, f"qr:{win}")
+    return _sign(secret, f"qr:{epoch}:{win}")
 
 
-def verify_qr_token(secret: str, k: str, now: float | None = None) -> bool:
-    """現在の窓と1つ前の窓の k のみ受理（＝最長48時間で失効）。"""
+def verify_qr_token(secret: str, epoch: int, k: str,
+                    now: float | None = None) -> bool:
+    """現在の窓と1つ前の窓の k のみ受理（＝最長48時間で失効）。
+    世代が違う k（強制失効前に表示されたQR）は即座に不一致になる。"""
     if not secret or not k:
         return False
     t = now if now is not None else time.time()
     win = int(t // WINDOW_SEC)
     for w in (win, win - 1):
-        if hmac.compare_digest(_sign(secret, f"qr:{w}"), k):
+        if hmac.compare_digest(_sign(secret, f"qr:{epoch}:{w}"), k):
             return True
     return False
 
@@ -88,12 +145,13 @@ def cookie_name(slug: str) -> str:
     return f"m4_pub_gate_{slug or 'default'}"
 
 
-def issue_cookie_value(secret: str, now: float | None = None) -> str:
+def issue_cookie_value(secret: str, epoch: int = 0,
+                       now: float | None = None) -> str:
     ts = int(now if now is not None else time.time())
-    return f"{ts}.{_sign(secret, f'ck:{ts}')}"
+    return f"{ts}.{_sign(secret, f'ck:{epoch}:{ts}')}"
 
 
-def check_cookie_value(secret: str, value: str | None,
+def check_cookie_value(secret: str, epoch: int, value: str | None,
                        now: float | None = None) -> tuple[str, int]:
     """クッキー値を検証する。
 
@@ -113,7 +171,8 @@ def check_cookie_value(secret: str, value: str | None,
         ts = int(ts_s)
     except Exception:
         return ("invalid", 0)
-    if not hmac.compare_digest(_sign(secret, f"ck:{ts}"), sig):
+    if not hmac.compare_digest(_sign(secret, f"ck:{epoch}:{ts}"), sig):
+        # 世代不一致（強制失効実行後）もここに落ちる＝invalid
         return ("invalid", 0)
     t = now if now is not None else time.time()
     remain = int(ts + TTL_SEC - t)

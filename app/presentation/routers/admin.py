@@ -203,7 +203,10 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
             return ""
         _sec = _pubgate.secret_for(_store)
         _u = f"{_base}{_pfx}/enter"
-        return f"{_u}?k={_pubgate.qr_token(_sec)}" if _sec else _u
+        if not _sec:
+            return _u
+        _ep = _pubgate.get_epoch(_pubgate.db_path_for(_store))
+        return f"{_u}?k={_pubgate.qr_token(_sec, _ep)}"
 
     if IS_CLOUD:
         # スラッグ店舗では店舗prefixを前置（既定店舗は空＝従来どおり）
@@ -496,6 +499,26 @@ async def m4laps_achievements_save(request: Request, db: aiosqlite.Connection = 
     )
     await db.commit()
     return RedirectResponse(url="/admin/settings?ach=ok#m4laps", status_code=303)
+
+@router.post("/pub-gate/reset")
+async def pub_gate_reset(request: Request):
+    """レーサー用QRの発行済みアクセスを全端末で即時強制失効させる。
+
+    署名の世代番号（pub_gate_epoch）を+1する。これにより
+      - 発行済みの全クッキーが invalid になり、観覧ページは次回の30秒ポーリング
+        （/api/pub-status）で失効オーバーレイに切り替わる
+      - 表示中・印刷済みの旧QR（旧世代の k）も即座に無効になる
+    管理画面を開き直せば新世代の k を含むQRが表示される。
+    """
+    from fastapi.responses import JSONResponse
+    from app.services import pub_gate as _pg
+    store = getattr(request.state, "store", None)
+    secret = _pg.secret_for(store)
+    if not secret:
+        return JSONResponse({"ok": False, "error": "gate disabled (secret未設定)"}, status_code=400)
+    new_epoch = _pg.bump_epoch(_pg.db_path_for(store))
+    return JSONResponse({"ok": True, "epoch": new_epoch})
+
 
 @router.get("/update/check")
 async def update_check(request: Request):

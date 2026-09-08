@@ -99,6 +99,7 @@ async def participant_enter(request: Request):
     is_pwa = (src == "pwa")
 
     secret = pub_gate.secret_for(store)
+    epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
 
     def _pass_page(set_js: str) -> HTMLResponse:
         html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
@@ -144,12 +145,12 @@ location.replace({base!r});
     # ---- ゲート有効 ----
     k = request.query_params.get("k", "")
     cname = pub_gate.cookie_name(slug)
-    state, _remain = pub_gate.check_cookie_value(secret, request.cookies.get(cname))
+    state, _remain = pub_gate.check_cookie_value(secret, epoch, request.cookies.get(cname))
     secure = PUBLIC_BASE_URL.startswith("https") if PUBLIC_BASE_URL else False
 
     def _issue(resp: HTMLResponse) -> HTMLResponse:
         resp.set_cookie(
-            cname, pub_gate.issue_cookie_value(secret),
+            cname, pub_gate.issue_cookie_value(secret, epoch),
             max_age=pub_gate.TTL_SEC, path="/",
             httponly=True, samesite="lax", secure=secure,
         )
@@ -160,7 +161,7 @@ location.replace({base!r});
   if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
 }} catch(e) {{}}"""
 
-    if pub_gate.verify_qr_token(secret, k):
+    if pub_gate.verify_qr_token(secret, epoch, k):
         # 本物のQR（現行トークン）：再スキャンのたびに新たな24時間を発行
         return _issue(_pass_page(renew_js))
 
@@ -193,8 +194,9 @@ async def public_gate_status(request: Request):
     if not secret:
         payload = {"gate": False, "state": "valid", "remain": 0}
     else:
+        epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
         state, remain = pub_gate.check_cookie_value(
-            secret, request.cookies.get(pub_gate.cookie_name(slug)))
+            secret, epoch, request.cookies.get(pub_gate.cookie_name(slug)))
         payload = {"gate": True, "state": state, "remain": remain}
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
