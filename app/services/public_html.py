@@ -199,7 +199,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   window.__M4_PUBLIC__ = true;   // #5 公開HTML判定（トーナメント表のレーサー名タップ→成績モーダル）
   window.__M4_FINALIZED__ = __M4FINAL__;   // 結果確定済みなら「次のレースまで」案内を抑止
   var KEY = "m4_pub_issued___SLUGKEY__";
-  var TTL = 24*60*60*1000;          // 24時間
+  var TTL = 12*60*60*1000;          // 12時間
   var CHECK_MS = 30000;             // 30秒ごとに「更新の有無」だけ確認する
   var ENTER = "__ENTERURL__";
   var STATUS = "__STATUSURL__";
@@ -225,7 +225,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       : '';
     ov.innerHTML=head
       +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>'
-      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>新たに24時間観覧できます</div>'
+      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>新たに12時間観覧できます</div>'
       +pwaNote;
     document.body.appendChild(ov);
   }
