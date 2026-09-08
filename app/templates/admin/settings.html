@@ -886,6 +886,42 @@
         saveCanvasAsImage(out, 'qr_' + (fileBase || 'miniyonku').replace(/[^\w\-ぁ-んァ-ヶ一-龠]+/g, '_') + '.png');
       }
       </script>
+
+      <!-- レーサー観覧アクセスの強制失効（世代リセット） -->
+      <div class="card">
+        <div class="card-header">レーサー観覧アクセスの強制失効</div>
+        <div class="card-body" style="padding:16px">
+          <div style="font-size:13px;color:#636e72;line-height:1.8;margin-bottom:12px">
+            発行済みの<b>全端末</b>の観覧許可（24時間）を即時無効化します。
+            観覧中の端末は約30秒以内に失効画面へ切り替わります。<br>
+            QRコードは固定のため差し替え不要です。失効させた参加者は、受付時間内にQRを再スキャンすれば復帰できます。
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-danger" id="pubGateResetBtn"
+                    onclick="pubGateReset(this)">🚫 強制失効を実行</button>
+            <span id="pubGateResetMsg" style="font-size:13px;color:#27ae60"></span>
+          </div>
+          <script>
+          function pubGateReset(btn){
+            if(!confirm('現在観覧中の全端末を強制的に失効させます。よろしいですか？')) return;
+            btn.disabled = true; btn.style.opacity = .6;
+            fetch('/admin/pub-gate/reset', {method:'POST'})
+              .then(function(r){ return r.json(); })
+              .then(function(j){
+                var m = document.getElementById('pubGateResetMsg');
+                if(j.ok){ m.style.color = '#27ae60'; m.textContent = '実行しました（世代 ' + j.epoch + '）。全端末は約30秒以内に失効します。'; }
+                else { m.style.color = '#c0392b'; m.textContent = '失敗: ' + (j.error || '不明なエラー'); }
+              })
+              .catch(function(e){
+                var m = document.getElementById('pubGateResetMsg');
+                m.style.color = '#c0392b'; m.textContent = '通信エラー: ' + e;
+              })
+              .finally(function(){ btn.disabled = false; btn.style.opacity = 1; });
+          }
+          </script>
+        </div>
+      </div>
+
       {% endif %}
 
     </div>

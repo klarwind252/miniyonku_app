@@ -90,11 +90,58 @@ def _sqlite_backup(src_path: str, dst_path: str) -> None:
         src.close()
 
 
+def revoke_all_pub_access() -> int:
+    """全店舗のレーサー観覧アクセス（24時間クッキー）を強制失効させる。
+
+    管理画面の「🚫 強制失効を実行」ボタン（/admin/pub-gate/reset）と同じ処理を、
+    control.db 上の全店舗（無効店舗含む）に対して一括実行する。
+    毎晩の自動バックアップ直前に呼ばれ、「営業日をまたいだ観覧の持ち越し」を
+    毎日確実にリセットする（QRは固定のまま。翌日、受付時間内の再スキャンで復帰）。
+
+    Returns:
+        世代を+1できた店舗DBの数
+    """
+    from app.services import pub_gate
+    done = 0
+    seen: set[str] = set()
+    paths: list[tuple[str, str]] = []   # (db_path, 表示名)
+    try:
+        from app import registry
+        for st in registry.list_stores(include_disabled=True):
+            ap = os.path.abspath(st.db_path)
+            if ap not in seen and os.path.isfile(ap):
+                seen.add(ap)
+                paths.append((ap, st.slug or "default"))
+    except Exception:
+        pass
+    if not paths:
+        # レジストリ未初期化・単一構成でも既定DBは対象にする
+        dp = pub_gate.db_path_for(None)
+        if dp and os.path.isfile(dp):
+            paths.append((dp, "default"))
+    for dp, name in paths:
+        try:
+            new_epoch = pub_gate.bump_epoch(dp)
+            done += 1
+            print(f"[BACKUP] 観覧アクセス強制失効 store={name} → 世代 {new_epoch}", flush=True)
+        except Exception as e:
+            print(f"[BACKUP] 強制失効 失敗 store={name}: {e}", flush=True)
+    return done
+
+
 def run_backup_once() -> str:
     """1回分のバックアップを取り、古い世代を掃除する。作成した日付フォルダを返す。
     同期処理（sqlite3・ファイル操作）なので、イベントループ外（executor）で呼ぶこと。
     手動テストにも使える: venv/bin/python -c "from app.services import backup_scheduler as b; b.run_backup_once()"
     """
+    # ① バックアップ直前に全店舗の観覧アクセスを強制失効（世代+1）。
+    #    こうすると失効後の世代番号ごとバックアップに残り、リストアしても
+    #    失効前のクッキーが復活しない。
+    try:
+        revoke_all_pub_access()
+    except Exception as e:
+        print(f"[BACKUP] 強制失効ステップでエラー（バックアップは継続）: {e}", flush=True)
+
     stamp = datetime.now(_JST).strftime("%Y-%m-%d")
     dest_dir = os.path.join(_backups_root(), stamp)
     tmp_dir = dest_dir + ".tmp"
@@ -170,5 +217,6 @@ def launch():
         return _task
     _task = asyncio.create_task(backup_loop())
     print(f"[BACKUP] 自動バックアップ有効（毎日 {_BACKUP_HOUR:02d}:{_BACKUP_MINUTE:02d} JST / "
-          f"{KEEP_GENERATIONS}世代保持 / 保存先 data/_backups/）", flush=True)
+          f"{KEEP_GENERATIONS}世代保持 / 保存先 data/_backups/ / "
+          f"実行直前に全店舗の観覧アクセスを強制失効）", flush=True)
     return _task
