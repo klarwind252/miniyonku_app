@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse, FileResponse, Response
 from starlette.responses import HTMLResponse
 
 from app.infrastructure.db.connection import get_db
+from app.config import PUBLIC_BASE_URL
 
 router = APIRouter()
 
@@ -68,35 +69,39 @@ async def public_telop(request: Request, cid: str = "", tid: int = 0,
 async def participant_enter(request: Request):
     """参加者向け入口（QRが指すURL）。
 
-    案①（クライアント側ソフト有効期限）:
-      この入口にアクセスした時刻を localStorage に記録し、参加者向け観覧ページへ進む。
-      観覧ページ側の判定JSは、記録時刻から24時間を過ぎると自動更新を止めて
-      オーバーレイ表示する。再びこのQR（/enter）を読み直すと時刻が更新され、
-      新たな24時間が始まる（単純な再読込では復帰しない）。
+    案②（サーバー署名方式・pub_gate 参照）:
+      レーサー用QRは /enter?k=<署名トークン> を指す。k は時刻窓ごとに自動更新され、
+      サーバーは「現在」と「1つ前」の窓の k のみ受理する（過去URLの使い回しは
+      最長48時間で必ず失効）。有効な k で通過した端末には署名付きクッキー
+      （発行時刻＋HMAC、有効24時間）を発行し、観覧ページは /api/pub-status で
+      サーバー判定を受けて期限切れなら自動更新を停止する。
 
-    PWA（ホーム画面アイコン）起動時の特例（?src=pwa）:
-      ホーム画面アイコンの start_url もこの /enter を指しているため、区別なく
-      無条件で時刻を上書きすると、アイコンをタップするだけで実質「QR再読み込み」が
-      毎回自動発生し、24時間制限を無期限に延長できてしまう（QR再スキャン不要で
-      アクセスし続けられる不具合）。
-      これを防ぐため、PWA起動（?src=pwa 付き）のときは「まだ発行時刻が無い場合
-      （そのアイコンの初回起動）」のみ記録し、既に発行時刻があるときは上書きしない。
-      本物のQR（?src=pwa なし）は従来どおり常に更新＝再スキャンでの延長を維持する。
+    従来の localStorage 記録（案①）はオフライン時のフォールバック判定用として
+    引き続き書き込む（正の判定はサーバー側が担う）。
+
+    PWA（ホーム画面アイコン起動 ?src=pwa）の扱い:
+      - クッキーが有効 → そのまま通過（※延長はしない）
+      - クッキーが全く無い（そのアイコンの初回起動）→ 初回のみ発行して通過
+      - クッキーが期限切れ → 失効ページ（カメラで最新QRを読むよう案内）
+      これにより「アイコンをタップするだけで24時間が無限に延長される」問題と、
+      期限切れオーバーレイの更新ボタン（?src=rescan）による無条件延長を廃止する。
+
+    secret（店舗 admin_token / 環境変数 ADMIN_TOKEN）が未設定の環境では
+    ゲート無効＝従来どおりの動作（後方互換）。
     """
+    from app.services import pub_gate
+
     store = getattr(request.state, "store", None)
     slug = store.slug if store else ""
     base = f"/{slug}/" if slug else "/"
     key = f"m4_pub_issued_{slug or 'default'}"
-    is_pwa = request.query_params.get("src") == "pwa"
-    if is_pwa:
-        # PWAアイコン起動：初回（未発行）のときだけ記録。既存の発行時刻（期限切れ含む）は上書きしない。
-        set_js = f"""try {{
-  if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
-}} catch(e) {{}}"""
-    else:
-        # 本物のQR：常に上書き（再スキャンのたびに新たな24時間が始まる＝仕様どおり）
-        set_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
-    html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+    src = request.query_params.get("src", "")
+    is_pwa = (src == "pwa")
+
+    secret = pub_gate.secret_for(store)
+
+    def _pass_page(set_js: str) -> HTMLResponse:
+        html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>読み込み中…</title></head><body>
 <p style="font-family:sans-serif;text-align:center;margin-top:40vh;color:#555">読み込み中…</p>
@@ -104,7 +109,94 @@ async def participant_enter(request: Request):
 {set_js}
 location.replace({base!r});
 </script></body></html>"""
-    return HTMLResponse(html)
+        return HTMLResponse(html)
+
+    def _blocked_page(pwa: bool) -> HTMLResponse:
+        # 失効：localStorage も 0 に落とし、観覧ページ側のローカル判定も確実に失効させる
+        extra = ("<div style=\"margin-top:14px;font-size:12px;opacity:.75;line-height:1.7\">"
+                 "ホーム画面アイコンの有効期限も切れています。<br>"
+                 "カメラでQRコードを読み取るとブラウザで観覧できます。"
+                 "</div>") if pwa else ""
+        html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>有効期限切れ</title></head>
+<body style="margin:0;background:#141821;color:#fff;font-family:sans-serif;">
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box;">
+  <div style="font-size:22px;font-weight:bold;margin-bottom:14px">観覧の有効期限が切れました</div>
+  <div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場に掲示されている<br><b>最新のQRコード</b>をもう一度スキャンしてください。</div>
+  <div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>新たに24時間観覧できます</div>
+  {extra}
+</div>
+<script>try {{ localStorage.setItem({key!r}, "0"); }} catch(e) {{}}</script>
+</body></html>"""
+        return HTMLResponse(html, status_code=403)
+
+    # ---- ゲート無効（secret 未設定）：従来動作（後方互換） ----
+    if not secret:
+        if is_pwa:
+            set_js = f"""try {{
+  if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
+}} catch(e) {{}}"""
+        else:
+            set_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
+        return _pass_page(set_js)
+
+    # ---- ゲート有効 ----
+    k = request.query_params.get("k", "")
+    cname = pub_gate.cookie_name(slug)
+    state, _remain = pub_gate.check_cookie_value(secret, request.cookies.get(cname))
+    secure = PUBLIC_BASE_URL.startswith("https") if PUBLIC_BASE_URL else False
+
+    def _issue(resp: HTMLResponse) -> HTMLResponse:
+        resp.set_cookie(
+            cname, pub_gate.issue_cookie_value(secret),
+            max_age=pub_gate.TTL_SEC, path="/",
+            httponly=True, samesite="lax", secure=secure,
+        )
+        return resp
+
+    renew_js = f"""try {{ localStorage.setItem({key!r}, String(Date.now())); }} catch(e) {{}}"""
+    keep_js = f"""try {{
+  if (!localStorage.getItem({key!r})) {{ localStorage.setItem({key!r}, String(Date.now())); }}
+}} catch(e) {{}}"""
+
+    if pub_gate.verify_qr_token(secret, k):
+        # 本物のQR（現行トークン）：再スキャンのたびに新たな24時間を発行
+        return _issue(_pass_page(renew_js))
+
+    if state == "valid":
+        # 有効期間内の再訪（PWAアイコン起動・ブックマーク等）：通過はさせるが延長はしない
+        return _pass_page(keep_js)
+
+    if is_pwa and state == "none":
+        # PWAアイコンの初回起動（クッキーが一度も無い）だけは初回発行を認める
+        return _issue(_pass_page(renew_js))
+
+    # 期限切れ・トークン無し/旧トークン・?src=rescan → 失効（延長させない）
+    return _blocked_page(pwa=(is_pwa or src == "rescan"))
+
+
+@router.get("/api/pub-status")
+async def public_gate_status(request: Request):
+    """参加者向けHTMLの有効期限ゲート状態を返す（公開・トークン不要）。
+
+    観覧ページの30秒ポーリングから呼ばれ、サーバー時刻・サーバー署名で
+    有効/失効を判定する。gate=false の環境（secret 未設定）では従来どおり
+    クライアント側判定のみで動作する。
+    """
+    from fastapi.responses import JSONResponse
+    from app.services import pub_gate
+
+    store = getattr(request.state, "store", None)
+    slug = store.slug if store else ""
+    secret = pub_gate.secret_for(store)
+    if not secret:
+        payload = {"gate": False, "state": "valid", "remain": 0}
+    else:
+        state, remain = pub_gate.check_cookie_value(
+            secret, request.cookies.get(pub_gate.cookie_name(slug)))
+        payload = {"gate": True, "state": state, "remain": remain}
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/logo")

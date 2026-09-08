@@ -185,6 +185,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _slug_key = (slug or "default")
     _enter_url = (f"/{slug}/enter" if slug else "/enter")
     _telop_url = (f"/{slug}/api/telop" if slug else "/api/telop")
+    _status_url = (f"/{slug}/api/pub-status" if slug else "/api/pub-status")
     _history_url = (f"/{slug}/api/history" if slug else "/api/history")
     patched = patched.replace("__HISTORYURL__", _history_url)
     _races_url = (f"/{slug}/api/races" if slug else "/api/races")
@@ -201,6 +202,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   var TTL = 24*60*60*1000;          // 24時間
   var CHECK_MS = 30000;             // 30秒ごとに「更新の有無」だけ確認する
   var ENTER = "__ENTERURL__";
+  var STATUS = "__STATUSURL__";
 
   function issued(){ try { return parseInt(localStorage.getItem(KEY)||"0",10)||0; } catch(e){ return 0; } }
   function expired(){ var t=issued(); return (!t) || (Date.now()-t > TTL); }
@@ -216,24 +218,15 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     ov.id="m4-expired";
     ov.style.cssText="position:fixed;inset:0;z-index:99999;background:rgba(20,24,33,.96);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;";
     var head='<div style="font-size:22px;font-weight:bold;margin-bottom:14px">観覧の有効期限が切れました</div>';
-    if(isStandalone()){
-      // PWA（ホーム画面アイコン）は独立ストレージのため、カメラでQRを読み直しても
-      // ブラウザ側にしか記録されずアプリ内には反映されない。アプリ内ナビゲーションで
-      // /enter?src=rescan を踏み直し、このPWA自身のstorageに発行時刻を書き直す。
-      ov.innerHTML=head
-        +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">続けて観覧するには<br>下のボタンを押してください。</div>'
-        +'<button id="m4-renew" type="button" style="border:0;cursor:pointer;background:#2c3e50;color:#fff;padding:14px 26px;border-radius:8px;font-size:16px;font-weight:bold;line-height:1.6">最新の観覧画面に更新</button>';
-      document.body.appendChild(ov);
-      var btn=document.getElementById("m4-renew");
-      if(btn){ btn.addEventListener("click", function(){
-        try { location.assign(ENTER + (ENTER.indexOf("?")>=0?"&":"?") + "src=rescan"); }
-        catch(e){ location.href = ENTER; }
-      }); }
-      return;
-    }
+    // 旧実装のPWA向け「更新」ボタン（/enter?src=rescan で無条件延長）はサーバー側
+    // 24時間ゲート導入に伴い廃止。PWA・ブラウザとも「最新QRの再スキャン」に統一する。
+    var pwaNote = isStandalone()
+      ? '<div style="margin-top:14px;font-size:12px;opacity:.75;line-height:1.7">ホーム画面アイコンの有効期限も切れています。<br>カメラでQRコードを読み取るとブラウザで観覧できます。</div>'
+      : '';
     ov.innerHTML=head
-      +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">お手元のQRコードを<br>もう一度スキャンしてください。</div>'
-      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>最新の観覧画面を表示できます</div>';
+      +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場に掲示されている<br><b>最新のQRコード</b>をもう一度スキャンしてください。</div>'
+      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">QRコードを再スキャンすると<br>新たに24時間観覧できます</div>'
+      +pwaNote;
     document.body.appendChild(ov);
   }
 
@@ -368,6 +361,24 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     if(expired()){ showOverlay(); return; }
     if(pendingReload) return;  // 反映待ち中は多重チェックしない
 
+    // ---- サーバー側24時間ゲート（正の判定はサーバー時刻・サーバー署名） ----
+    // 失効(expired)・不正(invalid)・未発行(none)なら自動更新を止めてオーバーレイ。
+    // 通信失敗時のみ従来のローカル判定にフォールバック（オフラインで即失効させない）。
+    fetch(STATUS, {cache:'no-store'}).then(function(r){ return r.json(); }).then(function(j){
+      if(j && j.gate && j.state !== 'valid'){
+        try { localStorage.setItem(KEY, "0"); } catch(e){}
+        showOverlay();
+        return;
+      }
+      fetchContent();
+    }).catch(function(){
+      if(expired()){ showOverlay(); return; }
+      fetchContent();
+    });
+  }
+
+  function fetchContent(){
+    if(pendingReload) return;
     var headers = {};
     if(lastTag) headers['If-None-Match'] = lastTag;
 
@@ -425,7 +436,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   check();
   setInterval(check, CHECK_MS);
 })();
-</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__M4FINAL__", "true" if is_finalized else "false")
+</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__M4FINAL__", "true" if is_finalized else "false")
 
     # bracket レイアウト＋線描画JSを再注入（admin と同一ロジックを保持したものを使用）。
     # connector_js 内で window._bracketDrawConnectors と init() が定義され、ページ内の

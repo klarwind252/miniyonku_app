@@ -195,11 +195,21 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     public_html_gcp_project = proj_row["value"] if proj_row else ""
 
     # 参加者向けURL（クラウド=VPSライブ配信 / オンプレ=GCS）
+    # レーサー用QRのサーバー署名トークン k（pub_gate 参照）。
+    # 表示のたびに現在の時刻窓の k でURLを組み立てる（旧URLは最長48時間で失効）。
+    from app.services import pub_gate as _pubgate
+    def _enter_url_with_k(_base: str, _pfx: str, _store) -> str:
+        if not _base:
+            return ""
+        _sec = _pubgate.secret_for(_store)
+        _u = f"{_base}{_pfx}/enter"
+        return f"{_u}?k={_pubgate.qr_token(_sec)}" if _sec else _u
+
     if IS_CLOUD:
         # スラッグ店舗では店舗prefixを前置（既定店舗は空＝従来どおり）
         _st_pu = getattr(request.state, "store", None)
         _pfx_pu = ("/" + _st_pu.slug) if (_st_pu is not None and getattr(_st_pu, "slug", "")) else ""
-        participant_url = f"{PUBLIC_BASE_URL}{_pfx_pu}/enter" if PUBLIC_BASE_URL else ""
+        participant_url = _enter_url_with_k(PUBLIC_BASE_URL, _pfx_pu, _st_pu)
     else:
         participant_url = (
             f"https://storage.googleapis.com/{public_html_gcs_bucket}/index.html"
@@ -240,7 +250,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
                     "admin_url": f"{base}{pfx}/admin/?key={s.admin_token}" if base else "",
                     "view_url": f"{base}{pfx}/view/?key={s.view_token}" if base else "",
                     "participant_url": f"{base}{pfx}/" if base else "",
-                    "qr_url": f"{base}{pfx}/enter" if base else "",
+                    "qr_url": _enter_url_with_k(base, pfx, s),
                     "restrict_hours": s.restrict_hours,
                     "access_start": s.access_start or "",
                     "access_end": s.access_end or "",
@@ -254,7 +264,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
             # 24時間ソフト有効期限ゲートを起動させるため）。
             if cur_store is not None:
                 pfx = f"/{cur_store.slug}" if cur_store.slug else ""
-                participant_url = f"{base}{pfx}/enter" if base else participant_url
+                participant_url = _enter_url_with_k(base, pfx, cur_store) or participant_url
         except Exception as e:
             print(f"[admin] stores_info error: {e}", flush=True)
 
@@ -338,7 +348,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
             {
                 "screen": "html", "label": "レーサー用",
                 "caption": f"{store_name} レーサー用".strip(),
-                "url": f"{PUBLIC_BASE_URL}{pfx}/enter",
+                "url": _enter_url_with_k(PUBLIC_BASE_URL, pfx, cur_store),
                 "logo_url": _logo("html"),
                 "sensitive": False,
             },
