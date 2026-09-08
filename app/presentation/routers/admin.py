@@ -546,6 +546,34 @@ async def pub_gate_reset(request: Request):
     return JSONResponse({"ok": True, "epoch": new_epoch})
 
 
+@router.get("/pub-gate/devices")
+async def pub_gate_devices(request: Request):
+    """現在アクセス有効なレーサー観覧端末の一覧を返す（管理画面の「有効端末の確認」）。
+
+    参加者HTMLの30秒心拍（/api/telop の cid 相乗り）を集計した access_stats を元に、
+    直近 window 秒以内に心拍のある端末を返す。心拍はブラウザ単位の端末ID(cid)で、
+    個人を特定する情報は含まない（UAはOS/ブラウザ種別に丸めて表示）。
+
+    注意: 集計はアプリのメモリ保持のため、アプリ再起動でリセットされる。また
+    「観覧許可(クッキー)が有効か」ではなく「現在ページを開いて心拍を送っているか」
+    を表す（＝実質いま見ている端末数）。強制失効の効果確認にはこちらが実態に近い。
+    """
+    from fastapi.responses import JSONResponse
+    from app.services import access_stats
+    store = getattr(request.state, "store", None)
+    sid = getattr(store, "id", 0)
+    try:
+        window = int(request.query_params.get("window", "90"))
+    except (TypeError, ValueError):
+        window = 90
+    window = max(30, min(600, window))
+    devices = access_stats.live_devices(sid, window=window)
+    return JSONResponse(
+        {"ok": True, "window": window, "count": len(devices), "devices": devices},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.get("/update/check")
 async def update_check(request: Request):
     """更新の有無を返す（admin ページ読み込み時にフロントから呼ばれる）。

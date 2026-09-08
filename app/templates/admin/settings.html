@@ -910,7 +910,32 @@
           <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             <button type="button" class="btn btn-danger" id="pubGateResetBtn"
                     onclick="pubGateReset(this)">🚫 強制失効を実行</button>
+            <button type="button" class="btn btn-secondary" id="pubGateDevBtn"
+                    onclick="pubGateLoadDevices(this)">👥 有効端末の確認</button>
             <span id="pubGateResetMsg" style="font-size:13px;color:#27ae60"></span>
+          </div>
+
+          <!-- 有効端末一覧（👥 有効端末の確認 で表示） -->
+          <div id="pubGateDevWrap" style="display:none;margin-top:14px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+              <span id="pubGateDevSummary" style="font-size:13px;font-weight:bold;color:#2c3e50"></span>
+              <span style="font-size:11px;color:#95a5a6">※直近90秒以内に観覧ページを開いている端末（ブラウザ単位）。個人情報は含みません。</span>
+            </div>
+            <div style="overflow-x:auto">
+              <table id="pubGateDevTable" style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
+                <thead>
+                  <tr style="background:#f1f3f5;color:#2c3e50;text-align:left">
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">#</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">端末</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">端末ID</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">大会</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">初回接続</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid #dee2e6;white-space:nowrap">最終確認</th>
+                  </tr>
+                </thead>
+                <tbody id="pubGateDevBody"></tbody>
+              </table>
+            </div>
           </div>
           <script>
           function pubGateReset(btn){
@@ -926,6 +951,61 @@
               .catch(function(e){
                 var m = document.getElementById('pubGateResetMsg');
                 m.style.color = '#c0392b'; m.textContent = '通信エラー: ' + e;
+              })
+              .finally(function(){ btn.disabled = false; btn.style.opacity = 1; });
+          }
+
+          function _pgFmtTime(sec){
+            if(!sec) return '—';
+            try {
+              var d = new Date(sec * 1000);
+              var z = function(n){ return (n<10?'0':'')+n; };
+              return z(d.getHours())+':'+z(d.getMinutes())+':'+z(d.getSeconds());
+            } catch(e){ return '—'; }
+          }
+          function _pgFmtIdle(idle){
+            if(idle == null) return '';
+            if(idle < 60) return '（'+idle+'秒前）';
+            return '（'+Math.floor(idle/60)+'分前）';
+          }
+          function _pgEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+          function pubGateLoadDevices(btn){
+            btn.disabled = true; btn.style.opacity = .6;
+            var wrap = document.getElementById('pubGateDevWrap');
+            var body = document.getElementById('pubGateDevBody');
+            var summ = document.getElementById('pubGateDevSummary');
+            fetch('/admin/pub-gate/devices', {cache:'no-store'})
+              .then(function(r){ return r.json(); })
+              .then(function(j){
+                wrap.style.display = 'block';
+                if(!j.ok){ summ.textContent = '取得に失敗しました'; body.innerHTML = ''; return; }
+                var list = j.devices || [];
+                summ.textContent = '現在アクセス有効：' + j.count + ' 台';
+                if(list.length === 0){
+                  body.innerHTML = '<tr><td colspan="6" style="padding:14px;text-align:center;color:#95a5a6">現在アクセス中の端末はありません</td></tr>';
+                  return;
+                }
+                var rows = '';
+                list.forEach(function(d, i){
+                  var cidShort = (d.cid || '').slice(0, 8) || '—';
+                  var tidLabel = d.tid ? ('#' + d.tid) : '待機/トップ';
+                  rows += '<tr style="border-bottom:1px solid #eee">'
+                    + '<td style="padding:6px 8px;color:#95a5a6">' + (i+1) + '</td>'
+                    + '<td style="padding:6px 8px">' + _pgEsc(d.ua || '不明') + '</td>'
+                    + '<td style="padding:6px 8px;font-family:monospace;color:#636e72">' + _pgEsc(cidShort) + '</td>'
+                    + '<td style="padding:6px 8px">' + _pgEsc(tidLabel) + '</td>'
+                    + '<td style="padding:6px 8px;white-space:nowrap">' + _pgFmtTime(d.first) + '</td>'
+                    + '<td style="padding:6px 8px;white-space:nowrap">' + _pgFmtTime(d.last)
+                        + ' <span style="color:#95a5a6">' + _pgEsc(_pgFmtIdle(d.idle)) + '</span></td>'
+                    + '</tr>';
+                });
+                body.innerHTML = rows;
+              })
+              .catch(function(e){
+                wrap.style.display = 'block';
+                summ.textContent = '通信エラー: ' + e;
+                body.innerHTML = '';
               })
               .finally(function(){ btn.disabled = false; btn.style.opacity = 1; });
           }

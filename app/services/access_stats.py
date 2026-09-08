@@ -19,8 +19,12 @@ _live: dict = {}        # (store_id, tid) -> {cid: last_seen_ts}
 _peak: dict = {}        # (store_id, tid) -> int
 _uniq: dict = {}        # (store_id, tid) -> set(cid)
 
+# 端末ごとの詳細（有効端末一覧の表示用）。store_id -> {cid: {...}}
+# 保持内容: first(初回接続) / last(最終心拍) / tid(直近の大会ID) / ua(UA要約) / hits(心拍数)
+_meta: dict = {}
 
-def record_hit(store_id, tid, cid: str) -> None:
+
+def record_hit(store_id, tid, cid: str, ua: str = "") -> None:
     """参加者htmlからの心拍を1件記録する。cid が空なら無視（＝viewや無効値）。"""
     if not cid:
         return
@@ -31,6 +35,20 @@ def record_hit(store_id, tid, cid: str) -> None:
     now = time.time()
     key = (store_id, tid)
     with _lock:
+        # --- 端末メタ更新 ---
+        md = _meta.get(store_id)
+        if md is None:
+            md = {}
+            _meta[store_id] = md
+        m = md.get(cid)
+        if m is None:
+            m = {"first": now, "last": now, "tid": tid, "ua": _summarize_ua(ua), "hits": 0}
+            md[cid] = m
+        m["last"] = now
+        m["tid"] = tid
+        m["hits"] = m.get("hits", 0) + 1
+        if ua:
+            m["ua"] = _summarize_ua(ua)
         d = _live.get(key)
         if d is None:
             d = {}
@@ -74,4 +92,72 @@ def snapshot(store_id) -> dict:
                 "peak": _peak.get(key, 0),
                 "uniq": len(_uniq.get(key, ())),
             }
+    return out
+
+
+def _summarize_ua(ua: str) -> str:
+    """User-Agent を「OS / ブラウザ」程度のごく短い表記に丸める（一覧表示用）。"""
+    if not ua:
+        return ""
+    u = ua
+    ul = u.lower()
+    # OS
+    if "iphone" in ul or "ipad" in ul or ("mac os" in ul and "mobile" in ul):
+        os_name = "iOS"
+    elif "android" in ul:
+        os_name = "Android"
+    elif "windows" in ul:
+        os_name = "Windows"
+    elif "mac os" in ul or "macintosh" in ul:
+        os_name = "Mac"
+    elif "linux" in ul:
+        os_name = "Linux"
+    else:
+        os_name = "その他"
+    # ブラウザ（順序に注意：Edge/Chrome/Safari）
+    if "edg/" in ul or "edga" in ul or "edgios" in ul:
+        br = "Edge"
+    elif "crios" in ul or "chrome" in ul:
+        br = "Chrome"
+    elif "firefox" in ul or "fxios" in ul:
+        br = "Firefox"
+    elif "safari" in ul:
+        br = "Safari"
+    else:
+        br = "ブラウザ"
+    return f"{os_name} / {br}"
+
+
+def live_devices(store_id, window: int | None = None) -> list[dict]:
+    """現在アクセス有効（直近 window 秒以内に心拍あり）の端末一覧を返す。
+
+    各要素: {cid, tid, first, last, ua, hits, idle}
+      - first/last : epoch 秒（表示側で整形）
+      - idle       : 最終心拍からの経過秒
+    最終心拍が新しい順に並べて返す。
+    """
+    win = _WINDOW if window is None else window
+    now = time.time()
+    out: list[dict] = []
+    with _lock:
+        md = _meta.get(store_id, {})
+        # 掃除も兼ねる：十分古い端末（window*3 と 300秒 の大きい方を超過）はメタから落とす。
+        # 小さな window で照会しても、まだ有効な端末のメタを誤って消さないようにする。
+        purge_after = max(win * 3, 300)
+        stale = [c for c, m in md.items() if now - m.get("last", 0) > purge_after]
+        for c in stale:
+            md.pop(c, None)
+        for cid, m in md.items():
+            idle = now - m.get("last", 0)
+            if idle <= win:
+                out.append({
+                    "cid": cid,
+                    "tid": m.get("tid", 0),
+                    "first": m.get("first", 0),
+                    "last": m.get("last", 0),
+                    "ua": m.get("ua", ""),
+                    "hits": m.get("hits", 0),
+                    "idle": int(idle),
+                })
+    out.sort(key=lambda x: x["last"], reverse=True)
     return out

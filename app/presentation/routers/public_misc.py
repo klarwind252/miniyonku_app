@@ -47,7 +47,8 @@ async def public_telop(request: Request, cid: str = "", tid: int = 0,
             from app.services import access_stats
             store = getattr(request.state, "store", None)
             sid = getattr(store, "id", 0)
-            access_stats.record_hit(sid, tid, cid)
+            ua = request.headers.get("user-agent", "")
+            access_stats.record_hit(sid, tid, cid, ua)
         except Exception:
             pass
 
