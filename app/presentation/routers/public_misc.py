@@ -28,6 +28,53 @@ async def health():
     return {"status": "ok"}
 
 
+def _staff_ok(request: Request) -> bool:
+    """admin / view の認証クッキーを持つ（＝会場スタッフ端末）なら True。"""
+    try:
+        import secrets as _sec
+        from app.presentation.auth import _store_tokens
+        from app.core.config import admin_cookie_name, view_cookie_name
+        sid, at, vt = _store_tokens(request)
+        ac = request.cookies.get(admin_cookie_name(sid), "")
+        vc = request.cookies.get(view_cookie_name(sid), "")
+        return (bool(at) and _sec.compare_digest(ac, at)) or (bool(vt) and _sec.compare_digest(vc, vt))
+    except Exception:
+        return False
+
+
+def _content_allowed(request: Request) -> bool:
+    """観覧内容系エンドポイント（過去成績・レース一覧・レース画像・テロップ）の可否。
+
+    参加者向けの本体は /api/pub-content で守っているが、そこから辿れる
+    /api/history /api/races /api/race-asset 等が無条件公開だと、失効した端末や
+    URLを知る第三者がそれらを直接開いて内容を見られる（抜け道）。
+    有効な参加者クッキー、または会場スタッフの admin/view クッキーのどちらかを要求する。
+    """
+    if _staff_ok(request):
+        return True
+    try:
+        from app.services import pub_gate
+        store = getattr(request.state, "store", None)
+        slug = store.slug if store else ""
+        secret = pub_gate.secret_for(store)
+        epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
+        state, _ = pub_gate.check_cookie_value(secret, epoch, request.cookies.get(pub_gate.cookie_name(slug)))
+        return state == "valid"
+    except Exception:
+        return False
+
+
+def _deny_content(request: Request):
+    """失効端末からの内容系アクセスを拒否。HTMLナビゲーションなら失効ページへ。"""
+    from fastapi.responses import RedirectResponse, Response
+    accept = request.headers.get("accept", "")
+    store = getattr(request.state, "store", None)
+    slug = store.slug if store else ""
+    if "text/html" in accept:
+        return RedirectResponse(url=(f"/{slug}/enter?src=expired" if slug else "/enter?src=expired"), status_code=302)
+    return Response(status_code=401, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/api/telop")
 async def public_telop(request: Request, cid: str = "", tid: int = 0,
                        db: aiosqlite.Connection = Depends(get_db)):
@@ -41,6 +88,10 @@ async def public_telop(request: Request, cid: str = "", tid: int = 0,
     cid があるときだけアクセス統計の心拍として記録する（view からは cid 無し＝不計上）。
     """
     from fastapi.responses import JSONResponse
+
+    if not _content_allowed(request):
+        return JSONResponse({"active": False, "text": "", "updated_at": ""},
+                            headers={"Cache-Control": "no-store"})
 
     if cid:
         try:
@@ -99,7 +150,7 @@ import threading as _threading
 import time as _time
 _enter_rl_lock = _threading.Lock()
 _enter_rl: dict = {}   # ip -> [count, window_start]
-_ENTER_RL_MAX = 30     # 1分あたり /enter/<秘密> の試行上限（IP毎）
+_ENTER_RL_MAX = 240    # 1分あたり /enter の上限（IP毎）。会場Wi-Fi(NAT)で大勢が同時にスキャンしても詰まらない値
 
 
 def _rate_limited(ip: str) -> bool:
@@ -394,9 +445,11 @@ async def serve_logo():
 
 
 @router.get("/api/race-asset/{tid}/{kind}/{seq}")
-async def serve_race_asset(tid: int, kind: str, seq: int,
+async def serve_race_asset(tid: int, kind: str, seq: int, request: Request,
                            db: aiosqlite.Connection = Depends(get_db)):
-    """レース情報の画像を配信HTMLとは別URLで返す。公開（トークン不要）。"""
+    """レース情報の画像を配信HTMLとは別URLで返す（参加者クッキー or スタッフ認証が必要）。"""
+    if not _content_allowed(request):
+        return _deny_content(request)
     if kind not in ("course", "schedule", "remarks"):
         return Response(status_code=404)
     async with db.execute(
@@ -430,7 +483,9 @@ _HISTORY_TTL = 60        # 集計は結果確定時しか変わらないため60
 
 @router.get("/api/history", response_class=HTMLResponse)
 async def public_history(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページを返す（公開）。"""
+    """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページ（参加者クッキー or スタッフ認証が必要）。"""
+    if not _content_allowed(request):
+        return _deny_content(request)
     import time as _time
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
@@ -526,7 +581,9 @@ async def _races_batch(db, licensed, *, f_from, f_to, f_reg, offset, limit):
 
 @router.get("/api/races", response_class=HTMLResponse)
 async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """レース結果一覧の初回ページ。以降はスクロールで /api/races/fragment を読む。"""
+    """レース結果一覧の初回ページ（参加者クッキー or スタッフ認証が必要）。"""
+    if not _content_allowed(request):
+        return _deny_content(request)
     import time as _time
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
@@ -569,7 +626,9 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
 
 @router.get("/api/races/fragment", response_class=HTMLResponse)
 async def public_races_fragment(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """スクロール追記用のカード断片（cardのHTMLのみ）を返す。"""
+    """スクロール追記用のカード断片（参加者クッキー or スタッフ認証が必要）。"""
+    if not _content_allowed(request):
+        return _deny_content(request)
     store = getattr(request.state, "store", None)
     slug = (getattr(store, "slug", "") or "")
     prefix = (f"/{slug}" if slug else "")
@@ -596,8 +655,10 @@ async def public_races_fragment(request: Request, db: aiosqlite.Connection = Dep
 @router.get("/api/history/racer/{racer_id}")
 async def public_history_racer(racer_id: int, request: Request,
                                db: aiosqlite.Connection = Depends(get_db)):
-    """1レーサーの大会別成績（過去成績ページの詳細）をJSONで返す（公開）。"""
+    """1レーサーの大会別成績（過去成績ページの詳細）をJSONで返す（参加者クッキー or スタッフ認証が必要）。"""
     from fastapi.responses import JSONResponse
+    if not _content_allowed(request):
+        return _deny_content(request)
     r = await _RacerService(db).achievements(racer_id, "1900-01-01", "")
     if not r:
         return JSONResponse({"ok": False}, status_code=404)
