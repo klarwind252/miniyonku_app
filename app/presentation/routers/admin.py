@@ -1757,6 +1757,35 @@ async def create_cert_template(request: Request, db: aiosqlite.Connection = Depe
         url=f"/admin/settings/certificate-templates/{new_id}/edit?saved=1", status_code=303)
 
 
+@router.post("/settings/certificate-templates/{tid}/copy", response_class=HTMLResponse)
+async def copy_cert_template(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """賞状テンプレートを複製して、その編集画面へ遷移する。
+
+    - 名前は元の名前の語尾に「 - コピー」を付ける
+    - レイアウト・用紙設定・背景画像はそのまま引き継ぐ
+    - 適用範囲(apply_ranks)は「1順位につき1テンプレートのみ」の制約があるため、
+      複製時は空にする（重複を避ける。編集画面で選び直す）
+    """
+    from fastapi.responses import RedirectResponse
+    async with db.execute("SELECT * FROM certificate_templates WHERE id=?", (tid,)) as cur:
+        src = await cur.fetchone()
+    if not src:
+        return RedirectResponse(url="/admin/settings", status_code=303)
+    src = dict(src)
+    new_name = (src.get("name") or "テンプレート") + " - コピー"
+    await db.execute(
+        "INSERT INTO certificate_templates (name, paper_size, orientation, apply_ranks, layout_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (new_name, src.get("paper_size", "A4"), src.get("orientation", "portrait"),
+         "", src.get("layout_json", "{}"))
+    )
+    async with db.execute("SELECT last_insert_rowid() AS id") as cur:
+        new_id = (await cur.fetchone())["id"]
+    await db.commit()
+    return RedirectResponse(
+        url=f"/admin/settings/certificate-templates/{new_id}/edit?saved=1", status_code=303)
+
+
 @router.get("/settings/certificate-templates/{tid}/edit", response_class=HTMLResponse)
 async def edit_cert_template(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """賞状テンプレート編集画面"""

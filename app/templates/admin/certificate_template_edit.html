@@ -320,7 +320,7 @@
         <!-- 適用範囲（この賞状を使う順位。1順位につき1テンプレートのみ） -->
         <div>
           <div class="left-section-title">適用範囲</div>
-          <div id="applyRanksBox" style="display:flex;flex-direction:column;gap:4px">
+          <div id="applyRanksBox" style="display:flex;flex-direction:row;flex-wrap:wrap;gap:14px;align-items:center">
             {% for r in [1,2,3] %}
             {%- set _rname = {1:'1位',2:'2位',3:'3位'}[r] -%}
             {%- set _taken_by = _taken.get(r) -%}

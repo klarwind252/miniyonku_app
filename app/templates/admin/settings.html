@@ -410,6 +410,9 @@
             <div class="template-actions">
               <a href="/admin/settings/certificate-templates/{{ tpl.id }}/edit"
                  class="btn btn-primary btn-sm">✏️ 編集</a>
+              <form method="post" action="/admin/settings/certificate-templates/{{ tpl.id }}/copy" style="display:inline">
+                <button type="submit" class="btn btn-secondary btn-sm">📄 コピー</button>
+              </form>
               <button class="btn btn-danger btn-sm"
                       onclick="confirmDelete({{ tpl.id }}, '{{ tpl.name }}')">🗑️ 削除</button>
             </div>
