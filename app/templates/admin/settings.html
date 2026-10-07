@@ -787,6 +787,28 @@
         s.onerror = function(){ alert('QRコード生成ライブラリ（qrcode.js）の読み込みに失敗しました。'); };
         document.body.appendChild(s);
       })();
+
+      // レーサー用（html）入口URLは毎日 09:00 に変わる。ページを開きっぱなしでも
+      // 追従できるよう、当日の入口URLを定期取得し、変化していればQRを描き直す。
+      (function(){
+        var prefix = location.pathname.split('/admin')[0];   // 店舗slug（無ければ空）
+        function poll(){
+          fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'})
+            .then(function(r){ return r.json(); })
+            .then(function(j){
+              if(!j || !j.url) return;
+              var t = QR3.find(function(x){ return x.screen === 'html'; });
+              if(t && t.url !== j.url){
+                t.url = j.url;                  // DLボタンの data-url も更新
+                var btn = document.querySelector('.qrdl3[data-screen="html"]');
+                if(btn){ btn.setAttribute('data-url', j.url); }
+                if(window.QRCode){ _qr3BuildPreviews(); }
+              }
+            })
+            .catch(function(){});
+        }
+        setInterval(poll, 60000);   // 60秒ごと（切替は最大1分で反映）
+      })();
       </script>
 
       <script>

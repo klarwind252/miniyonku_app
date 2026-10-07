@@ -195,10 +195,12 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     public_html_gcp_project = proj_row["value"] if proj_row else ""
 
     # 参加者向けURL（クラウド=VPSライブ配信 / オンプレ=GCS）
-    # レーサー用QRは従来どおり固定URL /enter（差し替え不要）。12時間制限は
-    # サーバー署名クッキー（TTL）＋世代リセット＋PWA引き継ぎで担保する。
+    # レーサー用QRは【毎日ローテーションする入口URL】（/enter/<当日の秘密語>）。
+    # 固定URLを踏むだけで無期限に再発行できた従来の穴を塞ぐため、QRの中身を
+    # 毎日 09:00 JST に自動で変える。素の /enter は発行しない。
+    from app.services import pub_gate as _pg_qr
     def _enter_url_with_k(_base: str, _pfx: str, _store) -> str:
-        return f"{_base}{_pfx}/enter" if _base else ""
+        return _pg_qr.entry_url(_base, _pfx, _store)
 
     if IS_CLOUD:
         # スラッグ店舗では店舗prefixを前置（既定店舗は空＝従来どおり）
@@ -504,7 +506,8 @@ async def pub_gate_reset_page(request: Request):
   <div style="font-size:14px;line-height:1.8;opacity:.85;margin-bottom:22px">
     実行すると、発行済みの<b>全端末</b>の観覧許可（ホーム画面アイコン含む）が即時無効になり、<br>
     観覧中の端末は約30秒以内に失効画面へ切り替わります。<br>
-    QRコードは固定のため差し替え不要です（QRの再スキャンで復帰できます）。
+    実行すると<b>当日の入口URL（QRの中身）も即時に新しくなります</b>。<br>
+    復帰させる端末には、管理画面を開き直して表示される<b>新しいQR</b>を再スキャンしてもらってください。
   </div>
   <button id="go" style="border:0;cursor:pointer;background:#c0392b;color:#fff;padding:14px 30px;border-radius:8px;font-size:16px;font-weight:bold">強制失効を実行する</button>
   <div id="out" style="margin-top:18px;font-size:14px;min-height:1.5em"></div>
@@ -542,6 +545,28 @@ async def pub_gate_reset(request: Request):
         return JSONResponse({"ok": False, "error": "gate disabled (secret未設定)"}, status_code=400)
     new_epoch = _pg.bump_epoch(_pg.db_path_for(store))
     return JSONResponse({"ok": True, "epoch": new_epoch})
+
+
+@router.get("/pub-gate/entry-url")
+async def pub_gate_entry_url(request: Request):
+    """現在有効な参加者入口URL（毎日ローテーション）を返す。
+
+    管理画面のQRがページを開きっぱなしでも 09:00 の切替に追従できるよう、
+    クライアントが定期的にこれを取得して、変化していればQRを描き直す。
+    """
+    from fastapi.responses import JSONResponse
+    from app.services import pub_gate as _pg
+    from app.core.config import PUBLIC_BASE_URL
+    store = getattr(request.state, "store", None)
+    pfx = ("/" + store.slug) if (store is not None and getattr(store, "slug", "")) else ""
+    secret = _pg.secret_for(store)
+    epoch = _pg.get_epoch(_pg.db_path_for(store))
+    word = _pg.daily_word(secret, epoch)
+    url = _pg.entry_url(PUBLIC_BASE_URL, pfx, store)
+    return JSONResponse(
+        {"url": url, "word": word, "day_index": _pg._day_index(), "epoch": epoch},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/pub-gate/diag")

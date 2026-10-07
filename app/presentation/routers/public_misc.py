@@ -191,15 +191,6 @@ def _enter_common(request: Request):
     return pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state
 
 
-def _scan_url(request: Request) -> str:
-    """失効画面のカメラ読み取り成功時に踏むURL（短命トークン付き）。"""
-    from app.services import pub_gate
-    store = getattr(request.state, "store", None)
-    secret = pub_gate.secret_for(store)
-    epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
-    return _enter_path(request) + "?scan=" + pub_gate.scan_token(secret, epoch)
-
-
 def _enter_path(request: Request) -> str:
     store = getattr(request.state, "store", None)
     slug = store.slug if store else ""
@@ -266,9 +257,10 @@ html,body{margin:0;background:#141821;color:#fff;font-family:sans-serif}
 <script>
 try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
 (function(){
-  var ENTER = __ENTER__;              // 発行URL（QRのURLと同じ）
-  var SCAN = __SCAN__;                // カメラ読み取り成功時の遷移先（短命トークン付き）
-  var JSQR_URL = ENTER + "?api=jsqr"; // 代替デコーダ（BarcodeDetector非対応ブラウザ用）
+  var ENTER_API = __ENTER_API_BASE__; // 代替デコーダ配信元（/enter。単語は含めない）
+  var JSQR_URL = ENTER_API + "?api=jsqr"; // 代替デコーダ（BarcodeDetector非対応ブラウザ用）
+  // 予約パス（これらは入口の秘密語とはみなさない）
+  var RESERVED = {admin:1, view:1, api:1, static:1, logo:1, health:1, favicon:1, entry:1, enter:1};
   var scanEl = document.getElementById('scan');
   var video = document.getElementById('v');
   var err = document.getElementById('err');
@@ -277,21 +269,33 @@ try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
 
   function setErr(t){ err.textContent = t || ''; }
 
-  function isVenueQr(text){
+  // 会場QR＝「このサイト上の、毎日変わる入口URL」。失効ページは秘密語を一切保持
+  // しないため、読み取ったURLが同一オリジンで、入口の形（単一セグメント or
+  // /enter/<語> or /<slug>/enter/<語>）であれば遷移し、発行可否はサーバーが判定する。
+  function venueTarget(text){
     try {
       var u = new URL(text, location.href);
-      if (u.origin !== location.origin) return false;
-      var p = u.pathname.replace(/\/+$/, '');
-      var e = ENTER.replace(/\/+$/, '');
-      return p === e;
-    } catch(e){ return false; }
+      if (u.origin !== location.origin) return null;
+      var segs = u.pathname.replace(/^\/+|\/+$/g, '').split('/');
+      // パターンA: /<語>（店舗1・root方式）
+      if (segs.length === 1 && segs[0] && !RESERVED[segs[0]]) return u.pathname + u.search;
+      // パターンB: /enter/<語>（既定・店舗1）
+      if (segs.length === 2 && segs[0] === 'enter' && segs[1]) return u.pathname + u.search;
+      // パターンC: /<slug>/<語>（スラッグ店舗・root方式）
+      if (segs.length === 2 && !RESERVED[segs[0]] && segs[1] && !RESERVED[segs[1]]) return u.pathname + u.search;
+      // パターンD: /<slug>/enter/<語>（既定・スラッグ店舗）
+      if (segs.length === 3 && segs[1] === 'enter' && segs[2]) return u.pathname + u.search;
+      return null;
+    } catch(e){ return null; }
   }
 
   function accept(text){
     stop();
-    if (!isVenueQr(text)) { setErr('会場のQRコードではありません。もう一度お試しください。'); return; }
-    // 正規の再スキャンとして発行を受け、観覧画面へ戻る（PWA内でもそのまま有効になる）
-    location.replace(SCAN);
+    var target = venueTarget(text);
+    if (!target) { setErr('会場のQRコードではありません。もう一度お試しください。'); return; }
+    // 正規の再スキャンとして発行を受け、観覧画面へ戻る（PWA内でもそのまま有効になる）。
+    // 当日の語でなければサーバーが失効ページに戻す（秘密語はページに出さない）。
+    location.replace(target);
   }
 
   function stop(){
@@ -362,15 +366,16 @@ try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
 </body></html>"""
 
 
-def _blocked_page(key: str, pwa: bool, reason: str = "", enter_url: str = "/enter",
-                  scan_url: str = "") -> HTMLResponse:
+def _blocked_page(key: str, pwa: bool, reason: str = "",
+                  enter_api_base: str = "/enter") -> HTMLResponse:
     """失効ページ。ページ内でカメラを起動して会場QRを読み直せる（iOS/iPadOS/Android/PC共通）。
 
-    - 読み取ったURLが「このサイトの /enter」のときだけ、そのURLへ遷移して発行を受ける
-      （他サイトや別パスのQRは拒否。読み取り内容でXSSにならないよう URL API で検証のみ）
+    - 読み取ったURLが「このサイト上の入口URL（毎日変わる秘密語）」なら、そのURLへ
+      遷移して発行を受ける（別サイト・別パスは拒否。XSS防止のため URL API で検証のみ）
+    - 失効ページ自体は秘密語を一切保持しない（＝このページを開けても発行はできない）。
+      発行できるのは「当日の秘密語URLを実際に読み取った／開いた」場合だけ。
     - 読み取りは BarcodeDetector（対応ブラウザ）→ 非対応なら jsQR（/enter?api=jsqr）で代替
-    - PWA（ホーム画面アイコン）内で読み取れば、そのPWAのCookieに直接発行されるため
-      「ブラウザで読み直してアイコンを追加し直す」手間が不要になる
+    - PWA（ホーム画面アイコン）内で読み取れば、そのPWAのCookieに直接発行される
     """
     import html as _html, json as _json
     reason_safe = _html.escape(reason)[:80]
@@ -380,8 +385,7 @@ def _blocked_page(key: str, pwa: bool, reason: str = "", enter_url: str = "/ente
             .replace("__PWA_NOTE__", note)
             .replace("__REASON__", reason_safe)
             .replace("__KEY__", _json.dumps(key))
-            .replace("__ENTER__", _json.dumps(enter_url))
-            .replace("__SCAN__", _json.dumps(scan_url or enter_url)))
+            .replace("__ENTER_API_BASE__", _json.dumps(enter_api_base)))
     resp = HTMLResponse(html, status_code=403)
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"
@@ -394,10 +398,10 @@ def _issue(request: Request, resp: HTMLResponse, cname: str, secret: str,
     fwd = request.headers.get("x-forwarded-proto", "")
     secure = (request.url.scheme == "https") or (fwd == "https")
     val = pub_gate.issue_cookie_value(secret, epoch, issued_ts)
-    # 引き継ぎ発行（issued_ts 指定）は残り時間ぶんだけの max_age にする
-    remain = pub_gate.TTL_SEC
-    if issued_ts is not None:
-        remain = max(1, int(issued_ts + pub_gate.TTL_SEC - _time.time()))
+    # 有効期限 = TTL と「発行した日の終わり（次の09:00）」の早い方。
+    # 引き継ぎ発行（issued_ts 指定）は元の発行時刻を基準にする。
+    base_ts = issued_ts if issued_ts is not None else _time.time()
+    remain = max(1, pub_gate.remaining_valid_sec(base_ts))
     resp.set_cookie(cname, val, max_age=remain, path="/",
                     httponly=True, samesite="lax", secure=secure)
     return resp
@@ -414,23 +418,12 @@ def _hours_ok(store) -> bool:
     return True
 
 
-@router.get("/enter")
-async def participant_enter(request: Request):
-    """固定QRが指す入口（従来どおり /enter）。
+async def _dispatch_enter_api(request: Request):
+    """/enter?api=... の同居API（内容・状態・引き継ぎ・manifest・jsqr）。該当なしは None。
 
-    ルール:
-      - ブラウザで /enter を開く（＝QRを読んだ）: 12時間を発行（再スキャンのたびに更新）
-        ※営業時間制限が有効な店舗では時間外は発行しない（有効クッキーの通過のみ）
-      - PWA 引き継ぎ ?h=<token>: ブラウザ側の発行時刻をそのまま引き継ぐ（延長なし）
-      - PWA 起動 ?src=pwa: 有効クッキーがあれば通過。無ければ失効（発行しない）
-        → アイコンを開くだけでは決して延長されない
-    QRが固定である以上、サーバーは「QRを読んだ」と「同じURLを開いた」を区別できない。
-    そのため被害は 12時間TTL＋世代リセット（手動／毎晩）で限定する。
+    nginx が /enter は確実にアプリへ中継しているため、観覧内容・状態確認・引き継ぎ・
+    manifest・jsqr も /enter?api=... で提供する（/api/pub-* を中継していない環境でも届く）。
     """
-    # --- ゲートAPIの同居 ---
-    # nginx が /enter は確実にアプリへ中継している（QRが動く＝中継されている）ことを
-    # 利用し、観覧内容・状態確認・引き継ぎ・manifest も /enter?api=... で提供する。
-    # サーバーごとの nginx 設定差（/api/pub-* を中継していない等）に依存しない。
     api = request.query_params.get("api", "")
     if api == "content":
         return await public_gate_content(request)
@@ -450,12 +443,62 @@ async def participant_enter(request: Request):
             return Response(status_code=404)
         return FileResponse(path, media_type="application/javascript",
                             headers={"Cache-Control": "public, max-age=86400"})
+    return None
+
+
+async def _issue_with_word(request: Request, word: str):
+    """毎日ローテーションする入口（/enter/<word> または /<word>）。
+
+    当日の秘密語（daily_word）に一致したときだけ 12時間クッキーを発行する。
+    一致しない（＝昨日以前・他店舗・当て推量）場合は発行しない。
+    これにより「一度踏んだURLを保存して無期限に再入場する」経路を遮断する。
+    """
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+
+    if _rate_limited(_client_ip(request)):
+        return _blocked_page(key, False, "RATE_LIMIT", enter_api_base=_enter_path(request))
+    if not _hours_ok(store):
+        if state == "valid":
+            return _pass_page(base, key, renew=False)
+        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_api_base=_enter_path(request))
+
+    # secret 未設定（ゲート無効環境）は後方互換で従来どおり発行する。
+    if not secret:
+        return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+
+    if pub_gate.verify_daily_word(secret, epoch, word):
+        # 正規の当日URL＝発行（再スキャンのたびに12時間を更新）
+        return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+
+    # 当日の語ではない（昨日以前のQR・古いブックマーク・当て推量）
+    if state == "valid":
+        return _pass_page(base, key, renew=False)
+    return _blocked_page(key, False, "WORD_INVALID+COOKIE_" + state.upper(),
+                         enter_api_base=_enter_path(request))
+
+
+@router.get("/enter")
+async def participant_enter(request: Request):
+    """素の /enter。【新規発行はしない】（毎日変わる /enter/<word> だけが発行できる）。
+
+    扱い:
+      - /enter?api=...      : 同居API（内容・状態・引き継ぎ・manifest・jsqr）をそのまま提供
+      - /enter?h=<token>    : PWA 引き継ぎ（既存の有効セッションの期限を引き継ぐだけ。新規発行不可）
+      - それ以外の素の /enter : 有効クッキーがあれば通過、無ければ失効ページ（＝発行しない）
+        （PWA起動 ?src=pwa、失効遷移 ?src=expired、URL直打ち・ブックマーク・共有 すべて同じ）
+
+    ねらい: 固定URL（/enter）を踏むだけで無期限に再発行できた従来の穴を塞ぐ。
+    発行できるのは「当日の秘密語 URL（/enter/<word>）を実際に読み取った／開いた」場合だけ。
+    """
+    resp = await _dispatch_enter_api(request)
+    if resp is not None:
+        return resp
 
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
     src = request.query_params.get("src", "")
     is_pwa = (src == "pwa")
 
-    # PWA 引き継ぎ：発行時刻を引き継いだクッキーを出す（期限は元と同じ）
+    # PWA 引き継ぎ：発行時刻を引き継いだクッキーを出す（期限は元と同じ・新規延長なし）
     h = request.query_params.get("h", "")
     if h:
         ts = pub_gate.verify_handoff(secret, epoch, h)
@@ -463,47 +506,22 @@ async def participant_enter(request: Request):
             return _issue(request, _pass_page(base, key, renew=False), cname, secret, epoch, issued_ts=ts)
         if state == "valid":
             return _pass_page(base, key, renew=False)
-        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(), enter_url=_enter_path(request), scan_url=_scan_url(request))
+        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(),
+                             enter_api_base=_enter_path(request))
 
-    if src:
-        # src 付き（PWAアイコン起動 ?src=pwa／失効遷移 ?src=expired／旧更新ボタン ?src=rescan）
-        # は【絶対に発行しない】。発行できるのは src 無しの /enter（＝QRのURLそのもの）だけ。
-        # ※失効時のページ遷移先を素の /enter にすると、その場で再発行されて失効が無意味になる。
-        src_tag = src.upper() if src in ("pwa", "expired", "rescan") else "OTHER"
-        if state == "valid":
-            return _pass_page(base, key, renew=False)
-        return _blocked_page(key, is_pwa or src == "rescan", "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag, enter_url=_enter_path(request), scan_url=_scan_url(request))
+    # 素の /enter は一切発行しない。有効クッキーのみ通過、無ければ失効ページ。
+    if state == "valid":
+        return _pass_page(base, key, renew=False)
+    src_tag = src.upper() if src in ("pwa", "expired", "rescan") else "BARE"
+    return _blocked_page(key, is_pwa or src == "rescan",
+                         "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag,
+                         enter_api_base=_enter_path(request))
 
-    # ---- ページ内からの遷移は発行しない ----
-    # 旧版の観覧ページ／旧シェルが失効時に素の /enter へ location.replace する作りだった
-    # ため、「失効 → /enter → 即再発行 → 表示」の無限ループが成立していた
-    # （iOS PWA は旧ページを独自キャッシュから開くので、サーバーを更新しても残る）。
-    # QRスキャン・URL直打ち・外部リンクは Sec-Fetch-Site: none / cross-site で届き、
-    # ページ内遷移は same-origin / same-site で届く。後者には発行しない。
-    # 失効画面のカメラ読み取りは ?scan=<短命トークン> を付けて正規経路として通す。
-    scan = request.query_params.get("scan", "")
-    if pub_gate.verify_scan_token(secret, epoch, scan):
-        return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
-    sfs = request.headers.get("sec-fetch-site", "").lower()
-    from_page = sfs in ("same-origin", "same-site")
-    if not sfs:
-        # Sec-Fetch 非対応ブラウザ向けフォールバック：Referer が自サイトならページ内遷移
-        ref = request.headers.get("referer", "")
-        host = request.headers.get("host", "")
-        from_page = bool(ref) and bool(host) and (("://" + host + "/") in ref or ref.endswith("://" + host))
-    if from_page:
-        if state == "valid":
-            return _pass_page(base, key, renew=False)
-        return _blocked_page(key, is_pwa, "NO_ISSUE+COOKIE_" + state.upper() + "+FROM_PAGE", enter_url=_enter_path(request), scan_url=_scan_url(request))
 
-    # 外部からの /enter（＝固定QRのスキャン／URL直打ち）
-    if _rate_limited(_client_ip(request)):
-        return _blocked_page(key, False, "RATE_LIMIT", enter_url=_enter_path(request), scan_url=_scan_url(request))
-    if not _hours_ok(store):
-        if state == "valid":
-            return _pass_page(base, key, renew=False)
-        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_url=_enter_path(request), scan_url=_scan_url(request))
-    return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+@router.get("/enter/{word}")
+async def participant_enter_word(word: str, request: Request):
+    """毎日ローテーションする入口（既定の形）。当日の秘密語のときだけ発行する。"""
+    return await _issue_with_word(request, word)
 
 
 @router.get("/api/pub-auth")

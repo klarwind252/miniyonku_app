@@ -82,6 +82,17 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
         if seg == "" or seg in _APP_PREFIXES:
             # 既定店舗（店舗1）
             store = registry.get_default_store()
+        elif self._root_word_match(registry.get_default_store(), seg):
+            # ドメイン直下 /<当日の秘密語>（root方式）を既定店舗の入口として扱う。
+            # scope を /enter/<seg> に書き換えて通常の入口ルートへ委譲する。
+            # ※ENTRY_PATH_STYLE != "root" のときは _root_word_match が常に False＝従来挙動。
+            store = registry.get_default_store()
+            request.scope["path"] = f"/enter/{seg}"
+            if "raw_path" in request.scope and request.scope["raw_path"]:
+                try:
+                    request.scope["raw_path"] = f"/enter/{seg}".encode()
+                except Exception:
+                    pass
         else:
             # スラッグ候補
             store = registry.get_store_by_slug(seg)
@@ -99,6 +110,12 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
             if _second != "static":
                 # scope から "/{slug}" を除去し root_path にセット
                 stripped = path[len(f"/{slug}"):] or "/"
+                # ドメイン直下 /<slug>/<当日の秘密語>（root方式）を入口として扱う。
+                # 単一セグメント かつ 当日の秘密語に一致するときだけ /enter/<語> へ委譲。
+                _ss = stripped.strip("/")
+                if _ss and "/" not in _ss and _ss not in _APP_PREFIXES \
+                   and self._root_word_match(store, _ss):
+                    stripped = f"/enter/{_ss}"
                 request.scope["path"] = stripped
                 request.scope["root_path"] = f"/{slug}"
                 if "raw_path" in request.scope and request.scope["raw_path"]:
@@ -129,6 +146,26 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
         if slug:
             response = await self._rewrite_response(response, slug)
         return response
+
+    def _root_word_match(self, store, seg: str) -> bool:
+        """ドメイン直下 /<seg> を入口（当日の秘密語）とみなすか。
+
+        ENTRY_PATH_STYLE が "root" のときだけ判定する（既定の "enter" では常に False＝
+        従来挙動のまま）。seg が当日の秘密語に一致する場合のみ True。
+        """
+        try:
+            from app.services import pub_gate
+            if getattr(pub_gate, "ENTRY_PATH_STYLE", "enter") != "root":
+                return False
+            if store is None:
+                return False
+            secret = pub_gate.secret_for(store)
+            if not secret:
+                return False
+            epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
+            return pub_gate.verify_daily_word(secret, epoch, seg)
+        except Exception:
+            return False
 
     async def _rewrite_response(self, response, slug: str):
         # --- リダイレクト先(Location)の前置 ---

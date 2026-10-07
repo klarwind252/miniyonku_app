@@ -46,6 +46,77 @@ TTL_SEC = 12 * 60 * 60
 
 _SIG_LEN = 16  # 署名の16進表現の使用桁数（64bit相当・用途上十分）
 
+# ===========================================================================
+# 毎日ローテーションする参加者入口（デイリー・ワード）
+# ---------------------------------------------------------------------------
+# 従来の固定 /enter は「踏むたびに12時間を発行」するため、一度QRを踏んだ端末が
+# URLをブックマーク／共有して無期限に再入場できた（＝常時観覧の穴）。
+# これを塞ぐため、発行できる入口URLを 1日ごとに変わるランダムな単語にする。
+#   - 入口URL例:  https://<host>/enter/<毎日変わる単語>   （既定・nginx無改修で動く）
+#   - 素の /enter は【一切発行しない】（有効クッキーの通過のみ）
+#   - 昨日以前の単語URLも発行不可（WORD_ACCEPT_PREV_DAY で猶予可）
+#
+# 単語は secret（店舗ごと）＋ epoch（強制失効の世代）＋ 日付インデックスから
+# HMAC で決定的に生成する。サーバーは「今日の単語」を都度計算して照合するだけで、
+# DBに保存する必要はない（強制失効＝世代+1 を行えば、その瞬間に単語も変わる）。
+# ===========================================================================
+
+# 1日の区切り（JST）。要望:「09:00-08:59」= 毎日 09:00 JST に切り替わる。
+# 09:00 JST は 00:00 UTC と一致するため、内部計算は UTC エポックの日割りで済む。
+DAY_START_HOUR_JST = 9
+_TZ_OFFSET_SEC = 9 * 60 * 60  # JST = UTC+9
+
+# 入口URLの形:
+#   "enter" … /enter/<単語>   （既定。nginx 無改修で確実に動く）
+#   "root"  … /<単語>         （ドメイン直下。nginx に1ブロック追加が必要）
+ENTRY_PATH_STYLE = "enter"
+
+# 昨日の単語URLでも発行を許すか（True＝約2日間の重なりを許容 / False＝当日のみ＝厳密日替わり）
+WORD_ACCEPT_PREV_DAY = False
+
+# 読みやすい「ランダムワード」を作るための語彙（衝突回避のため末尾に短い英数字も付与）。
+_WL_ADJ = (
+    "akai", "aoi", "hayai", "tsuyoi", "kiiro", "midori", "shiro", "kuro",
+    "ginga", "hikari", "kaze", "honoo", "inazuma", "arashi", "yuki", "tsuki",
+    "hoshi", "ryu", "tora", "washi", "taka", "kuma", "ookami", "hayate",
+    "shippu", "raimei", "sora", "umi", "mori", "iwa", "tetsu", "kurogane",
+    "shinku", "ougon", "hagane", "shippo", "mach", "turbo", "nitro", "sonic",
+)
+_WL_NOUN = (
+    "dash", "racer", "booster", "motor", "circuit", "roller", "gear", "shaft",
+    "wing", "frame", "chassis", "bumper", "stay", "guide", "tire", "axle",
+    "spring", "damper", "brake", "charger", "pit", "lane", "course", "gate",
+    "flag", "pole", "lap", "turn", "straight", "corner", "slope", "jump",
+    "comet", "rocket", "falcon", "tiger", "dragon", "phoenix", "cobra", "wolf",
+)
+
+
+def _day_index(now: float | None = None) -> int:
+    """1日の区切り（既定: 09:00 JST = 00:00 UTC）に基づく日付インデックス。"""
+    t = now if now is not None else time.time()
+    # JST ローカル秒へ変換し、区切り時刻ぶん手前にずらして日割り。
+    jst = t + _TZ_OFFSET_SEC
+    shifted = jst - DAY_START_HOUR_JST * 3600
+    return int(shifted // 86400)
+
+
+def _day_expiry(ts: float) -> float:
+    """ts が属する論理日の終わり（＝次の 09:00 JST）の UTC エポック秒。
+
+    発行クッキーは「発行した日のうち」だけ有効とし、この時刻を過ぎたら失効させる。
+    これにより 09:00 の切替で発行済み端末も全て接続不可になる（URLを変える意味を担保）。
+    """
+    di = _day_index(ts)
+    next_shifted = (di + 1) * 86400                 # 翌日の論理日開始（shifted空間）
+    return next_shifted + DAY_START_HOUR_JST * 3600 - _TZ_OFFSET_SEC
+
+
+def remaining_valid_sec(issued_ts: float, now: float | None = None) -> int:
+    """発行時刻 issued_ts のクッキーの残り有効秒（TTL と当日の終わりの早い方）。"""
+    t = now if now is not None else time.time()
+    hard = min(issued_ts + TTL_SEC, _day_expiry(issued_ts))
+    return int(hard - t)
+
 
 _SIGN_KEY = "pub_gate_secret"
 
@@ -214,12 +285,14 @@ def check_cookie_value(secret: str, epoch: int, value: str | None,
         # 世代不一致（強制失効実行後）もここに落ちる＝invalid
         return ("invalid", 0)
     t = now if now is not None else time.time()
-    remain = int(ts + TTL_SEC - t)
-    if remain <= 0:
-        return ("expired", 0)
-    # 未来時刻のクッキー（時計異常・改竄）も不正扱い
+    # 未来時刻のクッキー（時計異常・改竄）は不正扱い
     if ts > t + 300:
         return ("invalid", 0)
+    # 有効期限 = TTL と「発行した日の終わり（次の09:00）」の早い方。
+    # これにより 09:00 の切替で発行済み端末も全て失効する（＝毎日URLを変える意味を担保）。
+    remain = remaining_valid_sec(ts, t)
+    if remain <= 0:
+        return ("expired", 0)
     return ("valid", remain)
 
 
@@ -248,7 +321,8 @@ def verify_handoff(secret: str, epoch: int, token: str | None,
     if not hmac.compare_digest(_sign(secret, f"ho:{epoch}:{ts}"), sig):
         return 0
     t = now if now is not None else time.time()
-    if ts + TTL_SEC <= t or ts > t + 300:
+    # TTL・未来時刻に加え、発行日の終わり（次の09:00）を過ぎた引き継ぎも無効。
+    if ts + TTL_SEC <= t or ts > t + 300 or _day_expiry(ts) <= t:
         return 0
     return ts
 
@@ -284,3 +358,66 @@ def verify_scan_token(secret: str, epoch: int, token: str | None,
         if hmac.compare_digest(_sign(secret, f"scan:{epoch}:{w}"), token):
             return True
     return False
+
+
+# ---------------- デイリー・ワード（毎日ローテーションする入口の秘密語） ----------------
+
+def daily_word(secret: str, epoch: int = 0, dindex: int | None = None,
+               now: float | None = None) -> str:
+    """その日の入口URLに使う秘密語を決定的に生成する。
+
+    形式: "<adj>-<noun>-<英数4桁>"（例: "hayate-booster-k7m2"）。
+    secret / epoch / 日付のいずれかが変われば別語になる。強制失効（epoch+1）で
+    その瞬間に当日の語も変わる。secret が無ければ空文字（＝ゲート無効）。
+    """
+    if not secret:
+        return ""
+    di = dindex if dindex is not None else _day_index(now)
+    raw = hmac.new(_key(secret), f"word:{epoch}:{di}".encode("utf-8"),
+                   hashlib.sha256).digest()
+    adj = _WL_ADJ[raw[0] % len(_WL_ADJ)]
+    noun = _WL_NOUN[raw[1] % len(_WL_NOUN)]
+    # 残りのバイトから base32 風の短い英数字（紛らわしい文字を除外）を4桁。
+    alphabet = "abcdefghijkmnpqrstuvwxyz23456789"  # l,o,0,1 を除外
+    tail = "".join(alphabet[b % len(alphabet)] for b in raw[2:6])
+    return f"{adj}-{noun}-{tail}"
+
+
+def verify_daily_word(secret: str, epoch: int, word: str | None,
+                      now: float | None = None) -> bool:
+    """入口URLの秘密語を照合する（当日のみ。設定により前日も許容）。"""
+    if not secret or not word:
+        return False
+    di = _day_index(now)
+    candidates = [di]
+    if WORD_ACCEPT_PREV_DAY:
+        candidates.append(di - 1)
+    for d in candidates:
+        if hmac.compare_digest(daily_word(secret, epoch, d), word):
+            return True
+    return False
+
+
+def entry_sub_path(secret: str, epoch: int, now: float | None = None) -> str:
+    """店舗prefixを除いた入口サブパス（例: "/enter/<word>" または "/<word>"）。
+
+    secret が無い（ゲート無効）場合は従来どおり "/enter" を返す。
+    """
+    w = daily_word(secret, epoch, now=now)
+    if not w:
+        return "/enter"
+    if ENTRY_PATH_STYLE == "root":
+        return f"/{w}"
+    return f"/enter/{w}"
+
+
+def entry_url(base: str, pfx: str, store) -> str:
+    """参加者入口の絶対URL（QR・共有用）。base 未設定なら空文字。
+
+    base: 公開ベースURL（例 https://xxx）/ pfx: 店舗prefix（既定店舗は ""）。
+    """
+    if not base:
+        return ""
+    secret = secret_for(store)
+    epoch = get_epoch(db_path_for(store))
+    return f"{base}{pfx}{entry_sub_path(secret, epoch)}"

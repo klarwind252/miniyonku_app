@@ -295,17 +295,36 @@ select{background:#fff}
 </div>
 <script src="/static/js/qrcode.min.js"></script>
 <script>
-// レーサー用アクセスQR（クラウド版）。URL＝現在ホスト＋店舗prefix＋/enter を都度生成。
-function openRacerQr(){
-  var prefix = location.pathname.split('/admin')[0];   // 店舗slug（無ければ空）
-  var url = location.origin + prefix + '/enter';
+// レーサー用アクセスQR（クラウド版）。入口URLは毎日 09:00 に変わるため、
+// サーバーから「当日の入口URL」を取得してQRを生成する（固定 /enter は使わない）。
+function _racerQrRender(url){
   var wrap = document.getElementById('racerQrCanvas');
   wrap.innerHTML = '';
   try{ new QRCode(wrap, {text:url, width:240, height:240,
         colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M}); }
   catch(e){ wrap.textContent = 'QR生成に失敗しました'; }
-  document.getElementById('racerQrUrl').textContent = url;
-  document.getElementById('racerQrModal').style.display = 'flex';
+  // 画面に出す文字列は入口（/）だけにし、秘密語は露出させない
+  var shown = url;
+  try{
+    var u = new URL(url);
+    shown = u.origin + u.pathname.replace(/\/enter\/[^\/?#]+$/, '/').replace(/\/[^\/?#]+$/, function(m){
+      // root方式（/<slug>/<word> or /<word>）は末尾セグメントを / に畳む
+      return (/\/(admin|view|api|static|logo|health|favicon|entry|enter)$/.test(m)) ? m : '/';
+    });
+    shown = shown.replace(/\/{2,}$/, '/');
+  }catch(e){}
+  document.getElementById('racerQrUrl').textContent = shown;
+}
+function openRacerQr(){
+  var prefix = location.pathname.split('/admin')[0];   // 店舗slug（無ければ空）
+  var modal = document.getElementById('racerQrModal');
+  modal.style.display = 'flex';
+  document.getElementById('racerQrCanvas').innerHTML = '';
+  document.getElementById('racerQrUrl').textContent = '読み込み中…';
+  fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ _racerQrRender(j.url || (location.origin + prefix + '/enter')); })
+    .catch(function(){ _racerQrRender(location.origin + prefix + '/enter'); });
 }
 function closeRacerQr(){ document.getElementById('racerQrModal').style.display = 'none'; }
 document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeRacerQr(); });
