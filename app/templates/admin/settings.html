@@ -1379,6 +1379,16 @@
       // 店舗別の参加者QRを生成してDL（共通アイコン＝枠なし元画像を中央に合成）
       function downloadStoreQr(storeId, storeName, qrUrl, slug){
         if(!qrUrl){ alert('PUBLIC_BASE_URL が未設定のため生成できません。'); return; }
+        // 入口URLは毎日 09:00 に変わるため、生成直前に当日URLを取り直す
+        // （ページを開きっぱなしでも前日分を出さない）。失敗時は描画時点の値を使う。
+        var _adminPrefix = location.pathname.split('/admin')[0];
+        fetch(_adminPrefix + '/admin/pub-gate/entry-url?store_id=' + encodeURIComponent(storeId), {cache:'no-store'})
+          .then(function(r){ return r.json(); })
+          .then(function(j){ if(j && j.url) qrUrl = j.url; })
+          .catch(function(){})
+          .finally(function(){ _downloadStoreQrBuild(storeId, storeName, qrUrl, slug); });
+      }
+      function _downloadStoreQrBuild(storeId, storeName, qrUrl, slug){
         var prefix = slug ? ('/' + slug) : '';
         var iconVer = '{{ pwa_icon_ver }}';
         // 一時 div に QR を生成

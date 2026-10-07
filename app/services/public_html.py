@@ -1762,12 +1762,14 @@ def gated_content_path(store) -> str:
 
 
 def _build_shell_html(full_html: str, slug: str) -> str:
-    """nginx が静的配信する index.html（＝内容を一切持たないシェル）を生成する。
+    """nginx が静的配信する index.html（＝内容を持たない「中継専用」シェル）を生成する。
 
-    観覧内容は /api/pub-content がサーバー側で観覧クッキーを検証してから返す。
-    これにより、URL直打ち・curl・保存済みURL・PWA・開きっぱなしのタブのどれで
-    あっても「有効な観覧許可が無ければ内容は一切取得できない」がアプリ側だけで
-    成立する（nginx の auth_request 設定に依存しない）。
+    方針:
+      - 素の / では観覧内容を【絶対に表示しない】。固定URLに内容を出さないため、
+        有効クッキーがあれば「その日だけの観覧URL（/enter/<当日の単語>）」へ中継し、
+        無ければ失効ページへ送る。アドレスバーに毎日変わるURLを出すのが狙い。
+      - 当日の秘密語はクッキー検証に通った端末にだけ /enter?api=entrypath が返す
+        （無許可端末には渡さない）。
     <head> の manifest / アイコン / テーマ色は本体から引き継ぎ、PWA追加時の見え方を保つ。
     """
     import re as _re
@@ -1792,16 +1794,14 @@ def _build_shell_html(full_html: str, slug: str) -> str:
 </head><body><div id="m4-shell">読み込み中…</div>
 <script>
 (function(){{
-  var CONTENT = "{pfx}/enter?api=content";
-  var ENTER = "{pfx}/enter?src=expired";
-  function fail(){{ try {{ location.replace(ENTER); }} catch(e) {{}} }}
-  fetch(CONTENT, {{cache:'no-store', credentials:'same-origin'}}).then(function(r){{
-    if(r.status !== 200) {{ fail(); return null; }}
-    return r.text();
-  }}).then(function(html){{
-    if(!html) return;
-    // 本体HTMLで文書を置き換える（内蔵スクリプトも実行される）
-    document.open(); document.write(html); document.close();
+  var ENTRYPATH = "{pfx}/enter?api=entrypath";  // 有効時のみ当日の観覧URLを返す
+  var EXPIRED   = "{pfx}/enter?src=expired";     // 無効時はQR再スキャン案内へ
+  function fail(){{ try {{ location.replace(EXPIRED); }} catch(e) {{}} }}
+  fetch(ENTRYPATH, {{cache:'no-store', credentials:'same-origin'}}).then(function(r){{
+    return r.ok ? r.json() : null;
+  }}).then(function(j){{
+    if(j && j.ok && j.path) {{ location.replace(j.path); }}  // 当日の観覧URLへ
+    else {{ fail(); }}
   }}).catch(function(){{
     var el = document.getElementById('m4-shell');
     if(el) el.textContent = '通信できません。電波状況を確認して再読み込みしてください。';

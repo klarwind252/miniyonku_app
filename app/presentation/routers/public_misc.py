@@ -443,15 +443,98 @@ async def _dispatch_enter_api(request: Request):
             return Response(status_code=404)
         return FileResponse(path, media_type="application/javascript",
                             headers={"Cache-Control": "public, max-age=86400"})
+    if api == "entrypath":
+        return _entrypath_json(request)
     return None
 
 
-async def _issue_with_word(request: Request, word: str):
-    """毎日ローテーションする入口（/enter/<word> または /<word>）。
+def _daily_target(request: Request, secret: str, epoch: int) -> str:
+    """当日の観覧URL（店舗prefix付きの /enter/<当日の単語>）。secret無しは "/"。"""
+    from app.services import pub_gate
+    store = getattr(request.state, "store", None)
+    slug = store.slug if store else ""
+    pfx = f"/{slug}" if slug else ""
+    w = pub_gate.daily_word(secret, epoch)
+    return f"{pfx}/enter/{w}" if w else (f"{pfx}/" if pfx else "/")
 
-    当日の秘密語（daily_word）に一致したときだけ 12時間クッキーを発行する。
-    一致しない（＝昨日以前・他店舗・当て推量）場合は発行しない。
-    これにより「一度踏んだURLを保存して無期限に再入場する」経路を遮断する。
+
+def _entrypath_json(request: Request):
+    """観覧トップ（シェル）用：有効クッキー時のみ当日の観覧URLを返す。無効は401。
+
+    秘密語を知らせてよいのは「すでに観覧許可を持つ端末」だけなので、クッキー検証に通った
+    場合だけ path を返す（素の / を直接開いた無許可端末には渡さない）。
+    """
+    from fastapi.responses import JSONResponse
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    if state != "valid":
+        return JSONResponse({"ok": False}, status_code=401, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"ok": True, "path": _daily_target(request, secret, epoch)},
+                        headers={"Cache-Control": "no-store"})
+
+
+def _content_response(request: Request, base: str, key: str, slug: str,
+                      cname: str, secret: str, epoch: int,
+                      reissue: bool = True, issued_ts: float | None = None):
+    """観覧内容本体を【この日替わりURL上で】そのまま表示する。
+
+    - 素の / や固定URLに着地させず、アドレスバーに毎日変わる /enter/<word> を出すため、
+      リダイレクトせず本体HTMLを直接返す。
+    - 本体の失効判定が参照する localStorage の発行時刻をここで必ずセットしてから本体を流す。
+    - reissue=True のときだけ Set-Cookie する（PWA起動など既存クッキー保持時は再発行しない）。
+    """
+    import os
+    from app.services.public_html import gated_content_path
+    store = getattr(request.state, "store", None)
+    path = gated_content_path(store)
+    if not path or not os.path.isfile(path):
+        resp = HTMLResponse(
+            "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            "<title>準備中</title></head><body style=\"background:#141821;color:#cfd8e3;"
+            "font-family:sans-serif\"><p style=\"text-align:center;margin-top:40vh\">"
+            "観覧内容を準備中です。しばらくしてから再度お試しください。</p></body></html>",
+            status_code=503)
+        resp.headers["Cache-Control"] = "no-store"
+        return _issue(request, resp, cname, secret, epoch, issued_ts=issued_ts) if reissue else resp
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        body = f.read()
+    slugkey = slug or "default"
+    setter = ('<script>try{localStorage.setItem('
+              + repr("m4_pub_issued_" + slugkey)
+              + ',String(Date.now()));}catch(e){}</script>')
+    low = body.lower()
+    i = low.find("<head")
+    if i >= 0:
+        j = body.find(">", i)
+        body = (body[:j + 1] + setter + body[j + 1:]) if j >= 0 else (setter + body)
+    else:
+        body = setter + body
+    resp = HTMLResponse(body)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return _issue(request, resp, cname, secret, epoch, issued_ts=issued_ts) if reissue else resp
+
+
+def _redirect_to_daily(request: Request, cname: str, secret: str, epoch: int,
+                       reissue: bool = False, issued_ts: float | None = None) -> HTMLResponse:
+    """当日の観覧URL（/enter/<word>）へ中継する小さなページ。固定URLに内容を出さないため。"""
+    target = _daily_target(request, secret, epoch)
+    html = (f"<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            f"<meta name=\"referrer\" content=\"no-referrer\"><title>読み込み中…</title></head>"
+            f"<body><p style=\"font-family:sans-serif;text-align:center;margin-top:40vh;color:#555\">"
+            f"読み込み中…</p><script>location.replace({target!r});</script></body></html>")
+    resp = HTMLResponse(html)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return _issue(request, resp, cname, secret, epoch, issued_ts=issued_ts) if reissue else resp
+
+
+async def _issue_with_word(request: Request, word: str):
+    """毎日ローテーションする観覧URL（/enter/<word>）。
+
+    当日の秘密語に一致したときだけ 12時間クッキーを発行し、【このURL上で】観覧内容を表示する。
+    一致しない（昨日以前・他店舗・当て推量）場合は発行せず失効ページへ。
     """
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
 
@@ -459,36 +542,34 @@ async def _issue_with_word(request: Request, word: str):
         return _blocked_page(key, False, "RATE_LIMIT", enter_api_base=_enter_path(request))
     if not _hours_ok(store):
         if state == "valid":
-            return _pass_page(base, key, renew=False)
+            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
         return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_api_base=_enter_path(request))
 
-    # secret 未設定（ゲート無効環境）は後方互換で従来どおり発行する。
+    # secret 未設定（ゲート無効環境）は後方互換で発行して内容表示。
     if not secret:
-        return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+        return _content_response(request, base, key, slug, cname, secret, epoch, reissue=True)
 
     if pub_gate.verify_daily_word(secret, epoch, word):
-        # 正規の当日URL＝発行（再スキャンのたびに12時間を更新）
-        return _issue(request, _pass_page(base, key, renew=True), cname, secret, epoch)
+        # 正規の当日URL＝発行（当日の終わり＝次の09:00までで打ち切り）＋内容表示
+        return _content_response(request, base, key, slug, cname, secret, epoch, reissue=True)
 
     # 当日の語ではない（昨日以前のQR・古いブックマーク・当て推量）
     if state == "valid":
-        return _pass_page(base, key, renew=False)
+        # 既に有効なら、今日のURLへ寄せる（古い語URLに内容を出さない）
+        return _redirect_to_daily(request, cname, secret, epoch, reissue=False)
     return _blocked_page(key, False, "WORD_INVALID+COOKIE_" + state.upper(),
                          enter_api_base=_enter_path(request))
 
 
 @router.get("/enter")
 async def participant_enter(request: Request):
-    """素の /enter。【新規発行はしない】（毎日変わる /enter/<word> だけが発行できる）。
+    """素の /enter。【内容を表示しない】中継専用（観覧は毎日変わる /enter/<word> だけ）。
 
     扱い:
-      - /enter?api=...      : 同居API（内容・状態・引き継ぎ・manifest・jsqr）をそのまま提供
-      - /enter?h=<token>    : PWA 引き継ぎ（既存の有効セッションの期限を引き継ぐだけ。新規発行不可）
-      - それ以外の素の /enter : 有効クッキーがあれば通過、無ければ失効ページ（＝発行しない）
-        （PWA起動 ?src=pwa、失効遷移 ?src=expired、URL直打ち・ブックマーク・共有 すべて同じ）
-
-    ねらい: 固定URL（/enter）を踏むだけで無期限に再発行できた従来の穴を塞ぐ。
-    発行できるのは「当日の秘密語 URL（/enter/<word>）を実際に読み取った／開いた」場合だけ。
+      - /enter?api=...      : 同居API（内容・状態・引き継ぎ・manifest・jsqr・entrypath）
+      - /enter?h=<token>    : PWA 引き継ぎ（既存セッションの期限を引き継ぎ、内容表示。新規発行なし）
+      - /enter?src=pwa      : PWAアイコン起動。有効なら内容表示（再発行なし）、無効は失効ページ
+      - それ以外の素の /enter : 有効クッキーなら当日URLへ中継、無ければ失効ページ（発行しない）
     """
     resp = await _dispatch_enter_api(request)
     if resp is not None:
@@ -498,29 +579,37 @@ async def participant_enter(request: Request):
     src = request.query_params.get("src", "")
     is_pwa = (src == "pwa")
 
-    # PWA 引き継ぎ：発行時刻を引き継いだクッキーを出す（期限は元と同じ・新規延長なし）
+    # PWA 引き継ぎ：発行時刻を引き継いで内容表示（新規延長なし）
     h = request.query_params.get("h", "")
     if h:
         ts = pub_gate.verify_handoff(secret, epoch, h)
         if ts:
-            return _issue(request, _pass_page(base, key, renew=False), cname, secret, epoch, issued_ts=ts)
+            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=True, issued_ts=ts)
         if state == "valid":
-            return _pass_page(base, key, renew=False)
+            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
         return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(),
                              enter_api_base=_enter_path(request))
 
-    # 素の /enter は一切発行しない。有効クッキーのみ通過、無ければ失効ページ。
+    # PWA アイコン起動：アドレスバーが無いので、有効なら内容を直接表示（再発行しない）
+    if is_pwa:
+        if state == "valid":
+            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
+        return _blocked_page(key, True, "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_PWA",
+                             enter_api_base=_enter_path(request))
+
+    # それ以外の素の /enter（ブックマーク・失効遷移・直打ち）
+    # 有効クッキーがあれば当日URLへ寄せる（固定URLに内容を出さない）。無ければ失効ページ。
     if state == "valid":
-        return _pass_page(base, key, renew=False)
-    src_tag = src.upper() if src in ("pwa", "expired", "rescan") else "BARE"
-    return _blocked_page(key, is_pwa or src == "rescan",
+        return _redirect_to_daily(request, cname, secret, epoch, reissue=False)
+    src_tag = src.upper() if src in ("expired", "rescan") else "BARE"
+    return _blocked_page(key, src == "rescan",
                          "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag,
                          enter_api_base=_enter_path(request))
 
 
 @router.get("/enter/{word}")
 async def participant_enter_word(word: str, request: Request):
-    """毎日ローテーションする入口（既定の形）。当日の秘密語のときだけ発行する。"""
+    """毎日ローテーションする観覧URL（既定の形）。当日の秘密語のときだけ内容を表示。"""
     return await _issue_with_word(request, word)
 
 

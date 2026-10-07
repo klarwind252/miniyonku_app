@@ -558,6 +558,18 @@ async def pub_gate_entry_url(request: Request):
     from app.services import pub_gate as _pg
     from app.core.config import PUBLIC_BASE_URL
     store = getattr(request.state, "store", None)
+    # 複数店舗展開カードからの取得用：既定店舗の管理画面に限り、store_id で対象店舗を指定できる。
+    sid = request.query_params.get("store_id", "")
+    if sid:
+        try:
+            from app import registry
+            cur_is_default = bool(store is not None and not getattr(store, "slug", ""))
+            if cur_is_default:
+                tgt = registry.get_store_by_id(int(sid))
+                if tgt is not None:
+                    store = tgt
+        except Exception:
+            pass
     pfx = ("/" + store.slug) if (store is not None and getattr(store, "slug", "")) else ""
     secret = _pg.secret_for(store)
     epoch = _pg.get_epoch(_pg.db_path_for(store))
@@ -595,7 +607,8 @@ async def pub_gate_diag(request: Request):
                 "mtime": _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(st.st_mtime)),
                 "is_shell": ("m4-shell" in body[:4000]),
                 "has_expired_redirect": ("enter?src=expired" in body),
-                "uses_enter_api": ("enter?api=content" in body)}
+                "uses_enter_api": ("enter?api=entrypath" in body or "enter?api=content" in body),
+                "is_router_shell": ("enter?api=entrypath" in body)}
     dbp = _pg.db_path_for(store)
     tok = getattr(store, "admin_token", "") if store is not None else ""
     secret_src = "store.admin_token" if tok else ("env ADMIN_TOKEN" if os.environ.get("ADMIN_TOKEN") else "db(pub_gate_secret)")
