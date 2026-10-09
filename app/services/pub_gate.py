@@ -398,17 +398,63 @@ def verify_daily_word(secret: str, epoch: int, word: str | None,
     return False
 
 
-def entry_sub_path(secret: str, epoch: int, now: float | None = None) -> str:
-    """店舗prefixを除いた入口サブパス（例: "/enter/<word>" または "/<word>"）。
+def _daily_word_salted(secret: str, epoch: int, salt: str, dindex: int | None = None,
+                       now: float | None = None) -> str:
+    """daily_word に salt を足した派生語。観覧語(view)と鍵語(key)を別々に生成するため。"""
+    if not secret:
+        return ""
+    di = dindex if dindex is not None else _day_index(now)
+    raw = hmac.new(_key(secret), f"word:{salt}:{epoch}:{di}".encode("utf-8"),
+                   hashlib.sha256).digest()
+    adj = _WL_ADJ[raw[0] % len(_WL_ADJ)]
+    noun = _WL_NOUN[raw[1] % len(_WL_NOUN)]
+    alphabet = "abcdefghijkmnpqrstuvwxyz23456789"
+    tail = "".join(alphabet[b % len(alphabet)] for b in raw[2:6])
+    return f"{adj}-{noun}-{tail}"
 
-    secret が無い（ゲート無効）場合は従来どおり "/enter" を返す。
+
+def view_word(secret: str, epoch: int, now: float | None = None) -> str:
+    """観覧URLに出る語（/<観覧語>）。毎日・店舗ごとに変わる。"""
+    return _daily_word_salted(secret, epoch, "view", now=now)
+
+
+def key_word(secret: str, epoch: int, now: float | None = None) -> str:
+    """入場URLの鍵語（/<観覧語>/enter/<鍵語>）。毎日・店舗ごとに変わる。"""
+    return _daily_word_salted(secret, epoch, "key", now=now)
+
+
+def verify_view_word(secret: str, epoch: int, w: str | None, now: float | None = None) -> bool:
+    if not secret or not w:
+        return False
+    di = _day_index(now)
+    cands = [di] + ([di - 1] if WORD_ACCEPT_PREV_DAY else [])
+    for d in cands:
+        if hmac.compare_digest(_daily_word_salted(secret, epoch, "view", d), w):
+            return True
+    return False
+
+
+def verify_key_word(secret: str, epoch: int, w: str | None, now: float | None = None) -> bool:
+    if not secret or not w:
+        return False
+    di = _day_index(now)
+    cands = [di] + ([di - 1] if WORD_ACCEPT_PREV_DAY else [])
+    for d in cands:
+        if hmac.compare_digest(_daily_word_salted(secret, epoch, "key", d), w):
+            return True
+    return False
+
+
+def entry_sub_path(secret: str, epoch: int, now: float | None = None) -> str:
+    """2語方式の入場サブパス = /<観覧語>/enter/<鍵語>。
+
+    読み取ると観覧URL /<観覧語> へ移る。secret が無い場合のみ "/enter"。
     """
-    w = daily_word(secret, epoch, now=now)
-    if not w:
+    vw = view_word(secret, epoch, now=now)
+    kw = key_word(secret, epoch, now=now)
+    if not vw or not kw:
         return "/enter"
-    if ENTRY_PATH_STYLE == "root":
-        return f"/{w}"
-    return f"/enter/{w}"
+    return f"/{vw}/enter/{kw}"
 
 
 def entry_url(base: str, pfx: str, store) -> str:

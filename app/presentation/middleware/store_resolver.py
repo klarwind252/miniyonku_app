@@ -82,15 +82,14 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
         if seg == "" or seg in _APP_PREFIXES:
             # 既定店舗（店舗1）
             store = registry.get_default_store()
-        elif self._root_word_match(registry.get_default_store(), seg):
-            # ドメイン直下 /<当日の秘密語>（root方式）を既定店舗の入口として扱う。
-            # scope を /enter/<seg> に書き換えて通常の入口ルートへ委譲する。
-            # ※ENTRY_PATH_STYLE != "root" のときは _root_word_match が常に False＝従来挙動。
+        elif (_rw := self._word_rewrite(registry.get_default_store(), path)) is not None:
+            # ドメイン直下 /<観覧語> や /<観覧語>/enter/<鍵語> を既定店舗の2語入口として扱う。
+            # scope を内部ルート（/enter/__m4view__/… or /enter/__m4entry__/…）へ書き換える。
             store = registry.get_default_store()
-            request.scope["path"] = f"/enter/{seg}"
+            request.scope["path"] = _rw
             if "raw_path" in request.scope and request.scope["raw_path"]:
                 try:
-                    request.scope["raw_path"] = f"/enter/{seg}".encode()
+                    request.scope["raw_path"] = _rw.encode()
                 except Exception:
                     pass
         else:
@@ -110,12 +109,10 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
             if _second != "static":
                 # scope から "/{slug}" を除去し root_path にセット
                 stripped = path[len(f"/{slug}"):] or "/"
-                # ドメイン直下 /<slug>/<当日の秘密語>（root方式）を入口として扱う。
-                # 単一セグメント かつ 当日の秘密語に一致するときだけ /enter/<語> へ委譲。
-                _ss = stripped.strip("/")
-                if _ss and "/" not in _ss and _ss not in _APP_PREFIXES \
-                   and self._root_word_match(store, _ss):
-                    stripped = f"/enter/{_ss}"
+                # /<slug>/<観覧語>[/enter/<鍵語>] を2語入口として内部ルートへ委譲。
+                _rw2 = self._word_rewrite(store, stripped)
+                if _rw2 is not None:
+                    stripped = _rw2
                 request.scope["path"] = stripped
                 request.scope["root_path"] = f"/{slug}"
                 if "raw_path" in request.scope and request.scope["raw_path"]:
@@ -147,25 +144,32 @@ class StoreResolverMiddleware(BaseHTTPMiddleware):
             response = await self._rewrite_response(response, slug)
         return response
 
-    def _root_word_match(self, store, seg: str) -> bool:
-        """ドメイン直下 /<seg> を入口（当日の秘密語）とみなすか。
+    def _word_rewrite(self, store, subpath: str):
+        """店舗prefixを除いたサブパスが当日の2語URLなら内部ルートへ書き換えて返す。
 
-        ENTRY_PATH_STYLE が "root" のときだけ判定する（既定の "enter" では常に False＝
-        従来挙動のまま）。seg が当日の秘密語に一致する場合のみ True。
+          /<観覧語>              -> /enter/__m4view__/<観覧語>
+          /<観覧語>/enter/<鍵語> -> /enter/__m4entry__/<観覧語>/<鍵語>
+
+        当日の観覧語に一致しなければ None（＝通常のスラッグ解決や404に委ねる）。
         """
         try:
             from app.services import pub_gate
-            if getattr(pub_gate, "ENTRY_PATH_STYLE", "enter") != "root":
-                return False
             if store is None:
-                return False
+                return None
             secret = pub_gate.secret_for(store)
             if not secret:
-                return False
+                return None
             epoch = pub_gate.get_epoch(pub_gate.db_path_for(store))
-            return pub_gate.verify_daily_word(secret, epoch, seg)
+            parts = subpath.strip("/").split("/")
+            if len(parts) == 1 and parts[0] and parts[0] not in _APP_PREFIXES:
+                if pub_gate.verify_view_word(secret, epoch, parts[0]):
+                    return "/enter/__m4view__/" + parts[0]
+            elif len(parts) == 3 and parts[1] == "enter" and parts[0] and parts[2]:
+                if pub_gate.verify_view_word(secret, epoch, parts[0]):
+                    return "/enter/__m4entry__/" + parts[0] + "/" + parts[2]
+            return None
         except Exception:
-            return False
+            return None
 
     async def _rewrite_response(self, response, slug: str):
         # --- リダイレクト先(Location)の前置 ---

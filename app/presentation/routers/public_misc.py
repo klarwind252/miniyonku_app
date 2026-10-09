@@ -531,86 +531,84 @@ def _redirect_to_daily(request: Request, cname: str, secret: str, epoch: int,
 
 
 async def _issue_with_word(request: Request, word: str):
-    """毎日ローテーションする観覧URL（/enter/<word>）。
-
-    当日の秘密語に一致したときだけ 12時間クッキーを発行し、【このURL上で】観覧内容を表示する。
-    一致しない（昨日以前・他店舗・当て推量）場合は発行せず失効ページへ。
-    """
+    """旧1語方式 /enter/<word> は廃止。常に失効ページ（新方式の2語URLのみ有効）。"""
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
-
-    if _rate_limited(_client_ip(request)):
-        return _blocked_page(key, False, "RATE_LIMIT", enter_api_base=_enter_path(request))
-    if not _hours_ok(store):
-        if state == "valid":
-            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
-        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(), enter_api_base=_enter_path(request))
-
-    # secret 未設定（ゲート無効環境）は後方互換で発行して内容表示。
-    if not secret:
-        return _content_response(request, base, key, slug, cname, secret, epoch, reissue=True)
-
-    if pub_gate.verify_daily_word(secret, epoch, word):
-        # 正規の当日URL＝発行（当日の終わり＝次の09:00までで打ち切り）＋内容表示
-        return _content_response(request, base, key, slug, cname, secret, epoch, reissue=True)
-
-    # 当日の語ではない（昨日以前のQR・古いブックマーク・当て推量）
-    if state == "valid":
-        # 既に有効なら、今日のURLへ寄せる（古い語URLに内容を出さない）
-        return _redirect_to_daily(request, cname, secret, epoch, reissue=False)
-    return _blocked_page(key, False, "WORD_INVALID+COOKIE_" + state.upper(),
+    return _blocked_page(key, False, "LEGACY_ENTER_WORD_DISABLED+COOKIE_" + state.upper(),
                          enter_api_base=_enter_path(request))
 
 
 @router.get("/enter")
 async def participant_enter(request: Request):
-    """素の /enter。【内容を表示しない】中継専用（観覧は毎日変わる /enter/<word> だけ）。
+    """素の /enter は【内容を表示しない・発行しない】。観覧は当日の /<観覧語>/enter/<鍵語> のみ。
 
-    扱い:
-      - /enter?api=...      : 同居API（内容・状態・引き継ぎ・manifest・jsqr・entrypath）
-      - /enter?h=<token>    : PWA 引き継ぎ（既存セッションの期限を引き継ぎ、内容表示。新規発行なし）
-      - /enter?src=pwa      : PWAアイコン起動。有効なら内容表示（再発行なし）、無効は失効ページ
-      - それ以外の素の /enter : 有効クッキーなら当日URLへ中継、無ければ失効ページ（発行しない）
+    /enter?api=... （content/status/handoff/manifest/jsqr/entrypath）は観覧ページの
+    ライブ更新に必要なので従来どおり通す。それ以外の素の /enter は、クッキー・
+    PWA起動(?src=pwa)・引き継ぎ(?h=) の有無に関わらず常に失効ページ。
     """
     resp = await _dispatch_enter_api(request)
     if resp is not None:
         return resp
-
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
     src = request.query_params.get("src", "")
-    is_pwa = (src == "pwa")
-
-    # PWA 引き継ぎ：発行時刻を引き継いで内容表示（新規延長なし）
-    h = request.query_params.get("h", "")
-    if h:
-        ts = pub_gate.verify_handoff(secret, epoch, h)
-        if ts:
-            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=True, issued_ts=ts)
-        if state == "valid":
-            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
-        return _blocked_page(key, True, "HANDOFF_EXPIRED+COOKIE_" + state.upper(),
-                             enter_api_base=_enter_path(request))
-
-    # PWA アイコン起動：アドレスバーが無いので、有効なら内容を直接表示（再発行しない）
-    if is_pwa:
-        if state == "valid":
-            return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
-        return _blocked_page(key, True, "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_PWA",
-                             enter_api_base=_enter_path(request))
-
-    # それ以外の素の /enter（ブックマーク・失効遷移・直打ち）
-    # 有効クッキーがあれば当日URLへ寄せる（固定URLに内容を出さない）。無ければ失効ページ。
-    if state == "valid":
-        return _redirect_to_daily(request, cname, secret, epoch, reissue=False)
-    src_tag = src.upper() if src in ("expired", "rescan") else "BARE"
-    return _blocked_page(key, src == "rescan",
-                         "NO_ISSUE+COOKIE_" + state.upper() + "+SRC_" + src_tag,
+    return _blocked_page(key, src in ("pwa", "rescan"),
+                         "NO_ISSUE_BARE+COOKIE_" + state.upper(),
                          enter_api_base=_enter_path(request))
 
 
 @router.get("/enter/{word}")
 async def participant_enter_word(word: str, request: Request):
-    """毎日ローテーションする観覧URL（既定の形）。当日の秘密語のときだけ内容を表示。"""
+    """旧1語方式。廃止（常に失効ページ）。"""
     return await _issue_with_word(request, word)
+
+
+# ============ 2語方式：入場 /<観覧語>/enter/<鍵語> → 観覧 /<観覧語> ============
+# store_resolver がドメイン直下のワードURLを下の内部ルートへ書き換えて到達させる。
+def _redirect_to_view(request: Request, cname: str, secret: str, epoch: int) -> HTMLResponse:
+    """入場成功：クッキーを発行し、観覧URL /<観覧語>（店舗prefix付き）へ移動させる。"""
+    from app.services import pub_gate
+    store = getattr(request.state, "store", None)
+    slug = store.slug if store else ""
+    pfx = f"/{slug}" if slug else ""
+    vw = pub_gate.view_word(secret, epoch)
+    target = f"{pfx}/{vw}" if vw else (pfx or "/")
+    html = ("<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            "<meta name=\"referrer\" content=\"no-referrer\"><title>読み込み中…</title></head>"
+            "<body><p style=\"font-family:sans-serif;text-align:center;margin-top:40vh;color:#555\">"
+            "読み込み中…</p><script>location.replace(" + repr(target) + ");</script></body></html>")
+    resp = HTMLResponse(html)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return _issue(request, resp, cname, secret, epoch)
+
+
+@router.get("/enter/__m4entry__/{w24}/{wkey}")
+async def participant_entry(w24: str, wkey: str, request: Request):
+    """入場：当日の観覧語＋鍵語が一致したらクッキー発行→/<観覧語>へ移動。"""
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    if _rate_limited(_client_ip(request)):
+        return _blocked_page(key, False, "RATE_LIMIT", enter_api_base=_enter_path(request))
+    if not _hours_ok(store):
+        return _blocked_page(key, False, "CLOSED+COOKIE_" + state.upper(),
+                             enter_api_base=_enter_path(request))
+    if not secret:
+        return _redirect_to_view(request, cname, secret, epoch)
+    if pub_gate.verify_view_word(secret, epoch, w24) and pub_gate.verify_key_word(secret, epoch, wkey):
+        return _redirect_to_view(request, cname, secret, epoch)
+    return _blocked_page(key, False, "ENTRY_WORD_INVALID+COOKIE_" + state.upper(),
+                         enter_api_base=_enter_path(request))
+
+
+@router.get("/enter/__m4view__/{w24}")
+async def participant_view(w24: str, request: Request):
+    """観覧：当日の観覧語＋有効クッキーのときだけ内容表示。旧語・鍵なし(クッキー無)は拒否。"""
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    if secret and not pub_gate.verify_view_word(secret, epoch, w24):
+        return _blocked_page(key, False, "VIEW_WORD_INVALID+COOKIE_" + state.upper(),
+                             enter_api_base=_enter_path(request))
+    if state != "valid":
+        return _blocked_page(key, False, "VIEW_NO_COOKIE", enter_api_base=_enter_path(request))
+    return _content_response(request, base, key, slug, cname, secret, epoch, reissue=False)
 
 
 @router.get("/api/pub-auth")
@@ -801,7 +799,7 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
     return _templates.TemplateResponse("viewer/history.html", {
         "request": request,
         "prefix": (f"/{slug}" if slug else ""),
-        "back_href": (f"/{slug}/" if slug else "/"),
+        "back_href": "javascript:history.back()",
         "race_total": data.get("race_total", 0),
         "open_total": data.get("open_total", 0),
         "ltd_total": data.get("ltd_total", 0),
@@ -911,7 +909,7 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
     shown = len(races)
     return _templates.TemplateResponse("viewer/races.html", {
         "request": request, "prefix": prefix,
-        "back_href": (f"/{slug}/" if slug else "/"),
+        "back_href": "javascript:history.back()",
         "m4laps": bool(licensed),
         "races": races, "total": total, "shown": shown,
         "page_size": _RACES_PAGE, "next_offset": shown,
