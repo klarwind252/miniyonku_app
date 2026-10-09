@@ -290,41 +290,92 @@ select{background:#fff}
     <div style="font-size:12px;color:#636e72;margin-bottom:14px">レーサーはこのQRから入場・観覧ページにアクセスできます。</div>
     <div id="racerQrCanvas" style="display:inline-block;line-height:0;border:1px solid #e9ecef;border-radius:8px;padding:10px;background:#fff"></div>
     <div id="racerQrUrl" style="font-size:12px;color:#95a5a6;margin-top:12px;word-break:break-all"></div>
-    <button type="button" onclick="closeRacerQr()" style="margin-top:16px;padding:8px 24px;border:none;border-radius:6px;background:#2c3e50;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">閉じる</button>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:center">
+      <button type="button" onclick="printRacerQr()" style="padding:8px 20px;border:none;border-radius:6px;background:#2e7d32;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">🖨 印刷</button>
+      <button type="button" onclick="closeRacerQr()" style="padding:8px 24px;border:none;border-radius:6px;background:#2c3e50;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">閉じる</button>
+    </div>
   </div>
 </div>
 <script src="/static/js/qrcode.min.js"></script>
 <script>
 // レーサー用アクセスQR（クラウド版）。入口URLは毎日 09:00 に変わるため、
 // サーバーから「当日の入口URL」を取得してQRを生成する（固定 /enter は使わない）。
-function _racerQrRender(url){
-  var wrap = document.getElementById('racerQrCanvas');
-  wrap.innerHTML = '';
-  try{ new QRCode(wrap, {text:url, width:240, height:240,
-        colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M}); }
-  catch(e){ wrap.textContent = 'QR生成に失敗しました'; }
+// ダウンロードQRと同じ見た目：店舗名（上）＋中央ロゴ＋入口URL（下）を1枚の画像に合成する。
+var _M4_STORE_NAME = "{{ request.state.store.name|e }}";
+var _racerQrDataUrl = "";   // 印刷用に合成画像(dataURL)を保持
+function _racerShownUrl(url){
   // 画面に出す文字列は入口（/）だけにし、秘密語は露出させない
-  var shown = url;
   try{
     var u = new URL(url);
-    shown = u.origin + u.pathname.replace(/\/enter\/[^\/?#]+$/, '/').replace(/\/[^\/?#]+$/, function(m){
-      // root方式（/<slug>/<word> or /<word>）は末尾セグメントを / に畳む
+    var shown = u.origin + u.pathname.replace(/\/enter\/[^\/?#]+$/, '/').replace(/\/[^\/?#]+$/, function(m){
       return (/\/(admin|view|api|static|logo|health|favicon|entry|enter)$/.test(m)) ? m : '/';
     });
-    shown = shown.replace(/\/{2,}$/, '/');
-  }catch(e){}
-  document.getElementById('racerQrUrl').textContent = shown;
+    return shown.replace(/\/{2,}$/, '/');
+  }catch(e){ return url; }
+}
+function _rqRound(ctx,x,y,w,h,r){ ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function _racerQrRender(url, storeName, logoUrl){
+  var wrap = document.getElementById('racerQrCanvas');
+  wrap.innerHTML = '';
+  var qrSize = 240;
+  var tmp = document.createElement('div');
+  try{ new QRCode(tmp, {text:url, width:qrSize, height:qrSize,
+        colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.H}); }
+  catch(e){ wrap.textContent = 'QR生成に失敗しました'; return; }
+  var srcEl = tmp.querySelector('canvas') || tmp.querySelector('img');
+  var dispUrl = _racerShownUrl(url);
+  function draw(logoImg){
+    var pad=16, capH = storeName ? 30 : 0, urlH = 26;
+    var W = qrSize + pad*2, H = capH + qrSize + pad*2 + urlH;
+    var c = document.createElement('canvas'); c.width=W; c.height=H;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    var y = pad;
+    if(storeName){ ctx.fillStyle='#2c3e50'; ctx.font='bold 18px sans-serif';
+      ctx.fillText(storeName, W/2, y+18); y += capH; }
+    var qx=pad, qy=y;
+    ctx.drawImage(srcEl, qx, qy, qrSize, qrSize);
+    if(logoImg){
+      var L=Math.round(qrSize*0.22), cx=qx+qrSize/2, cy=qy+qrSize/2, bp=6;
+      ctx.fillStyle='#fff'; _rqRound(ctx, cx-L/2-bp, cy-L/2-bp, L+bp*2, L+bp*2, 8); ctx.fill();
+      try{ ctx.drawImage(logoImg, cx-L/2, cy-L/2, L, L); }catch(e){}
+    }
+    ctx.fillStyle='#95a5a6'; ctx.font='12px monospace';
+    ctx.fillText(dispUrl, W/2, qy+qrSize+pad+10, W-8);
+    wrap.innerHTML=''; wrap.appendChild(c);
+    try{ _racerQrDataUrl = c.toDataURL('image/png'); }catch(e){ _racerQrDataUrl=''; }
+    document.getElementById('racerQrUrl').textContent = '';
+  }
+  if(logoUrl){ var im=new Image();
+    im.onload=function(){ draw(im); }; im.onerror=function(){ draw(null); }; im.src=logoUrl; }
+  else { draw(null); }
 }
 function openRacerQr(){
   var prefix = location.pathname.split('/admin')[0];   // 店舗slug（無ければ空）
   var modal = document.getElementById('racerQrModal');
   modal.style.display = 'flex';
+  _racerQrDataUrl = '';
   document.getElementById('racerQrCanvas').innerHTML = '';
   document.getElementById('racerQrUrl').textContent = '読み込み中…';
+  var logoUrl = prefix + '/pwa/icon-src-192.png?t=' + Date.now();
   fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'})
     .then(function(r){ return r.json(); })
-    .then(function(j){ _racerQrRender(j.url || (location.origin + prefix + '/enter')); })
-    .catch(function(){ _racerQrRender(location.origin + prefix + '/enter'); });
+    .then(function(j){ _racerQrRender(j.url || (location.origin + prefix + '/enter'), _M4_STORE_NAME, logoUrl); })
+    .catch(function(){ _racerQrRender(location.origin + prefix + '/enter', _M4_STORE_NAME, logoUrl); });
+}
+function printRacerQr(){
+  if(!_racerQrDataUrl){ return; }
+  var w = window.open('', '_blank');
+  if(!w){ alert('印刷ウィンドウを開けませんでした（ポップアップ許可を確認してください）。'); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>レーサー用アクセスQR</title>'
+    + '<style>@page{margin:12mm}html,body{margin:0}'
+    + 'body{display:flex;align-items:center;justify-content:center;min-height:100vh}'
+    + 'img{max-width:90vw;max-height:90vh;image-rendering:pixelated}</style></head>'
+    + '<body><img src="' + _racerQrDataUrl + '" onload="window.focus();window.print();"></body></html>');
+  w.document.close();
 }
 function closeRacerQr(){ document.getElementById('racerQrModal').style.display = 'none'; }
 document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeRacerQr(); });
