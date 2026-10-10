@@ -222,170 +222,40 @@ location.replace({base!r} + "?v=" + Date.now());
 _BLOCKED_TPL = r"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>有効期限切れ</title>
+<title>観覧は終了しました</title>
 <style>
-html,body{margin:0;background:#141821;color:#fff;font-family:sans-serif}
+html,body{margin:0;background:#141821;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box}
-.ttl{font-size:22px;font-weight:bold;margin-bottom:14px}
-.msg{font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9}
-.btn{border:0;cursor:pointer;background:#e74c3c;color:#fff;padding:16px 30px;border-radius:12px;font-size:17px;font-weight:bold;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.35)}
-.btn:active{transform:scale(.98)}
-.note{margin-top:16px;font-size:12px;opacity:.7;line-height:1.7}
-.code{margin-top:20px;font-size:11px;opacity:.45}
-#scan{display:none;position:fixed;inset:0;background:#000;z-index:100}
-#scan video{width:100%;height:100%;object-fit:cover}
-#scan .frame{position:absolute;left:50%;top:50%;width:min(70vw,320px);height:min(70vw,320px);transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
-#scan .hint{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 84px);text-align:center;font-size:15px;color:#fff;text-shadow:0 1px 3px #000}
-#scan .close{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);border:0;background:rgba(255,255,255,.15);color:#fff;padding:12px 28px;border-radius:999px;font-size:15px}
-#err{color:#ffb4a8;font-size:13px;margin-top:12px;min-height:1.4em}
+.ttl{font-size:22px;font-weight:bold;margin-bottom:16px}
+.msg{font-size:16px;line-height:1.9;opacity:.92}
+.sub{margin-top:18px;font-size:13px;opacity:.6;line-height:1.7}
+.code{margin-top:24px;font-size:11px;opacity:.35}
 </style></head>
 <body>
 <div class="wrap">
   <div class="ttl">観覧の有効期限が切れました</div>
-  <div class="msg">会場のQRコードをもう一度読み取ると<br>新たに12時間観覧できます。</div>
-  <button class="btn" id="scanBtn" type="button">📷 カメラでQRコードを読み取る</button>
-  <div id="err"></div>
-  __PWA_NOTE__
+  <div class="msg">お手数ですが店舗にご来店のうえ<br>本日の会場QRコードを<br>もう一度読み取ってください。</div>
+  <div class="sub">※ このページ（保存した画面・ホーム画面アイコン）からは観覧できません。</div>
   <div class="code">code: __REASON__</div>
 </div>
-<div id="scan">
-  <video id="v" playsinline autoplay muted></video>
-  <div class="frame"></div>
-  <div class="hint">枠内に会場のQRコードを合わせてください</div>
-  <button class="close" id="closeBtn" type="button">閉じる</button>
-</div>
-<script>
-try { localStorage.setItem(__KEY__, "0"); } catch(e) {}
-(function(){
-  var ENTER_API = __ENTER_API_BASE__; // 代替デコーダ配信元（/enter。単語は含めない）
-  var JSQR_URL = ENTER_API + "?api=jsqr"; // 代替デコーダ（BarcodeDetector非対応ブラウザ用）
-  // 予約パス（これらは入口の秘密語とはみなさない）
-  var RESERVED = {admin:1, view:1, api:1, static:1, logo:1, health:1, favicon:1, entry:1, enter:1};
-  var scanEl = document.getElementById('scan');
-  var video = document.getElementById('v');
-  var err = document.getElementById('err');
-  var stream = null, running = false, detector = null, jsqrLoaded = false;
-  var canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', {willReadFrequently:true});
-
-  function setErr(t){ err.textContent = t || ''; }
-
-  // 会場QR＝「このサイト上の、毎日変わる入口URL」。失効ページは秘密語を一切保持
-  // しないため、読み取ったURLが同一オリジンで、入口の形（単一セグメント or
-  // /enter/<語> or /<slug>/enter/<語>）であれば遷移し、発行可否はサーバーが判定する。
-  function venueTarget(text){
-    try {
-      var u = new URL(text, location.href);
-      if (u.origin !== location.origin) return null;
-      var segs = u.pathname.replace(/^\/+|\/+$/g, '').split('/');
-      // パターンA: /<語>（店舗1・root方式）
-      if (segs.length === 1 && segs[0] && !RESERVED[segs[0]]) return u.pathname + u.search;
-      // パターンB: /enter/<語>（既定・店舗1）
-      if (segs.length === 2 && segs[0] === 'enter' && segs[1]) return u.pathname + u.search;
-      // パターンC: /<slug>/<語>（スラッグ店舗・root方式）
-      if (segs.length === 2 && !RESERVED[segs[0]] && segs[1] && !RESERVED[segs[1]]) return u.pathname + u.search;
-      // パターンD: /<slug>/enter/<語>（既定・スラッグ店舗）
-      if (segs.length === 3 && segs[1] === 'enter' && segs[2]) return u.pathname + u.search;
-      return null;
-    } catch(e){ return null; }
-  }
-
-  function accept(text){
-    stop();
-    var target = venueTarget(text);
-    if (!target) { setErr('会場のQRコードではありません。もう一度お試しください。'); return; }
-    // 正規の再スキャンとして発行を受け、観覧画面へ戻る（PWA内でもそのまま有効になる）。
-    // 当日の語でなければサーバーが失効ページに戻す（秘密語はページに出さない）。
-    location.replace(target);
-  }
-
-  function stop(){
-    running = false;
-    try { if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); } catch(e){}
-    stream = null; scanEl.style.display = 'none';
-  }
-
-  function loadJsQR(cb){
-    if (window.jsQR) { jsqrLoaded = true; cb(); return; }
-    var sc = document.createElement('script');
-    sc.src = JSQR_URL; sc.onload = function(){ jsqrLoaded = !!window.jsQR; cb(); };
-    sc.onerror = function(){ cb(); };
-    document.head.appendChild(sc);
-  }
-
-  function tick(){
-    if (!running) return;
-    if (video.readyState >= 2 && video.videoWidth) {
-      if (detector) {
-        detector.detect(video).then(function(codes){
-          if (!running) return;
-          if (codes && codes.length && codes[0].rawValue) { accept(codes[0].rawValue); return; }
-          requestAnimationFrame(tick);
-        }).catch(function(){ requestAnimationFrame(tick); });
-        return;
-      }
-      if (jsqrLoaded) {
-        var w = video.videoWidth, h = video.videoHeight, s = 640 / Math.max(w, h);
-        canvas.width = Math.round(w * s); canvas.height = Math.round(h * s);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        var r = window.jsQR(img.data, img.width, img.height, {inversionAttempts:'dontInvert'});
-        if (r && r.data) { accept(r.data); return; }
-      }
-    }
-    setTimeout(function(){ requestAnimationFrame(tick); }, 80);
-  }
-
-  function start(){
-    setErr('');
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setErr('このブラウザではカメラを使えません。カメラアプリでQRコードを読み取ってください。'); return;
-    }
-    var prep = function(){
-      navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false}).then(function(st){
-        stream = st; video.srcObject = st; scanEl.style.display = 'block'; running = true;
-        var p = video.play(); if (p && p.catch) p.catch(function(){});
-        requestAnimationFrame(tick);
-      }).catch(function(e){
-        var n = (e && e.name) || '';
-        if (n === 'NotAllowedError' || n === 'SecurityError') setErr('カメラの使用が許可されていません。ブラウザの設定でこのサイトのカメラを許可してください。');
-        else if (n === 'NotFoundError') setErr('カメラが見つかりません。');
-        else setErr('カメラを起動できませんでした（' + n + '）。');
-      });
-    };
-    if ('BarcodeDetector' in window) {
-      try { detector = new window.BarcodeDetector({formats:['qr_code']}); } catch(e){ detector = null; }
-    }
-    if (detector) prep(); else loadJsQR(prep);
-  }
-
-  document.getElementById('scanBtn').addEventListener('click', start);
-  document.getElementById('closeBtn').addEventListener('click', stop);
-  document.addEventListener('visibilitychange', function(){ if (document.hidden) stop(); });
-})();
-</script>
+<script>try { localStorage.setItem(__KEY__, "0"); } catch(e) {}</script>
 </body></html>"""
 
 
-def _blocked_page(key: str, pwa: bool, reason: str = "",
+def _blocked_page(key: str, pwa: bool = False, reason: str = "",
                   enter_api_base: str = "/enter") -> HTMLResponse:
-    """失効ページ。ページ内でカメラを起動して会場QRを読み直せる（iOS/iPadOS/Android/PC共通）。
+    """アクセス拒否ページ（観覧不可）。
 
-    - 読み取ったURLが「このサイト上の入口URL（毎日変わる秘密語）」なら、そのURLへ
-      遷移して発行を受ける（別サイト・別パスは拒否。XSS防止のため URL API で検証のみ）
-    - 失効ページ自体は秘密語を一切保持しない（＝このページを開けても発行はできない）。
-      発行できるのは「当日の秘密語URLを実際に読み取った／開いた」場合だけ。
-    - 読み取りは BarcodeDetector（対応ブラウザ）→ 非対応なら jsQR（/enter?api=jsqr）で代替
-    - PWA（ホーム画面アイコン）内で読み取れば、そのPWAのCookieに直接発行される
+    許可するのは「当日の会場QRアドレス（/<観覧語>/enter/<鍵語>）」を実際に読み取った
+    場合だけ。期限切れ・古い保存URL・古いPWA・素の /enter 等はすべてこの画面で止める。
+    ページ内カメラ等の再入場導線は持たない（＝このページからは二度と入れない）。
+    pwa / enter_api_base 引数は呼び出し互換のため残置（本文では未使用）。
     """
     import html as _html, json as _json
     reason_safe = _html.escape(reason)[:80]
-    note = ('<div class="note">ホーム画面アイコンからでも、上のボタンでそのまま読み取り直せます。</div>' if pwa
-            else '<div class="note">カメラアプリで読み取っても構いません。</div>')
     html = (_BLOCKED_TPL
-            .replace("__PWA_NOTE__", note)
             .replace("__REASON__", reason_safe)
-            .replace("__KEY__", _json.dumps(key))
-            .replace("__ENTER_API_BASE__", _json.dumps(enter_api_base)))
+            .replace("__KEY__", _json.dumps(key)))
     resp = HTMLResponse(html, status_code=403)
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"
