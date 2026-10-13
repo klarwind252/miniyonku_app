@@ -1308,7 +1308,7 @@
               <div>
                 <button type="button"
                         class="btn btn-secondary btn-sm"
-                        onclick="downloadStoreQr({{ s.id }}, '{{ s.name|e }}', '{{ s.qr_url|e }}', '{{ s.slug|e }}')"
+                        onclick="downloadStoreQr({{ s.id }}, '{{ s.name|e }}', '{{ s.qr_url|e }}', '{{ s.slug|e }}', '{{ s.icon_ver|e }}')"
                         {% if not s.qr_url %}disabled title="PUBLIC_BASE_URL未設定"{% endif %}>
                   ⬇️ 参加者QRをDL（高解像度）
                 </button>
@@ -1377,7 +1377,7 @@
 
       <script>
       // 店舗別の参加者QRを生成してDL（共通アイコン＝枠なし元画像を中央に合成）
-      function downloadStoreQr(storeId, storeName, qrUrl, slug){
+      function downloadStoreQr(storeId, storeName, qrUrl, slug, iconVer){
         if(!qrUrl){ alert('PUBLIC_BASE_URL が未設定のため生成できません。'); return; }
         // 入口URLは毎日 09:00 に変わるため、生成直前に当日URLを取り直す
         // （ページを開きっぱなしでも前日分を出さない）。失敗時は描画時点の値を使う。
@@ -1386,11 +1386,13 @@
           .then(function(r){ return r.json(); })
           .then(function(j){ if(j && j.url) qrUrl = j.url; })
           .catch(function(){})
-          .finally(function(){ _downloadStoreQrBuild(storeId, storeName, qrUrl, slug); });
+          .finally(function(){ _downloadStoreQrBuild(storeId, storeName, qrUrl, slug, iconVer); });
       }
-      function _downloadStoreQrBuild(storeId, storeName, qrUrl, slug){
+      function _downloadStoreQrBuild(storeId, storeName, qrUrl, slug, iconVer){
         var prefix = slug ? ('/' + slug) : '';
-        var iconVer = '{{ pwa_icon_ver }}';
+        // iconVer は「その店舗カードの icon_ver」。現在admin店舗の ver を使わない
+        // （使うと他店舗のロゴが出ない/取り違える）。ロゴ画像は prefix(slug) 側を指す＝店舗別。
+        iconVer = iconVer || '';
         // 一時 div に QR を生成
         var holder = document.createElement('div');
         holder.style.position = 'fixed';

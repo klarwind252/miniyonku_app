@@ -353,18 +353,36 @@ function _racerQrRender(url, storeName, logoUrl){
     im.onload=function(){ draw(im); }; im.onerror=function(){ draw(null); }; im.src=logoUrl; }
   else { draw(null); }
 }
+// 入場URL（.../<slug>/<観覧語>/enter/<鍵語> または .../<観覧語>/enter/<鍵語>）から
+// 店舗prefix（スラッグ）を取り出す。QRの内容と必ず同じ店舗のロゴを拾うため。
+function _slugPrefixFromEntryUrl(url){
+  try{
+    var u = new URL(url, location.href);
+    var before = u.pathname.replace(/^\/+/, '').split('/enter/')[0]; // "demo2/viewword" or "viewword"
+    var segs = before.split('/');
+    return (segs.length >= 2 && segs[0]) ? ('/' + segs[0]) : '';
+  }catch(e){ return ''; }
+}
 function openRacerQr(){
-  var prefix = location.pathname.split('/admin')[0];   // 店舗slug（無ければ空）
+  var prefix = location.pathname.split('/admin')[0];   // fetch先の店舗slug（無ければ空）
   var modal = document.getElementById('racerQrModal');
   modal.style.display = 'flex';
   _racerQrDataUrl = '';
   document.getElementById('racerQrCanvas').innerHTML = '';
   document.getElementById('racerQrUrl').textContent = '読み込み中…';
-  var logoUrl = prefix + '/pwa/icon-src-192.png?t=' + Date.now();
   fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'})
     .then(function(r){ return r.json(); })
-    .then(function(j){ _racerQrRender(j.url || (location.origin + prefix + '/enter'), _M4_STORE_NAME, logoUrl); })
-    .catch(function(){ _racerQrRender(location.origin + prefix + '/enter', _M4_STORE_NAME, logoUrl); });
+    .then(function(j){
+      var url = j.url || (location.origin + prefix + '/enter');
+      // ロゴは QR の入場URL が指す店舗のアイコンを使う（設定QRと同じ icon-src-512.png）
+      var logoPfx = _slugPrefixFromEntryUrl(url) || prefix;
+      var logoUrl = logoPfx + '/pwa/icon-src-512.png?t=' + Date.now();
+      _racerQrRender(url, _M4_STORE_NAME, logoUrl);
+    })
+    .catch(function(){
+      var logoUrl = prefix + '/pwa/icon-src-512.png?t=' + Date.now();
+      _racerQrRender(location.origin + prefix + '/enter', _M4_STORE_NAME, logoUrl);
+    });
 }
 function printRacerQr(){
   if(!_racerQrDataUrl){ return; }
