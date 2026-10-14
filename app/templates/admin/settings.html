@@ -931,7 +931,7 @@
         <div class="card-header">レーサー観覧アクセスの強制失効</div>
         <div class="card-body" style="padding:16px">
           <div style="font-size:13px;color:#636e72;line-height:1.8;margin-bottom:12px">
-            発行済みの<b>全端末</b>の観覧許可（12時間）を即時無効化します。
+            発行済みの<b>全端末</b>の観覧許可（当日分・毎日9:00で自動失効／翌8:59まで有効）を即時無効化します。
             観覧中の端末は約30秒以内に失効画面へ切り替わります。<br>
             QRコードは固定のため差し替え不要です。失効させた参加者は、受付時間内にQRを再スキャンすれば復帰できます。
           </div>
@@ -1297,14 +1297,38 @@
             </div>
             {% endif %}
 
-            <div style="display:grid;grid-template-columns:80px 1fr;gap:6px 10px;font-size:12px;align-items:center">
-              <div style="color:#95a5a6">admin</div>
-              <code style="background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.admin_url or '（PUBLIC_BASE_URL未設定）' }}</code>
-              <div style="color:#95a5a6">view</div>
-              <code style="background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.view_url or '（PUBLIC_BASE_URL未設定）' }}</code>
-              <div style="color:#95a5a6">参加者QR</div>
-              <code style="background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.qr_url or '（PUBLIC_BASE_URL未設定）' }}</code>
-              <div style="color:#95a5a6">QR画像</div>
+            <div style="display:grid;grid-template-columns:80px 1fr;gap:6px 10px;font-size:12px;align-items:start">
+              <div style="color:#95a5a6;padding-top:5px">admin</div>
+              <div>
+                <code id="url-admin-{{ s.id }}" style="display:block;background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.admin_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+                {% if s.admin_url %}
+                <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="copyUrl(this,'url-admin-{{ s.id }}')">📋 コピー</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="openUrl('url-admin-{{ s.id }}')">↗️ 別ウインドウで表示</button>
+                </div>
+                {% endif %}
+              </div>
+              <div style="color:#95a5a6;padding-top:5px">view</div>
+              <div>
+                <code id="url-view-{{ s.id }}" style="display:block;background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.view_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+                {% if s.view_url %}
+                <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="copyUrl(this,'url-view-{{ s.id }}')">📋 コピー</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="openUrl('url-view-{{ s.id }}')">↗️ 別ウインドウで表示</button>
+                </div>
+                {% endif %}
+              </div>
+              <div style="color:#95a5a6;padding-top:5px">参加者QR</div>
+              <div>
+                <code id="url-qr-{{ s.id }}" style="display:block;background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.qr_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+                {% if s.qr_url %}
+                <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="copyUrl(this,'url-qr-{{ s.id }}')">📋 コピー</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="openUrl('url-qr-{{ s.id }}')">↗️ 別ウインドウで表示</button>
+                </div>
+                {% endif %}
+              </div>
+              <div style="color:#95a5a6;padding-top:5px">QR画像</div>
               <div>
                 <button type="button"
                         class="btn btn-secondary btn-sm"
@@ -1376,6 +1400,42 @@
       </div>
 
       <script>
+      // 店舗URL（admin / view / 参加者QR）をクリップボードにコピー
+      function copyUrl(btn, id){
+        var el = document.getElementById(id);
+        if(!el) return;
+        var text = (el.textContent || '').trim();
+        if(!text) return;
+        var done = function(){
+          var old = btn.innerHTML;
+          btn.innerHTML = '✅ コピーしました';
+          setTimeout(function(){ btn.innerHTML = old; }, 1200);
+        };
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(text).then(done).catch(function(){ _fallbackCopyUrl(text); done(); });
+        } else {
+          _fallbackCopyUrl(text); done();
+        }
+      }
+      function _fallbackCopyUrl(text){
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        try { document.execCommand('copy'); } catch(e) {}
+        document.body.removeChild(ta);
+      }
+      // 店舗URLを別ウインドウ（新規タブ）で開く
+      function openUrl(id){
+        var el = document.getElementById(id);
+        if(!el) return;
+        var url = (el.textContent || '').trim();
+        if(url) window.open(url, '_blank', 'noopener');
+      }
+
       // 店舗別の参加者QRを生成してDL（共通アイコン＝枠なし元画像を中央に合成）
       function downloadStoreQr(storeId, storeName, qrUrl, slug, iconVer){
         if(!qrUrl){ alert('PUBLIC_BASE_URL が未設定のため生成できません。'); return; }
