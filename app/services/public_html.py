@@ -65,7 +65,7 @@ def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False
 
     有効期限（案①・クライアント側ソフト方式 / 24時間）:
       参加者は QR（/enter）経由でアクセスし、/enter が localStorage に発行時刻を記録する。
-      本ページは発行時刻から24時間以内なら30秒ごとに「更新の有無」を確認し、変化があった
+      本ページは発行時刻から24時間以内なら10秒ごとに「更新の有無」を確認し、変化があった
       ときだけ反映する（ETag条件付きGETで304が返れば何もしない）。超過すると自動更新を止めて
       「QRを読み直してください」のオーバーレイを表示する。単純な再読込では復帰せず、QR
       （/enter）を読み直すと新たな24時間が始まる。判定は全てブラウザ側で完結するため
@@ -207,7 +207,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   window.__M4_FINALIZED__ = __M4FINAL__;   // 結果確定済みなら「次のレースまで」案内を抑止
   var KEY = "m4_pub_issued___SLUGKEY__";
   var TTL = 24*60*60*1000;          // 24時間（サーバーの日境界=翌09:00に合わせる。正確な失効はサーバー判定/scheduleDeadline）
-  var CHECK_MS = 30000;             // 30秒ごとに「更新の有無」だけ確認する
+  var CHECK_MS = 10000;             // 10秒ごとに「更新の有無」だけ確認する（変化なしはETagで304＝最軽量）
   var ENTER = "__ENTERURL__";
   var STATUS = "__STATUSURL__";
   var HANDOFF = "__HANDOFFURL__";
