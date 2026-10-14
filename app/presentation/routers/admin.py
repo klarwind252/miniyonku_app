@@ -914,6 +914,13 @@ async def save_telop(request: Request, db: aiosqlite.Connection = Depends(get_db
     await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('telop_active', ?)", (active,))
     await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('telop_updated_at', ?)", (now,))
     await db.commit()
+    # お知らせ帯の変更を観覧端末へ即時push（SSE）。購読者が居なければ何もしない。
+    try:
+        from app.services import live_events
+        _st = getattr(request.state, "store", None)
+        live_events.publish(_st.id if _st else 0, "telop")
+    except Exception:
+        pass
     return _JSONResponse({"ok": True, "active": active == "1", "text": text, "updated_at": now})
 
 

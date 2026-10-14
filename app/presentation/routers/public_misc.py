@@ -299,6 +299,8 @@ async def _dispatch_enter_api(request: Request):
         return await public_gate_content(request)
     if api == "status":
         return await public_gate_status(request)
+    if api == "events":
+        return await public_gate_events(request)
     if api == "auth":
         return await public_gate_auth(request)
     if api == "handoff":
@@ -596,6 +598,68 @@ async def public_gate_status(request: Request):
                 "x_forwarded_proto": request.headers.get("x-forwarded-proto", ""),
             }
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+
+# SSE（Server-Sent Events）push：アドミン更新→観覧端末へ即時合図。
+# ハートビート間隔（秒）。プロキシ/モバイルのアイドル切断対策＋バッファ検知用。
+_SSE_HEARTBEAT_SEC = 20
+
+
+@router.get("/api/pub-events")
+async def public_gate_events(request: Request):
+    """観覧ページ向けのSSEストリーム。更新時に `update` / `telop` を送る。
+
+    - 正規ルートは /enter?api=events（_dispatch_enter_api 経由）。/api/pub-events でも届く。
+    - 有効な観覧クッキーが無ければ 401（EventSource は onerror→従来ポーリングにフォールバック）。
+    - 接続直後に `ready` を1回送る（プロキシがバッファせず流れていることの検知も兼ねる）。
+    - 以後 _SSE_HEARTBEAT_SEC ごとに `ping`（コメント行）でキープアライブ。
+    - push は live_events のプロセス内 pub/sub から受け取る。配信漏れは観覧側の
+      フォールバック・ポーリングが拾うため、取りこぼし許容の軽量設計。
+    """
+    import asyncio
+    from fastapi.responses import StreamingResponse
+    from app.services import live_events
+
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _enter_common(request)
+    # ゲート有効時のみ接続を受ける（公開エンドポイントの接続洪水・無駄接続を防ぐ）。
+    # secret 未設定（ゲート無効）の環境では誰でも購読可（従来どおり内容側で制御）。
+    if secret and state != "valid":
+        return Response(status_code=401, headers={"Cache-Control": "no-store"})
+
+    sid = store.id if store else 0
+    q = live_events.subscribe(sid)
+    if q is None:
+        # 同時接続上限。503 を返し、観覧側はポーリングのみで動作（機能縮退・安全側）。
+        return Response(status_code=503, headers={"Cache-Control": "no-store",
+                                                  "Retry-After": "30"})
+
+    async def _gen():
+        try:
+            # 接続直後の合図（これが届けばプロキシはバッファしていない＝push有効）。
+            yield "retry: 5000\n"
+            yield "event: ready\ndata: 1\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=_SSE_HEARTBEAT_SEC)
+                    yield f"event: {ev}\ndata: 1\n\n"
+                except asyncio.TimeoutError:
+                    # ハートビート（コメント行）。イベントではないので受信側のハンドラは動かない。
+                    yield ": ping\n\n"
+        except asyncio.CancelledError:
+            raise
+        finally:
+            live_events.unsubscribe(sid, q)
+
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Connection": "keep-alive",
+        # nginx 等のレスポンスバッファを無効化（SSEを即時に流すため）。
+        # 併せて nginx 側で該当 location に proxy_buffering off / gzip off / HTTP1.1 を推奨。
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(_gen(), media_type="text/event-stream", headers=headers)
 
 
 @router.get("/logo")

@@ -193,6 +193,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _handoff_url = f"{_pfx_e}/enter?api=handoff"
     _manifest_url = f"{_pfx_e}/enter?api=manifest"
     _content_url = f"{_pfx_e}/enter?api=content"
+    _events_url = f"{_pfx_e}/enter?api=events"   # SSE（即時push）。失敗時はポーリングにフォールバック
     _history_url = (f"/{slug}/api/history" if slug else "/api/history")
     patched = patched.replace("__HISTORYURL__", _history_url)
     _races_url = (f"/{slug}/api/races" if slug else "/api/races")
@@ -213,6 +214,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
   var HANDOFF = "__HANDOFFURL__";
   var MANIFEST = "__MANIFESTURL__";
   var CONTENT = "__CONTENTURL__";   // 観覧内容（サーバーでクッキー検証してから返す）
+  var EVENTS = "__EVENTSURL__";     // SSE（即時push）。届かない環境ではポーリングにフォールバック
   var handoffDone = false;
 
   function issued(){ try { return parseInt(localStorage.getItem(KEY)||"0",10)||0; } catch(e){ return 0; } }
@@ -496,14 +498,42 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     }).catch(function(){ /* 一時的な通信失敗は無視して次回再試行 */ });
   }
 
+  // ---- ポーリング（SSE断時のフォールバック。SSE接続中は間隔を緩める）----
+  var FAST_MS = CHECK_MS;   // SSE未接続/断：10秒（確実な更新手段）
+  var SLOW_MS = 60000;      // SSE接続中：60秒の安全ハートビート（取りこぼし保険）
+  var pollTimer = null;
+  function startPolling(ms){
+    if(pollTimer){ clearInterval(pollTimer); }
+    pollTimer = setInterval(check, ms);
+  }
+
   // 初回に基準値（ETag/ハッシュ）を取得してから、定期チェックを開始する
   check();
-  setInterval(check, CHECK_MS);
+  startPolling(FAST_MS);
   // バックグラウンドからの復帰・戻る操作でのbfcache復元時は、次のポーリングを待たず即判定
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) check(); });
   window.addEventListener('pageshow', function(ev){ if(ev.persisted) check(); });
+
+  // ---- SSE（Server-Sent Events）による即時push ----
+  // アドミンが更新した瞬間にサーバーから合図が来て、その場で check()/テロップ更新を走らせる。
+  // ・接続直後に届く 'ready' を受信できた時だけポーリングを緩める（＝プロキシがバッファ
+  //   していない＝pushが実際に流れている確証。バッファ環境では ready が来ないので
+  //   10秒ポーリングのまま＝壊れない）。
+  // ・切断/非対応/接続不可では onerror で 10秒ポーリングへ戻す（EventSource は自動再接続）。
+  (function initSSE(){
+    if(typeof EventSource === 'undefined' || !EVENTS){ return; }   // 非対応→ポーリング継続
+    var live = false;
+    function goLive(){ if(!live){ live = true; startPolling(SLOW_MS); } }
+    function goPoll(){ live = false; startPolling(FAST_MS); }
+    var es;
+    try { es = new EventSource(EVENTS); } catch(e){ return; }
+    es.addEventListener('ready',  function(){ goLive(); });
+    es.addEventListener('update', function(){ goLive(); check(); });
+    es.addEventListener('telop',  function(){ goLive(); if(window.__m4TelopPoll){ try { window.__m4TelopPoll(); } catch(e){} } });
+    es.onerror = function(){ goPoll(); };   // 確立できない環境ではポーリングが実質の更新手段
+  })();
 })();
-</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__M4FINAL__", "true" if is_finalized else "false")
+</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__EVENTSURL__", _events_url).replace("__M4FINAL__", "true" if is_finalized else "false")
 
     # bracket レイアウト＋線描画JSを再注入（admin と同一ロジックを保持したものを使用）。
     # connector_js 内で window._bracketDrawConnectors と init() が定義され、ページ内の
@@ -1278,6 +1308,8 @@ window.addEventListener('load', function(){
       .then(function(r){ return r.json(); })
       .then(apply).catch(function(){});
   }
+  /* SSE(即時push)からも呼べるように公開（update/telop受信時に即実行） */
+  window.__m4TelopPoll = poll;
   poll();
   setInterval(poll, 10000);
 })();

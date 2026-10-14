@@ -122,3 +122,11 @@ async def _do_export(key: int) -> None:
         await export_current_html()
     finally:
         current_store.reset(token)
+
+    # 書き出し完了を観覧端末へ即時push（SSE）。購読者が居なければ何もしない。
+    # 失敗してもポーリングで追従するため握りつぶす。
+    try:
+        from app.services import live_events
+        live_events.publish(key, "update")
+    except Exception:
+        pass
