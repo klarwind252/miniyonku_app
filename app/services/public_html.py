@@ -1244,7 +1244,7 @@ window.addEventListener('load', function(){
 })();
 </script>"""
 
-    # お試し（お知らせ帯）テロップ：/api/telop を30秒ごとに確認して帯を出し入れする。
+    # お試し（お知らせ帯）テロップ：/api/telop を10秒ごとに確認して帯を出し入れする。
     # 参加者htmlは <script> が全除去されるため、ここで専用ポーラーを注入する。
     telop_script = ("""<script>
 (function(){
@@ -1279,7 +1279,7 @@ window.addEventListener('load', function(){
       .then(apply).catch(function(){});
   }
   poll();
-  setInterval(poll, 30000);
+  setInterval(poll, 10000);
 })();
 </script>""").replace("__TELOPURL__", _telop_url).replace("__TID__", _tid)
 
