@@ -39,13 +39,29 @@ class M4lapsLicenseMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         licensed = False
         if IS_CLOUD:
-            path = request.url.path
+            # StoreResolverMiddleware より内側で実行されるため、ここでは
+            #   ・scope["path"] はスラッグ除去後（例 "/admin/timing/results"）
+            #   ・request.state.store は解決済みの店舗
+            # になっている。スラッグ付き店舗でも正しい店舗DBを読めるよう、
+            # ContextVare ではなく request.state.store の db_path を使う。
+            path = request.scope.get("path", "") or request.url.path
             # admin画面の表示にだけ必要（ナビ判定）。無駄な判定を避ける。
             if path.startswith("/admin"):
-                try:
-                    licensed = _read_licensed(current_db_path())
-                except Exception:
-                    licensed = False
+                db_path = None
+                store = getattr(request.state, "store", None)
+                if store is not None and getattr(store, "db_path", None):
+                    db_path = store.db_path
+                if db_path is None:
+                    # フォールバック（既定店舗 / 単一店舗）。
+                    try:
+                        db_path = current_db_path()
+                    except Exception:
+                        db_path = None
+                if db_path:
+                    try:
+                        licensed = _read_licensed(db_path)
+                    except Exception:
+                        licensed = False
         request.state.m4laps_licensed = licensed
         return await call_next(request)
 

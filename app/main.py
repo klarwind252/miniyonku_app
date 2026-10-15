@@ -45,9 +45,13 @@ app = FastAPI(title="ミニ四駆レース管理システム", version="1.0.0")
 add_auth(app)
 # オンプレ版のLAN公開時：ONPREM_ADMIN_PIN 設定時のみ /admin をPIN保護（既定は無効＝従来挙動）。
 add_onprem_auth(app)
-add_store_resolver(app)
 # M4LAPSライセンス状態を request.state にセット（クラウドのadmin画面でのみ判定）。
+# 店舗リゾルバより「内側（後に実行）」である必要がある：リゾルバが request.state.store と
+# スラッグ除去後の scope["path"] を用意した後でライセンスDBを読むため、add_store_resolver
+# より先に（＝内側に）登録する。先に登録すると既定店舗のDBしか読めず、スラッグ付き店舗で
+# M4LAPSがナビに出ない不具合になる。
 add_m4laps_license(app)
+add_store_resolver(app)
 # 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
 add_security_headers(app)
 
