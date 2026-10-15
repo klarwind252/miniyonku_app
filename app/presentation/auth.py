@@ -37,7 +37,7 @@ from app.core.config import (
     admin_cookie_name, view_cookie_name,
 )
 
-_PUBLIC_PREFIXES = ("/static", "/health", "/logo", "/favicon", "/enter", "/entry", "/race-asset", "/p/")
+_PUBLIC_PREFIXES = ("/static", "/health", "/logo", "/favicon", "/enter", "/entry", "/race-asset")
 
 
 def _wants_admin(path: str) -> bool:

@@ -31,10 +31,6 @@ from app.presentation.routers.public_entry import router as public_entry_router
 from app.presentation.routers.public_misc import router as public_misc_router
 from app.presentation.routers.pwa_manifest import router as pwa_manifest_router
 from app.presentation.routers.timing_settings import router as timing_settings_router
-from app.presentation.routers.preview import (
-    router as preview_router,
-    admin_router as preview_admin_router,
-)
 from app.presentation.routers.timing_api import router as timing_api_router
 from app.presentation.routers.timing_assign_api import (
     router as timing_assign_router,
@@ -50,10 +46,7 @@ add_auth(app)
 # オンプレ版のLAN公開時：ONPREM_ADMIN_PIN 設定時のみ /admin をPIN保護（既定は無効＝従来挙動）。
 add_onprem_auth(app)
 # M4LAPSライセンス状態を request.state にセット（クラウドのadmin画面でのみ判定）。
-# 店舗リゾルバより「内側（後に実行）」である必要がある：リゾルバが request.state.store と
-# スラッグ除去後の scope["path"] を用意した後でライセンスDBを読むため、add_store_resolver
-# より先に（＝内側に）登録する。先に登録すると既定店舗のDBしか読めず、スラッグ付き店舗で
-# M4LAPSがナビに出ない不具合になる。
+# 店舗リゾルバより内側（後に実行）にする必要があるため add_store_resolver より先に登録する。
 add_m4laps_license(app)
 add_store_resolver(app)
 # 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
@@ -158,9 +151,6 @@ app.include_router(timing_assign_admin_router)
 app.include_router(pwa_manifest_router)
 app.include_router(public_entry_router)
 app.include_router(public_misc_router)
-# 事前告知ページ：公開（/p/<token>）＋ 管理API（/admin/preview/...）
-app.include_router(preview_router)
-app.include_router(preview_admin_router, prefix="/admin/preview")
 
 
 @app.on_event("startup")
