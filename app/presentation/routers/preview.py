@@ -1,7 +1,7 @@
 """店舗固定URLの『事前告知ページ』（開催前お知らせ）。
 
 通常のレース運用（日替わり2語ゲート／観覧URL）とは別系統。店舗ごとに推測され
-にくい恒久トークンURL（/p/<token>）を1本だけ持ち、管理者がモーダルで選んだ
+にくい恒久トークンURL（/api/preview/<token>）を1本だけ持ち、管理者がモーダルで選んだ
 「未開催レース」1件の情報（レース情報・事前エントリー・コースレイアウト・
 タイムスケジュール・備考）を読み取り専用で表示する。
 
@@ -15,8 +15,9 @@
     Googleフォーム反映・手動反映で更新された内容は、ユーザーが再読込（または開き直し）
     したときに反映される。
 
-公開ルーター（router）は /p/... 、管理ルーター（admin_router）は /admin/preview/... で
-main.py から登録する。/admin/preview/* は既存のクラウド認証（admin Cookie）で保護される。
+公開ルーター（router）は /api/preview/<token>（nginxが既にアプリへ転送する /api 配下＝
+nginx設定変更不要）、管理ルーター（admin_router）は /admin/preview/... で main.py から登録する。
+/admin/preview/* は既存のクラウド認証（admin Cookie）で保護される。
 """
 from __future__ import annotations
 
@@ -176,7 +177,7 @@ async def _resolve_target(db: aiosqlite.Connection):
 # はしない。Googleフォーム反映・手動反映で更新された内容は、ユーザーが再読込（または
 # 開き直し）したときに反映される。
 
-@router.get("/p/{token}", response_class=HTMLResponse)
+@router.get("/api/preview/{token}", response_class=HTMLResponse)
 async def preview_page(token: str, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     real = await ensure_preview_token(db)
     if (not token) or (not secrets.compare_digest(token, real)):
@@ -240,7 +241,7 @@ async def preview_admin_info(request: Request, db: aiosqlite.Connection = Depend
     base = _public_base(request)
     return JSONResponse({
         "token": token,
-        "url": f"{base}/p/{token}",
+        "url": f"{base}/api/preview/{token}",
         "selected_tid": selected_tid,
         "races": races,
     })
@@ -264,4 +265,4 @@ async def preview_admin_select(request: Request, db: aiosqlite.Connection = Depe
 
     token = await ensure_preview_token(db)
     base = _public_base(request)
-    return JSONResponse({"ok": True, "url": f"{base}/p/{token}", "selected_tid": tid})
+    return JSONResponse({"ok": True, "url": f"{base}/api/preview/{token}", "selected_tid": tid})

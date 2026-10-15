@@ -70,7 +70,7 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#0f19
   min-height:auto;text-align:center;padding:18px 12px 6px;
   position:relative;z-index:2;   /* 画像(.v-standby-images z-index:1)より必ず前面 */
 }
-.v-waiting h1{font-size:48px;color:#2980b9;margin-bottom:16px;text-shadow:0 2px 6px rgba(0,0,0,.55)}
+.v-waiting h1{font-size:48px;color:#2980b9;margin-bottom:16px;text-shadow:0 2px 6px rgba(0,0,0,.55);max-width:100%;overflow-wrap:anywhere;word-break:break-word}
 .v-waiting p{font-size:18px;color:#eaf2fb;text-shadow:0 1px 4px rgba(0,0,0,.75)}
 .v-waiting .dot-anim::after{content:'...';animation:dots 1.5s infinite}
 @keyframes dots{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}

@@ -31,6 +31,10 @@ from app.presentation.routers.public_entry import router as public_entry_router
 from app.presentation.routers.public_misc import router as public_misc_router
 from app.presentation.routers.pwa_manifest import router as pwa_manifest_router
 from app.presentation.routers.timing_settings import router as timing_settings_router
+from app.presentation.routers.preview import (
+    router as preview_router,
+    admin_router as preview_admin_router,
+)
 from app.presentation.routers.timing_api import router as timing_api_router
 from app.presentation.routers.timing_assign_api import (
     router as timing_assign_router,
@@ -150,6 +154,9 @@ app.include_router(timing_assign_admin_router)
 app.include_router(pwa_manifest_router)
 app.include_router(public_entry_router)
 app.include_router(public_misc_router)
+# 事前告知ページ：公開（/api/preview/<token>）＋ 管理API（/admin/preview/...）
+app.include_router(preview_router)
+app.include_router(preview_admin_router, prefix="/admin/preview")
 
 
 @app.on_event("startup")

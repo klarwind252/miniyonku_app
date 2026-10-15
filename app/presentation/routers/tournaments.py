@@ -516,6 +516,12 @@ async def tournament_add(
             ("1" if qual_heat_exclude else "0",),
         )
     await db.commit()
+    # 事前告知ページの恒久URLトークンを自動発行（店舗DBごとに1本・未発行時のみ）。
+    try:
+        from app.presentation.routers.preview import ensure_preview_token
+        await ensure_preview_token(db)
+    except Exception:
+        pass
     return RedirectResponse(url="/admin/tournaments/", status_code=303)
 
 
