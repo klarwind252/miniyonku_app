@@ -48,7 +48,7 @@
     min-width:120px; max-width:100%; overflow-wrap:anywhere; word-break:break-word}
   .chip .no{font-variant-numeric:tabular-nums; font-weight:700; color:var(--accent);
     background:#eaf1ff; border-radius:6px; padding:1px 7px; font-size:13px}
-  .chip .kid{font-size:11px; color:#fff; background:#16a085; border-radius:6px; padding:1px 6px}
+  .chip .kid{font-size:11px; font-weight:700; color:#fff; background:#e74c3c; border-radius:6px; padding:1px 6px}
   .chip .walk{font-size:11px; color:#fff; background:#8e44ad; border-radius:6px; padding:1px 6px}
   .empty{color:#95a5a6; font-size:14px; text-align:center; padding:22px}
   .detail-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px}
@@ -127,7 +127,7 @@
           <div class="chip">
             <span class="no">{{ '%03d'|format(p.seq_no) if p.seq_no is not none else '―' }}</span>
             <span>{{ p.name }}</span>
-            {% if p.is_child %}<span class="kid">ジュニア</span>{% endif %}
+            {% if p.is_child %}<span class="kid">Jr.</span>{% endif %}
             {% if p.is_walkin %}<span class="walk">当日</span>{% endif %}
           </div>
           {% endfor %}
