@@ -29,7 +29,7 @@ from app import registry
 from app.core.store_context import Store, current_store
 
 # 既定店舗のアプリパス（これらが先頭ならスラッグ解決をスキップ）
-_APP_PREFIXES = ("admin", "view", "static", "logo", "health", "api", "enter", "favicon")
+_APP_PREFIXES = ("admin", "view", "static", "logo", "health", "api", "enter", "favicon", "p")
 
 # HTML本文中で前置対象にする絶対パス接頭辞
 _REWRITE_RE = re.compile(r"([\"'`])(/(?:admin|view|static|logo|health|api|enter)\b)")

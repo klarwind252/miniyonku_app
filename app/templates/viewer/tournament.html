@@ -142,10 +142,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {% if finalists %}<tr><td>決勝進出予定</td><td><strong>{{ finalists }} 名</strong></td></tr>{% endif %}
     {% endif %}
   </div>
-  <div style="display:flex;gap:16px;margin-top:8px;padding:6px 14px;font-size:13px;color:#7f8c8d">
-    {% if m4laps_active and t.use_m4laps != 0 %}<span>⚡ <strong style="color:#ecf0f1">M4LAPS使用</strong></span>{% endif %}
-    <span>🏁 レーン数 <strong style="color:#ecf0f1">{{ t.lane_count }}</strong></span>
-    {% if t.note %}<span>📝 {{ t.note }}</span>{% endif %}
+  <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px;padding:6px 14px;font-size:13px;color:#7f8c8d">
+    {% if m4laps_active and t.use_m4laps != 0 %}<span style="white-space:nowrap">⚡ <strong style="color:#ecf0f1">M4LAPS使用</strong></span>{% endif %}
+    <span style="white-space:nowrap">🏁 レーン数 <strong style="color:#ecf0f1">{{ t.lane_count }}</strong></span>
+    {% if t.note %}<span style="flex-basis:100%;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">📝 {{ t.note }}</span>{% endif %}
   </div>
 </div>
 

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if t %}{{ t.name }} ｜ 事前告知{% else %}事前告知{% endif %}</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#ffffff; --ink:#2c3e50; --sub:#636e72;
+    --line:#e6e9ec; --accent:#2563eb; --accent2:#e67e22; --ok:#27ae60;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",
+      Arial,"Hiragino Kaku Gothic ProN","Meiryo",sans-serif;
+  }
+  .wrap{max-width:720px; margin:0 auto; padding:16px 14px 48px}
+  .topbar{display:flex; align-items:center; gap:10px; padding:6px 2px 14px}
+  .topbar .logo{height:30px; width:auto}
+  .topbar .store{font-weight:700; font-size:15px; color:var(--sub)}
+  .live{margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+    font-size:12px; color:var(--sub)}
+  .live .dot{width:8px; height:8px; border-radius:50%; background:var(--ok);
+    animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .hero{background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:18px 18px 16px; margin-bottom:14px}
+  .hero .badge{display:inline-block; font-size:12px; font-weight:700; color:#fff;
+    background:var(--accent2); padding:3px 10px; border-radius:999px; margin-bottom:8px}
+  .hero h1{margin:0; font-size:22px; line-height:1.3}
+  .hero .date{margin:6px 0 0; color:var(--sub); font-size:14px; font-weight:600}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:14px; overflow:hidden}
+  .card-h{font-weight:700; font-size:15px; padding:13px 18px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:8px}
+  .card-b{padding:14px 18px}
+  table.info{width:100%; border-collapse:collapse}
+  table.info{table-layout:fixed}
+  table.info td{padding:7px 0; vertical-align:top; border-bottom:1px solid #f1f3f5; font-size:14px; overflow-wrap:anywhere; word-break:break-word}
+  table.info tr:last-child td{border-bottom:none}
+  table.info td.k{color:var(--sub); font-size:13px; width:132px; white-space:nowrap}
+  .pts span{white-space:nowrap; margin-right:10px}
+  .count{color:var(--sub); font-weight:400; font-size:13px; margin-left:6px}
+  .entries{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{display:flex; align-items:center; gap:8px; background:#f7f9fb;
+    border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:14px;
+    min-width:120px; max-width:100%; overflow-wrap:anywhere; word-break:break-word}
+  .chip .no{font-variant-numeric:tabular-nums; font-weight:700; color:var(--accent);
+    background:#eaf1ff; border-radius:6px; padding:1px 7px; font-size:13px}
+  .chip .kid{font-size:11px; color:#fff; background:#16a085; border-radius:6px; padding:1px 6px}
+  .chip .walk{font-size:11px; color:#fff; background:#8e44ad; border-radius:6px; padding:1px 6px}
+  .empty{color:#95a5a6; font-size:14px; text-align:center; padding:22px}
+  .detail-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px}
+  .detail-grid h4{margin:0 0 10px; font-size:14px; color:var(--ink);
+    border-bottom:2px solid var(--line); padding-bottom:6px}
+  figure{margin:0}
+  figure img{max-width:100%; border:1px solid var(--line); border-radius:8px; display:block}
+  figcaption{font-size:12px; color:var(--sub); margin-top:4px}
+  .ssched{white-space:pre-wrap; font-size:14px; color:var(--ink); margin-bottom:12px; overflow-wrap:anywhere; word-break:break-word}
+  .foot{text-align:center; color:#9aa5af; font-size:12px; margin-top:22px; line-height:1.7}
+  .closed-box{background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:40px 24px; text-align:center; margin-top:28px}
+  .closed-box .ico{font-size:40px}
+  .closed-box h2{margin:12px 0 6px; font-size:18px}
+  .closed-box p{margin:4px 0; color:var(--sub); font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <img class="logo" src="{{ prefix }}/logo" alt="" onerror="this.style.display='none'">
+    {% if store_name %}<span class="store">{{ store_name }}</span>{% endif %}
+    {% if t and state == 'ok' %}
+    <button type="button" class="live" onclick="location.reload()" style="border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--sub)">🔄 更新</button>
+    {% endif %}
+  </div>
+
+  {% if not t or state == 'none' %}
+    <div class="closed-box">
+      <div class="ico">🗓️</div>
+      <h2>ただいま事前告知はありません</h2>
+      <p>現在お知らせ中のレースがありません。</p>
+      <p>準備が整うまでしばらくお待ちください。</p>
+    </div>
+
+  {% elif state == 'closed' %}
+    <div class="closed-box">
+      <div class="ico">🏁</div>
+      <h2>この事前告知は終了しました</h2>
+      <p>「{{ t.name }}」（{{ t.date }}）は開催日を過ぎたため、</p>
+      <p>このページはご覧いただけません。</p>
+    </div>
+
+  {% else %}
+    <div class="hero">
+      <span class="badge">📣 事前告知</span>
+      <h1>{{ t.name }}</h1>
+      <p class="date">🗓️ {{ t.date }}</p>
+    </div>
+
+    <!-- レース情報 -->
+    <div class="card">
+      <div class="card-h">📋 レース情報</div>
+      <div class="card-b">
+        <table class="info">
+          <tr><td class="k">時間帯</td>
+              <td>{% if t.time_slot == 'free' %}{{ t.time_slot_free or '-' }}{% else %}{{ time_slot_labels.get(t.time_slot, '-') }}{% endif %}</td></tr>
+          <tr><td class="k">レギュレーション</td>
+              <td>{{ regulation_labels.get(t.regulation, t.regulation or '-') }}</td></tr>
+          <tr><td class="k">予選形式</td>
+              <td>{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type or '-') }}</td></tr>
+
+          {% if t.qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
+          <tr><td class="k">ヒート数</td><td><strong>{{ t.qual_heat_count }}</strong> ヒート</td></tr>
+          {% if (t.qual_group_count or 1) > 1 %}
+          <tr><td class="k">グループ数</td><td><strong>{{ t.qual_group_count }}</strong> グループ</td></tr>
+          {% endif %}
+          <tr><td class="k">ヒート通過人数</td><td>各ヒート上位 <strong>{{ t.qual_group_advance or t.qual_heat_advance }}</strong> 名</td></tr>
+          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
+
+          {% elif t.qualifying_type == 'heat_roundrobin' %}
+          <tr><td class="k">ヒート数</td><td><strong>{{ t.qual_heat_count }}</strong> ヒート</td></tr>
+          <tr><td class="k">グループ数</td><td><strong>{{ t.qual_group_count }}</strong> グループ</td></tr>
+          <tr><td class="k">グループ通過人数</td><td>グループ上位 <strong>{{ t.qual_group_advance }}</strong> 名</td></tr>
+          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
+
+          {% elif t.qualifying_type == 'point' %}
+          <tr><td class="k">予選回数</td><td><strong>{{ t.qual_round_count or 1 }}</strong> 回</td></tr>
+          <tr><td class="k">決勝進出人数</td><td><strong>{{ finalists or t.qual_final_advance }}</strong> 名</td></tr>
+          <tr><td class="k">ポイント配点</td><td class="pts">
+            <span style="color:#d4a017">🏆 1位 {{ t.point_1st if t.point_1st is not none else 3 }}pt</span>
+            <span style="color:#888">🥈 2位 {{ t.point_2nd if t.point_2nd is not none else 2 }}pt</span>
+            <span style="color:#cd7f32">🥉 3位 {{ t.point_3rd if t.point_3rd is not none else 1 }}pt</span>
+            <span style="color:#e74c3c">💥 CO {{ t.point_co if t.point_co is not none else 0 }}pt</span>
+          </td></tr>
+
+          {% elif t.qualifying_type in ('order','order_winner') %}
+          <tr><td class="k">ポイント配点</td><td class="pts">
+            <span style="color:#d4a017">🏆 1位 {{ t.point_1st if t.point_1st is not none else 3 }}pt</span>
+            <span style="color:#888">🥈 2位 {{ t.point_2nd if t.point_2nd is not none else 2 }}pt</span>
+            <span style="color:#cd7f32">🥉 3位 {{ t.point_3rd if t.point_3rd is not none else 1 }}pt</span>
+            <span style="color:#e74c3c">💥 CO {{ t.point_co if t.point_co is not none else 0 }}pt</span>
+          </td></tr>
+          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
+
+          {% elif t.qualifying_type == 'time_attack' %}
+          <tr><td class="k">走行回数</td><td><strong>{{ t.qual_ta_runs or 3 }}</strong> 回</td></tr>
+          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
+
+          {% elif finalists %}
+          <tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>
+          {% endif %}
+
+          {% if t.lane_count %}<tr><td class="k">レーン数</td><td><strong>{{ t.lane_count }}</strong> レーン</td></tr>{% endif %}
+          <tr><td class="k">M4LAPS</td>
+              <td>{% if t.use_m4laps != 0 %}<span style="color:var(--accent);font-weight:700">使用</span>{% else %}<span style="color:#95a5a6">不使用</span>{% endif %}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    {% if t.pre_entry %}
+    <!-- 事前エントリー -->
+    <div class="card">
+      <div class="card-h">👥 事前エントリー<span class="count">{{ pre_entries|length }}名</span></div>
+      <div class="card-b">
+        {% if pre_entries %}
+        <div class="entries">
+          {% for p in pre_entries %}
+          <div class="chip">
+            <span class="no">{{ '%03d'|format(p.seq_no) if p.seq_no is not none else '―' }}</span>
+            <span>{{ p.name }}</span>
+            {% if p.is_child %}<span class="kid">ジュニア</span>{% endif %}
+            {% if p.is_walkin %}<span class="walk">当日</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">まだ事前エントリーはありません。</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% set _course = (race_assets.get('course', []) if race_assets else []) %}
+    {% set _sched = (race_assets.get('schedule', []) if race_assets else []) %}
+    {% set _remarks = (race_assets.get('remarks', []) if race_assets else []) %}
+    {% if _course or _sched or t.time_schedule or _remarks or t.note %}
+    <!-- コースレイアウト / タイムスケジュール / 備考 -->
+    <div class="card">
+      <div class="card-h">🗺️ レース詳細情報</div>
+      <div class="card-b">
+        <div class="detail-grid">
+          <div>
+            <h4>🗺️ コースレイアウト</h4>
+            {% if _course %}
+            <div style="display:flex;flex-direction:column;gap:12px">
+              {% for a in _course %}
+              <figure><img src="{{ a.data_uri }}" alt="{{ a.name }}">{% if a.name %}<figcaption>{{ a.name }}</figcaption>{% endif %}</figure>
+              {% endfor %}
+            </div>
+            {% else %}<div class="empty" style="padding:8px 0;text-align:left">（未登録）</div>{% endif %}
+          </div>
+          <div>
+            <h4>🕒 タイムスケジュール</h4>
+            {% if t.time_schedule %}<div class="ssched">{{ t.time_schedule }}</div>{% endif %}
+            {% if _sched %}
+            <div style="display:flex;flex-direction:column;gap:12px">
+              {% for a in _sched %}
+              <figure><img src="{{ a.data_uri }}" alt="{{ a.name }}">{% if a.name %}<figcaption>{{ a.name }}</figcaption>{% endif %}</figure>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if not t.time_schedule and not _sched %}<div class="empty" style="padding:8px 0;text-align:left">（未登録）</div>{% endif %}
+          </div>
+        </div>
+        {% if t.note or _remarks %}
+        <div style="margin-top:22px">
+          <h4 style="margin:0 0 10px;font-size:14px;border-bottom:2px solid var(--line);padding-bottom:6px">📝 備考</h4>
+          {% if t.note %}<div class="ssched">{{ t.note }}</div>{% endif %}
+          {% if _remarks %}
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+            {% for a in _remarks %}
+            <figure><img src="{{ a.data_uri }}" alt="{{ a.name }}">{% if a.name %}<figcaption>{{ a.name }}</figcaption>{% endif %}</figure>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="foot">
+      このページは開催前のお知らせ用です。内容は予告なく変更される場合があります。<br>
+      最新の情報は「🔄 更新」または再読み込みでご確認ください。<span id="loadstamp"></span>
+    </div>
+  {% endif %}
+
+</div>
+
+<script>
+(function(){
+  // 追従なし。読み込み時点の内容を表示する普通のページ。表示時刻だけ添える。
+  try{
+    var el=document.getElementById('loadstamp');
+    if(el){ el.textContent=' （表示時刻 '+new Date().toLocaleString('ja-JP')+'）'; }
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
