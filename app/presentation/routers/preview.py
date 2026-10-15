@@ -154,9 +154,12 @@ async def _load_assets(db: aiosqlite.Connection, tid: int) -> dict:
 
 
 async def _load_pre_entries(db: aiosqlite.Connection, tid: int) -> list:
+    # 事前エントリーのみ表示する。受付スキャンで本エントリーへ昇格済み（checked_in=1）は
+    # 「本エントリー」扱いなので一覧から除外する（管理画面の事前エントリー一覧と同条件）。
     async with db.execute(
         "SELECT seq_no, name, yomi, prefecture, is_child, is_walkin "
-        "FROM pre_entries WHERE tournament_id=? ORDER BY seq_no",
+        "FROM pre_entries WHERE tournament_id=? AND COALESCE(checked_in,0)=0 "
+        "ORDER BY seq_no",
         (tid,),
     ) as cur:
         return await cur.fetchall()

@@ -714,6 +714,48 @@ _history_cache = {}      # store_id -> (monotonic_ts, data)
 _HISTORY_TTL = 60        # 集計は結果確定時しか変わらないため60秒キャッシュ
 
 
+# 「観覧に戻る」のリンク先を安全に決める。
+#   遷移元(Referer)が「同一オリジンの観覧ページ」なら、そのURLへ直接戻す。
+#   → 別タブで開いても戻れる／観覧ページを新規に開き直す＝追従(SSE)も再開する。
+#   取得不可・または遷移元が結果/成績/API・管理・静的・レース詳細のときは、
+#   従来どおり history.back() にフォールバックする。
+#   Referer はブラウザ設定値だが、同一オリジン(scheme+host一致)のみ採用し、
+#   href はテンプレート側で自動エスケープされるため安全。
+# 観覧として戻してはいけない先頭セグメント（結果/成績/API・管理・静的・入場 等）。
+_BACK_EXCLUDE_FIRST = {
+    "api", "admin", "static", "logo", "health", "favicon", "enter", "entry",
+}
+
+
+def _safe_back_href(request) -> str:
+    try:
+        from urllib.parse import urlparse
+        ref = (request.headers.get("referer", "") or "").strip()
+        if not ref:
+            return "javascript:history.back()"
+        u = urlparse(ref)
+        host = request.headers.get("host", "")
+        if not (u.scheme in ("http", "https") and u.netloc and u.netloc == host):
+            return "javascript:history.back()"
+
+        path = u.path or "/"
+        # 店舗スラッグ(/acecup 等)を除いた相対パスで判定する。
+        store = getattr(request.state, "store", None)
+        slug = (getattr(store, "slug", "") or "")
+        rel = path
+        if slug and (path == f"/{slug}" or path.startswith(f"/{slug}/")):
+            rel = path[len(f"/{slug}"):] or "/"
+
+        seg = rel.lstrip("/").split("/", 1)[0]
+        low = (rel.rstrip("/") or "/")
+        # 結果詳細(/view/tournament/...)や上記セグメントへは戻さない。観覧(2語URL等)のみ許可。
+        if seg in _BACK_EXCLUDE_FIRST or low.startswith("/view/tournament"):
+            return "javascript:history.back()"
+        return ref
+    except Exception:
+        return "javascript:history.back()"
+
+
 @router.get("/api/history", response_class=HTMLResponse)
 async def public_history(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページを返す（公開）。"""
@@ -733,7 +775,7 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
     return _templates.TemplateResponse("viewer/history.html", {
         "request": request,
         "prefix": (f"/{slug}" if slug else ""),
-        "back_href": "javascript:history.back()",
+        "back_href": _safe_back_href(request),
         "race_total": data.get("race_total", 0),
         "open_total": data.get("open_total", 0),
         "ltd_total": data.get("ltd_total", 0),
@@ -843,7 +885,7 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
     shown = len(races)
     return _templates.TemplateResponse("viewer/races.html", {
         "request": request, "prefix": prefix,
-        "back_href": "javascript:history.back()",
+        "back_href": _safe_back_href(request),
         "m4laps": bool(licensed),
         "races": races, "total": total, "shown": shown,
         "page_size": _RACES_PAGE, "next_offset": shown,
