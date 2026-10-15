@@ -1689,6 +1689,30 @@ function _showPubToast(msg) {
 
   window.paClose = function(){ el('paOverlay').style.display='none'; };
 
+  window.paCopy = function(){
+    var inp = el('paUrl');
+    var text = inp ? inp.value : '';
+    if(!text){ return; }
+    function done(){ el('paMsg').style.color='#27ae60'; el('paMsg').textContent='✓ URLをコピーしました'; }
+    function fallback(){
+      try{
+        inp.removeAttribute('readonly');
+        inp.focus(); inp.select(); inp.setSelectionRange(0, text.length);
+        var ok = document.execCommand('copy');
+        inp.setAttribute('readonly','readonly');
+        if(ok){ done(); } else { throw new Error('execCommand'); }
+      }catch(e){
+        el('paMsg').style.color='#e67e22';
+        el('paMsg').textContent='自動コピーできませんでした。URLを長押し／右クリックでコピーしてください。';
+      }
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    }else{
+      fallback();
+    }
+  };
+
   window.paSelect = function(tid){
     var fd = new FormData(); fd.append('tournament_id', tid);
     el('paMsg').style.color='#636e72'; el('paMsg').textContent='保存中…';

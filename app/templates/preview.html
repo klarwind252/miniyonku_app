@@ -97,13 +97,14 @@
     <div class="hero">
       <span class="badge">📣 事前告知</span>
       <h1>{{ t.name }}</h1>
-      <p class="date">🗓️ {{ t.date }}</p>
+      <p class="date">🗓️ {{ date_fmt or t.date }}</p>
     </div>
 
     <!-- レース情報 -->
     <div class="card">
       <div class="card-h">📋 レース情報</div>
       <div class="card-b">
+        {# 当日状況で変わる項目は載せない。固定的な3項目のみ表示。 #}
         <table class="info">
           <tr><td class="k">時間帯</td>
               <td>{% if t.time_slot == 'free' %}{{ t.time_slot_free or '-' }}{% else %}{{ time_slot_labels.get(t.time_slot, '-') }}{% endif %}</td></tr>
@@ -111,51 +112,6 @@
               <td>{{ regulation_labels.get(t.regulation, t.regulation or '-') }}</td></tr>
           <tr><td class="k">予選形式</td>
               <td>{{ qualifying_labels.get(t.qualifying_type, t.qualifying_type or '-') }}</td></tr>
-
-          {% if t.qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
-          <tr><td class="k">ヒート数</td><td><strong>{{ t.qual_heat_count }}</strong> ヒート</td></tr>
-          {% if (t.qual_group_count or 1) > 1 %}
-          <tr><td class="k">グループ数</td><td><strong>{{ t.qual_group_count }}</strong> グループ</td></tr>
-          {% endif %}
-          <tr><td class="k">ヒート通過人数</td><td>各ヒート上位 <strong>{{ t.qual_group_advance or t.qual_heat_advance }}</strong> 名</td></tr>
-          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
-
-          {% elif t.qualifying_type == 'heat_roundrobin' %}
-          <tr><td class="k">ヒート数</td><td><strong>{{ t.qual_heat_count }}</strong> ヒート</td></tr>
-          <tr><td class="k">グループ数</td><td><strong>{{ t.qual_group_count }}</strong> グループ</td></tr>
-          <tr><td class="k">グループ通過人数</td><td>グループ上位 <strong>{{ t.qual_group_advance }}</strong> 名</td></tr>
-          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
-
-          {% elif t.qualifying_type == 'point' %}
-          <tr><td class="k">予選回数</td><td><strong>{{ t.qual_round_count or 1 }}</strong> 回</td></tr>
-          <tr><td class="k">決勝進出人数</td><td><strong>{{ finalists or t.qual_final_advance }}</strong> 名</td></tr>
-          <tr><td class="k">ポイント配点</td><td class="pts">
-            <span style="color:#d4a017">🏆 1位 {{ t.point_1st if t.point_1st is not none else 3 }}pt</span>
-            <span style="color:#888">🥈 2位 {{ t.point_2nd if t.point_2nd is not none else 2 }}pt</span>
-            <span style="color:#cd7f32">🥉 3位 {{ t.point_3rd if t.point_3rd is not none else 1 }}pt</span>
-            <span style="color:#e74c3c">💥 CO {{ t.point_co if t.point_co is not none else 0 }}pt</span>
-          </td></tr>
-
-          {% elif t.qualifying_type in ('order','order_winner') %}
-          <tr><td class="k">ポイント配点</td><td class="pts">
-            <span style="color:#d4a017">🏆 1位 {{ t.point_1st if t.point_1st is not none else 3 }}pt</span>
-            <span style="color:#888">🥈 2位 {{ t.point_2nd if t.point_2nd is not none else 2 }}pt</span>
-            <span style="color:#cd7f32">🥉 3位 {{ t.point_3rd if t.point_3rd is not none else 1 }}pt</span>
-            <span style="color:#e74c3c">💥 CO {{ t.point_co if t.point_co is not none else 0 }}pt</span>
-          </td></tr>
-          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
-
-          {% elif t.qualifying_type == 'time_attack' %}
-          <tr><td class="k">走行回数</td><td><strong>{{ t.qual_ta_runs or 3 }}</strong> 回</td></tr>
-          {% if finalists %}<tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>{% endif %}
-
-          {% elif finalists %}
-          <tr><td class="k">決勝進出人数</td><td><strong>{{ finalists }}</strong> 名</td></tr>
-          {% endif %}
-
-          {% if t.lane_count %}<tr><td class="k">レーン数</td><td><strong>{{ t.lane_count }}</strong> レーン</td></tr>{% endif %}
-          <tr><td class="k">M4LAPS</td>
-              <td>{% if t.use_m4laps != 0 %}<span style="color:var(--accent);font-weight:700">使用</span>{% else %}<span style="color:#95a5a6">不使用</span>{% endif %}</td></tr>
         </table>
       </div>
     </div>
@@ -204,7 +160,7 @@
           </div>
           <div>
             <h4>🕒 タイムスケジュール</h4>
-            {% if t.time_schedule %}<div class="ssched">{{ t.time_schedule }}</div>{% endif %}
+            {% if t.time_schedule %}<div class="ssched">{{ t.time_schedule | linkify }}</div>{% endif %}
             {% if _sched %}
             <div style="display:flex;flex-direction:column;gap:12px">
               {% for a in _sched %}
@@ -218,7 +174,7 @@
         {% if t.note or _remarks %}
         <div style="margin-top:22px">
           <h4 style="margin:0 0 10px;font-size:14px;border-bottom:2px solid var(--line);padding-bottom:6px">📝 備考</h4>
-          {% if t.note %}<div class="ssched">{{ t.note }}</div>{% endif %}
+          {% if t.note %}<div class="ssched">{{ t.note | linkify }}</div>{% endif %}
           {% if _remarks %}
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
             {% for a in _remarks %}

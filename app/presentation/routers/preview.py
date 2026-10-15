@@ -27,12 +27,52 @@ import aiosqlite
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 
+import html as _html
+import re as _re
+from markupsafe import Markup
+
 from app.infrastructure.db.connection import get_db
 from app.presentation.templates import templates
 from app.domain.finalists import calc_finalists
 from app.presentation.routers.tournaments import (
     TIME_SLOT_LABELS, QUALIFYING_LABELS, get_regulation_labels,
 )
+
+# ── URL自動リンク化（備考・タイムスケジュール等のテキスト用）────────────────
+#   テキストをHTMLエスケープしてから http(s):// のURLを <a> に変換する。
+#   先にエスケープするので XSS 安全（& は &amp; になり、href 属性としても正しい）。
+_URL_RE = _re.compile(r'(https?://[^\s<>"\')]+)')
+
+
+def _linkify(text) -> Markup:
+    if not text:
+        return Markup("")
+    esc = _html.escape(str(text))
+
+    def _repl(m):
+        u = m.group(1)
+        return (f'<a href="{u}" target="_blank" rel="noopener" '
+                f'style="color:#2563eb;text-decoration:underline;word-break:break-all">{u}</a>')
+
+    return Markup(_URL_RE.sub(_repl, esc))
+
+
+# テンプレートから {{ value | linkify }} で使えるよう登録（既存があれば尊重）。
+templates.env.filters.setdefault("linkify", _linkify)
+
+_WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+def _format_date_ja(s) -> str:
+    """'2026-12-13' → '2026年12月13日（日）'。失敗時は元文字列。"""
+    import datetime
+    if not s:
+        return ""
+    try:
+        d = datetime.date.fromisoformat(str(s).strip()[:10])
+        return f"{d.year}年{d.month}月{d.day}日（{_WEEKDAYS_JA[d.weekday()]}）"
+    except Exception:
+        return str(s)
 
 router = APIRouter()        # 公開：/p/...
 admin_router = APIRouter()  # 管理：/admin/preview/...
@@ -201,6 +241,7 @@ async def preview_page(token: str, request: Request, db: aiosqlite.Connection = 
         "request": request,
         "t": td,
         "state": state,
+        "date_fmt": _format_date_ja(td.get("date")),
         "prefix": prefix,
         "store_name": await _store_name(db, request),
         "pre_entries": pre_entries,
