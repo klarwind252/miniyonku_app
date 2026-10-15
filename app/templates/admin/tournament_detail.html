@@ -564,8 +564,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <span class="pre-name-text"
                 {% if not is_finalized %}onclick="editPreEntryName(this)" title="クリックで名前を変更"{% endif %}
                 style="font-weight:bold;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{% if not is_finalized %}cursor:text{% endif %}">{{ p.name }}</span>
+          {% if p.is_child %}<span title="ジュニア（子供）" style="flex-shrink:0;font-size:10px;font-weight:bold;color:#fff;background:#e74c3c;padding:2px 6px;border-radius:10px">Jr.</span>{% endif %}
         </div>
-        {% if p.is_child %}<span title="ジュニア（子供）" style="flex-shrink:0;font-size:10px;font-weight:bold;color:#fff;background:#e74c3c;padding:2px 7px;border-radius:10px">Jr</span>{% endif %}
         {% if p.is_walkin %}<span style="flex-shrink:0;font-size:10px;font-weight:bold;color:#e67e22;background:#fdf2e9;padding:2px 7px;border-radius:10px">当日</span>{% endif %}
         <form method="post" action="/admin/tournaments/{{ t.id }}/remove-pre-entry/{{ p.id }}"
               onsubmit="return confirmRemovePreEntry(this)"
