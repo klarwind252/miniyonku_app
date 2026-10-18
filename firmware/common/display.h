@@ -129,7 +129,7 @@ static bool s_time_ok = false;
 
 static void begin() {
   s_tft.init();
-  s_tft.setRotation(3);           // 横向き 320x240
+  s_tft.setRotation(1);           // 横向き 320x240
   s_tft.fillScreen(C_BLACK);
   // PSRAMに 320x240x16bit(=150KB) スプライト確保（docs/02・20.6）
   s_spr.setColorDepth(16);

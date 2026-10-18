@@ -118,35 +118,83 @@ static constexpr uint32_t DEBOUNCE_MS   = 20;
 //   旧 RESET_HOLD_MS(600ms長押し)・OVERRIDE_HOLD_MS(灰3秒で封じ強制解除) は未使用の死に定義
 //   だったため削除。関連する「長押し」前提のコメントも本改修で撤去した。
 
-// ---- ブザー（29章／GPIO12・自励式109800・実機確定 20260811）--------------
-//  待機中(ST_IDLE)にGW自身のS/Gを車が通過した瞬間だけ 60ms「ピッ」。自励式ゆえHIGH/LOWのみ。
-//  ⚠非ブロッキング：loopをdelayで止めない（millis管理で消灯）。計測中・エラー面では鳴らさない。
-static constexpr int      PIN_BUZZER = 12;   // ストラップだが実機で書込み/起動OK確認済(20260811)
-static constexpr uint32_t BUZZER_MS  = 60;   // 鳴動長（80→40→20→60で実機比較し確定）
-static constexpr uint32_t BUZZER_ERR_MS = 2000;  // エラー発生時の「ピー」（2秒・1回だけ・20260831）
-static uint32_t s_buzz_off_ms = 0;           // 0=消灯中／非0=この millis で消灯予定
+// ---- ブザー（GPIO12・他励式SPT15＋12V昇圧・ledc駆動）★20261012焼き直し------
+//  旧：自励式109800/UGCM1205を5VでdigitalWrite HIGH/LOW（音程固定・5Vブザー）。
+//  新：他励式SPT15を12V昇圧で鳴らす。音程は与えないと鳴らない＝ledc(PWM)で周波数駆動。
+//    ・通過/切断の「ピッ」＝共振付近の高め（最大音量）。
+//    ・スタートの「ブー」＝低め（12V昇圧の主目的・150〜250Hz）。緑点灯と同時に0.5秒。
+//    ・エラーの「ピー」＝高め2秒・1回。いずれも非ブロッキング（millis管理でloopを止めない）。
+//  ⚠ 12Vが行くのはブザー＋のみ。GPIO12はSS8050ドライバ経由でSPT15(−)を叩く（配線は従来どおり）。
+static constexpr int      PIN_BUZZER       = 12;    // ストラップだが実機で書込み/起動OK確認済(20260811)
+static constexpr uint8_t  BUZZER_LEDC_CH   = 2;     // ★ledcチャンネル。ch2=timer1（38kHz IRのch0=timer0とタイマー非共有）。ch1はtimer0共有でNG（20261012修正）
+static constexpr uint8_t  BUZZER_LEDC_BITS = 10;    // 分解能（ledcWriteToneがduty50%を自動設定）
+static constexpr uint32_t BUZZER_F_BEEP    = 2000;  // ピッ（通過・切断）。高めの明瞭音。SPT15最大音量は約1200Hz（85dBA@9Vpp・データシート）
+static constexpr uint32_t BUZZER_F_START   = 1000;  // ブー（スタート）。※圧電は200Hz等の低音はほぼ無音→可聴の低めへ。最大音量が要るなら1200へ
+static constexpr uint32_t BUZZER_F_ERR     = 1200;  // ピー（エラー）＝SPT15最大音量点1200Hz
+static constexpr uint32_t BUZZER_MS        = 60;    // 通過ピッ鳴動長（80→40→20→60で実機比較し確定）
+static constexpr uint32_t BUZZER_START_MS  = 500;   // スタート「ブー」長（緑と同時・DC27/DC30）
+static constexpr uint32_t BUZZER_ERR_MS    = 2000;  // エラー「ピー」（2秒・1回だけ・20260831）
+static uint32_t s_buzz_off_ms = 0;           // 0=消音中／非0=この millis で消音予定
 static bool     s_sg_beeped   = false;       // ST_IDLE中に既にS/G通過ピッを鳴らしたか（TAの毎回鳴り防止・灰リセットで復活）
-static inline void buzzer_start(uint32_t ms) {   // 非ブロッキング開始（ms鳴らす）
-  digitalWrite(PIN_BUZZER, HIGH);
+// ledc(PWM)で周波数を出す/止める（コア2.x=ch指定 / 3.x=pin指定・beam.hと同方式）。freq=0で停止。
+static inline void buzzer_tone(uint32_t freq) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWriteTone(PIN_BUZZER, freq);
+#else
+  ledcWriteTone(BUZZER_LEDC_CH, freq);
+#endif
+}
+static inline void buzzer_start(uint32_t ms, uint32_t freq = BUZZER_F_BEEP) {   // 非ブロッキング開始
+  buzzer_tone(freq);
   s_buzz_off_ms = millis() + ms;
   if (s_buzz_off_ms == 0) s_buzz_off_ms = 1; // millis境界で0になる稀ケースを回避
 }
 static inline void buzzer_beep() {           // S/G通過の瞬間に呼ぶ（60ms「ピッ」）
-  buzzer_start(BUZZER_MS);
+  buzzer_start(BUZZER_MS, BUZZER_F_BEEP);
 }
-static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来たら消灯）
+static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来たら消音）
   if (s_buzz_off_ms && (int32_t)(millis() - s_buzz_off_ms) >= 0) {
-    digitalWrite(PIN_BUZZER, LOW);
+    buzzer_tone(0);
     s_buzz_off_ms = 0;
   }
 }
-// エラー表示の立ち上がり（無→有）でだけ 1秒「ピー」を1回鳴らす。
+// エラー表示の立ち上がり（無→有）でだけ 2秒「ピー」を1回鳴らす。
 //  err_now=エラー面を出しているか。出し続けている間は再鳴動しない（1回だけ）。
 //  エラーが一旦消えて再発したら、また1回鳴る。tick_display（約4fps）から呼ぶ。
 static inline void buzzer_error_edge(bool err_now) {
   static bool prev = false;
-  if (err_now && !prev) buzzer_start(BUZZER_ERR_MS);
+  if (err_now && !prev) buzzer_start(BUZZER_ERR_MS, BUZZER_F_ERR);
   prev = err_now;
+}
+
+// ---- 信号灯（GW一体・GPIO13赤/GPIO14緑→IRLU3410→5V LED）★20261012追加------
+//  旧：別筐体SG機へ ESP-NOW(CMD_RED/GREEN/RESET) で指示（signal_cmd・DC70で撤去）。
+//  新：GW自身の GPIO13/14 で IRLU3410(ローサイド)を直接駆動し、抵抗内蔵5V -VV LEDを点灯。
+//    赤ボタン→赤点灯→2〜5秒→緑点灯＋ブザー0.5秒→0.05秒後に赤消灯→2秒後に緑消灯。
+//  ⚠ G–GND間に外付け4.7kΩプルダウン（起動時の薄点灯防止・DC74）。13/14は非ストラップ。
+static constexpr int      PIN_SIG_RED   = 13;   // →100Ω→IRLU3410(赤)ゲート
+static constexpr int      PIN_SIG_GREEN = 14;   // →100Ω→IRLU3410(緑)ゲート
+static constexpr uint32_t GREEN_HOLD_MS = 2000; // 緑点灯の保持（最終確定2秒・DC30）
+static constexpr uint32_t GREEN_LEAD_MS = 50;   // 緑先行→0.05秒後に赤を消す重なり（暗転の隙間なし・DC32）
+static uint32_t s_green_off_ms = 0;   // 0=予約なし／非0=この millis で緑を自動消灯
+static uint32_t s_red_off_ms   = 0;   // 0=予約なし／非0=この millis で赤を消灯（緑先行の重なり後）
+static inline void sig_red(bool on)   { digitalWrite(PIN_SIG_RED,   on ? HIGH : LOW); }
+static inline void sig_green(bool on) { digitalWrite(PIN_SIG_GREEN, on ? HIGH : LOW); }
+static inline void sig_all_off() {                     // 全消灯＋予約解除（RESET/完走時）
+  sig_red(false); sig_green(false); s_green_off_ms = 0; s_red_off_ms = 0;
+}
+static inline void sig_on_red() {                      // 赤点灯（赤ボタン/CMD_SIGNAL受付時）
+  sig_red(true); sig_green(false); s_green_off_ms = 0; s_red_off_ms = 0;
+}
+static inline void sig_on_green() {                    // 緑点灯の唯一の入口（tick_sequenceの緑遷移で）
+  sig_green(true);
+  s_red_off_ms   = millis() + GREEN_LEAD_MS;           // 0.05秒後に赤を消す（赤緑オーバーラップ・DC32）
+  s_green_off_ms = millis() + GREEN_HOLD_MS;           // 2秒後に緑を自動消灯（DC30）
+}
+static inline void sig_tick() {                        // loop毎に呼ぶ（時間が来たら消灯・非ブロッキング）
+  uint32_t now = millis();
+  if (s_red_off_ms   && (int32_t)(now - s_red_off_ms)   >= 0) { sig_red(false);   s_red_off_ms = 0; }
+  if (s_green_off_ms && (int32_t)(now - s_green_off_ms) >= 0) { sig_green(false); s_green_off_ms = 0; }
 }
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
@@ -181,11 +229,9 @@ static uint32_t s_armed_ms = 0;         // ARMEDに入った時刻
 // 20260831k：シグナル二度押しガード時間。ARMED成立からこの時間内の再受付を弾く。
 //   赤の最短点灯(s_red_dur_ms=2s)より十分短く、かつ人間の誤連打(数百ms)を吸収する400ms。
 static constexpr uint32_t SIGNAL_GUARD_MS = 400;
-// ★CMD_RED再送（灰→赤/初回赤の取りこぼし対策・2026-08-26）
-static constexpr uint32_t RED_RESEND_WINDOW_MS = 400;  // ARMED後この時間だけ赤を再送
-static constexpr uint32_t RED_RESEND_EVERY_MS  = 60;   // 再送間隔（60ms毎＝約6回×3連送）
-static uint32_t s_red_resend_ms = 0;    // 最後にCMD_REDを再送した時刻
-static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（3秒＋ランダム）
+// ★20261012：旧CMD_RED再送（ESP-NOWでSGへ送る取りこぼし対策）は廃止。
+//   信号灯がGW自機のGPIO13直結になり、赤はsig_on_red()で即・確実に点くため再送不要。
+static uint32_t s_red_dur_ms = 0;       // 今回の赤の長さ（2〜5秒ランダム）
 static uint64_t s_green_t_us = 0;       // 緑を出したGW時刻（F1式・green_t_us）。走行式は0のまま
 // 20260831i：走行式（signalなし）の全車共通起点＝「最初に通過した1台の初通過時刻」。
 //   START_MODE_SHARED=1（い）で使用。最初の正常通過(ST_IDLE)で1回だけ立て、灰リセットで0へ。
@@ -361,21 +407,19 @@ static inline bool node_alive(uint8_t id) {
 // 排他状態を評価。g_status.gw_dup/rc_dup/sg_dup を更新し、いずれか競合なら true。
 //  あわせて“生きているSG”を s_active_sg_id に反映し、予備SG単独運用でも光るようにする。
 static bool eval_exclusivity() {
-  bool gw_peer = false; int rc = 0, sg = 0; int last_sg = -1;
+  bool gw_peer = false; int rc = 0;
   for (uint8_t id = 0; id <= proto::NODE_ID_MAX; id++) {
     if (!node_alive(id)) continue;
     switch (proto::kind_of(id)) {
       case proto::KIND_GW: if (id != NODE_ID) gw_peer = true; break;  // 自分以外のGW＝重複
       case proto::KIND_RC: rc++; break;
-      case proto::KIND_SG: sg++; last_sg = id; break;
-      default: break;   // SQ等は排他対象外
+      default: break;   // SQ・SGは排他対象外（★20261012：信号灯GW一体化でSG機廃止・旧SG残置でも誤ブロックしない）
     }
   }
-  if (last_sg >= 0) s_active_sg_id = (uint8_t)last_sg;   // 生存SGへCMDを向ける
   disp::g_status.gw_dup = gw_peer;
   disp::g_status.rc_dup = (rc >= 2);
-  disp::g_status.sg_dup = (sg >= 2);
-  return gw_peer || (rc >= 2) || (sg >= 2);
+  disp::g_status.sg_dup = false;        // ★SG機廃止：常にfalse（ERR_SG_DUPは発火しない）
+  return gw_peer || (rc >= 2);
 }
 static inline bool exclusivity_conflict() {
   return disp::g_status.gw_dup || disp::g_status.rc_dup || disp::g_status.sg_dup;
@@ -477,19 +521,11 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
   return rid;
 }
 
-// ---- シグナルへ COMMAND（赤/緑/リセット）----------------------------------
-static void signal_cmd(uint8_t code) {
-  proto::CommandBody c = {};
-  c.code = code;
-  // 生きているシグナル（SG10 or 予備SG11）へ送る。既定はSG10。
-  // ★2026-08-25：ブロードキャストはACKが無く単発だと1回のパケットロスで取りこぼす
-  //   （起動直後の初回赤がSGに届かない事象＝T-9）。CMD_RED/GREEN/RESETは受信側で冪等なので
-  //   3連送して確実性を上げる（seqは毎回+1され重複排除に掛からず全て配送される）。
-  //   ⚠ 本関数はESP-NOWコールバック(CMD_RESET)からも呼ばれるため delay() は入れない。
-  for (int i = 0; i < 3; i++) {
-    mesh::send(proto::PT_COMMAND, s_active_sg_id, &c, sizeof(c));
-  }
-}
+// ★20261012：旧 signal_cmd()（GW→別筐体SG機へ ESP-NOW で赤/緑/リセットを指示）を廃止。
+//   信号灯はGW自機の GPIO13/14 直結になったため、赤=sig_on_red() / 緑=sig_on_green() /
+//   消灯=sig_all_off() を直接呼ぶ（上の「信号灯」ブロック参照）。RC からの CMD_SIGNAL/
+//   CMD_RESET 受信（＝リモコンでスタート/リセット）は従来どおり on_signal_pressed/
+//   on_reset_pressed で処理する（PT_COMMAND 受信ハンドラは不変）。
 
 // ---- 内部レース開始（内部rid採番＋参加レーン/緑/per-raceフラグの初期化）------
 //  on_signal_pressed が on_reset_pressed を先に呼ぶため前方宣言（定義は後方）。
@@ -550,10 +586,9 @@ static void on_signal_pressed() {
   begin_internal_race();                          // 内部rid採番＋参加レーン初期化
   s_red_dur_ms = 2000 + (esp_random() % 3000);   // 2.0〜5.0秒（DC26・旧3〜5秒）。RCも本関数を通るため同じ
   s_armed_ms   = millis();
-  s_red_resend_ms = millis();                     // 再送タイマ基点（以後tick_sequenceで再送）
   s_state      = ST_ARMED;
   s_last_signal_ms = nowm;                        // 20260831k：受付成立→二度押しガード起点
-  signal_cmd(proto::CMD_RED);
+  sig_on_red();                                   // ★GW自機の赤灯ON（GPIO13直結・緑は消灯）
   s_set_now_req = true;                           // ★即SET要求（実描画はloopで・コールバック文脈のSPIクラッシュ回避）
   Serial.printf("[SEQ] ARMED rid=%u red=%ums\n", s_internal_rid, s_red_dur_ms);
 }
@@ -590,28 +625,19 @@ static void on_reset_pressed() {
   s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
   s_start_shared_us = 0;        // 20260831i：走行式の共通起点も灰リセットでクリア
-  signal_cmd(proto::CMD_RESET);
+  sig_all_off();                // ★GW自機の信号灯を全消灯（赤緑・自動消灯予約も解除）
+  buzzer_tone(0); s_buzz_off_ms = 0;   // ★スタート音/エラー音を即停止
   Serial.println("[SEQ] RESET -> IDLE (flush queued if data)");
 }
 
 // ARMED経過で緑へ。loopから呼ぶ。緑時刻はRAM保持のみ（POSTしない。flush時に同梱）。
 static void tick_sequence() {
-  // ★2026-08-26：ARMED直後の一定時間、CMD_REDを再送し続ける。
-  //   灰→赤直後などでサーバーTLS試行がloopを一瞬ブロックし、単発（3連送）のCMD_REDを
-  //   SGが取りこぼす事象（初回赤/灰→赤で点灯しない）への対策。SGはCMD_RED冪等なので
-  //   再送は無害。緑遷移（s_red_dur_ms＝2〜5秒）より十分手前で送り終わる。
-  if (s_state == ST_ARMED) {
-    uint32_t since = millis() - s_armed_ms;
-    if (since < RED_RESEND_WINDOW_MS &&
-        (millis() - s_red_resend_ms) >= RED_RESEND_EVERY_MS) {
-      s_red_resend_ms = millis();
-      signal_cmd(proto::CMD_RED);
-    }
-  }
+  // ★20261012：旧CMD_RED再送ループ（ESP-NOWでSGへ）は廃止。赤はsig_on_red()でGPIO直点灯済み。
   if (s_state == ST_ARMED && (millis() - s_armed_ms) >= s_red_dur_ms) {
     s_green_t_us = tsync::now_gw_us();          // 緑を出した瞬間＝green_t_us（F1式起点）
     s_state = ST_GREEN;
-    signal_cmd(proto::CMD_GREEN);
+    sig_on_green();                             // ★GW自機の緑灯ON＋50ms後に赤消灯＋2秒で緑自動消灯（DC30/DC32）
+    buzzer_start(BUZZER_START_MS, BUZZER_F_START);  // ★スタート音「ブー」0.5秒（12V昇圧SPT15・DC27/DC30）
     Serial.printf("[SEQ] GREEN t=%llu (rid=%u)\n",
                   (unsigned long long)s_green_t_us, s_internal_rid);
     s_state = ST_RACE;
@@ -1003,7 +1029,7 @@ static void maybe_autocomplete() {
   s_green_t_us    = 0;
   s_start_shared_us = 0;          // 20260831i：合計(total_ms)は各マシン完走時に保存済みなので安全
   s_post_err_until = millis() + 3000;   // 24.4⑤：A1/A2を3秒だけ表示
-  signal_cmd(proto::CMD_RESET);         // シグナル消灯（念のため）
+  sig_all_off();                        // ★信号灯消灯（念のため・GPIO直結）
 }
 
 // ---- 送信要求の実行（loop文脈・HTTPSはここだけ・#20）------------------------
@@ -1161,8 +1187,19 @@ void setup() {
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(PIN_BTN_RED),  isr_btn_red,  FALLING);  // 押下取りこぼし防止（2026-08-24e）
   attachInterrupt(digitalPinToInterrupt(PIN_BTN_GRAY), isr_btn_gray, FALLING);
-  pinMode(PIN_BUZZER, OUTPUT);
-  digitalWrite(PIN_BUZZER, LOW);   // 起動直後は必ず消灯
+  // ブザー（他励式SPT15＋12V昇圧・ledc駆動）。周波数を与えて鳴らす（自励式のdigitalWriteから変更・20261012）。
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(PIN_BUZZER, BUZZER_F_BEEP, BUZZER_LEDC_BITS);  // pin指定（beam.hと同方式）
+  ledcWriteTone(PIN_BUZZER, 0);                             // 起動直後は無音
+#else
+  ledcSetup(BUZZER_LEDC_CH, BUZZER_F_BEEP, BUZZER_LEDC_BITS);
+  ledcAttachPin(PIN_BUZZER, BUZZER_LEDC_CH);                // ch指定（38kHz IRはbeam.hのch0・こちらはch1）
+  ledcWriteTone(BUZZER_LEDC_CH, 0);                         // 起動直後は無音
+#endif
+  // 信号灯（GW一体・GPIO13赤/GPIO14緑→IRLU3410・DC70/DC90）。起動直後は必ず消灯（20261012追加）。
+  pinMode(PIN_SIG_RED,   OUTPUT);
+  pinMode(PIN_SIG_GREEN, OUTPUT);
+  sig_all_off();
   if (!LittleFS.begin(true, "/littlefs", 10, "littlefs")) Serial.println("LittleFS mount 失敗");  // K7: csvのName列を明示
   // 案X：起動時にスプールを全消し（毎回まっさら・2026-08-24）。
   //   「空ファイルを作成」して常に存在させる → 読み込み時の vfs "does not exist" ログ抑止。
@@ -1531,7 +1568,8 @@ static void tick_display() {
 
 void loop() {
   tick_buttons();
-  buzzer_tick();              // ブザー非ブロッキング消灯（29章）
+  buzzer_tick();              // ブザー非ブロッキング消音（ledc・20261012）
+  sig_tick();                 // ★信号灯の非ブロッキング消灯（赤は緑+50ms/緑は緑+2秒・DC30/DC32）
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_roster();              // 接続機材の一覧をシリアルへ（設営確認用・3秒毎）
   tick_sequence();

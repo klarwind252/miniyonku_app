@@ -1318,6 +1318,16 @@
                 </div>
                 {% endif %}
               </div>
+              <div style="color:#95a5a6;padding-top:5px">TA view</div>
+              <div>
+                <code id="url-taview-{{ s.id }}" style="display:block;background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.ta_view_url or '（PUBLIC_BASE_URL未設定）' }}</code>
+                {% if s.ta_view_url %}
+                <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="copyUrl(this,'url-taview-{{ s.id }}')">📋 コピー</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="openUrl('url-taview-{{ s.id }}')">↗️ 別ウインドウで表示</button>
+                </div>
+                {% endif %}
+              </div>
               <div style="color:#95a5a6;padding-top:5px">参加者QR</div>
               <div>
                 <code id="url-qr-{{ s.id }}" style="display:block;background:#f4f5f7;padding:5px 8px;border-radius:5px;word-break:break-all;border:1px solid #e9ecef">{{ s.qr_url or '（PUBLIC_BASE_URL未設定）' }}</code>

@@ -246,6 +246,7 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
                     "enabled": s.enabled, "is_default": (not s.slug),
                     "admin_url": f"{base}{pfx}/admin/?key={s.admin_token}" if base else "",
                     "view_url": f"{base}{pfx}/view/?key={s.view_token}" if base else "",
+                    "ta_view_url": f"{base}{pfx}/view/ta?key={s.view_token}" if base else "",
                     "participant_url": f"{base}{pfx}/" if base else "",
                     "qr_url": _enter_url_with_k(base, pfx, s),
                     "restrict_hours": s.restrict_hours,

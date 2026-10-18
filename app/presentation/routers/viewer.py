@@ -8,7 +8,7 @@
 - /view/host-sync            → ホストが画面変更を通知(POST)
 """
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 import os
 import aiosqlite
@@ -1732,3 +1732,130 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         "achievements": achievements,
         "ach_labels": _ach_labels_bv,
     })
+
+
+# ============================================================================
+#  TA view（FHD全画面・計測結果ビューア）  — /view 配下＝既存のview鍵ゲートを継承
+#    GET /view/ta             … FHD全画面シェル
+#    GET /view/ta/list        … 履歴一覧JSON（最大1000・新しい順）
+#    GET /view/ta/race/{id}   … 1レース詳細JSON（順位＋ラップ/セクション）
+#    GET /view/ta/events      … SSE（新結果が届いたら即push／断時はクライアントが10秒ポーリング）
+#  ※ 既存の /view/* ページには一切手を入れない（独立した追加ルート）。
+# ============================================================================
+
+def _ta_mode(race) -> str:
+    keys = race.keys() if hasattr(race, "keys") else []
+    g = race["green_t_us"] if "green_t_us" in keys else None
+    return "race" if g is not None else "free"
+
+
+@router.get("/ta", response_class=HTMLResponse)
+async def ta_board(request: Request):
+    """TA用view（FHD全画面・計測結果ビューア）のシェル。"""
+    from app import pwa as _pwa
+    return templates.TemplateResponse("viewer/ta_board.html", {
+        "request": request,
+        "bg_url": _pwa.bg_url(request),
+    })
+
+
+@router.get("/ta/list")
+async def ta_list(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """履歴一覧（軽量・最大1000件・新しい順）。"""
+    from app.presentation.routers.timing_api import TimingRaceRepository
+    repo = TimingRaceRepository(db)
+    rows = []
+    for r in await repo.list_races(limit=1000):
+        keys = r.keys() if hasattr(r, "keys") else []
+        rows.append({
+            "race_id": r["id"],
+            "created_at": (r["created_at"] if "created_at" in keys else None),
+            "target_laps": (r["target_laps"] if "target_laps" in keys else None),
+            "heat_tag": (r["heat_tag"] if "heat_tag" in keys else None),
+            "mode": _ta_mode(r),
+        })
+    return JSONResponse({"races": rows})
+
+
+@router.get("/ta/race/{race_id}")
+async def ta_race(race_id: int, request: Request,
+                  db: aiosqlite.Connection = Depends(get_db)):
+    """1レース詳細（順位＋各レーンのラップ/セクション）。admin詳細と同じ組み立て。"""
+    from app.presentation.routers.timing_api import build_race_result
+    race, result = await build_race_result(db, race_id)
+    if race is None:
+        raise HTTPException(status_code=404, detail="race not found")
+    ranking, machines = [], []
+    if result is not None:
+        for pos, m in enumerate(result.ranking(), start=1):
+            ranking.append({
+                "pos": pos, "start_lane": m.start_lane,
+                "total_s": (m.total_time_us / 1e6) if m.total_time_us else None,
+                "best_s": (m.best_lap_us / 1e6) if m.best_lap_us else None,
+                "completed_laps": m.completed_laps,
+                "dnf": m.dnf, "jump_start": m.jump_start, "missing": m.missing,
+            })
+        for sl in sorted(result.machines):
+            m = result.machines[sl]
+            laps = []
+            for lap in m.laps:
+                laps.append({
+                    "lap": lap.lap, "lap_s": lap.lap_time_us / 1e6,
+                    "sectors": [
+                        {"from": s.from_gate_index, "to": s.to_gate_index,
+                         "s": s.dt_us / 1e6}
+                        for s in lap.sectors
+                    ],
+                })
+            machines.append({
+                "start_lane": m.start_lane, "completed_laps": m.completed_laps,
+                "dnf": m.dnf,
+                "total_s": (m.total_time_us / 1e6) if m.total_time_us else None,
+                "laps": laps,
+            })
+    keys = race.keys() if hasattr(race, "keys") else []
+    return JSONResponse({
+        "race_id": race_id,
+        "target_laps": (race["target_laps"] if "target_laps" in keys else None),
+        "heat_tag": (race["heat_tag"] if "heat_tag" in keys else None),
+        "created_at": (race["created_at"] if "created_at" in keys else None),
+        "mode": (result.mode if result else _ta_mode(race)),
+        "has_result": result is not None,
+        "ranking": ranking, "machines": machines,
+    })
+
+
+@router.get("/ta/events")
+async def ta_events(request: Request):
+    """新しい結果が届いたらpush（SSE）。live_events を購読。
+       SSEが届かない環境ではクライアントが自動で10秒ポーリングにfallbackする。"""
+    import asyncio
+    from app.services import live_events
+    sid = _store_id_of(request)
+    q = live_events.subscribe(sid)
+
+    async def gen():
+        try:
+            yield b": ready\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                if q is None:
+                    await asyncio.sleep(20)
+                    yield b": ping\n\n"
+                    continue
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=20.0)
+                    yield ("event: %s\ndata: 1\n\n" % (ev or "ta")).encode()
+                except asyncio.TimeoutError:
+                    yield b": ping\n\n"
+        finally:
+            if q is not None:
+                live_events.unsubscribe(sid, q)
+
+    return StreamingResponse(
+        gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache",
+                 "X-Accel-Buffering": "no",
+                 "Connection": "keep-alive"},
+    )

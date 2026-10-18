@@ -205,6 +205,14 @@ async def post_events(
     except Exception as e:
         print(f"[timing] status judge failed race={race_id}: {type(e).__name__}: {e}", flush=True)
 
+    # TA view（FHD計測ビューア）へ即時push（新結果到着を知らせる）。失敗は無視（受信は成功扱い）。
+    try:
+        from app.services import live_events
+        _st = getattr(request.state, "store", None)
+        live_events.publish(_st.id if _st is not None else 0, "ta")
+    except Exception:
+        pass
+
     return JSONResponse({"inserted": inserted, "duplicate": duplicate,
                          "bests_updated": bests})
 

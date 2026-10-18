@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, initial-scale=1">
+<title>TA view</title>
+<style>
+  /* ===== カラールール（指示）=====
+     背景=黒 / 基本文字=白 / L1=青 L2=緑 L3=黄 L4=赤 L5=白(灰)
+     ハイライト=文字色と背景を反転 */
+  :root{
+    --bg:#000; --fg:#fff; --dim:#8a8a90; --line:#1c1c1e; --panel:#0b0b0c;
+    --l1:#2d9bf0; --l2:#32d74b; --l3:#ffd60a; --l4:#ff453a; --l5:#c9c9ce;
+    /* FHD(1920x1080)基準。vminで全画面スケール */
+    --u: 1vh;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;width:100%;background:var(--bg);color:var(--fg);
+    font-family:"Helvetica Neue",Arial,"Hiragino Sans","Noto Sans JP",sans-serif;
+    overflow:hidden;-webkit-font-smoothing:antialiased}
+  .wrap{display:flex;height:100vh;width:100vw}
+
+  /* ===== 左：履歴一覧（最大1000）===== */
+  #side{width:19vw;min-width:230px;max-width:380px;height:100vh;
+    border-right:2px solid var(--line);background:var(--panel);
+    display:flex;flex-direction:column}
+  #side .shd{padding:1.4vh 1.2vw;border-bottom:1px solid var(--line);
+    font-size:2.0vh;font-weight:700;letter-spacing:.04em;color:var(--dim);
+    display:flex;justify-content:space-between;align-items:baseline}
+  #side .shd b{color:var(--fg)}
+  #hist{flex:1;overflow-y:auto;overflow-x:hidden}
+  #hist::-webkit-scrollbar{width:8px}
+  #hist::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
+  .hi{padding:1.25vh 1.2vw;border-bottom:1px solid var(--line);cursor:pointer;
+    display:flex;align-items:baseline;gap:.6vw;line-height:1.2}
+  .hi:hover{background:#141416}
+  .hi .no{font-size:2.3vh;font-weight:800;min-width:3.4em}
+  .hi .mt{font-size:1.55vh;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hi .md{font-size:1.4vh;color:var(--dim);font-weight:700}
+  .hi.active{background:var(--fg);color:var(--bg)}            /* ハイライト=反転 */
+  .hi.active .mt,.hi.active .md{color:var(--bg)}
+
+  /* ===== 右：1集計を大きく ===== */
+  #main{flex:1;height:100vh;display:flex;flex-direction:column;padding:2.2vh 2vw}
+  #head{display:flex;align-items:baseline;gap:1.4vw;flex:0 0 auto;
+    border-bottom:2px solid var(--line);padding-bottom:1.4vh;margin-bottom:1.6vh}
+  #head .rid{font-size:6.4vh;font-weight:900;letter-spacing:-.01em}
+  #head .meta{font-size:2.6vh;color:var(--dim);font-weight:700}
+  #head .live{margin-left:auto;font-size:1.8vh;font-weight:800;color:var(--dim);
+    display:flex;align-items:center;gap:.5vw}
+  #head .live .dot{width:1.2vh;height:1.2vh;border-radius:50%;background:#3a3a3e}
+  #head .live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
+
+  #body{flex:1;display:flex;gap:2vw;min-height:0}
+  /* 順位（大きく） */
+  #rank{flex:0 0 40%;display:flex;flex-direction:column;gap:1vh;min-height:0;overflow:auto}
+  .rk{display:flex;align-items:center;gap:1vw;padding:1.4vh 1.2vw;border-radius:10px;
+    border:2px solid var(--line)}
+  .rk .pos{font-size:5.2vh;font-weight:900;min-width:1.6em;text-align:center}
+  .rk .lane{font-size:2.2vh;font-weight:800;opacity:.9}
+  .rk .tt{margin-left:auto;text-align:right}
+  .rk .tt .big{font-size:5.0vh;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .rk .tt .sub{font-size:1.8vh;color:var(--dim);font-weight:700}
+  .rk .flag{font-size:1.9vh;font-weight:900;padding:.1em .5em;border-radius:6px;margin-left:.6vw}
+  .flag.dnf{background:#555;color:#fff}
+  .flag.js{background:var(--l4);color:#fff}
+  .flag.warn{background:var(--l3);color:#000}
+  /* 1位=反転ハイライト（レーン色を背景に、文字を黒に） */
+  .rk.hl{color:#000}
+  .rk.hl .sub{color:#00000099}
+
+  /* ラップ/セクション表 */
+  #laps{flex:1;overflow:auto;min-height:0}
+  table.lt{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  table.lt th,table.lt td{padding:.85vh .7vw;text-align:right;border-bottom:1px solid var(--line);
+    font-size:2.0vh;white-space:nowrap}
+  table.lt th{color:var(--dim);font-size:1.6vh;font-weight:800;position:sticky;top:0;background:var(--bg)}
+  table.lt th:first-child,table.lt td:first-child{text-align:left}
+  table.lt td.laneh{font-weight:900;font-size:2.2vh}
+  td.best{background:var(--fg);color:var(--bg);font-weight:900;border-radius:4px}  /* ベスト=反転 */
+
+  /* レーン色クラス（文字色）＋ 反転(.hl / 背景化) */
+  .l1{color:var(--l1)} .l2{color:var(--l2)} .l3{color:var(--l3)} .l4{color:var(--l4)} .l5{color:var(--l5)}
+  .bg1{background:var(--l1)} .bg2{background:var(--l2)} .bg3{background:var(--l3)} .bg4{background:var(--l4)} .bg5{background:var(--l5)}
+  .bd1{border-color:var(--l1)} .bd2{border-color:var(--l2)} .bd3{border-color:var(--l3)} .bd4{border-color:var(--l4)} .bd5{border-color:var(--l5)}
+
+  #empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:3vh}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside id="side">
+    <div class="shd"><span>履歴</span><span><b id="hcount">0</b> 件</span></div>
+    <div id="hist"></div>
+  </aside>
+  <section id="main">
+    <div id="head">
+      <div class="rid" id="h-rid">—</div>
+      <div class="meta" id="h-meta"></div>
+      <div class="live" id="h-live"><span class="dot"></span><span id="h-livetxt">接続中…</span></div>
+    </div>
+    <div id="body">
+      <div id="rank"></div>
+      <div id="laps"></div>
+    </div>
+    <div id="empty" style="display:none">結果がありません</div>
+  </section>
+</div>
+<script>
+(function(){
+  "use strict";
+  // 現在パス（/view/ta or /<slug>/view/ta）とクエリ(?key=)を維持してfetch
+  var BASE = location.pathname.replace(/\/+$/,"");            // 末尾スラッシュ除去
+  var QS   = location.search || "";
+  var LANE = {1:"1",2:"2",3:"3",4:"4",5:"5"};
+
+  var laneCls = function(l){ return (l>=1&&l<=5)? l : 5; };
+  function fmt(s){ if(s==null) return "—"; return s.toFixed(3); }
+  function fmtClock(iso){
+    if(!iso) return "";
+    var t = String(iso).replace("T"," ");
+    // "YYYY-MM-DD HH:MM:SS" → "MM/DD HH:MM"
+    var m = t.match(/(\d{2})-(\d{2})\D+(\d{2}):(\d{2})/);
+    return m ? (m[1]+"/"+m[2]+" "+m[3]+":"+m[4]) : t;
+  }
+  function el(tag,cls,txt){ var e=document.createElement(tag); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e; }
+
+  var current = null;      // 表示中 race_id
+  var pinnedByUser = false;// ユーザーがクリックで選んだら自動ジャンプしない
+  var hist = [];
+
+  // ---- 履歴一覧 ----
+  function renderHist(){
+    var box = document.getElementById("hist");
+    box.innerHTML = "";
+    document.getElementById("hcount").textContent = hist.length;
+    hist.forEach(function(r){
+      var row = el("div","hi"+(r.race_id===current?" active":""));
+      row.appendChild(el("span","no","#"+r.race_id));
+      var label = (r.heat_tag!=null? ("ヒート"+r.heat_tag+" ") : "") + fmtClock(r.created_at);
+      row.appendChild(el("span","mt",label));
+      row.appendChild(el("span","md",(r.mode==="race"?"RACE":"FREE")+(r.target_laps!=null?(" "+r.target_laps+"L"):"")));
+      row.onclick = function(){ pinnedByUser = true; show(r.race_id); };
+      box.appendChild(row);
+    });
+  }
+  function loadList(cb){
+    fetch(BASE+"/list"+QS,{cache:"no-store"}).then(function(x){return x.json();}).then(function(j){
+      hist = (j&&j.races)||[];
+      renderHist();
+      if(cb) cb();
+    }).catch(function(){});
+  }
+
+  // ---- 1集計の詳細 ----
+  function laneClassName(l){ return "l"+laneCls(l); }
+  function show(raceId){
+    if(raceId==null) return;
+    fetch(BASE+"/race/"+raceId+QS,{cache:"no-store"}).then(function(x){return x.json();}).then(function(d){
+      current = d.race_id;
+      renderHist();
+      // ヘッダ
+      document.getElementById("h-rid").textContent = "#"+d.race_id;
+      var meta = (d.mode==="race"?"RACE（反応込み）":"FREE（フリー）")
+               + (d.target_laps!=null?("　/　"+d.target_laps+"周"):"")
+               + (d.heat_tag!=null?("　/　ヒート"+d.heat_tag):"")
+               + (d.created_at?("　/　"+fmtClock(d.created_at)):"");
+      document.getElementById("h-meta").textContent = meta;
+
+      var rankBox = document.getElementById("rank");
+      var lapsBox = document.getElementById("laps");
+      var emptyBox= document.getElementById("empty");
+      rankBox.innerHTML=""; lapsBox.innerHTML="";
+      if(!d.has_result || !d.ranking || !d.ranking.length){
+        document.getElementById("body").style.display="none";
+        emptyBox.style.display="flex"; return;
+      }
+      document.getElementById("body").style.display="flex";
+      emptyBox.style.display="none";
+
+      // 順位
+      d.ranking.forEach(function(m){
+        var lc = laneCls(m.start_lane);
+        var row = el("div","rk bd"+lc+(m.pos===1?" hl bg"+lc:""));
+        row.appendChild(el("div","pos "+(m.pos===1?"":("l"+lc)), String(m.pos)));
+        row.appendChild(el("div","lane "+(m.pos===1?"":("l"+lc)), "LANE "+LANE[lc]));
+        var tt = el("div","tt");
+        tt.appendChild(el("div","big", fmt(m.total_s)));
+        tt.appendChild(el("div","sub", "BEST "+fmt(m.best_s)+" / "+(m.completed_laps||0)+"周"));
+        row.appendChild(tt);
+        if(m.dnf)        row.appendChild(el("span","flag dnf","DNF"));
+        if(m.jump_start) row.appendChild(el("span","flag js","JS"));
+        if(m.missing)    row.appendChild(el("span","flag warn","⚠"));
+        rankBox.appendChild(row);
+      });
+
+      // ラップ/セクション表（レーンごと）
+      var maxLap = 0;
+      d.machines.forEach(function(mc){ if(mc.laps.length>maxLap) maxLap=mc.laps.length; });
+      var tbl = el("table","lt");
+      var thead = el("thead"); var htr = el("tr");
+      htr.appendChild(el("th",null,"LANE"));
+      for(var i=1;i<=maxLap;i++) htr.appendChild(el("th",null,"LAP "+i));
+      htr.appendChild(el("th",null,"TOTAL"));
+      thead.appendChild(htr); tbl.appendChild(thead);
+      var tb = el("tbody");
+      d.machines.forEach(function(mc){
+        var lc = laneCls(mc.start_lane);
+        var tr = el("tr");
+        var th0 = el("td","laneh l"+lc,"L"+LANE[lc]); tr.appendChild(th0);
+        // 各ラップのベスト（このレーン内）を強調
+        var best=null;
+        mc.laps.forEach(function(lp){ if(best==null||lp.lap_s<best) best=lp.lap_s; });
+        for(var i=0;i<maxLap;i++){
+          if(i<mc.laps.length){
+            var lp=mc.laps[i];
+            var td=el("td",(best!=null&&Math.abs(lp.lap_s-best)<1e-6)?"best":null, fmt(lp.lap_s));
+            tr.appendChild(td);
+          }else{
+            tr.appendChild(el("td",null,"—"));
+          }
+        }
+        tr.appendChild(el("td","l"+lc, fmt(mc.total_s)));
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      lapsBox.appendChild(tbl);
+
+      // 選択中が一覧に見えるようスクロール
+      var act = document.querySelector("#hist .hi.active");
+      if(act && act.scrollIntoViewIfNeeded) act.scrollIntoViewIfNeeded();
+    }).catch(function(){});
+  }
+
+  // ---- 新結果 → 最新へジャンプ（ユーザーが固定選択してなければ）----
+  function refreshToLatest(){
+    loadList(function(){
+      if(!hist.length) return;
+      if(!pinnedByUser || current==null){
+        show(hist[0].race_id);         // 一覧は新しい順＝先頭が最新
+      }
+    });
+  }
+
+  // ---- SSE（届かない時は10秒ポーリングにfallback）----
+  var live = document.getElementById("h-live");
+  var liveTxt = document.getElementById("h-livetxt");
+  var pollMs = 10000, pollTimer=null, gotSSE=false;
+  function setLive(on){ live.classList.toggle("on",on); liveTxt.textContent = on?"自動更新 中":"ポーリング"; }
+  function startPoll(){ if(pollTimer)return; pollTimer=setInterval(refreshToLatest, pollMs); }
+
+  function startSSE(){
+    try{
+      var es = new EventSource(BASE+"/events"+QS);
+      es.addEventListener("ready", function(){ gotSSE=true; setLive(true); });
+      es.addEventListener("ta", function(){ setLive(true); refreshToLatest(); });
+      es.onmessage = function(){ refreshToLatest(); };
+      es.onerror = function(){ setLive(false); startPoll(); };  // 断→ポーリング（EventSourceは自動再接続）
+    }catch(e){ setLive(false); startPoll(); }
+  }
+
+  // 初期化
+  refreshToLatest();
+  startSSE();
+  startPoll();          // 保険（SSEが生きてても二重更新は冪等なので無害）
+})();
+</script>
+</body>
+</html>
