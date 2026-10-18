@@ -56,8 +56,9 @@
   .tr-table thead tr.g-row th{border-bottom:1px solid var(--line);color:var(--dim)}
   .tr-table th.gsep,.tr-table td.gsep{border-left:2px solid #35353a}
   .tr-table thead tr.h-row th{border-bottom:2px solid var(--line)}
+  /* ⚠ td にはフォントサイズを指定しない（各列の .c-xxx が効かなくなるため） */
   .tr-table td{padding:.45vh .4vw;border-bottom:1px solid var(--line);white-space:nowrap;
-    text-align:right;font-size:1.8vh}
+    text-align:right}
   .tr-table tr.race-start td{border-top:2px solid #45454b}
   .tr-table tr.lane-start td{border-top:2px solid #2a2a2e}
 
