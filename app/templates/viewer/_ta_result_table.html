@@ -13,7 +13,7 @@
         <th colspan="2"></th>
         <th colspan="4" class="gsep">TOTAL</th>
         <th colspan="3" class="gsep">LAP</th>
-        <th colspan="8" class="gsep">SECTOR</th>
+        <th colspan="5" class="gsep">SECTOR</th>
       </tr>
       <tr class="h-row">
         <th>LANE</th>
@@ -25,7 +25,7 @@
         <th class="gsep">#</th>
         <th>TIME</th>
         <th>Av.</th>
-        {% for n in range(0, 8) %}
+        {% for n in range(0, 5) %}
         <th{% if n == 0 %} class="gsep"{% endif %}>{{ n }}</th>
         {% endfor %}
       </tr>
@@ -62,7 +62,7 @@
           {% if row.lap_avg_ms is not none %}{{ '%.2f'|format(row.lap_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
         </td>
         {# SECTOR 0〜7（上段=区間タイム / 下段=通過速度） #}
-        {% for n in range(0, 8) %}
+        {% for n in range(0, 5) %}
         {% set sec = row.sectors[n] %}
         <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
           {% if sec %}
