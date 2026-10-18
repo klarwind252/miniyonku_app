@@ -19,7 +19,7 @@
   .wrap{display:flex;height:100vh;width:100vw}
 
   /* ===== 左：履歴一覧（最大1000）===== */
-  #side{width:16vw;min-width:210px;max-width:340px;height:100vh;
+  #side{width:14vw;min-width:200px;max-width:320px;height:100vh;
     border-right:2px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
   #side .shd{padding:1.2vh 1vw;border-bottom:1px solid var(--line);
     font-size:1.8vh;font-weight:700;color:var(--dim);display:flex;justify-content:space-between;align-items:baseline}
@@ -39,55 +39,57 @@
   #live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
 
   /* ===== 右：1集計を大きく（本物テーブルを注入）===== */
-  #main{flex:1;height:100vh;overflow:auto;padding:1.6vh 1.6vw;min-width:0}
+  #main{flex:1;height:100vh;overflow:auto;padding:1.1vh 1vw;min-width:0}
   #main::-webkit-scrollbar{width:9px}#main::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
 
   .ta-head{display:flex;align-items:baseline;gap:1.2vw;border-bottom:2px solid var(--line);
-    padding-bottom:1.1vh;margin-bottom:1.2vh}
-  .ta-head .rid{font-size:5.4vh;font-weight:900;letter-spacing:-.01em}
-  .ta-head .meta{font-size:2.5vh;color:var(--dim);font-weight:700}
+    padding-bottom:.6vh;margin-bottom:.7vh}
+  .ta-head .rid{font-size:5vh;font-weight:900;letter-spacing:-.01em}
+  .ta-head .meta{font-size:2.2vh;color:var(--dim);font-weight:700}
   .ta-empty{display:flex;align-items:center;justify-content:center;height:70vh;color:var(--dim);font-size:3vh}
 
   /* ===== 本物テーブル（/admin/timing/results と同一構造）を黒背景用に配色 ===== */
   .tr-wrap{overflow-x:auto}
   .tr-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  .tr-table th{padding:.6vh .55vw;text-align:center;font-size:1.5vh;font-weight:800;
+  .tr-table th{padding:.35vh .4vw;text-align:center;font-size:1.35vh;font-weight:800;
     color:var(--dim);letter-spacing:.5px;white-space:nowrap}
   .tr-table thead tr.g-row th{border-bottom:1px solid var(--line);color:var(--dim)}
   .tr-table th.gsep,.tr-table td.gsep{border-left:2px solid #35353a}
   .tr-table thead tr.h-row th{border-bottom:2px solid var(--line)}
-  .tr-table td{padding:.75vh .55vw;border-bottom:1px solid var(--line);white-space:nowrap;
-    text-align:right;font-size:2.0vh}
+  .tr-table td{padding:.45vh .4vw;border-bottom:1px solid var(--line);white-space:nowrap;
+    text-align:right;font-size:1.8vh}
   .tr-table tr.race-start td{border-top:2px solid #45454b}
   .tr-table tr.lane-start td{border-top:2px solid #2a2a2e}
 
   /* LANE：セルをレーン色で塗り黒文字（指示：L1青 L2緑 L3黄 L4赤 L5白/灰） */
-  .c-lane{text-align:center;vertical-align:middle;font-size:2.4vh;font-weight:900;color:#000}
+  /* LANE：POSと同じ幅・文字サイズは倍 */
+  .c-lane{text-align:center;vertical-align:middle;width:4.5vw;font-size:4.8vh;font-weight:900;color:#000}
   .tr-table td.lane-1{background:var(--l1);color:#000}
   .tr-table td.lane-2{background:var(--l2);color:#000}
   .tr-table td.lane-3{background:var(--l3);color:#000}
   .tr-table td.lane-4{background:var(--l4);color:#000}
   .tr-table td.lane-5{background:var(--l5);color:#000}
 
-  .c-pos{text-align:center;vertical-align:middle;font-size:2.6vh;font-weight:900;width:3em}
+  .c-pos{text-align:center;vertical-align:middle;font-size:2.8vh;font-weight:900;width:4.5vw}
   .rflag{display:block;margin-top:2px;font-size:1.15vh;font-weight:900;line-height:1.25;border-radius:5px;padding:0 3px;white-space:nowrap}
   .rflag-dnf{background:#6b6b70;color:#fff}
   .rflag-js{background:var(--l4);color:#fff}
 
-  .c-total{text-align:right;font-weight:900;vertical-align:middle;font-size:3.0vh;letter-spacing:-.01em}
-  .c-gap{text-align:right;vertical-align:middle;font-size:2.1vh;color:#c6a4ff}
-  .c-totav{text-align:right;vertical-align:middle;font-size:2.0vh;color:#5fd0c4}
-  .c-max{text-align:right;vertical-align:middle;font-size:2.0vh;color:var(--l4)}
+  /* TOTAL TIME：4倍（ヒーロー数値） */
+  .c-total{text-align:right;font-weight:900;vertical-align:middle;font-size:12vh;letter-spacing:-.02em;padding-right:.8vw}
+  .c-gap{text-align:right;vertical-align:middle;font-size:1.9vh;color:#c6a4ff}
+  .c-totav{text-align:right;vertical-align:middle;font-size:1.9vh;color:#5fd0c4}
+  .c-max{text-align:right;vertical-align:middle;font-size:1.9vh;color:var(--l4)}
   .unit{color:#6a6a70;font-size:1.2vh;margin-left:1px}
 
-  .c-lapno{text-align:center;color:var(--dim);font-size:1.6vh}
-  .c-lapt{text-align:right;font-weight:800;font-size:2.1vh}
-  .c-lapav{text-align:right;color:#9fb0bf;font-size:1.7vh}
+  .c-lapno{text-align:center;color:var(--dim);font-size:1.5vh;width:2vw}
+  .c-lapt{text-align:right;font-weight:800;font-size:2.0vh}
+  .c-lapav{text-align:right;color:#9fb0bf;font-size:1.55vh}
 
-  .c-sec{text-align:right;background:#0e0e10;border-left:1px solid var(--line);line-height:1.2;font-size:1.9vh}
+  .c-sec{text-align:right;background:#0e0e10;border-left:1px solid var(--line);line-height:1.15;font-size:1.6vh}
   .c-sec.sg{background:#13171d}
   .c-sec .sec-t{font-weight:800}
-  .c-sec .sec-v{color:var(--dim);font-size:1.4vh}
+  .c-sec .sec-v{color:var(--dim);font-size:1.2vh}
 
   /* ハイライト＝反転（その日の上位3傑。1位=白地黒字／2・3位=灰地黒字で段階） */
   .r1{background:#fff !important;color:#000 !important;font-weight:900;border-radius:3px}
