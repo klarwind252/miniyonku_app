@@ -1537,3 +1537,88 @@ async def layout_for_gw(
         "node_count": len(nodes),
         "updated_at": lay[5],
     })
+
+
+async def build_result_rows(db, race_id: int):
+    """1レース分の明細行を /admin/timing/results と完全に同じ構造で組み立てる。
+       TA view（/view/ta）が本物テーブルを再現するために使う。
+       戻り: {race, mode, has_result, rows}（rows は results_page と同一スキーマ）。"""
+    repo = TimingRaceRepository(db)
+    try:
+        race, result = await build_race_result(db, race_id)
+    except Exception:
+        return {"race": None, "mode": None, "has_result": False, "rows": []}
+    if race is None or result is None:
+        return {"race": race, "mode": None, "has_result": False, "rows": []}
+
+    # 速度（反映時に計算・保存済み）を読む
+    stored = await speed_store.load_speeds(db, race_id)
+
+    # その日のベスト（ハイライト判定）
+    dkey = (race["created_at"] or "")[:10]
+    stored_bests = await best_svc.load_bests(db, "day", dkey) if dkey else {}
+    bst = {k: [x["value"] for x in v] for k, v in stored_bests.items()}
+
+    def _pass_speed(lane, lap_no, sector_idx):
+        return stored["sec"].get((lane, lap_no, sector_idx))
+
+    ranked = result.ranking()
+    pos_map = {m.start_lane: i for i, m in enumerate(ranked, start=1)}
+    ordered = sorted(ranked, key=lambda m: m.start_lane)
+    top_us = None
+    for m in ordered:
+        if m.total_time_us is not None:
+            top_us = m.total_time_us
+            break
+    race_row_count = sum(max(1, len(m.laps)) for m in ordered)
+    race_row_index = 0
+    rows = []
+    for m in ordered:
+        pos = pos_map.get(m.start_lane)
+        gap = None
+        if m.total_time_us is not None and top_us is not None:
+            gap = round((m.total_time_us - top_us) / 1e6, 3)
+        max_ms = stored["lane"].get(m.start_lane, {}).get("max_ms")
+        total_avg = stored["lane"].get(m.start_lane, {}).get("total_avg")
+        lap_count = max(1, len(m.laps))
+        for li, lap in enumerate(m.laps or [None]):
+            sectors = [None] * 8
+            if lap is not None:
+                sg_ms = (None if lap.lap == 1
+                         else _pass_speed(m.start_lane, lap.lap, 0))
+                sectors[0] = {"s": None, "ms": sg_ms, "sg": True,
+                              "rank_ms": _best_rank(sg_ms, bst.get("max_ms")),
+                              "rank_s": 0}
+                for idx, sec in enumerate(lap.sectors):
+                    if idx + 1 > 7:
+                        break
+                    sp = _pass_speed(m.start_lane, lap.lap, idx + 1)
+                    sectors[idx + 1] = {
+                        "s": round(sec.dt_us / 1e6, 3), "ms": sp, "sg": False,
+                        "rank_s": _best_rank(sec.dt_us / 1e6,
+                                             bst.get(best_svc.sector_metric(idx + 1))),
+                        "rank_ms": _best_rank(sp,
+                                              bst.get(best_svc.sector_speed_metric(idx + 1))),
+                    }
+            lap_avg = (stored["lap"].get((m.start_lane, lap.lap))
+                       if lap is not None else None)
+            rows.append({
+                "rank_total": _best_rank(
+                    m.total_time_us / 1e6 if m.total_time_us else None, bst.get("total")),
+                "rank_max": _best_rank(max_ms, bst.get("max_ms")),
+                "rank_total_avg": _best_rank(total_avg, bst.get("total_avg")),
+                "rank_lap": _best_rank(
+                    lap.lap_time_us / 1e6 if lap is not None else None, bst.get("lap")),
+                "rank_lap_avg": _best_rank(lap_avg, bst.get("lap_avg")),
+                "pos": pos, "start_lane": m.start_lane,
+                "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+                "max_ms": max_ms, "total_avg_ms": total_avg, "gap": gap,
+                "dnf": m.dnf, "jump_start": m.jump_start, "missing": m.missing,
+                "lap_no": lap.lap if lap is not None else None,
+                "lap_s": round(lap.lap_time_us / 1e6, 3) if lap is not None else None,
+                "lap_avg_ms": lap_avg, "sectors": sectors,
+                "is_first_of_lane": li == 0, "lane_row_count": lap_count,
+                "is_first_of_race": race_row_index == 0, "race_row_count": race_row_count,
+            })
+            race_row_index += 1
+    return {"race": race, "mode": result.mode, "has_result": True, "rows": rows}

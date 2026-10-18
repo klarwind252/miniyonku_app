@@ -19,68 +19,81 @@
   .wrap{display:flex;height:100vh;width:100vw}
 
   /* ===== 左：履歴一覧（最大1000）===== */
-  #side{width:17vw;min-width:220px;max-width:360px;height:100vh;
+  #side{width:16vw;min-width:210px;max-width:340px;height:100vh;
     border-right:2px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
-  #side .shd{padding:1.3vh 1vw;border-bottom:1px solid var(--line);
-    font-size:1.9vh;font-weight:700;letter-spacing:.04em;color:var(--dim);
-    display:flex;justify-content:space-between;align-items:baseline}
+  #side .shd{padding:1.2vh 1vw;border-bottom:1px solid var(--line);
+    font-size:1.8vh;font-weight:700;color:var(--dim);display:flex;justify-content:space-between;align-items:baseline}
   #side .shd b{color:var(--fg)}
   #hist{flex:1;overflow-y:auto;overflow-x:hidden}
   #hist::-webkit-scrollbar{width:8px}#hist::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
-  .hi{padding:1.15vh 1vw;border-bottom:1px solid var(--line);cursor:pointer;
-    display:flex;align-items:baseline;gap:.5vw;line-height:1.2}
+  .hi{padding:1.1vh 1vw;border-bottom:1px solid var(--line);cursor:pointer;display:flex;align-items:baseline;gap:.5vw;line-height:1.2}
   .hi:hover{background:#141416}
-  .hi .no{font-size:2.1vh;font-weight:800;min-width:3.2em}
-  .hi .mt{font-size:1.45vh;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hi .md{font-size:1.3vh;color:var(--dim);font-weight:700}
+  .hi .no{font-size:2.0vh;font-weight:800;min-width:3.2em}
+  .hi .mt{font-size:1.4vh;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hi .md{font-size:1.25vh;color:var(--dim);font-weight:700}
   .hi.active{background:var(--fg);color:var(--bg)}              /* ハイライト=反転 */
   .hi.active .mt,.hi.active .md{color:var(--bg)}
+  #live{padding:.9vh 1vw;border-top:1px solid var(--line);font-size:1.4vh;font-weight:800;color:var(--dim);
+    display:flex;align-items:center;gap:.5vw}
+  #live .dot{width:1.1vh;height:1.1vh;border-radius:50%;background:#3a3a3e}
+  #live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
 
-  /* ===== 右：1集計を大きく ===== */
-  #main{flex:1;height:100vh;display:flex;flex-direction:column;padding:1.8vh 1.8vw;min-width:0}
-  #head{display:flex;align-items:baseline;gap:1.2vw;flex:0 0 auto;
-    border-bottom:2px solid var(--line);padding-bottom:1.1vh;margin-bottom:1.1vh}
-  #head .rid{font-size:5.4vh;font-weight:900;letter-spacing:-.01em}
-  #head .meta{font-size:2.3vh;color:var(--dim);font-weight:700}
-  #head .live{margin-left:auto;font-size:1.7vh;font-weight:800;color:var(--dim);display:flex;align-items:center;gap:.5vw}
-  #head .live .dot{width:1.1vh;height:1.1vh;border-radius:50%;background:#3a3a3e}
-  #head .live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
+  /* ===== 右：1集計を大きく（本物テーブルを注入）===== */
+  #main{flex:1;height:100vh;overflow:auto;padding:1.6vh 1.6vw;min-width:0}
+  #main::-webkit-scrollbar{width:9px}#main::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
 
-  #scroll{flex:1;overflow:auto;min-height:0}
-  #scroll::-webkit-scrollbar{width:9px}#scroll::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
+  .ta-head{display:flex;align-items:baseline;gap:1.2vw;border-bottom:2px solid var(--line);
+    padding-bottom:1.1vh;margin-bottom:1.2vh}
+  .ta-head .rid{font-size:5.4vh;font-weight:900;letter-spacing:-.01em}
+  .ta-head .meta{font-size:2.5vh;color:var(--dim);font-weight:700}
+  .ta-empty{display:flex;align-items:center;justify-content:center;height:70vh;color:var(--dim);font-size:3vh}
 
-  /* 見出し */
-  .sect{font-size:1.9vh;font-weight:800;letter-spacing:.06em;color:var(--dim);margin:1.2vh 0 .8vh}
+  /* ===== 本物テーブル（/admin/timing/results と同一構造）を黒背景用に配色 ===== */
+  .tr-wrap{overflow-x:auto}
+  .tr-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  .tr-table th{padding:.6vh .55vw;text-align:center;font-size:1.5vh;font-weight:800;
+    color:var(--dim);letter-spacing:.5px;white-space:nowrap}
+  .tr-table thead tr.g-row th{border-bottom:1px solid var(--line);color:var(--dim)}
+  .tr-table th.gsep,.tr-table td.gsep{border-left:2px solid #35353a}
+  .tr-table thead tr.h-row th{border-bottom:2px solid var(--line)}
+  .tr-table td{padding:.75vh .55vw;border-bottom:1px solid var(--line);white-space:nowrap;
+    text-align:right;font-size:2.0vh}
+  .tr-table tr.race-start td{border-top:2px solid #45454b}
+  .tr-table tr.lane-start td{border-top:2px solid #2a2a2e}
 
-  /* 順位表（詳細ページの「順位」＝順位/スタートレーン/合計タイム/ベストラップ） */
-  table.rk{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  table.rk th{font-size:1.6vh;color:var(--dim);font-weight:800;text-align:right;padding:.5vh .8vw;border-bottom:1px solid var(--line)}
-  table.rk th:first-child,table.rk th:nth-child(2){text-align:left}
-  table.rk td{padding:1.0vh .8vw;border-bottom:1px solid var(--line);font-size:2.6vh;text-align:right}
-  table.rk td.pos{text-align:center;font-size:3.4vh;font-weight:900;width:2.4em}
-  table.rk td.lane{text-align:left;font-size:2.4vh;font-weight:800}
-  table.rk td.big{font-size:3.4vh;font-weight:900;letter-spacing:-.01em}
-  .flag{display:inline-block;margin-left:.5vw;font-size:1.5vh;font-weight:900;padding:.05em .5em;border-radius:6px;vertical-align:middle}
-  .flag.dnf{background:#6b6b70;color:#fff}.flag.js{background:var(--l4);color:#fff}.flag.warn{background:var(--l3);color:#000}
-  tr.r1 td{background:var(--fg);color:#000}                      /* 1位=反転ハイライト */
-  tr.r1 td.lane.l1,tr.r1 td.lane.l2,tr.r1 td.lane.l3,tr.r1 td.lane.l4,tr.r1 td.lane.l5{color:#000}
+  /* LANE：セルをレーン色で塗り黒文字（指示：L1青 L2緑 L3黄 L4赤 L5白/灰） */
+  .c-lane{text-align:center;vertical-align:middle;font-size:2.4vh;font-weight:900;color:#000}
+  .tr-table td.lane-1{background:var(--l1);color:#000}
+  .tr-table td.lane-2{background:var(--l2);color:#000}
+  .tr-table td.lane-3{background:var(--l3);color:#000}
+  .tr-table td.lane-4{background:var(--l4);color:#000}
+  .tr-table td.lane-5{background:var(--l5);color:#000}
 
-  /* 各レーンのラップ詳細（詳細ページ：ラップ/タイム/セクター）をレーン別カードで横並び */
-  #lanes{display:flex;gap:1.4vw;flex-wrap:wrap;align-items:flex-start}
-  .lcard{flex:1 1 30%;min-width:26vw;border:2px solid var(--line);border-radius:10px;overflow:hidden}
-  .lcard .lh{padding:.9vh 1vw;font-size:2.2vh;font-weight:900;display:flex;align-items:baseline;gap:.6vw}
-  .lcard .lh .sub{font-size:1.5vh;font-weight:700;opacity:.85}
-  table.lp{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  table.lp th{font-size:1.4vh;color:var(--dim);font-weight:800;text-align:right;padding:.5vh .8vw;border-bottom:1px solid var(--line)}
-  table.lp th:first-child{text-align:left}
-  table.lp td{padding:.7vh .8vw;border-bottom:1px solid var(--line);font-size:1.95vh;text-align:right;white-space:nowrap}
-  table.lp td.lapno{text-align:left;font-weight:800;color:var(--dim)}
-  table.lp td.sec{text-align:left;font-size:1.5vh;color:var(--dim);white-space:normal}
-  table.lp td.tm.best{background:var(--fg);color:#000;font-weight:900}   /* ベストラップ=反転 */
+  .c-pos{text-align:center;vertical-align:middle;font-size:2.6vh;font-weight:900;width:3em}
+  .rflag{display:block;margin-top:2px;font-size:1.15vh;font-weight:900;line-height:1.25;border-radius:5px;padding:0 3px;white-space:nowrap}
+  .rflag-dnf{background:#6b6b70;color:#fff}
+  .rflag-js{background:var(--l4);color:#fff}
 
-  .l1{color:var(--l1)}.l2{color:var(--l2)}.l3{color:var(--l3)}.l4{color:var(--l4)}.l5{color:var(--l5)}
-  .bd1{border-color:var(--l1)}.bd2{border-color:var(--l2)}.bd3{border-color:var(--l3)}.bd4{border-color:var(--l4)}.bd5{border-color:var(--l5)}
-  #empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:3vh}
+  .c-total{text-align:right;font-weight:900;vertical-align:middle;font-size:3.0vh;letter-spacing:-.01em}
+  .c-gap{text-align:right;vertical-align:middle;font-size:2.1vh;color:#c6a4ff}
+  .c-totav{text-align:right;vertical-align:middle;font-size:2.0vh;color:#5fd0c4}
+  .c-max{text-align:right;vertical-align:middle;font-size:2.0vh;color:var(--l4)}
+  .unit{color:#6a6a70;font-size:1.2vh;margin-left:1px}
+
+  .c-lapno{text-align:center;color:var(--dim);font-size:1.6vh}
+  .c-lapt{text-align:right;font-weight:800;font-size:2.1vh}
+  .c-lapav{text-align:right;color:#9fb0bf;font-size:1.7vh}
+
+  .c-sec{text-align:right;background:#0e0e10;border-left:1px solid var(--line);line-height:1.2;font-size:1.9vh}
+  .c-sec.sg{background:#13171d}
+  .c-sec .sec-t{font-weight:800}
+  .c-sec .sec-v{color:var(--dim);font-size:1.4vh}
+
+  /* ハイライト＝反転（その日の上位3傑。1位=白地黒字／2・3位=灰地黒字で段階） */
+  .r1{background:#fff !important;color:#000 !important;font-weight:900;border-radius:3px}
+  .r2{background:#c9c9ce !important;color:#000 !important;font-weight:900;border-radius:3px}
+  .r3{background:#86868b !important;color:#000 !important;font-weight:900;border-radius:3px}
+  .c-sec .r1,.c-sec .r2,.c-sec .r3{display:block;padding:0 2px}
 </style>
 </head>
 <body>
@@ -88,32 +101,15 @@
   <aside id="side">
     <div class="shd"><span>履歴</span><span><b id="hcount">0</b> 件</span></div>
     <div id="hist"></div>
+    <div id="live"><span class="dot"></span><span id="livetxt">接続中…</span></div>
   </aside>
-  <section id="main">
-    <div id="head">
-      <div class="rid" id="h-rid">—</div>
-      <div class="meta" id="h-meta"></div>
-      <div class="live" id="h-live"><span class="dot"></span><span id="h-livetxt">接続中…</span></div>
-    </div>
-    <div id="scroll">
-      <div class="sect">順位</div>
-      <table class="rk"><thead><tr>
-        <th>順位</th><th>スタートレーン</th><th>合計タイム</th><th>ベストラップ</th>
-      </tr></thead><tbody id="rankbody"></tbody></table>
-      <div class="sect">各レーンのラップ詳細</div>
-      <div id="lanes"></div>
-    </div>
-    <div id="empty" style="display:none">結果がありません</div>
-  </section>
+  <section id="main"><div class="ta-empty">読み込み中…</div></section>
 </div>
 <script>
 (function(){
   "use strict";
   var BASE = location.pathname.replace(/\/+$/,"");   // /view/ta or /<slug>/view/ta
   var QS   = location.search || "";
-  function fmt(s){ return (s==null)?"—":s.toFixed(3); }
-  function medal(p){ return p===1?"🏆":p===2?"🥈":p===3?"🥉":String(p); }
-  function lc(l){ return (l>=1&&l<=5)? l : 5; }
   function fmtClock(iso){ if(!iso)return ""; var t=String(iso).replace("T"," ");
     var m=t.match(/(\d{2})-(\d{2})\D+(\d{2}):(\d{2})/); return m?(m[1]+"/"+m[2]+" "+m[3]+":"+m[4]):t; }
   function el(t,c,x){ var e=document.createElement(t); if(c)e.className=c; if(x!=null)e.textContent=x; return e; }
@@ -126,8 +122,7 @@
     hist.forEach(function(r){
       var row=el("div","hi"+(r.race_id===current?" active":""));
       row.appendChild(el("span","no","#"+r.race_id));
-      var label=(r.heat_tag!=null?("ヒート"+r.heat_tag+" "):"")+fmtClock(r.created_at);
-      row.appendChild(el("span","mt",label));
+      row.appendChild(el("span","mt",(r.heat_tag!=null?("ヒート"+r.heat_tag+" "):"")+fmtClock(r.created_at)));
       row.appendChild(el("span","md",(r.mode==="race"?"RACE":"FREE")+(r.target_laps!=null?(" "+r.target_laps+"L"):"")));
       row.onclick=function(){ pinnedByUser=true; show(r.race_id); };
       box.appendChild(row);
@@ -141,60 +136,9 @@
 
   function show(raceId){
     if(raceId==null)return;
-    fetch(BASE+"/race/"+raceId+QS,{cache:"no-store"}).then(function(x){return x.json();}).then(function(d){
-      current=d.race_id; renderHist();
-      document.getElementById("h-rid").textContent="#"+d.race_id;
-      var meta=(d.mode==="f1"||d.mode==="race"?"レース（反応込み）":"フリー")
-        +(d.target_laps!=null?("　/　"+d.target_laps+"周"):"")
-        +(d.heat_tag!=null?("　/　ヒート"+d.heat_tag):"")
-        +(d.created_at?("　/　"+fmtClock(d.created_at)):"");
-      document.getElementById("h-meta").textContent=meta;
-
-      var scroll=document.getElementById("scroll"), empty=document.getElementById("empty");
-      var rb=document.getElementById("rankbody"), lanes=document.getElementById("lanes");
-      rb.innerHTML=""; lanes.innerHTML="";
-      if(!d.has_result||!d.ranking||!d.ranking.length){ scroll.style.display="none"; empty.style.display="flex"; return; }
-      scroll.style.display="block"; empty.style.display="none";
-
-      // 順位（順位/スタートレーン/合計タイム/ベストラップ）＋DNF/JS/⚠
-      d.ranking.forEach(function(m){
-        var c=lc(m.start_lane);
-        var tr=el("tr",(m.pos===1?"r1":""));
-        tr.appendChild(el("td","pos", medal(m.pos)));
-        var tdl=el("td","lane l"+c); tdl.appendChild(document.createTextNode(m.start_lane+"コース スタート"));
-        if(m.dnf){ var f=el("span","flag dnf","DNF"); tdl.appendChild(f); }
-        if(m.jump_start){ tdl.appendChild(el("span","flag js","JS")); }
-        if(m.missing){ tdl.appendChild(el("span","flag warn","⚠要確認")); }
-        tr.appendChild(tdl);
-        tr.appendChild(el("td","big", m.total_s!=null?(fmt(m.total_s)+" 秒"):"—"));
-        tr.appendChild(el("td", m.best_s!=null?(fmt(m.best_s)+" 秒"):"—"));
-        rb.appendChild(tr);
-      });
-
-      // 各レーンのラップ詳細（ラップ/タイム/セクター）
-      d.machines.forEach(function(mc){
-        var c=lc(mc.start_lane);
-        var card=el("div","lcard bd"+c);
-        var h=el("div","lh l"+c); h.appendChild(document.createTextNode(mc.start_lane+"コース スタート"));
-        var sub=el("span","sub", "（"+(mc.completed_laps||0)+"周完了"+(mc.total_s!=null?("・合計 "+fmt(mc.total_s)+"秒"):"")+"）");
-        h.appendChild(sub); card.appendChild(h);
-        var tbl=el("table","lp");
-        var thead=el("thead"), htr=el("tr");
-        htr.appendChild(el("th",null,"ラップ")); htr.appendChild(el("th",null,"タイム")); htr.appendChild(el("th",null,"セクター"));
-        thead.appendChild(htr); tbl.appendChild(thead);
-        var tb=el("tbody");
-        var best=null; mc.laps.forEach(function(lp){ if(best==null||lp.lap_s<best)best=lp.lap_s; });
-        mc.laps.forEach(function(lp){
-          var tr=el("tr");
-          tr.appendChild(el("td","lapno", lp.lap+"周目"));
-          tr.appendChild(el("td","tm"+((best!=null&&Math.abs(lp.lap_s-best)<1e-6)?" best":""), fmt(lp.lap_s)+" 秒"));
-          var sc=(lp.sectors||[]).map(function(s){ return "["+s.from+"→"+s.to+"] "+fmt(s.s); }).join(" / ");
-          tr.appendChild(el("td","sec", sc||"—"));
-          tb.appendChild(tr);
-        });
-        tbl.appendChild(tb); card.appendChild(tbl); lanes.appendChild(card);
-      });
-
+    fetch(BASE+"/race/"+raceId+"/table"+QS,{cache:"no-store"}).then(function(x){return x.text();}).then(function(html){
+      current=raceId; renderHist();
+      document.getElementById("main").innerHTML=html;
       var act=document.querySelector("#hist .hi.active");
       if(act&&act.scrollIntoViewIfNeeded) act.scrollIntoViewIfNeeded();
     }).catch(function(){});
@@ -204,7 +148,7 @@
     loadList(function(){ if(!hist.length)return; if(!pinnedByUser||current==null){ show(hist[0].race_id); } });
   }
 
-  var live=document.getElementById("h-live"), liveTxt=document.getElementById("h-livetxt");
+  var live=document.getElementById("live"), liveTxt=document.getElementById("livetxt");
   var pollTimer=null;
   function setLive(on){ live.classList.toggle("on",on); liveTxt.textContent=on?"自動更新 中":"ポーリング"; }
   function startPoll(){ if(pollTimer)return; pollTimer=setInterval(refreshToLatest,10000); }

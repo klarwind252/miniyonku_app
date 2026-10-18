@@ -1,0 +1,79 @@
+<div class="ta-head">
+  <span class="rid">#{{ race_id }}</span>
+  <span class="meta">{% if mode == 'f1' %}レース（反応込み）{% else %}フリー{% endif %}　/　{{ target_laps }}周{% if heat_tag is not none %}　/　ヒート{{ heat_tag }}{% endif %}{% if created_at %}　/　{{ created_at[5:16].replace('-','/') }}{% endif %}</span>
+</div>
+
+{% if not has_result or not rows %}
+<div class="ta-empty">結果がありません</div>
+{% else %}
+<div class="tr-wrap">
+  <table class="tr-table">
+    <thead>
+      <tr class="g-row">
+        <th colspan="2"></th>
+        <th colspan="4" class="gsep">TOTAL</th>
+        <th colspan="3" class="gsep">LAP</th>
+        <th colspan="8" class="gsep">SECTOR</th>
+      </tr>
+      <tr class="h-row">
+        <th>LANE</th>
+        <th>POS</th>
+        <th class="gsep">TIME</th>
+        <th>GAP</th>
+        <th>Av.</th>
+        <th>MAX</th>
+        <th class="gsep">#</th>
+        <th>TIME</th>
+        <th>Av.</th>
+        {% for n in range(0, 8) %}
+        <th{% if n == 0 %} class="gsep"{% endif %}>{{ n }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="{% if row.is_first_of_race %}race-start{% elif row.is_first_of_lane %}lane-start{% endif %}">
+        {# POS・LANE・TOTAL はレーンごとに1回だけ（rowspan結合） #}
+        {% if row.is_first_of_lane %}
+        <td class="c-lane lane-{{ ((row.start_lane - 1) % 5) + 1 }}"
+            rowspan="{{ row.lane_row_count }}">{{ row.start_lane }}</td>
+        <td class="c-pos" rowspan="{{ row.lane_row_count }}">{{ row.pos }}
+          {% if row.dnf %}<span class="rflag rflag-dnf">DNF</span>{% endif %}
+          {% if row.jump_start %}<span class="rflag rflag-js">JS</span>{% endif %}
+        </td>
+        <td class="c-total gsep{% if row.rank_total %} r{{ row.rank_total }}{% endif %}"
+            rowspan="{{ row.lane_row_count }}">
+          {{ '%.3f'|format(row.total_s) if row.total_s is not none else '—' }}
+        </td>
+        <td class="c-gap" rowspan="{{ row.lane_row_count }}">
+          {% if row.gap is none %}—{% elif row.gap == 0 %}-{% else %}+{{ '%.3f'|format(row.gap|abs) }}{% endif %}
+        </td>
+        <td class="c-totav{% if row.rank_total_avg %} r{{ row.rank_total_avg }}{% endif %}" rowspan="{{ row.lane_row_count }}">
+          {% if row.total_avg_ms is not none %}{{ '%.2f'|format(row.total_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+        </td>
+        <td class="c-max{% if row.rank_max %} r{{ row.rank_max }}{% endif %}" rowspan="{{ row.lane_row_count }}">
+          {% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+        </td>
+        {% endif %}
+        {# LAP：周ごと #}
+        <td class="c-lapno gsep">{{ row.lap_no if row.lap_no is not none else '—' }}</td>
+        <td class="c-lapt{% if row.rank_lap %} r{{ row.rank_lap }}{% endif %}">{{ '%.3f'|format(row.lap_s) if row.lap_s is not none else '—' }}</td>
+        <td class="c-lapav{% if row.rank_lap_avg %} r{{ row.rank_lap_avg }}{% endif %}">
+          {% if row.lap_avg_ms is not none %}{{ '%.2f'|format(row.lap_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+        </td>
+        {# SECTOR 0〜7（上段=区間タイム / 下段=通過速度） #}
+        {% for n in range(0, 8) %}
+        {% set sec = row.sectors[n] %}
+        <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
+          {% if sec %}
+            {% if sec.s is not none %}<div class="sec-t{% if sec.rank_s %} r{{ sec.rank_s }}{% endif %}">{{ '%.3f'|format(sec.s) }}</div>{% endif %}
+            {% if sec.ms is not none %}<div class="sec-v{% if sec.rank_ms %} r{{ sec.rank_ms }}{% endif %}">{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
