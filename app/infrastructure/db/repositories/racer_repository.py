@@ -31,10 +31,17 @@ class RacerRepository:
             return await cur.fetchall()
 
     async def find_by_name(self, name: str, exclude_id: int | None = None):
+        # マスタの重複判定はマスタ（非ephemeral）のみを対象にする。
+        # レース専用（ephemeral=1・owner_tournament_id付きの隠しレーサー）は同名でも
+        # マスタ登録を妨げない。旧実装は ephemeral も拾ってしまい、
+        # 「マスタ未使用でレース作成→そのレース用レーサー登録」後に同名をマスタ一覧へ
+        # 登録できない不具合があった。
         if exclude_id is None:
-            sql, params = "SELECT id FROM racers WHERE name = ?", (name,)
+            sql = "SELECT id FROM racers WHERE name = ? AND COALESCE(ephemeral,0)=0"
+            params = (name,)
         else:
-            sql, params = "SELECT id FROM racers WHERE name = ? AND id != ?", (name, exclude_id)
+            sql = "SELECT id FROM racers WHERE name = ? AND COALESCE(ephemeral,0)=0 AND id != ?"
+            params = (name, exclude_id)
         async with self.db.execute(sql, params) as cur:
             return await cur.fetchone()
 
