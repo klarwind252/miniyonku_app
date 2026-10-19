@@ -19,7 +19,7 @@
   .wrap{display:flex;height:100vh;width:100vw}
 
   /* ===== 左：履歴一覧（最大1000）===== */
-  #side{width:14vw;min-width:200px;max-width:320px;height:100vh;
+  #side{width:9.5vw;min-width:150px;max-width:230px;height:100vh;
     border-right:2px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
   #side .shd{padding:1.2vh 1vw;border-bottom:1px solid var(--line);
     font-size:1.8vh;font-weight:700;color:var(--dim);display:flex;justify-content:space-between;align-items:baseline}
@@ -39,18 +39,22 @@
   #live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
 
   /* ===== 右：1集計を大きく（本物テーブルを注入）===== */
-  #main{flex:1;height:100vh;overflow:auto;padding:1.1vh 1vw;min-width:0}
-  #main::-webkit-scrollbar{width:9px}#main::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
+  /* 右側はウインドウ高さいっぱいに。ヘッダ固定・テーブルが残り高さを埋める */
+  #main{flex:1;height:100vh;overflow:hidden;padding:1.1vh 1vw;min-width:0;
+    display:flex;flex-direction:column}
 
-  .ta-head{display:flex;align-items:baseline;gap:1.2vw;border-bottom:2px solid var(--line);
+  .ta-head{flex:0 0 auto;display:flex;align-items:baseline;gap:1.2vw;border-bottom:2px solid var(--line);
     padding-bottom:.6vh;margin-bottom:.7vh}
   .ta-head .rid{font-size:5vh;font-weight:900;letter-spacing:-.01em}
   .ta-head .meta{font-size:2.2vh;color:var(--dim);font-weight:700}
-  .ta-empty{display:flex;align-items:center;justify-content:center;height:70vh;color:var(--dim);font-size:3vh}
+  .ta-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:3vh}
 
   /* ===== 本物テーブル（/admin/timing/results と同一構造）を黒背景用に配色 ===== */
-  .tr-wrap{overflow-x:auto}
-  .tr-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  .tr-wrap{flex:1 1 auto;min-height:0;overflow:auto}
+  .tr-wrap::-webkit-scrollbar{width:9px;height:9px}.tr-wrap::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
+  /* height:100% で余った縦幅を各行に自動配分＝ウインドウ高さに合わせて行が伸縮 */
+  .tr-table{width:100%;height:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  .tr-table thead tr{height:4.5vh}  /* ヘッダは固定高。残りをtbodyが埋める */
   .tr-table th{padding:.35vh .4vw;text-align:center;font-size:1.35vh;font-weight:800;
     color:var(--dim);letter-spacing:.5px;white-space:nowrap}
   .tr-table thead tr.g-row th{border-bottom:1px solid var(--line);color:var(--dim)}
@@ -97,6 +101,14 @@
   .r2{background:#c9c9ce !important;color:#000 !important;font-weight:900;border-radius:3px}
   .r3{background:#86868b !important;color:#000 !important;font-weight:900;border-radius:3px}
   .c-sec .r1,.c-sec .r2,.c-sec .r3{display:block;padding:0 2px}
+
+  /* ===== 当日ベスト行（最下部）===== */
+  .best-row td{border-top:4px solid #55555c;background:#101014;vertical-align:middle}
+  .best-row .best-lane{background:#1a1a1d;color:var(--l3);font-size:3.2vh;font-weight:900}
+  .best-row .best-pos{white-space:normal;line-height:1.1;font-size:1.7vh;font-weight:800;color:var(--dim)}
+  .best-row .c-total{font-size:5vh;font-weight:900;color:var(--fg)}
+  .best-row .tb-v{font-weight:900}
+  .tb-dash{color:#55555a}
 </style>
 </head>
 <body>
@@ -126,7 +138,6 @@
       var row=el("div","hi"+(r.race_id===current?" active":""));
       row.appendChild(el("span","no","#"+r.race_id));
       row.appendChild(el("span","mt",(r.heat_tag!=null?("ヒート"+r.heat_tag+" "):"")+fmtClock(r.created_at)));
-      row.appendChild(el("span","md",(r.mode==="race"?"RACE":"FREE")+(r.target_laps!=null?(" "+r.target_laps+"L"):"")));
       row.onclick=function(){ pinnedByUser=true; show(r.race_id); };
       box.appendChild(row);
     });

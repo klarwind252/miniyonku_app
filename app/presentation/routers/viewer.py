@@ -1865,12 +1865,13 @@ async def ta_events(request: Request):
 async def ta_race_table(race_id: int, request: Request,
                         db: aiosqlite.Connection = Depends(get_db)):
     """1レースの本物テーブル（/admin/timing/results と同一構造）をHTML断片で返す。"""
-    from app.presentation.routers.timing_api import build_result_rows
+    from app.presentation.routers.timing_api import build_result_rows, today_best_map_for
     data = await build_result_rows(db, race_id)
     race = data["race"]
     if race is None:
         raise HTTPException(status_code=404, detail="race not found")
     keys = race.keys() if hasattr(race, "keys") else []
+    tb = await today_best_map_for(db)
     return templates.TemplateResponse("viewer/_ta_result_table.html", {
         "request": request,
         "race_id": race_id,
@@ -1880,4 +1881,8 @@ async def ta_race_table(race_id: int, request: Request,
         "target_laps": (race["target_laps"] if "target_laps" in keys else None),
         "heat_tag": (race["heat_tag"] if "heat_tag" in keys else None),
         "created_at": (race["created_at"] if "created_at" in keys else None),
+        "today_best_map": tb["today_best_map"],
+        "today_from": tb["today_from"],
+        "today_to": tb["today_to"],
+        "today_race_count": tb["today_race_count"],
     })

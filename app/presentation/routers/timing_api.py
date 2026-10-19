@@ -1622,3 +1622,28 @@ async def build_result_rows(db, race_id: int):
             })
             race_row_index += 1
     return {"race": race, "mode": result.mode, "has_result": True, "rows": rows}
+
+
+async def today_best_map_for(db):
+    """当日（09:00〜翌08:59）のベストを results_page と同じ集計で作る。TA view 最下部用。"""
+    repo = TimingRaceRepository(db)
+    ts_from, ts_to, _label = best_svc.business_day_window()
+    today_bests = []
+    today_race_count = 0
+    try:
+        today_races = await repo.list_races_between_ts(ts_from, ts_to)
+        if today_races:
+            t_sf, t_lf, t_tf = await _speed_fns_for_races(db, [r["id"] for r in today_races])
+            agg = await best_svc.aggregate_range(
+                db, date_from=ts_from, date_to=ts_to, mode=None,
+                list_fn=lambda a, b: repo.list_races_between_ts(a, b),
+                build_fn=build_race_result, speed_fn=t_sf, lap_avg_fn=t_lf, total_avg_fn=t_tf,
+            )
+            today_race_count = agg["race_count"]
+            today_bests = [x for x in _best_items(agg["bests"]) if x["value"] is not None]
+    except Exception:
+        today_bests = []
+    return {
+        "today_best_map": {x["key"]: x for x in today_bests},
+        "today_from": ts_from, "today_to": ts_to, "today_race_count": today_race_count,
+    }
