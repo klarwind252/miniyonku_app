@@ -113,14 +113,14 @@
 
   /* ===== スマホ縦画面（/api/ta など）。FHDの横2カラム＆vhフォントを上書き ===== */
   @media (max-width: 860px){
-    /* ページ全体を自然に流す（固定100vh+overflow:hiddenの切れを解除）。
-       内容(main)は全レーンを切らずに全部表示し、スクロールするのは履歴側。 */
-    html,body{height:auto;overflow:auto}
-    .wrap{flex-direction:column;height:auto;min-height:100dvh}
-    /* 内容を上・自然高さで全部表示（縦は切らない／横だけ必要ならスクロール） */
-    #main{order:1;height:auto;flex:none;overflow-x:auto;overflow-y:visible;display:block;padding:3vw 2.5vw}
-    /* 履歴は内容の下。高さ上限付きの“スクロール箱”にする（＝ここが唯一スクロールする側） */
-    #side{order:2;width:100%;max-width:none;min-width:0;height:auto;max-height:42vh;
+    /* 画面を3段固定：①内容(main)=上に固定 ②履歴(side)=余ったスペースでスクロール
+       ③戻るボタン(exit)=最下部に常時固定。スクロールするのは履歴だけ。 */
+    html,body{height:100%;overflow:hidden}
+    .wrap{flex-direction:column;height:100dvh;overflow:hidden}
+    /* 内容＝自然高さで固定（スクロールしない／横だけ必要なら横スクロール） */
+    #main{order:1;flex:0 0 auto;height:auto;overflow-x:auto;overflow-y:hidden;display:block;padding:3vw 2.5vw}
+    /* 履歴＝残り全部を占めてここだけ縦スクロール */
+    #side{order:2;width:100%;max-width:none;min-width:0;flex:1 1 auto;min-height:0;height:auto;
       overflow-y:auto;overflow-x:hidden;border-right:none;border-top:2px solid var(--line)}
     #side .shd{display:flex;padding:2.6vw 4vw;font-size:3.4vw;position:sticky;top:0;background:var(--panel);z-index:1}
     #hist{display:block;overflow:visible}
@@ -128,10 +128,9 @@
       border-bottom:1px solid var(--line);padding:3.2vw 4vw}
     .hi .no{font-size:5vw;min-width:3.6em}
     .hi .mt{display:inline;font-size:3.6vw}
-    .hi:nth-child(n+11){display:none}     /* 直近10件のみ表示 */
     #live{display:none}
-    /* 戻るボタン（最下部） */
-    #ta-exit{order:3;display:block;text-align:center;padding:3.8vw;font-size:4.2vw;
+    /* 戻るボタン＝最下部に常時固定（絶対に隠さない） */
+    #ta-exit{order:3;flex:0 0 auto;display:block;text-align:center;padding:3.8vw;font-size:4.2vw;
       font-weight:800;color:var(--fg);text-decoration:none;
       background:var(--panel);border-top:2px solid var(--line)}
     #ta-exit:active{background:#141416}

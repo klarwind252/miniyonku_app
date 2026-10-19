@@ -59,7 +59,8 @@ def _get_logo_base64() -> str | None:
     return None
 
 
-def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False) -> str:
+def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False,
+                           ta_enabled: bool = False) -> str:
     """
     静的配信用: 全JSを除去し、bracket線描画JS＋有効期限ゲートJSを再注入する。
 
@@ -208,6 +209,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 (function(){
   window.__M4_PUBLIC__ = true;   // #5 公開HTML判定（トーナメント表のレーサー名タップ→成績モーダル）
   window.__M4_FINALIZED__ = __M4FINAL__;   // 結果確定済みなら「次のレースまで」案内を抑止
+  window.__M4_TA_ON__ = __M4TA__;   // 連動型ラップタイマーM4LAPSが有効な店舗のみ true（ラップタイムボタン表示可否）
   var KEY = "m4_pub_issued___SLUGKEY__";
   var TTL = 24*60*60*1000;          // 24時間（サーバーの日境界=翌09:00に合わせる。正確な失効はサーバー判定/scheduleDeadline）
   var CHECK_MS = 10000;             // 10秒ごとに「更新の有無」だけ確認する（変化なしはETagで304＝最軽量）
@@ -251,6 +253,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     // 観覧期限バッジの代わりに「ラップタイム(TA)」入口ボタンを下部中央に常時表示。
     // （期限の失効処理は scheduleDeadline() が担うので、ここは表示のみ）
     try {
+      if(!window.__M4_TA_ON__) return;   // M4LAPS無効の店舗はボタンを出さない
       if(document.getElementById('m4-ta-btn')) return;   // 既に設置済みなら何もしない
       var a = document.createElement('a');
       a.id = 'm4-ta-btn';
@@ -532,7 +535,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     es.onerror = function(){ goPoll(); };   // 確立できない環境ではポーリングが実質の更新手段
   })();
 })();
-</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__EVENTSURL__", _events_url).replace("__TAURL__", _ta_url).replace("__M4FINAL__", "true" if is_finalized else "false")
+</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__EVENTSURL__", _events_url).replace("__TAURL__", _ta_url).replace("__M4FINAL__", "true" if is_finalized else "false").replace("__M4TA__", "true" if ta_enabled else "false")
 
     # bracket レイアウト＋線描画JSを再注入（admin と同一ロジックを保持したものを使用）。
     # connector_js 内で window._bracketDrawConnectors と init() が定義され、ページ内の
@@ -1749,7 +1752,20 @@ async def export_current_html(db=None) -> bool:
                 _is_final = await _is_result_finalized(int(_mfin.group(1)), own_db)
         except Exception:
             _is_final = False
-        html = _patch_html_for_static(html, slug, is_finalized=_is_final)
+        # 連動型ラップタイマー M4LAPS が有効な店舗だけラップタイム(TA)ボタンを表示。
+        # 判定はこの店舗のDB(own_db)で行うので、slug有無・店舗ごとに独立。
+        _ta_enabled = False
+        try:
+            if IS_CLOUD:
+                async with own_db.execute(
+                    "SELECT value FROM app_settings WHERE key='m4laps_licensed'"
+                ) as _cur_ta:
+                    _row_ta = await _cur_ta.fetchone()
+                _ta_enabled = bool(_row_ta) and (_row_ta[0] == "1")
+        except Exception:
+            _ta_enabled = False
+        html = _patch_html_for_static(html, slug, is_finalized=_is_final,
+                                      ta_enabled=_ta_enabled)
         # ホーム画面アイコン（Webアプリ）: <head> へメタ注入 ＋ 静的 manifest 書き出し（クラウド版のみ）
         try:
             from app import pwa as _pwa

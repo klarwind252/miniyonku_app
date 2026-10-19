@@ -749,17 +749,30 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
 #    GET /api/ta/events           … SSE（新結果で即push／断時はクライアントが10秒ポーリング）
 #  参加者ゲート（_content_allowed＝観覧クッキー or スタッフ）で保護。
 # ============================================================================
-@router.get("/api/ta", response_class=HTMLResponse)
-async def public_ta(request: Request):
+async def _ta_gate(request, db):
+    """TA画面の共通ゲート：参加者認証＋M4LAPSライセンス。
+    未ライセンス店舗ではTA機能自体を存在しない扱い(404)にする。slug有無に非依存。"""
+    from fastapi import HTTPException
     if not _content_allowed(request):
         return _deny_content(request)
+    if not await _m4laps_licensed(request, db):
+        raise HTTPException(status_code=404)
+    return None
+
+
+@router.get("/api/ta", response_class=HTMLResponse)
+async def public_ta(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    _g = await _ta_gate(request, db)
+    if _g is not None:
+        return _g
     return _templates.TemplateResponse("viewer/ta_board.html", {"request": request})
 
 
 @router.get("/api/ta/list")
 async def public_ta_list(request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    if not _content_allowed(request):
-        return _deny_content(request)
+    _g = await _ta_gate(request, db)
+    if _g is not None:
+        return _g
     from fastapi.responses import JSONResponse
     from app.presentation.routers.timing_api import TimingRaceRepository
 
@@ -785,8 +798,9 @@ async def public_ta_list(request: Request, db: aiosqlite.Connection = Depends(ge
 @router.get("/api/ta/race/{race_id}/table", response_class=HTMLResponse)
 async def public_ta_race_table(race_id: int, request: Request,
                                db: aiosqlite.Connection = Depends(get_db)):
-    if not _content_allowed(request):
-        return _deny_content(request)
+    _g = await _ta_gate(request, db)
+    if _g is not None:
+        return _g
     from app.presentation.routers.timing_api import build_result_rows, today_best_map_for
     data = await build_result_rows(db, race_id)
     race = data["race"]
@@ -812,9 +826,10 @@ async def public_ta_race_table(race_id: int, request: Request,
 
 
 @router.get("/api/ta/events")
-async def public_ta_events(request: Request):
-    if not _content_allowed(request):
-        return _deny_content(request)
+async def public_ta_events(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    _g = await _ta_gate(request, db)
+    if _g is not None:
+        return _g
     import asyncio
     from fastapi.responses import StreamingResponse
     from app.services import live_events
