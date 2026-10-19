@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Form, Query
+from fastapi import APIRouter, Request, Depends, Form, Query, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 import aiosqlite
@@ -516,12 +516,6 @@ async def tournament_add(
             ("1" if qual_heat_exclude else "0",),
         )
     await db.commit()
-    # 事前告知ページの恒久URLトークンを自動発行（店舗DBごとに1本・未発行時のみ）。
-    try:
-        from app.presentation.routers.preview import ensure_preview_token
-        await ensure_preview_token(db)
-    except Exception:
-        pass
     return RedirectResponse(url="/admin/tournaments/", status_code=303)
 
 
@@ -798,6 +792,41 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
         "holder_boxes": holder_boxes,
         "post_templates": await _get_post_templates(db),
     })
+
+
+@router.get("/{tid}/entries.csv")
+async def tournament_entries_csv(tid: int, db: aiosqlite.Connection = Depends(get_db)):
+    """エントリー済みレーサーのCSVエクスポート（レーサーマスタ未使用のレース用）。
+       レーサーマスタのインポート形式（uid,name,yomigana,is_junior）で出力するため、
+       そのまま『レーサー一覧』へインポートできる。"""
+    import csv as _csv
+    import io as _io
+    from fastapi.responses import StreamingResponse
+    async with db.execute("SELECT name FROM tournaments WHERE id=?", (tid,)) as cur:
+        trow = await cur.fetchone()
+    if trow is None:
+        raise HTTPException(status_code=404, detail="tournament not found")
+    async with db.execute(
+        """SELECT r.uid, r.name, r.yomi, r.is_child
+           FROM entries e JOIN racers r ON r.id = e.racer_id
+           WHERE e.tournament_id = ?
+           ORDER BY r.yomi, r.name""",
+        (tid,),
+    ) as cur:
+        rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    buf.write("﻿")  # ExcelでUTF-8日本語が文字化けしないようBOM付与
+    w = _csv.writer(buf)
+    w.writerow(["uid", "name", "yomigana", "is_junior"])
+    for r in rows:
+        uid = r["uid"] or str(uuid.uuid4())
+        w.writerow([uid, r["name"], r["yomi"] or "", 1 if r["is_child"] else 0])
+
+    data = buf.getvalue()
+    headers = {"Content-Disposition": f'attachment; filename="entries_{tid}.csv"'}
+    return StreamingResponse(iter([data]), media_type="text/csv; charset=utf-8",
+                             headers=headers)
 
 
 async def _get_post_templates(db) -> list:
@@ -1274,57 +1303,16 @@ async def add_pre_entries(tid: int, request: Request, db: aiosqlite.Connection =
     if not pre_on:
         return RedirectResponse(url=f"/admin/tournaments/{tid}", status_code=303)
 
-    import json as _json
     form = await request.form()
-
-    def _short_region(r: str) -> str:
-        """地域の末尾「県/都/府」を除去して短縮（例 鹿児島県→鹿児島）。北海道はそのまま。"""
-        r = (r or "").strip()
-        if r.endswith(("県", "都", "府")):
-            return r[:-1]
-        return r
-
-    def _is_child_from_age(age: str) -> int:
-        """年齢表記に「大人」を含まなければ子供(Jr)扱い。空欄は大人(0)。"""
-        a = (age or "").strip()
-        return 0 if (not a or "大人" in a) else 1
-
-    # 入力の正規化：
-    #   - people（JSON文字列）… [{name, yomi, age, region}, ...]（GAS等の構造化送信・推奨）
-    #       → サーバー側で「名前（地域短縮）」整形・is_child判定・生データ(prefecture/yomi)保存。
-    #   - racer_names（改行区切り）… 従来の名前のみ送信（後方互換・is_child=0）。
-    # 各要素を (display_name, yomi, is_child, prefecture_raw) に変換する。
-    items = []
+    raw = form.get("racer_names", "") or ""
+    # 改行区切り → 各行trim → 空行除外、入力順を保持しつつ同一入力内の重複は除外
+    names = []
     seen_in_input = set()
-    people_raw = (form.get("people", "") or "").strip()
-    if people_raw:
-        try:
-            arr = _json.loads(people_raw)
-        except Exception:
-            arr = []
-        if isinstance(arr, list):
-            for p in arr:
-                if not isinstance(p, dict):
-                    continue
-                name = str(p.get("name") or "").strip()
-                if not name:
-                    continue
-                region_raw = str(p.get("region") or "").strip()
-                yomi = str(p.get("yomi") or "").strip()
-                age = str(p.get("age") or "").strip()
-                short = _short_region(region_raw)
-                disp = f"{name}（{short}）" if short else name
-                if disp in seen_in_input:
-                    continue
-                seen_in_input.add(disp)
-                items.append((disp, yomi, _is_child_from_age(age), region_raw))
-    else:
-        raw = form.get("racer_names", "") or ""
-        for line in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-            nm = line.strip()
-            if nm and nm not in seen_in_input:
-                seen_in_input.add(nm)
-                items.append((nm, "", 0, ""))
+    for line in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        nm = line.strip()
+        if nm and nm not in seen_in_input:
+            names.append(nm)
+            seen_in_input.add(nm)
 
     # このレースに既に登録済みの事前エントリー名（重複登録防止）
     async with db.execute(
@@ -1338,16 +1326,15 @@ async def add_pre_entries(tid: int, request: Request, db: aiosqlite.Connection =
     ) as cur:
         seq = (await cur.fetchone())["mx"]
 
-    for disp, yomi, is_child, pref in items:
-        if disp in existing_names:
+    for nm in names:
+        if nm in existing_names:
             continue
         seq += 1
         await db.execute(
-            "INSERT INTO pre_entries (tournament_id, seq_no, name, yomi, is_child, prefecture) "
-            "VALUES (?,?,?,?,?,?)",
-            (tid, seq, disp, yomi, is_child, pref),
+            "INSERT INTO pre_entries (tournament_id, seq_no, name) VALUES (?,?,?)",
+            (tid, seq, nm),
         )
-        existing_names.add(disp)
+        existing_names.add(nm)
     await db.commit()
     return RedirectResponse(url=f"/admin/tournaments/{tid}", status_code=303)
 
