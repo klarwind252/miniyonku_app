@@ -34,7 +34,7 @@
 
 <div class="card">
   <div class="card-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <span>端末一覧（固定12台）</span>
+    <span>端末一覧（固定10台）</span>
     <span style="color:#c0392b;font-size:12px;font-weight:normal">※計測できなくなる可能性があるため変更禁止</span>
   </div>
   <div class="card-body" style="overflow-x:auto">
@@ -51,7 +51,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for d in devices %}
+        {% for d in devices %}{% if d.kind != 'SG' %}{# シグナル機(SG)はGW一体化で廃止＝非表示 #}
         <tr style="border-bottom:1px solid #eef2f5">
           <form method="post" action="/admin/timing/devices/{{ d.node_id }}">
           <td style="padding:8px;font-weight:bold">{{ d.node_id }}</td>
@@ -90,13 +90,14 @@
           </td>
           </form>
         </tr>
-        {% endfor %}
+        {% endif %}{% endfor %}
       </tbody>
     </table>
     <p style="color:#7f8c8d;font-size:13px;margin-top:12px">
       ⚠ ノードID・種別は固定です。表示名・MAC・メモのみ編集できます。<br>
       ノード0〜5＝セクターゲート（最大6台）／ ノード6・7＝本体・チェッカー（1台は予備・電源OFF）／
-      ノード8・9＝リモコン ／ ノード10・11＝シグナル。
+      ノード8・9＝リモコン。<br>
+      ※ シグナル（信号灯）はGW本体に一体化しました（旧SG10/11は廃止）。
     </p>
   </div>
 </div>
@@ -104,7 +105,7 @@
 <script>
 // ===== 未割当ノードの割当UI =====
 // 種別ごとの割当可能レンジ（protocol.h / node_assignment.py と一致）
-const KIND_RANGE = { SQ:[0,1,2,3,4,5], GW:[6,7], RC:[8,9], SG:[10,11] };
+const KIND_RANGE = { SQ:[0,1,2,3,4,5], GW:[6,7], RC:[8,9] };  // SG(シグナル機)はGW一体化で廃止
 
 // 既に台帳で使用済みの番号（この画面のテーブルから集める）
 function usedNodeIds() {

@@ -278,8 +278,7 @@ DEVICES = [
     {"unit": "SE5",  "node": 5,  "kind": "SE", "env": "sq5",  "chip": "esp32",   "has_wifi": False},
     {"unit": "RC8",  "node": 8,  "kind": "RC", "env": "rc8",  "chip": "esp32c3", "has_wifi": False},
     {"unit": "RC9",  "node": 9,  "kind": "RC", "env": "rc9",  "chip": "esp32c3", "has_wifi": False},
-    {"unit": "SG10", "node": 10, "kind": "SG", "env": "sg10", "chip": "esp32c3", "has_wifi": False},
-    {"unit": "SG11", "node": 11, "kind": "SG", "env": "sg11", "chip": "esp32c3", "has_wifi": False},
+    # ★シグナル機(SG10/SG11)はGW本体に一体化して廃止（対象機材から除外）。
 ]
 SETTINGS_TARGETS = [d["unit"] for d in DEVICES if d["has_wifi"]]   # WiFi欄を出す対象=GW
 ALL_UNITS = {d["unit"] for d in DEVICES}                            # 設定(ch)は全機材
