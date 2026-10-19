@@ -3,6 +3,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 import aiosqlite
 import os
+import re
 import uuid
 import json
 from datetime import date
@@ -815,13 +816,19 @@ async def tournament_entries_csv(tid: int, db: aiosqlite.Connection = Depends(ge
     ) as cur:
         rows = await cur.fetchall()
 
+    # レーサーマスタのCSVインポートと同一形式（ヘッダ: uid,name,yomigana,is_junior）。
+    # 対応するデータが無い項目は空白にする（uid未設定は空欄＝インポート時は名前+よみで突合/新規）。
     buf = _io.StringIO()
     buf.write("﻿")  # ExcelでUTF-8日本語が文字化けしないようBOM付与
     w = _csv.writer(buf)
     w.writerow(["uid", "name", "yomigana", "is_junior"])
     for r in rows:
-        uid = r["uid"] or str(uuid.uuid4())
-        w.writerow([uid, r["name"], r["yomi"] or "", 1 if r["is_child"] else 0])
+        w.writerow([
+            r["uid"] or "",                  # 無ければ空白（生成しない）
+            r["name"] or "",
+            r["yomi"] or "",                 # よみ未設定は空白
+            1 if r["is_child"] else 0,
+        ])
 
     data = buf.getvalue()
     headers = {"Content-Disposition": f'attachment; filename="entries_{tid}.csv"'}
@@ -1882,6 +1889,18 @@ async def tournament_edit_final(
     return RedirectResponse(url=f"/admin/tournaments/{tid}", status_code=303)
 
 
+# 賞状のレーサー名から括弧部分を括弧ごと除去する（全角（）・半角()・混合・空括弧すべて）。
+#   例) レーサー（福岡） / レーサー(宮崎) / レーサー(鹿児島） / レーサー() → すべて「レーサー」
+_PAREN_RE = re.compile(r'[（(][^（）()]*[）)]')
+
+
+def _strip_name_parens(name):
+    if not name:
+        return name
+    s = _PAREN_RE.sub('', name)
+    return s.strip(' 　\t')   # 前後の半角/全角スペース・タブも除去
+
+
 @router.get("/{tid}/certificate", response_class=HTMLResponse)
 async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """賞状印刷ページ（テンプレート切り替え対応）"""
@@ -1902,7 +1921,7 @@ async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Conne
                ORDER BY e.none_rr_rank""", (tid,)
         ) as cur:
             for row in await cur.fetchall():
-                results[row["rank"]] = row["name"]
+                results[row["rank"]] = _strip_name_parens(row["name"])
     else:
         async with db.execute(
             """SELECT bsr.rank, r.name
@@ -1917,7 +1936,7 @@ async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Conne
         ) as cur:
             for row in await cur.fetchall():
                 if row["rank"] not in results:
-                    results[row["rank"]] = row["name"]
+                    results[row["rank"]] = _strip_name_parens(row["name"])
 
     # テンプレート一覧を取得（layout_jsonをPythonオブジェクトとしてパース済みで渡す）
     import json as _json
