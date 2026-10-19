@@ -1836,7 +1836,7 @@ async def ta_events(request: Request):
 
     async def gen():
         try:
-            yield b": ready\n\n"
+            yield b"event: ready\ndata: 1\n\n"   # ★コメントではなく実イベントで送る（クライアントの ready 受信用）
             while True:
                 if await request.is_disconnected():
                     break
