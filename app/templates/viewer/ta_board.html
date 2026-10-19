@@ -109,22 +109,29 @@
   .best-row .c-total{font-size:5vh;font-weight:900;color:var(--fg)}
   .best-row .tb-v{font-weight:900}
   .tb-dash{color:#55555a}
+  #ta-exit{display:none}   /* desktopでは非表示。スマホのみ下部に表示 */
 
   /* ===== スマホ縦画面（/api/ta など）。FHDの横2カラム＆vhフォントを上書き ===== */
   @media (max-width: 860px){
     .wrap{flex-direction:column}
     /* 内容を上・履歴を下（縦長スマホ向け） */
     #main{order:1;height:auto;flex:1 1 auto;overflow:auto;display:block;padding:3vw 2.5vw}
-    /* 履歴は最下部の横並びストリップに */
-    #side{order:2;width:100%;max-width:none;min-width:0;height:auto;max-height:22vh;
+    /* 履歴は最下部に縦並び・直近10件だけ（#＋タイムスタンプ） */
+    #side{order:2;width:100%;max-width:none;min-width:0;height:auto;max-height:none;
       border-right:none;border-top:2px solid var(--line)}
-    #side .shd{display:none}
-    #hist{display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden}
-    .hi{flex:0 0 auto;border-bottom:none;border-right:1px solid var(--line);
-      white-space:nowrap;padding:2.4vw 3.2vw}
-    .hi .no{font-size:4.6vw;min-width:0}
-    .hi .mt{display:none}      /* 横並びでは日時を隠して番号だけ */
+    #side .shd{display:flex;padding:2.6vw 4vw;font-size:3.4vw}
+    #hist{display:block;overflow:visible}
+    .hi{display:flex;align-items:baseline;gap:3vw;border-right:none;
+      border-bottom:1px solid var(--line);padding:3.2vw 4vw}
+    .hi .no{font-size:5vw;min-width:3.6em}
+    .hi .mt{display:inline;font-size:3.6vw}
+    .hi:nth-child(n+11){display:none}     /* 直近10件のみ表示 */
     #live{display:none}
+    /* 戻るボタン（最下部） */
+    #ta-exit{order:3;display:block;text-align:center;padding:3.8vw;font-size:4.2vw;
+      font-weight:800;color:var(--fg);text-decoration:none;
+      background:var(--panel);border-top:2px solid var(--line)}
+    #ta-exit:active{background:#141416}
     .ta-head{flex-wrap:wrap;padding-bottom:1.5vw;margin-bottom:1.5vw}
     .ta-head .rid{font-size:8.5vw}
     .ta-head .meta{font-size:3.6vw}
@@ -158,6 +165,7 @@
     <div id="live"><span class="dot"></span><span id="livetxt">接続中…</span></div>
   </aside>
   <section id="main"><div class="ta-empty">読み込み中…</div></section>
+  <a id="ta-exit" href="javascript:history.back()">← 観覧に戻る</a>
 </div>
 <script>
 (function(){
