@@ -109,6 +109,45 @@
   .best-row .c-total{font-size:5vh;font-weight:900;color:var(--fg)}
   .best-row .tb-v{font-weight:900}
   .tb-dash{color:#55555a}
+
+  /* ===== スマホ縦画面（/api/ta など）。FHDの横2カラム＆vhフォントを上書き ===== */
+  @media (max-width: 860px){
+    .wrap{flex-direction:column}
+    /* 履歴は上部の横並びストリップに */
+    #side{width:100%;max-width:none;min-width:0;height:auto;max-height:24vh;
+      border-right:none;border-bottom:2px solid var(--line)}
+    #side .shd{display:none}
+    #hist{display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden}
+    .hi{flex:0 0 auto;border-bottom:none;border-right:1px solid var(--line);
+      white-space:nowrap;padding:2.4vw 3.2vw}
+    .hi .no{font-size:4.6vw;min-width:0}
+    .hi .mt{display:none}      /* 横並びでは日時を隠して番号だけ */
+    #live{display:none}
+    /* メインは下に全幅。縦スクロール、テーブルは自然高さ＋横スクロール */
+    #main{height:auto;flex:1 1 auto;overflow:auto;display:block;padding:3vw 2.5vw}
+    .ta-head{flex-wrap:wrap;padding-bottom:1.5vw;margin-bottom:1.5vw}
+    .ta-head .rid{font-size:8.5vw}
+    .ta-head .meta{font-size:3.6vw}
+    .tr-wrap{flex:none;overflow:auto}
+    .tr-table{height:auto}
+    .tr-table thead tr{height:auto}
+    .tr-table th{font-size:2.6vw;padding:1vw 1.2vw}
+    .tr-table td{padding:1.4vw 1.4vw}
+    .c-lane{font-size:7.5vw;width:13vw}
+    .c-pos{font-size:5.2vw;width:11vw}
+    .c-total{font-size:9.5vw;padding-right:2vw}
+    .c-gap{font-size:3.6vw}.c-totav{font-size:3.6vw}.c-max{font-size:3.6vw}
+    .c-lapno{font-size:3vw}
+    .c-lapt{font-size:4vw}
+    .c-lapav{font-size:3vw}
+    .c-sec{font-size:3.4vw}
+    .c-sec .sec-v{font-size:2.7vw}
+    .unit{font-size:2.2vw}
+    .rflag{font-size:2.4vw}
+    .best-row .best-lane{font-size:6vw}
+    .best-row .best-pos{font-size:2.8vw}
+    .best-row .c-total{font-size:6.5vw}
+  }
 </style>
 </head>
 <body>
