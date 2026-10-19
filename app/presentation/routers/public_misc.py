@@ -714,48 +714,6 @@ _history_cache = {}      # store_id -> (monotonic_ts, data)
 _HISTORY_TTL = 60        # 集計は結果確定時しか変わらないため60秒キャッシュ
 
 
-# 「観覧に戻る」のリンク先を安全に決める。
-#   遷移元(Referer)が「同一オリジンの観覧ページ」なら、そのURLへ直接戻す。
-#   → 別タブで開いても戻れる／観覧ページを新規に開き直す＝追従(SSE)も再開する。
-#   取得不可・または遷移元が結果/成績/API・管理・静的・レース詳細のときは、
-#   従来どおり history.back() にフォールバックする。
-#   Referer はブラウザ設定値だが、同一オリジン(scheme+host一致)のみ採用し、
-#   href はテンプレート側で自動エスケープされるため安全。
-# 観覧として戻してはいけない先頭セグメント（結果/成績/API・管理・静的・入場 等）。
-_BACK_EXCLUDE_FIRST = {
-    "api", "admin", "static", "logo", "health", "favicon", "enter", "entry",
-}
-
-
-def _safe_back_href(request) -> str:
-    try:
-        from urllib.parse import urlparse
-        ref = (request.headers.get("referer", "") or "").strip()
-        if not ref:
-            return "javascript:history.back()"
-        u = urlparse(ref)
-        host = request.headers.get("host", "")
-        if not (u.scheme in ("http", "https") and u.netloc and u.netloc == host):
-            return "javascript:history.back()"
-
-        path = u.path or "/"
-        # 店舗スラッグ(/acecup 等)を除いた相対パスで判定する。
-        store = getattr(request.state, "store", None)
-        slug = (getattr(store, "slug", "") or "")
-        rel = path
-        if slug and (path == f"/{slug}" or path.startswith(f"/{slug}/")):
-            rel = path[len(f"/{slug}"):] or "/"
-
-        seg = rel.lstrip("/").split("/", 1)[0]
-        low = (rel.rstrip("/") or "/")
-        # 結果詳細(/view/tournament/...)や上記セグメントへは戻さない。観覧(2語URL等)のみ許可。
-        if seg in _BACK_EXCLUDE_FIRST or low.startswith("/view/tournament"):
-            return "javascript:history.back()"
-        return ref
-    except Exception:
-        return "javascript:history.back()"
-
-
 @router.get("/api/history", response_class=HTMLResponse)
 async def public_history(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """全レーサーの過去成績（参加数・優勝数・入賞数）の一覧ページを返す（公開）。"""
@@ -775,12 +733,119 @@ async def public_history(request: Request, db: aiosqlite.Connection = Depends(ge
     return _templates.TemplateResponse("viewer/history.html", {
         "request": request,
         "prefix": (f"/{slug}" if slug else ""),
-        "back_href": _safe_back_href(request),
+        "back_href": "javascript:history.back()",
         "race_total": data.get("race_total", 0),
         "open_total": data.get("open_total", 0),
         "ltd_total": data.get("ltd_total", 0),
         "racers": data.get("racers", []),
     })
+
+
+# ============================================================================
+#  参加者向け TA（ラップタイム）画面。中身は /view/ta と同一（build_result_rows 流用）。
+#    GET /api/ta                  … シェル（ta_board.html）
+#    GET /api/ta/list             … 履歴一覧JSON（最大1000・新しい順）
+#    GET /api/ta/race/{id}/table  … 1レース詳細HTML（本物テーブル）
+#    GET /api/ta/events           … SSE（新結果で即push／断時はクライアントが10秒ポーリング）
+#  参加者ゲート（_content_allowed＝観覧クッキー or スタッフ）で保護。
+# ============================================================================
+@router.get("/api/ta", response_class=HTMLResponse)
+async def public_ta(request: Request):
+    if not _content_allowed(request):
+        return _deny_content(request)
+    return _templates.TemplateResponse("viewer/ta_board.html", {"request": request})
+
+
+@router.get("/api/ta/list")
+async def public_ta_list(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    if not _content_allowed(request):
+        return _deny_content(request)
+    from fastapi.responses import JSONResponse
+    from app.presentation.routers.timing_api import TimingRaceRepository
+
+    def _mode(r):
+        keys = r.keys() if hasattr(r, "keys") else []
+        g = r["green_t_us"] if "green_t_us" in keys else None
+        return "race" if g is not None else "free"
+
+    repo = TimingRaceRepository(db)
+    rows = []
+    for r in await repo.list_races(limit=1000):
+        keys = r.keys() if hasattr(r, "keys") else []
+        rows.append({
+            "race_id": r["id"],
+            "created_at": (r["created_at"] if "created_at" in keys else None),
+            "target_laps": (r["target_laps"] if "target_laps" in keys else None),
+            "heat_tag": (r["heat_tag"] if "heat_tag" in keys else None),
+            "mode": _mode(r),
+        })
+    return JSONResponse({"races": rows})
+
+
+@router.get("/api/ta/race/{race_id}/table", response_class=HTMLResponse)
+async def public_ta_race_table(race_id: int, request: Request,
+                               db: aiosqlite.Connection = Depends(get_db)):
+    if not _content_allowed(request):
+        return _deny_content(request)
+    from app.presentation.routers.timing_api import build_result_rows, today_best_map_for
+    data = await build_result_rows(db, race_id)
+    race = data["race"]
+    if race is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="race not found")
+    keys = race.keys() if hasattr(race, "keys") else []
+    tb = await today_best_map_for(db)
+    return _templates.TemplateResponse("viewer/_ta_result_table.html", {
+        "request": request,
+        "race_id": race_id,
+        "mode": data["mode"],
+        "has_result": data["has_result"],
+        "rows": data["rows"],
+        "target_laps": (race["target_laps"] if "target_laps" in keys else None),
+        "heat_tag": (race["heat_tag"] if "heat_tag" in keys else None),
+        "created_at": (race["created_at"] if "created_at" in keys else None),
+        "today_best_map": tb["today_best_map"],
+        "today_from": tb["today_from"],
+        "today_to": tb["today_to"],
+        "today_race_count": tb["today_race_count"],
+    })
+
+
+@router.get("/api/ta/events")
+async def public_ta_events(request: Request):
+    if not _content_allowed(request):
+        return _deny_content(request)
+    import asyncio
+    from fastapi.responses import StreamingResponse
+    from app.services import live_events
+    store = getattr(request.state, "store", None)
+    sid = store.id if store is not None else 0
+    q = live_events.subscribe(sid)
+
+    async def gen():
+        try:
+            yield b"event: ready\ndata: 1\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                if q is None:
+                    await asyncio.sleep(20)
+                    yield b": ping\n\n"
+                    continue
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=20.0)
+                    yield ("event: %s\ndata: 1\n\n" % (ev or "ta")).encode()
+                except asyncio.TimeoutError:
+                    yield b": ping\n\n"
+        finally:
+            if q is not None:
+                live_events.unsubscribe(sid, q)
+
+    return StreamingResponse(
+        gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache",
+                 "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 # ---- 過去レース結果一覧（「レースの結果」ボタン）。無限スクロールで順次読み込み ----
@@ -885,7 +950,7 @@ async def public_races(request: Request, db: aiosqlite.Connection = Depends(get_
     shown = len(races)
     return _templates.TemplateResponse("viewer/races.html", {
         "request": request, "prefix": prefix,
-        "back_href": _safe_back_href(request),
+        "back_href": "javascript:history.back()",
         "m4laps": bool(licensed),
         "races": races, "total": total, "shown": shown,
         "page_size": _RACES_PAGE, "next_offset": shown,

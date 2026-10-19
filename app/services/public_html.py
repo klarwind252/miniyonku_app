@@ -198,6 +198,8 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     patched = patched.replace("__HISTORYURL__", _history_url)
     _races_url = (f"/{slug}/api/races" if slug else "/api/races")
     patched = patched.replace("__RACESURL__", _races_url)
+    # 参加者向け TA（ラップタイム）画面の入口URL（観覧期限バッジの代わりに下部へ表示）
+    _ta_url = (f"/{slug}/api/ta" if slug else "/api/ta")
     # アクセス統計用：表示中の大会ID（/view/tournament/<id> リンクから抽出。トップ等は0）
     import re as _re_tid
     _mtid = _re_tid.search(r"/view/tournament/(\d+)", html)
@@ -246,22 +248,19 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     } catch(e){}
   }
   function showDeadline(expiresAt){
-    // 観覧期限を画面下部に常時表示（PWA・ブラウザ共通）。期限の見える化＋不具合切り分け用。
+    // 観覧期限バッジの代わりに「ラップタイム(TA)」入口ボタンを下部中央に常時表示。
+    // （期限の失効処理は scheduleDeadline() が担うので、ここは表示のみ）
     try {
-      var el = document.getElementById('m4-gate-exp');
-      if(!el){
-        el = document.createElement('div');
-        el.id = 'm4-gate-exp';
-        el.style.cssText = 'position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:9998;'
-          + 'background:rgba(20,24,33,.82);color:#cfd8e3;font-size:11px;padding:5px 12px;border-radius:999px;'
-          + 'font-family:sans-serif;letter-spacing:.02em;pointer-events:none;white-space:nowrap;';
-        document.body.appendChild(el);
-      }
-      if(!expiresAt){ el.textContent = '観覧期限: 未取得'; return; }
-      var d = new Date(expiresAt * 1000);
-      var z = function(n){ return (n<10?'0':'')+n; };
-      el.textContent = '観覧期限 ' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + z(d.getHours()) + ':' + z(d.getMinutes())
-        + ' まで' + (isStandalone() ? '（アプリ）' : '');
+      if(document.getElementById('m4-ta-btn')) return;   // 既に設置済みなら何もしない
+      var a = document.createElement('a');
+      a.id = 'm4-ta-btn';
+      a.href = "__TAURL__";
+      a.textContent = '📊 ラップタイム';
+      a.style.cssText = 'position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:97;'
+        + 'background:#2d9bf0;color:#fff;font-size:13px;font-weight:bold;padding:9px 18px;border-radius:999px;'
+        + 'font-family:sans-serif;letter-spacing:.02em;text-decoration:none;'
+        + 'box-shadow:0 2px 10px rgba(0,0,0,.35);white-space:nowrap;';
+      document.body.appendChild(a);
     } catch(e){}
   }
   function attachHandoffManifest(){
@@ -533,7 +532,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     es.onerror = function(){ goPoll(); };   // 確立できない環境ではポーリングが実質の更新手段
   })();
 })();
-</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__EVENTSURL__", _events_url).replace("__M4FINAL__", "true" if is_finalized else "false")
+</script>""".replace("__SLUGKEY__", _slug_key).replace("__ENTERURL__", _enter_url).replace("__STATUSURL__", _status_url).replace("__HANDOFFURL__", _handoff_url).replace("__MANIFESTURL__", _manifest_url).replace("__CONTENTURL__", _content_url).replace("__EVENTSURL__", _events_url).replace("__TAURL__", _ta_url).replace("__M4FINAL__", "true" if is_finalized else "false")
 
     # bracket レイアウト＋線描画JSを再注入（admin と同一ロジックを保持したものを使用）。
     # connector_js 内で window._bracketDrawConnectors と init() が定義され、ページ内の
