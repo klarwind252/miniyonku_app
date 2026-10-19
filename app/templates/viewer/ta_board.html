@@ -166,13 +166,16 @@
   var pollTimer=null;
   function setLive(on){ live.classList.toggle("on",on); liveTxt.textContent=on?"自動更新 中":"ポーリング"; }
   function startPoll(){ if(pollTimer)return; pollTimer=setInterval(refreshToLatest,10000); }
+  var sseReady=false;
   function startSSE(){
     try{
       var es=new EventSource(BASE+"/events"+QS);
-      es.addEventListener("ready",function(){ setLive(true); });
-      es.addEventListener("ta",function(){ setLive(true); refreshToLatest(); });
+      es.addEventListener("ready",function(){ sseReady=true; setLive(true); });
+      es.addEventListener("ta",function(){ sseReady=true; setLive(true); refreshToLatest(); });
       es.onmessage=function(){ refreshToLatest(); };
       es.onerror=function(){ setLive(false); startPoll(); };
+      // 6秒以内に ready が来なければ（nginxバッファ等でSSEが届かない）ポーリング表示に切替
+      setTimeout(function(){ if(!sseReady){ setLive(false); startPoll(); } }, 6000);
     }catch(e){ setLive(false); startPoll(); }
   }
   refreshToLatest(); startSSE(); startPoll();
