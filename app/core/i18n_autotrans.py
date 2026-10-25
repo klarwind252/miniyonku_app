@@ -30,7 +30,9 @@ _MASTER = re.compile(
     r"|(?P<script><script\b[^>]*>.*?</script\s*>)"
     r"|(?P<style><style\b[^>]*>.*?</style\s*>)"
     r"|(?P<hcomment><!--.*?-->)"
-    r"|(?P<tag><[^>]+>)",
+    # タグ：属性値（" " / ' '）の中に > があっても正しく1タグとして食う
+    # （例: onclick="a.forEach(c=>c.checked=false)"）
+    r"|(?P<tag><[a-zA-Z/!][^>\"']*(?:(?:\"[^\"]*\"|'[^']*')[^>\"']*)*>)",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -39,18 +41,33 @@ _ATTR = re.compile(r'\b(placeholder|title)="([^"{}]*?)"', re.IGNORECASE)
 
 _WS = re.compile(r"\s+")
 
+# コード（CSS/JS）とみなす強いシグナル。子テンプレートが親の {% block %} に
+# <style>/<script> タグ無しで流し込む CSS/JS を誤って翻訳対象にしないためのガード。
+# これらを含むテキストノードは絶対に tr() で包まない（空白圧縮でJSが壊れる事故を防ぐ）。
+_CODEY = ("{", "}", ";", "/*", "*/", "//", "function", "var ", "let ", "const ", "=>")
+
 
 def _has_jp(s: str) -> bool:
     return bool(_JP.search(s))
 
 
+_ENTITY = re.compile(r"&[#a-zA-Z0-9]+;")
+
+
+def _looks_like_code(s: str) -> bool:
+    # HTMLエンティティ（&#10; 等）の ; を誤検知しないよう除去してから判定
+    s = _ENTITY.sub("", s)
+    return any(tok in s for tok in _CODEY)
+
+
 def _wrap_text(seg: str) -> str:
-    """タグ外テキストノード。日本語を含めば中身を tr() で包む（前後の空白は保持）。"""
+    """タグ外テキストノード。日本語を含めば中身を tr() で包む（前後の空白は保持）。
+    CSS/JSらしきテキスト（波括弧・セミコロン・コメント等を含む）は一切触らない。"""
     if not _has_jp(seg):
         return seg
     m = re.match(r"^(\s*)(.*?)(\s*)$", seg, re.DOTALL)
     lead, core, trail = m.group(1), m.group(2), m.group(3)
-    if not _has_jp(core):
+    if not _has_jp(core) or _looks_like_code(core):
         return seg
     key = _WS.sub(" ", core)  # 内部の改行・連続空白は1スペースに（HTMLと同じ扱い）
     return lead + "{{ tr(" + json.dumps(key, ensure_ascii=False) + ") }}" + trail
