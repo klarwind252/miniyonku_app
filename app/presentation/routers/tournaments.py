@@ -1311,15 +1311,56 @@ async def add_pre_entries(tid: int, request: Request, db: aiosqlite.Connection =
         return RedirectResponse(url=f"/admin/tournaments/{tid}", status_code=303)
 
     form = await request.form()
-    raw = form.get("racer_names", "") or ""
-    # 改行区切り → 各行trim → 空行除外、入力順を保持しつつ同一入力内の重複は除外
-    names = []
-    seen_in_input = set()
-    for line in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        nm = line.strip()
-        if nm and nm not in seen_in_input:
-            names.append(nm)
-            seen_in_input.add(nm)
+
+    # 地域短縮：末尾の「県/都/府」を1文字だけ除去（北海道はそのまま）。空はそのまま空。
+    def _short_region(region: str) -> str:
+        region = (region or "").strip()
+        if not region or region == "北海道":
+            return region
+        return region[:-1] if region[-1] in ("県", "都", "府") else region
+
+    # 年齢判定：値に「大人」を含まなければ Jr（子供）＝1。空・未指定は大人(0)扱い。
+    def _is_child(age: str) -> int:
+        age = (age or "").strip()
+        return 1 if (age and "大人" not in age) else 0
+
+    # 登録レコードを組み立てる。
+    #   records: [{"name": 表示名（地域結合）, "yomi":, "is_child":, "prefecture": 生データ}, ...]
+    # (A) GAS/フォーム連携：people（JSON文字列）優先。名前（地域短縮）整形・Jr判定・生データ保存。
+    # (B) 後方互換：people が無ければ従来の racer_names（改行区切り・名前のみ）。
+    records = []
+    people_raw = form.get("people", "") or ""
+    people = None
+    if people_raw.strip():
+        try:
+            parsed = json.loads(people_raw)
+            if isinstance(parsed, list):
+                people = parsed
+        except (ValueError, TypeError):
+            people = None  # 壊れたJSONは無視して racer_names 経路へフォールバック
+
+    if people:
+        for p in people:
+            if not isinstance(p, dict):
+                continue
+            base = str(p.get("name", "") or "").strip()
+            if not base:
+                continue
+            region_raw = str(p.get("region", "") or "").strip()
+            short = _short_region(region_raw)
+            disp = f"{base}（{short}）" if short else base
+            records.append({
+                "name": disp,
+                "yomi": str(p.get("yomi", "") or "").strip(),
+                "is_child": _is_child(str(p.get("age", "") or "")),
+                "prefecture": region_raw,
+            })
+    else:
+        raw = form.get("racer_names", "") or ""
+        for line in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            nm = line.strip()
+            if nm:
+                records.append({"name": nm, "yomi": "", "is_child": 0, "prefecture": ""})
 
     # このレースに既に登録済みの事前エントリー名（重複登録防止）
     async with db.execute(
@@ -1333,13 +1374,18 @@ async def add_pre_entries(tid: int, request: Request, db: aiosqlite.Connection =
     ) as cur:
         seq = (await cur.fetchone())["mx"]
 
-    for nm in names:
-        if nm in existing_names:
+    # 表示名（地域結合後）で重複判定。同一入力内の重複もスキップ。
+    seen_in_input = set()
+    for rec in records:
+        nm = rec["name"]
+        if nm in existing_names or nm in seen_in_input:
             continue
+        seen_in_input.add(nm)
         seq += 1
         await db.execute(
-            "INSERT INTO pre_entries (tournament_id, seq_no, name) VALUES (?,?,?)",
-            (tid, seq, nm),
+            "INSERT INTO pre_entries (tournament_id, seq_no, name, yomi, is_child, prefecture) "
+            "VALUES (?,?,?,?,?,?)",
+            (tid, seq, nm, rec["yomi"], rec["is_child"], rec["prefecture"]),
         )
         existing_names.add(nm)
     await db.commit()
