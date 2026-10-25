@@ -1,26 +1,26 @@
 {% extends "admin/base.html" %}
-{% block title %}レーサーマスタ{% endblock %}
+{% block title %}{{ tr('レーサーマスタ') }}{% endblock %}
 {% block content %}
 <div class="page-title">
-  <h1>レーサーマスタ</h1>
-  <p>レースをまたいで使い回せるレーサーリストです</p>
+  <h1>{{ tr('レーサーマスタ') }}</h1>
+  <p>{{ tr('レースをまたいで使い回せるレーサーリストです') }}</p>
 </div>
 
 {% if today_tournaments %}
 <div class="alert alert-info" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-  <span>📅 本日開催：
+  <span>📅 {{ tr('本日開催：') }}
     {% for t in today_tournaments %}
       <strong>{{ t.name }}</strong>{% if not loop.last %}、{% endif %}
     {% endfor %}
   </span>
-  <a href="#today-entry" class="btn btn-primary btn-sm">▼ 本日のエントリー状況</a>
+  <a href="#today-entry" class="btn btn-primary btn-sm">▼ {{ tr('本日のエントリー状況') }}</a>
 </div>
 {% endif %}
 
 <div class="grid-2">
   <!-- 追加フォーム -->
   <div class="card">
-    <div class="card-header">レーサーを追加</div>
+    <div class="card-header">{{ tr('レーサーを追加') }}</div>
     <div class="card-body">
       {% if error %}
       <div style="background:#fdf2f2;border-left:4px solid #e74c3c;color:#922b21;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:14px">
@@ -29,12 +29,12 @@
       {% endif %}
       <form method="post" action="/admin/racers/add">
         <div class="form-group">
-          <label>レーサー名 *</label>
-          <input type="text" name="name" required placeholder="例：田中太郎" value="{{ form_name or '' }}">
+          <label>{{ tr('レーサー名') }} *</label>
+          <input type="text" name="name" required placeholder="{{ tr('例：田中太郎') }}" value="{{ form_name or '' }}">
         </div>
         <div class="form-group">
-          <label>よみがな</label>
-          <input type="text" name="yomi" placeholder="例：たなかたろう" value="{{ form_yomi or '' }}">
+          <label>{{ tr('よみがな') }}</label>
+          <input type="text" name="yomi" placeholder="{{ tr('例：たなかたろう') }}" value="{{ form_yomi or '' }}">
         </div>
         <div class="form-group" style="margin-bottom:18px">
           <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
@@ -43,40 +43,40 @@
                      {% if form_is_child %}checked{% endif %}
                      style="width:16px;height:16px;margin:0;accent-color:#e74c3c">
               <span style="font-size:14px;color:#2c3e50">Jr.</span>
-              <span style="font-size:12px;color:#95a5a6">（ジュニアクラス）</span>
+              <span style="font-size:12px;color:#95a5a6">{{ tr('（ジュニアクラス）') }}</span>
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
               <input type="checkbox" name="is_regular" value="1"
                      {% if form_is_regular %}checked{% endif %}
                      style="width:16px;height:16px;margin:0;accent-color:#0078d4">
-              <span style="font-size:14px;color:#2c3e50">常連</span>
+              <span style="font-size:14px;color:#2c3e50">{{ tr('常連') }}</span>
             </label>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">追加する</button>
+        <button type="submit" class="btn btn-primary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ tr('追加する') }}</button>
       </form>
     </div>
   </div>
 
   <!-- 検索 -->
   <div class="card">
-    <div class="card-header">検索</div>
+    <div class="card-header">{{ tr('検索') }}</div>
     <div class="card-body">
       <form method="get" action="/admin/racers/" style="display:flex;gap:8px">
-        <input type="text" name="q" value="{{ q }}" placeholder="レーサー名・よみがなで検索" style="flex:1">
+        <input type="text" name="q" value="{{ q }}" placeholder="{{ tr('レーサー名・よみがなで検索') }}" style="flex:1">
         <input type="hidden" name="sort" value="{{ sort }}">
         <input type="hidden" name="order" value="{{ order }}">
-        <button type="submit" class="btn btn-primary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">検索</button>
+        <button type="submit" class="btn btn-primary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ tr('検索') }}</button>
         {% if q %}
-        <a href="/admin/racers/" class="btn btn-secondary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">クリア</a>
+        <a href="/admin/racers/" class="btn btn-secondary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ tr('クリア') }}</a>
         {% endif %}
       </form>
 
       <!-- 五十音「行」フィルタ（先頭1文字一致 / レーサー名・よみがな いずれか） -->
       <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-        <span style="font-size:12px;color:#636e72;margin-right:2px">先頭文字:</span>
+        <span style="font-size:12px;color:#636e72;margin-right:2px">{{ tr('先頭文字:') }}</span>
         <a href="/admin/racers/?sort={{ sort }}&order={{ order }}"
-           class="btn btn-sm {% if not kana and not q %}btn-primary{% else %}btn-secondary{% endif %}" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">全</a>
+           class="btn btn-sm {% if not kana and not q %}btn-primary{% else %}btn-secondary{% endif %}" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ tr('全') }}</a>
         {% for row in kana_rows %}
         <a href="/admin/racers/?kana={{ row }}&sort={{ sort }}&order={{ order }}"
            class="btn btn-sm {% if kana == row %}btn-primary{% else %}btn-secondary{% endif %}" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ row }}</a>
@@ -85,24 +85,24 @@
 
       <!-- 常連フィルタ（先頭文字とは独立） -->
       <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-        <span style="font-size:12px;color:#636e72;margin-right:2px">抽出:</span>
+        <span style="font-size:12px;color:#636e72;margin-right:2px">{{ tr('抽出:') }}</span>
         {% if regular %}
         <a href="/admin/racers/?sort={{ sort }}&order={{ order }}"
-           class="btn btn-sm" style="background:#0078d4;color:#fff;border-color:#0078d4;height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">常連 ✓</a>
+           class="btn btn-sm" style="background:#0078d4;color:#fff;border-color:#0078d4;height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ tr('常連') }} ✓</a>
         {% else %}
         <a href="/admin/racers/?sort={{ sort }}&order={{ order }}&regular=1"
-           class="btn btn-sm btn-secondary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">常連</a>
+           class="btn btn-sm btn-secondary" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1">{{ tr('常連') }}</a>
         {% endif %}
       </div>
 
       {% if q %}
-      <p style="margin-top:10px;font-size:13px;color:#636e72">「{{ q }}」の検索結果：{{ racers|length }} 件</p>
+      <p style="margin-top:10px;font-size:13px;color:#636e72">「{{ q }}」{{ tr('の検索結果：') }}{{ racers|length }} {{ tr('件') }}</p>
       {% endif %}
       {% if kana %}
-      <p style="margin-top:10px;font-size:13px;color:#636e72">「{{ kana }}」行（先頭1文字）：{{ racers|length }} 件</p>
+      <p style="margin-top:10px;font-size:13px;color:#636e72">「{{ kana }}」{{ tr('行（先頭1文字）：') }}{{ racers|length }} {{ tr('件') }}</p>
       {% endif %}
       {% if regular %}
-      <p style="margin-top:10px;font-size:13px;color:#0078d4">常連のみ表示：{{ racers|length }} 名</p>
+      <p style="margin-top:10px;font-size:13px;color:#0078d4">{{ tr('常連のみ表示：') }}{{ racers|length }} {{ tr('名') }}</p>
       {% endif %}
     </div>
   </div>
@@ -111,11 +111,11 @@
 <!-- 登録済みレーサー一覧 -->
 <div class="card">
   <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-    <span>登録済みレーサー</span>
-    <span class="badge">{{ racers|length }} 名</span>
+    <span>{{ tr('登録済みレーサー') }}</span>
+    <span class="badge">{{ racers|length }} {{ tr('名') }}</span>
     <span style="flex:1"></span>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="openImportDialog()" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0">インポート</button>
-    <a href="/admin/racers/export" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0">エクスポート</a>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="openImportDialog()" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0">{{ tr('インポート') }}</button>
+    <a href="/admin/racers/export" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0">{{ tr('エクスポート') }}</a>
     <input type="file" id="import-csv-file" accept=".csv,text/csv" style="display:none" onchange="onImportFileSelected(event)">
   </div>
   <div class="card-body" style="padding:0;overflow-x:auto">
@@ -126,7 +126,7 @@
           <th>
             <a href="/admin/racers/?sort=name&order={{ next_order if sort=='name' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;gap:4px">
-              レーサー名
+              {{ tr('レーサー名') }}
               {% if sort=='name' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
@@ -134,7 +134,7 @@
           <th>
             <a href="/admin/racers/?sort=yomi&order={{ next_order if sort=='yomi' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;gap:4px">
-              よみがな
+              {{ tr('よみがな') }}
               {% if sort=='yomi' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
@@ -143,16 +143,16 @@
           <th style="width:70px;text-align:center">
             <a href="/admin/racers/?sort=is_regular&order={{ next_order if sort=='is_regular' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;justify-content:center;gap:4px">
-              常連
+              {{ tr('常連') }}
               {% if sort=='is_regular' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
           </th>
-          <th style="width:240px">操作</th>
+          <th style="width:240px">{{ tr('操作') }}</th>
           <th style="min-width:110px;text-align:center">
             <a href="/admin/racers/?sort=podium&order={{ next_order if sort=='podium' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;justify-content:center;gap:4px">
-              前回入賞
+              {{ tr('前回入賞') }}
               {% if sort=='podium' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
@@ -160,7 +160,7 @@
           <th style="min-width:110px;text-align:center">
             <a href="/admin/racers/?sort=win&order={{ next_order if sort=='win' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;justify-content:center;gap:4px">
-              前回優勝
+              {{ tr('前回優勝') }}
               {% if sort=='win' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
@@ -168,16 +168,16 @@
           <th style="min-width:110px;text-align:center">
             <a href="/admin/racers/?sort=entry&order={{ next_order if sort=='entry' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;justify-content:center;gap:4px">
-              前回来店
+              {{ tr('前回来店') }}
               {% if sort=='entry' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
           </th>
-          <th style="min-width:150px">来店日時</th>
+          <th style="min-width:150px">{{ tr('来店日時') }}</th>
           <th style="min-width:100px">
             <a href="/admin/racers/?sort=created_at&order={{ next_order if sort=='created_at' else 'asc' }}&q={{ q }}&kana={{ kana }}{% if regular %}&regular=1{% endif %}"
                style="color:inherit;display:flex;align-items:center;gap:4px">
-              登録日
+              {{ tr('登録日') }}
               {% if sort=='created_at' %}<span style="font-size:11px">{{ '▲' if order=='asc' else '▼' }}</span>
               {% else %}<span style="font-size:11px;opacity:.3">▲</span>{% endif %}
             </a>
@@ -210,7 +210,7 @@
           </td>
           <td style="text-align:center">
             <span class="disp-regular-{{ r.id }}">
-              {% if r.is_regular %}<span style="font-size:11px;color:#0078d4;font-weight:bold">常連</span>
+              {% if r.is_regular %}<span style="font-size:11px;color:#0078d4;font-weight:bold">{{ tr('常連') }}</span>
               {% else %}<span style="color:#ddd;font-size:13px">—</span>{% endif %}
             </span>
             <label class="edit-regular-{{ r.id }}" style="display:none;justify-content:center">
@@ -221,16 +221,16 @@
           </td>
           <td style="white-space:normal;">
             <div class="disp-btns-{{ r.id }}" style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center;justify-content:flex-start">
-              <button class="btn btn-warning" style="font-size:15px;padding-left:18px;padding-right:18px;padding-top:0;padding-bottom:0;height:40px;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0" onclick="entryToday({{ r.id }}, '{{ r.name }}')">来店</button>
-              <button class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0" onclick="startEdit({{ r.id }})">編集</button>
-              <button class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0" onclick="openAchievements({{ r.id }})">実績</button>
+              <button class="btn btn-warning" style="font-size:15px;padding-left:18px;padding-right:18px;padding-top:0;padding-bottom:0;height:40px;font-weight:bold;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0" onclick="entryToday({{ r.id }}, '{{ r.name }}')">{{ tr('来店') }}</button>
+              <button class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0" onclick="startEdit({{ r.id }})">{{ tr('編集') }}</button>
+              <button class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;white-space:nowrap;flex-shrink:0" onclick="openAchievements({{ r.id }})">{{ tr('実績') }}</button>
             </div>
             <div class="edit-btns-{{ r.id }}" style="display:none;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-success btn-sm" onclick="saveEdit({{ r.id }})">保存</button>
-              <button class="btn btn-secondary btn-sm" onclick="cancelEdit({{ r.id }})">取消</button>
+              <button class="btn btn-success btn-sm" onclick="saveEdit({{ r.id }})">{{ tr('保存') }}</button>
+              <button class="btn btn-secondary btn-sm" onclick="cancelEdit({{ r.id }})">{{ tr('取消') }}</button>
               <form method="post" action="/admin/racers/delete/{{ r.id }}"
-                    onsubmit="return confirm('{{ r.name }} を削除しますか？')">
-                <button type="submit" class="btn btn-danger btn-sm">削除</button>
+                    onsubmit="return confirm('{{ r.name }} {{ tr('を削除しますか？') }}')">
+                <button type="submit" class="btn btn-danger btn-sm">{{ tr('削除') }}</button>
               </form>
             </div>
             <div class="edit-error-{{ r.id }}" style="display:none;color:#e74c3c;font-size:12px;margin-top:4px"></div>
@@ -254,7 +254,7 @@
     </table>
     {% else %}
     <div style="padding:30px;text-align:center;color:#95a5a6">
-      {% if q %}「{{ q }}」に一致するレーサーはいません{% else %}レーサーがまだ登録されていません{% endif %}
+      {% if q %}「{{ q }}」{{ tr('に一致するレーサーはいません') }}{% else %}{{ tr('レーサーがまだ登録されていません') }}{% endif %}
     </div>
     {% endif %}
   </div>
@@ -263,9 +263,9 @@
 <!-- ===== 本日のエントリー状況 ===== -->
 <div class="card" id="today-entry">
   <div class="card-header">
-    📋 本日のエントリー状況
+    📋 {{ tr('本日のエントリー状況') }}
     {% if today_tournaments %}
-    <span class="badge">{{ today_racers|length }} 名エントリー</span>
+    <span class="badge">{{ today_racers|length }} {{ tr('名エントリー') }}</span>
     {% endif %}
   </div>
 
@@ -274,10 +274,10 @@
   <div style="padding:10px 20px;background:#f8f9fa;border-bottom:1px solid #e9ecef;font-size:12px;color:#636e72;display:flex;flex-wrap:wrap;gap:12px">
     {% for t in today_tournaments %}
     <span>
-      <strong style="color:#2c3e50">レース{{ loop.index }}</strong>：
+      <strong style="color:#2c3e50">{{ tr('レース') }}{{ loop.index }}</strong>：
       <a href="/admin/tournaments/{{ t.id }}" style="color:#2980b9">{{ t.name }}</a>
       {% if t.regulation and ('ジュニア' in t.regulation or 'junior' in t.regulation.lower() or 'jr' in t.regulation.lower()) %}
-        <span style="color:#e74c3c;font-size:11px">（Jr.のみ）</span>
+        <span style="color:#e74c3c;font-size:11px">{{ tr('（Jr.のみ）') }}</span>
       {% endif %}
     </span>
     {% endfor %}
@@ -286,18 +286,18 @@
 
   <div class="card-body" style="padding:0;overflow-x:auto">
     {% if not today_racers %}
-      <div style="padding:30px;text-align:center;color:#95a5a6">まだ来店がありません</div>
+      <div style="padding:30px;text-align:center;color:#95a5a6">{{ tr('まだ来店がありません') }}</div>
     {% else %}
 <table style="min-width:max-content;width:100%">
       <thead>
         <tr>
-          <th style="position:sticky;left:0;background:#f8f9fa;z-index:2;min-width:120px;white-space:nowrap;border-right:1px solid #e9ecef">レーサー名</th>
+          <th style="position:sticky;left:0;background:#f8f9fa;z-index:2;min-width:120px;white-space:nowrap;border-right:1px solid #e9ecef">{{ tr('レーサー名') }}</th>
           {% for t in today_tournaments %}
-          <th style="text-align:center;min-width:60px;white-space:nowrap;border-right:1px solid #e9ecef">レース{{ loop.index }}</th>
+          <th style="text-align:center;min-width:60px;white-space:nowrap;border-right:1px solid #e9ecef">{{ tr('レース') }}{{ loop.index }}</th>
           {% endfor %}
-          <th style="width:60px;text-align:center">操作</th>
-          <th style="width:80px;text-align:center">来店時間</th>
-          <th style="width:90px;text-align:right">利用料金</th>
+          <th style="width:60px;text-align:center">{{ tr('操作') }}</th>
+          <th style="width:80px;text-align:center">{{ tr('来店時間') }}</th>
+          <th style="width:90px;text-align:right">{{ tr('利用料金') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -317,7 +317,7 @@
                 {% if not is_fin %}class="entry-cell" data-racer="{{ r.id }}" data-tid="{{ t.id }}"
                 data-state="{{ 'on' if ts else 'off' }}"
                 onclick="toggleEntry(this)"{% endif %}
-                title="{% if is_fin %}結果確定済み{% else %}クリックでエントリー切替{% endif %}">
+                title="{% if is_fin %}{{ tr('結果確定済み') }}{% else %}{{ tr('クリックでエントリー切替') }}{% endif %}">
               {% if ts %}
                 {% set _ = last_ts.append(ts[11:16]) %}
                 <span style="display:inline-flex;align-items:center;justify-content:center;
@@ -332,7 +332,7 @@
           {% endfor %}
           <td style="text-align:center;background:#fff">
             <button class="btn btn-danger btn-sm"
-                    onclick="cancelVisit({{ r.id }}, '{{ r.name }}')">取消</button>
+                    onclick="cancelVisit({{ r.id }}, '{{ r.name }}')">{{ tr('取消') }}</button>
           </td>
           <td style="text-align:center;color:#636e72;font-size:13px;background:#fff;white-space:nowrap;padding:8px 4px">
             {{ r.last_visit_at[11:16] if r.last_visit_at else '—' }}
@@ -587,18 +587,18 @@ setInterval(calcPricing, 60000);
 <div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;padding:20px;overflow:auto">
   <div style="background:#fff;max-width:1000px;margin:20px auto;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.3)">
     <div style="padding:16px 20px;border-bottom:1px solid #e0e0e0;display:flex;align-items:center;gap:10px">
-      <strong style="font-size:18px">インポート プレビュー</strong>
+      <strong style="font-size:18px">{{ tr('インポート プレビュー') }}</strong>
       <span id="import-counts" style="color:#666;font-size:14px"></span>
       <span style="flex:1"></span>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="closeImportDialog()">閉じる</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeImportDialog()">{{ tr('閉じる') }}</button>
     </div>
     <div style="padding:12px 20px;background:#f8f9fa;border-bottom:1px solid #e0e0e0;font-size:13px;color:#555">
-      取り込む行のチェックボックスをオンにしてください。
-      <strong>「名前のみ一致」「競合」は既定でオフ</strong>です。
-      取り込みは氏名・よみがな・ジュニア区分（identity）のみ反映し、来店・料金・エントリーには影響しません。
+      {{ tr('取り込む行のチェックボックスをオンにしてください。') }}
+      <strong>{{ tr('「名前のみ一致」「競合」は既定でオフ') }}</strong>{{ tr('です。') }}
+      {{ tr('取り込みは氏名・よみがな・ジュニア区分（identity）のみ反映し、来店・料金・エントリーには影響しません。') }}
       <div style="margin-top:6px">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="bulkCheck(true)">すべて選択</button>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="bulkCheck(false)">すべて解除</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="bulkCheck(true)">{{ tr('すべて選択') }}</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="bulkCheck(false)">{{ tr('すべて解除') }}</button>
       </div>
     </div>
     <div id="import-warnings" style="display:none;padding:10px 20px;background:#fff8e1;color:#8a6d00;font-size:13px;border-bottom:1px solid #ffe082"></div>
@@ -606,12 +606,12 @@ setInterval(calcPricing, 60000);
       <table style="width:100%;border-collapse:collapse;font-size:14px">
         <thead style="position:sticky;top:0;background:#fff;box-shadow:0 1px 0 #e0e0e0">
           <tr>
-            <th style="padding:8px 6px;text-align:center;width:48px">取込</th>
-            <th style="padding:8px 6px;text-align:left">状態</th>
-            <th style="padding:8px 6px;text-align:left">名前</th>
-            <th style="padding:8px 6px;text-align:left">よみがな</th>
+            <th style="padding:8px 6px;text-align:center;width:48px">{{ tr('取込') }}</th>
+            <th style="padding:8px 6px;text-align:left">{{ tr('状態') }}</th>
+            <th style="padding:8px 6px;text-align:left">{{ tr('名前') }}</th>
+            <th style="padding:8px 6px;text-align:left">{{ tr('よみがな') }}</th>
             <th style="padding:8px 6px;text-align:center;width:60px">Jr.</th>
-            <th style="padding:8px 6px;text-align:left">処理</th>
+            <th style="padding:8px 6px;text-align:left">{{ tr('処理') }}</th>
           </tr>
         </thead>
         <tbody id="import-rows"></tbody>
@@ -620,8 +620,8 @@ setInterval(calcPricing, 60000);
     <div style="padding:16px 20px;border-top:1px solid #e0e0e0;display:flex;align-items:center;gap:10px">
       <span id="import-result" style="color:#2e7d32;font-size:14px"></span>
       <span style="flex:1"></span>
-      <button type="button" class="btn btn-secondary" onclick="closeImportDialog()">キャンセル</button>
-      <button type="button" class="btn btn-primary" id="import-commit-btn" onclick="commitImport()">選択した行を取り込む</button>
+      <button type="button" class="btn btn-secondary" onclick="closeImportDialog()">{{ tr('キャンセル') }}</button>
+      <button type="button" class="btn btn-primary" id="import-commit-btn" onclick="commitImport()">{{ tr('選択した行を取り込む') }}</button>
     </div>
   </div>
 </div>
