@@ -202,8 +202,8 @@
 {% block content %}
 <div class="page-title" style="display:flex;align-items:center;margin-bottom:24px">
   <div>
-    <h1>⚙️ {{ t('設定') }}</h1>
-    <p>{{ t('アプリの各種設定・テンプレートを管理します') }}</p>
+    <h1>⚙️ {{ tr('設定') }}</h1>
+    <p>{{ tr('アプリの各種設定・テンプレートを管理します') }}</p>
   </div>
 </div>
 
@@ -211,33 +211,33 @@
 
   <!-- 左サイドメニュー（縦並び） -->
   <nav class="settings-menu">
-    <div class="settings-menu-label">{{ t('設定項目') }}</div>
-    <a href="#language"  class="settings-menu-item" id="menu-language">🌐 {{ t('言語設定') }}</a>
-    <a href="#defaults"  class="settings-menu-item" id="menu-defaults">🎛️ {{ t('初期値') }}</a>
+    <div class="settings-menu-label">{{ tr('設定項目') }}</div>
+    <a href="#language"  class="settings-menu-item" id="menu-language">🌐 {{ tr('言語設定') }}</a>
+    <a href="#defaults"  class="settings-menu-item" id="menu-defaults">🎛️ {{ tr('初期値') }}</a>
     {% if not IS_CLOUD %}
-    <a href="#store-name" class="settings-menu-item" id="menu-store-name">🏪 {{ t('店舗名') }}</a>
+    <a href="#store-name" class="settings-menu-item" id="menu-store-name">🏪 {{ tr('店舗名') }}</a>
     {% endif %}
-    <a href="#pricing"   class="settings-menu-item" id="menu-pricing">💴 {{ t('利用料金') }}</a>
-    <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 {{ t('賞状テンプレート') }}</a>
-    <a href="#card"      class="settings-menu-item" id="menu-card">📇 {{ t('QR/バーコード印刷テンプレート') }}</a>
-    <a href="#post"      class="settings-menu-item" id="menu-post">𝕏 {{ t('ポストテンプレート') }}</a>
+    <a href="#pricing"   class="settings-menu-item" id="menu-pricing">💴 {{ tr('利用料金') }}</a>
+    <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 {{ tr('賞状テンプレート') }}</a>
+    <a href="#card"      class="settings-menu-item" id="menu-card">📇 {{ tr('QR/バーコード印刷テンプレート') }}</a>
+    <a href="#post"      class="settings-menu-item" id="menu-post">𝕏 {{ tr('ポストテンプレート') }}</a>
     <a href="#bgm"       class="settings-menu-item" id="menu-bgm">🎵 BGM</a>
-    <a href="#public-html" class="settings-menu-item" id="menu-public-html">🌐 {{ t('参加者向け配信') }}</a>
+    <a href="#public-html" class="settings-menu-item" id="menu-public-html">🌐 {{ tr('参加者向け配信') }}</a>
     {% if IS_CLOUD %}
-    <a href="#pwa" class="settings-menu-item" id="menu-pwa">📱 {{ t('ホーム画面アイコン') }}</a>
+    <a href="#pwa" class="settings-menu-item" id="menu-pwa">📱 {{ tr('ホーム画面アイコン') }}</a>
     {% endif %}
     {% if IS_CLOUD and is_default_store %}
-    <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 {{ t('複数店舗展開') }}</a>
+    <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 {{ tr('複数店舗展開') }}</a>
     {% endif %}
     {% if IS_CLOUD %}
     <a href="#m4laps" class="settings-menu-item" id="menu-m4laps">⏱️ M4LAPS</a>
     {% endif %}
-    <a href="#health" class="settings-menu-item" id="menu-health">🩺 {{ t('稼働ヘルス') }}</a>
-    <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 {{ t('アクセス統計') }}</a>
-    <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 {{ t('監査ログ') }}</a>
-    <a href="#db-reset" class="settings-menu-item" id="menu-db-reset" style="color:#dc2626">🗑 {{ t('データ初期化') }}</a>
+    <a href="#health" class="settings-menu-item" id="menu-health">🩺 {{ tr('稼働ヘルス') }}</a>
+    <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 {{ tr('アクセス統計') }}</a>
+    <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 {{ tr('監査ログ') }}</a>
+    <a href="#db-reset" class="settings-menu-item" id="menu-db-reset" style="color:#dc2626">🗑 {{ tr('データ初期化') }}</a>
     {% if IS_CLOUD %}
-    <a href="#" class="settings-menu-item" id="menu-restart" style="color:#dc2626">🔄 {{ t('再起動') }}</a>
+    <a href="#" class="settings-menu-item" id="menu-restart" style="color:#dc2626">🔄 {{ tr('再起動') }}</a>
     {% endif %}
   </nav>
 
@@ -246,12 +246,12 @@
 
     <!-- 言語設定（多言語対応・店舗単位。設定ページの最上段） -->
     <div class="settings-section" id="language">
-      <div class="section-title">🌐 {{ t('言語設定') }}</div>
+      <div class="section-title">🌐 {{ tr('言語設定') }}</div>
       <div class="card">
-        <div class="card-header">{{ t('表示言語') }}</div>
+        <div class="card-header">{{ tr('表示言語') }}</div>
         <div style="padding:16px">
           <p style="color:#7f8c8d;font-size:13px;margin:0 0 12px">
-            {{ t('この端末ではなく店舗ごとの設定です。管理画面・参加者ページの表示言語に反映します。') }}
+            {{ tr('この端末ではなく店舗ごとの設定です。管理画面・参加者ページの表示言語に反映します。') }}
           </p>
           <form method="post" action="/admin/settings/language/save"
                 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -262,11 +262,11 @@
               <option value="{{ L.code }}"
                       {% if current_language(request) == L.code %}selected{% endif %}
                       {% if not L.enabled %}disabled{% endif %}>
-                {{ L.native }}（{{ L.ja_label }}）{% if not L.enabled %} — {{ t('準備中') }}{% endif %}
+                {{ L.native }}（{{ L.ja_label }}）{% if not L.enabled %} — {{ tr('準備中') }}{% endif %}
               </option>
               {% endfor %}
             </select>
-            <button type="submit" class="btn btn-primary">{{ t('保存') }}</button>
+            <button type="submit" class="btn btn-primary">{{ tr('保存') }}</button>
           </form>
         </div>
       </div>

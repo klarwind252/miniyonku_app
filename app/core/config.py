@@ -95,7 +95,8 @@ def inject_globals(templates):
     except Exception:
         templates.env.globals.setdefault("app_icon_src", lambda *a, **k: "/logo")
 
-    # 多言語対応（i18n）。テンプレートは {{ t('原文') }} で現在言語に翻訳できる。
+    # 多言語対応（i18n）。テンプレートは {{ tr('原文') }} で現在言語に翻訳できる。
+    # ※グローバル名は `tr`。`t` はレース行など既存のテンプレート変数と衝突するため使わない。
     # 現在言語は店舗DB（app_settings.language）から解決する（i18n 側でキャッシュ）。
     try:
         from app.core import i18n
@@ -122,14 +123,14 @@ def inject_globals(templates):
             return i18n.get_language_raw(_lang_db_path(request))
 
         templates.env.globals.update(
-            t=_t,
+            tr=_t,
             languages=i18n.LANGUAGES,
             language_is_set=_language_is_set,
             current_language=_current_language,
         )
     except Exception:
         # i18n 未配置でも従来挙動（日本語）を壊さない素通し。
-        templates.env.globals.setdefault("t", lambda text, *a, **k: text)
+        templates.env.globals.setdefault("tr", lambda text, *a, **k: text)
         templates.env.globals.setdefault("languages", [])
         templates.env.globals.setdefault("language_is_set", lambda *a, **k: True)
         templates.env.globals.setdefault("current_language", lambda *a, **k: "ja")

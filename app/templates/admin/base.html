@@ -170,21 +170,21 @@ select{background:#fff}
   <div class="nav-group">
     <a href="/admin/"
        class="nav-link {% if request.url.path == '/admin/' %}active{% endif %}">
-      🏠 {{ t('ダッシュボード') }}
+      🏠 {{ tr('ダッシュボード') }}
     </a>
   </div>
 
   <div class="nav-group">
     <a href="/admin/tournaments/"
        class="nav-link {% if '/admin/tournaments' in request.url.path %}active{% endif %}">
-      🏆 {{ t('レース一覧') }}
+      🏆 {{ tr('レース一覧') }}
     </a>
   </div>
 
   <div class="nav-group">
     <a href="/admin/racers/"
        class="nav-link {% if '/admin/racers' in request.url.path %}active{% endif %}">
-      👤 {{ t('レーサー一覧') }}
+      👤 {{ tr('レーサー一覧') }}
     </a>
   </div>
 
@@ -205,7 +205,7 @@ select{background:#fff}
             onclick="toggleTelopPopover(event)"
             title="お知らせ帯（テロップ）を入力・表示"
             style="display:flex;align-items:center;gap:6px;color:#ecf0f1;padding:14px 16px;font-size:13px;white-space:nowrap;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer">
-      <span>📢</span> {{ t('テロップ') }}
+      <span>📢</span> {{ tr('テロップ') }}
       <span id="telopOnDot" style="display:none;width:8px;height:8px;border-radius:50%;background:#e67e22"></span>
     </button>
 
@@ -213,19 +213,19 @@ select{background:#fff}
     <div id="telopPopover"
          style="display:none;position:absolute;top:100%;left:0;z-index:10001;width:300px;background:#fff;color:#2c3e50;border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.3);padding:14px;text-align:left">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-        <span style="font-size:14px;font-weight:bold">📢 {{ t('テロップ') }}</span>
+        <span style="font-size:14px;font-weight:bold">📢 {{ tr('テロップ') }}</span>
         <span id="telopStatus" style="margin-left:auto;font-size:12px;color:#95a5a6"></span>
       </div>
       <textarea id="telopText" rows="3" maxlength="200"
-                placeholder="{{ t('例）決勝は14時開始です') }}"
+                placeholder="{{ tr('例）決勝は14時開始です') }}"
                 style="width:100%;box-sizing:border-box;font-size:14px;padding:8px;border:1px solid #dfe4ea;border-radius:6px;resize:vertical"></textarea>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button type="button" onclick="saveTelop('show')"
-                style="flex:1;padding:8px 0;border:none;border-radius:6px;background:#e67e22;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">✓ {{ t('表示') }}</button>
+                style="flex:1;padding:8px 0;border:none;border-radius:6px;background:#e67e22;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">✓ {{ tr('表示') }}</button>
         <button type="button" onclick="saveTelop('clear')"
-                style="flex:1;padding:8px 0;border:none;border-radius:6px;background:#e74c3c;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">× {{ t('消去') }}</button>
+                style="flex:1;padding:8px 0;border:none;border-radius:6px;background:#e74c3c;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">× {{ tr('消去') }}</button>
       </div>
-      <div style="font-size:11px;color:#95a5a6;margin-top:8px">{{ t('「表示」で view・参加者html の帯に反映（最大30秒）') }}</div>
+      <div style="font-size:11px;color:#95a5a6;margin-top:8px">{{ tr('「表示」で view・参加者html の帯に反映（最大30秒）') }}</div>
     </div>
   </div>
 
@@ -245,7 +245,7 @@ select{background:#fff}
       <span id="bgmAutoTrack" style="position:relative;display:inline-block;width:32px;height:18px;border-radius:9px;background:#4a5568;transition:background .3s;flex-shrink:0">
         <span id="bgmAutoKnob" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .3s;display:block"></span>
       </span>
-      {{ t('自動') }}
+      {{ tr('自動') }}
     </button>
   </div>
 
@@ -253,22 +253,22 @@ select{background:#fff}
     <a href="/admin/settings"
        class="nav-link {% if '/admin/settings' in request.url.path %}active{% endif %}"
        style="gap:6px;">
-      ⚙️ {{ t('設定') }}
+      ⚙️ {{ tr('設定') }}
     </a>
   </div>
 
   {# 料金区分は設定（pricing_enabled）がONのときだけ出す #}
   {% if nav_pricing_enabled(request) %}
   <div class="nav-group" style="padding:0 8px;display:flex;align-items:center;gap:6px">
-    <span style="font-size:11px;color:#bdc3c7;white-space:nowrap">{{ t('料金区分') }}</span>
+    <span style="font-size:11px;color:#bdc3c7;white-space:nowrap">{{ tr('料金区分') }}</span>
     <select id="dayTypeSelect"
             style="font-size:12px;padding:4px 8px;border-radius:4px;border:none;background:#34495e;color:#ecf0f1;cursor:pointer"
             onchange="saveDayType(this.value)">
-      <option value="weekday">{{ t('平日') }}</option>
-      <option value="saturday">{{ t('土曜') }}</option>
-      <option value="sunday">{{ t('日曜') }}</option>
-      <option value="holiday">{{ t('祝日') }}</option>
-      <option value="special">{{ t('特別') }}</option>
+      <option value="weekday">{{ tr('平日') }}</option>
+      <option value="saturday">{{ tr('土曜') }}</option>
+      <option value="sunday">{{ tr('日曜') }}</option>
+      <option value="holiday">{{ tr('祝日') }}</option>
+      <option value="special">{{ tr('特別') }}</option>
     </select>
   </div>
   {% endif %}
@@ -286,8 +286,8 @@ select{background:#fff}
 <!-- レーサー用アクセスQR モーダル -->
 <div id="racerQrModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;align-items:center;justify-content:center" onclick="if(event.target===this)closeRacerQr()">
   <div style="background:#fff;border-radius:12px;padding:24px;max-width:360px;width:92vw;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.35)">
-    <div style="font-weight:bold;font-size:16px;color:#2c3e50;margin-bottom:4px">📱 {{ t('レーサー用アクセスQR') }}</div>
-    <div style="font-size:12px;color:#636e72;margin-bottom:14px">{{ t('レーサーはこのQRから入場・観覧ページにアクセスできます。') }}</div>
+    <div style="font-weight:bold;font-size:16px;color:#2c3e50;margin-bottom:4px">📱 {{ tr('レーサー用アクセスQR') }}</div>
+    <div style="font-size:12px;color:#636e72;margin-bottom:14px">{{ tr('レーサーはこのQRから入場・観覧ページにアクセスできます。') }}</div>
     <div id="racerQrCanvas" style="display:inline-block;line-height:0;border:1px solid #e9ecef;border-radius:8px;padding:10px;background:#fff"></div>
     <div id="racerQrUrl" style="font-size:12px;color:#95a5a6;margin-top:12px;word-break:break-all"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center">
