@@ -441,6 +441,36 @@ async def save_default_qualifying(request: Request, db: aiosqlite.Connection = D
     return RedirectResponse(url="/admin/settings#defaults", status_code=303)
 
 
+# ---- 表示言語（多言語対応 i18n） ----
+
+@router.post("/settings/language/save", response_class=HTMLResponse)
+async def save_language(request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """表示言語を店舗単位で保存する（app_settings.language）。
+    初回セットアップの強制モーダル・設定ページの両方から呼ばれる。
+    有効化済みの言語のみ受理し、未設定/未知値は保存しない（モーダルが出続ける）。"""
+    from fastapi.responses import RedirectResponse
+    from app.core import i18n
+
+    form = await request.form()
+    lang = (form.get("lang", "") or "").strip()
+    # オープンリダイレクト防止：内部パスのみ許可（// や外部URLは拒否）
+    nxt = (form.get("next", "") or "").strip()
+    if not (nxt.startswith("/") and not nxt.startswith("//")):
+        nxt = "/admin/settings#language"
+
+    if lang in i18n.ENABLED:
+        await db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('language', ?)",
+            (lang,),
+        )
+        await db.commit()
+        i18n.invalidate_language_cache()   # 次の描画から即反映
+        return RedirectResponse(url=nxt, status_code=303)
+
+    # 無効な言語（未実装・空）は保存せず元ページへ
+    return RedirectResponse(url=nxt, status_code=303)
+
+
 # ---- M4LAPS ライセンス（キー登録で機能を有効化） ----
 
 @router.post("/settings/m4laps/activate", response_class=HTMLResponse)

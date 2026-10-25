@@ -202,8 +202,8 @@
 {% block content %}
 <div class="page-title" style="display:flex;align-items:center;margin-bottom:24px">
   <div>
-    <h1>⚙️ 設定</h1>
-    <p>アプリの各種設定・テンプレートを管理します</p>
+    <h1>⚙️ {{ t('設定') }}</h1>
+    <p>{{ t('アプリの各種設定・テンプレートを管理します') }}</p>
   </div>
 </div>
 
@@ -211,37 +211,66 @@
 
   <!-- 左サイドメニュー（縦並び） -->
   <nav class="settings-menu">
-    <div class="settings-menu-label">設定項目</div>
-    <a href="#defaults"  class="settings-menu-item" id="menu-defaults">🎛️ 初期値</a>
+    <div class="settings-menu-label">{{ t('設定項目') }}</div>
+    <a href="#language"  class="settings-menu-item" id="menu-language">🌐 {{ t('言語設定') }}</a>
+    <a href="#defaults"  class="settings-menu-item" id="menu-defaults">🎛️ {{ t('初期値') }}</a>
     {% if not IS_CLOUD %}
-    <a href="#store-name" class="settings-menu-item" id="menu-store-name">🏪 店舗名</a>
+    <a href="#store-name" class="settings-menu-item" id="menu-store-name">🏪 {{ t('店舗名') }}</a>
     {% endif %}
-    <a href="#pricing"   class="settings-menu-item" id="menu-pricing">💴 利用料金</a>
-    <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 賞状テンプレート</a>
-    <a href="#card"      class="settings-menu-item" id="menu-card">📇 QR/バーコード印刷テンプレート</a>
-    <a href="#post"      class="settings-menu-item" id="menu-post">𝕏 ポストテンプレート</a>
+    <a href="#pricing"   class="settings-menu-item" id="menu-pricing">💴 {{ t('利用料金') }}</a>
+    <a href="#cert"      class="settings-menu-item" id="menu-cert">🏅 {{ t('賞状テンプレート') }}</a>
+    <a href="#card"      class="settings-menu-item" id="menu-card">📇 {{ t('QR/バーコード印刷テンプレート') }}</a>
+    <a href="#post"      class="settings-menu-item" id="menu-post">𝕏 {{ t('ポストテンプレート') }}</a>
     <a href="#bgm"       class="settings-menu-item" id="menu-bgm">🎵 BGM</a>
-    <a href="#public-html" class="settings-menu-item" id="menu-public-html">🌐 参加者向け配信</a>
+    <a href="#public-html" class="settings-menu-item" id="menu-public-html">🌐 {{ t('参加者向け配信') }}</a>
     {% if IS_CLOUD %}
-    <a href="#pwa" class="settings-menu-item" id="menu-pwa">📱 ホーム画面アイコン</a>
+    <a href="#pwa" class="settings-menu-item" id="menu-pwa">📱 {{ t('ホーム画面アイコン') }}</a>
     {% endif %}
     {% if IS_CLOUD and is_default_store %}
-    <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 複数店舗展開</a>
+    <a href="#stores" class="settings-menu-item" id="menu-stores">🏬 {{ t('複数店舗展開') }}</a>
     {% endif %}
     {% if IS_CLOUD %}
     <a href="#m4laps" class="settings-menu-item" id="menu-m4laps">⏱️ M4LAPS</a>
     {% endif %}
-    <a href="#health" class="settings-menu-item" id="menu-health">🩺 稼働ヘルス</a>
-    <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 アクセス統計</a>
-    <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 監査ログ</a>
-    <a href="#db-reset" class="settings-menu-item" id="menu-db-reset" style="color:#dc2626">🗑 データ初期化</a>
+    <a href="#health" class="settings-menu-item" id="menu-health">🩺 {{ t('稼働ヘルス') }}</a>
+    <a href="#access-stats" class="settings-menu-item" id="menu-access-stats">📊 {{ t('アクセス統計') }}</a>
+    <a href="#audit-log" class="settings-menu-item" id="menu-audit-log">📜 {{ t('監査ログ') }}</a>
+    <a href="#db-reset" class="settings-menu-item" id="menu-db-reset" style="color:#dc2626">🗑 {{ t('データ初期化') }}</a>
     {% if IS_CLOUD %}
-    <a href="#" class="settings-menu-item" id="menu-restart" style="color:#dc2626">🔄 再起動</a>
+    <a href="#" class="settings-menu-item" id="menu-restart" style="color:#dc2626">🔄 {{ t('再起動') }}</a>
     {% endif %}
   </nav>
 
   <!-- 右コンテンツ -->
   <div>
+
+    <!-- 言語設定（多言語対応・店舗単位。設定ページの最上段） -->
+    <div class="settings-section" id="language">
+      <div class="section-title">🌐 {{ t('言語設定') }}</div>
+      <div class="card">
+        <div class="card-header">{{ t('表示言語') }}</div>
+        <div style="padding:16px">
+          <p style="color:#7f8c8d;font-size:13px;margin:0 0 12px">
+            {{ t('この端末ではなく店舗ごとの設定です。管理画面・参加者ページの表示言語に反映します。') }}
+          </p>
+          <form method="post" action="/admin/settings/language/save"
+                style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <input type="hidden" name="next" value="/admin/settings#language">
+            <select name="lang"
+                    style="padding:8px 12px;border:1px solid #ced4da;border-radius:6px;font-size:14px;min-width:220px">
+              {% for L in languages %}
+              <option value="{{ L.code }}"
+                      {% if current_language(request) == L.code %}selected{% endif %}
+                      {% if not L.enabled %}disabled{% endif %}>
+                {{ L.native }}（{{ L.ja_label }}）{% if not L.enabled %} — {{ t('準備中') }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary">{{ t('保存') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
 
     {% if not IS_CLOUD %}
     <!-- 店舗名（オンプレ版／店舗1の名称） -->
