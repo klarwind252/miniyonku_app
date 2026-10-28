@@ -178,6 +178,10 @@ static constexpr uint32_t GREEN_HOLD_MS = 2000; // 緑点灯の保持（最終�
 static constexpr uint32_t GREEN_LEAD_MS = 50;   // 緑先行→0.05秒後に赤を消す重なり（暗転の隙間なし・DC32）
 static uint32_t s_green_off_ms = 0;   // 0=予約なし／非0=この millis で緑を自動消灯
 static uint32_t s_red_off_ms   = 0;   // 0=予約なし／非0=この millis で赤を消灯（緑先行の重なり後）
+// ★通過検知フラッシュ（緑シグナルLEDを一瞬＋高音ピッ）。スタート演出とは独立・暫定。
+static constexpr uint32_t DETECT_FLASH_MS = 50;   // 緑を光らせる長さ（一瞬・見えればOK）
+static constexpr uint32_t DETECT_BEEP_MS  = 40;   // 「ピッ」の長さ（一瞬）
+static uint32_t s_detect_green_off_ms = 0;        // 検知フラッシュの消灯予約（0=なし）
 static inline void sig_red(bool on)   { digitalWrite(PIN_SIG_RED,   on ? HIGH : LOW); }
 static inline void sig_green(bool on) { digitalWrite(PIN_SIG_GREEN, on ? HIGH : LOW); }
 static inline void sig_all_off() {                     // 全消灯＋予約解除（RESET/完走時）
@@ -195,6 +199,19 @@ static inline void sig_tick() {                        // loop毎に呼ぶ（時
   uint32_t now = millis();
   if (s_red_off_ms   && (int32_t)(now - s_red_off_ms)   >= 0) { sig_red(false);   s_red_off_ms = 0; }
   if (s_green_off_ms && (int32_t)(now - s_green_off_ms) >= 0) { sig_green(false); s_green_off_ms = 0; }
+  if (s_detect_green_off_ms && (int32_t)(now - s_detect_green_off_ms) >= 0) {
+    if (!s_green_off_ms) sig_green(false);   // スタート緑が点いていなければ消す（信号演出を優先）
+    s_detect_green_off_ms = 0;
+  }
+}
+// ★通過検知フィードバック：緑シグナルLEDを一瞬＋高音ピッ。
+//   スタート演出で緑を保持中(s_green_off_ms!=0)なら緑には触れずピッだけ（信号を壊さない）。
+static inline void detect_flash() {
+  if (!s_green_off_ms) {
+    sig_green(true);
+    s_detect_green_off_ms = millis() + DETECT_FLASH_MS;
+  }
+  buzzer_start(DETECT_BEEP_MS, BUZZER_F_BEEP);   // 一瞬「ピッ」＝2kHz（高音）
 }
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
@@ -1736,10 +1753,12 @@ void loop() {
     Serial.printf("[SG] lane=%u q=%u miss=%u rid=%u cross=%u\n",
                   hit.lane, hit.quality, hit.miss, s_internal_rid,
                   (hit.lane>=1&&hit.lane<=3)?s_lane_cross[hit.lane]:0);
-    if (was_idle_hit && !s_sg_beeped) {  // 待機からの「最初の」S/G通過のみ 60ms「ピッ」（29章・TA開始時も鳴る）
-      buzzer_beep();
-      s_sg_beeped = true;                       // 以降は灰リセットまで鳴らさない（TA周回の毎回鳴り防止）
-    }
+    // ★通過検知フィードバック（暫定）：通過の瞬間に緑を一瞬＋高音ピッ（全通過で発火）。
+    //   スタート緑の保持中は緑に触れない（detect_flash内でガード）。
+    //   ⚠計測中も毎通過で鳴る。待機中の1回だけにしたい場合は if(was_idle_hit && !s_sg_beeped) で囲う。
+    detect_flash();
+    s_sg_beeped = true;                       // 既存フラグ互換のため維持
+    (void)was_idle_hit;
   }
 
   // 20260821：POSTは「全員完走(自動)」と「灰ボタン(手動)」の2契機のみ。

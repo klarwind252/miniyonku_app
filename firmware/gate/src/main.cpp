@@ -39,6 +39,24 @@ static Pending s_pending[PENDING_MAX];
 
 static bool s_assigned = false;   // JOIN_ACKを受けた（台帳にMAC登録済み）
 
+// ---- ★通過検知フラッシュ（アンバーLED・PCBの空きランド Q3=IRLU3410→J_SIG_R を流用）----
+//   GPIO13 → 100Ω(R13) → IRLU3410(Q3)ゲート、G-S間4.7k(R15)プルダウン。
+//   LED：アノード→J_SIG_R.1(5V)、カソード→直列抵抗→J_SIG_R.2(Q3ドレイン)。抵抗はハーネス側（基板外）。
+//   一瞬だけONの非ブロッキング。オーバードライブ電流は外付け抵抗で決める（ファームはON/OFFのみ）。
+static constexpr int      PIN_FLASH = 13;     // 検知フラッシュ出力（=J_SIG_R経路）
+static constexpr uint32_t FLASH_MS  = 50;     // 一瞬ピカッ（見えればOK・暫定）
+static uint32_t s_flash_off_ms = 0;
+static inline void flash_fire() {             // 通過検知の瞬間に呼ぶ
+  digitalWrite(PIN_FLASH, HIGH);
+  s_flash_off_ms = millis() + FLASH_MS;
+}
+static inline void flash_tick() {             // loop毎：時間が来たら消灯
+  if (s_flash_off_ms && (int32_t)(millis() - s_flash_off_ms) >= 0) {
+    digitalWrite(PIN_FLASH, LOW);
+    s_flash_off_ms = 0;
+  }
+}
+
 // ---- 受信ハンドラ ----------------------------------------------------------
 static void on_recv(const proto::PktHeader& h, const uint8_t* body,
                     int body_len, const uint8_t* /*mac*/) {
@@ -179,6 +197,8 @@ void setup() {
     Serial.println("ESP-NOW init 失敗"); return;
   }
   beam::begin();
+  pinMode(PIN_FLASH, OUTPUT);
+  digitalWrite(PIN_FLASH, LOW);   // ★検知フラッシュ：起動時消灯（G-S間4.7kΩプルダウン併用）
   Serial.printf("ch=%d で稼働（GWのchへ自動追従）。SYNCとビーム待受け開始。\n", ch0);
 }
 
@@ -190,6 +210,7 @@ void loop() {
   beam::Hit hit;
   while (beam::poll(hit)) {    // 溜まった通過を全部拾う
     enqueue_event(hit);
+    flash_fire();             // ★通過検知の瞬間にアンバーLEDを一瞬ピカッ（暫定・全通過）
     uint8_t q = (hit.quality == 2) ? 2
                 : (tsync::is_synced() ? hit.quality : 3);
     const char* ab = (hit.miss == 1) ? " A" : (hit.miss == 2) ? " B" : "";
@@ -208,5 +229,6 @@ void loop() {
       Serial.println("[BEAM] ALL STUCK -> TX side suspected (LED 5V / 38kHz / wiring)");
     }
   }
+  flash_tick();               // ★検知フラッシュの非ブロッキング消灯
   service_pending();
 }
