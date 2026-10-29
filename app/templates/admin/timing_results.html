@@ -202,6 +202,47 @@
   .pc-raw-chip .qd{width:7px;height:7px;border-radius:50%;background:var(--qc);display:inline-block}
   .pc-raw-chip.off{opacity:.28}
   .pc-raw-none,.pc-raw-empty{font-size:11px;color:#aaa;padding:2px 4px}
+  /* ===== 端末別センサーA/B一覧（感知／記録）：モーダル最下部 ===== */
+  .pc-sensorsec{margin-top:10px;border-top:2px solid #eee;padding-top:8px}
+  .pc-sensorsec-h{font-weight:bold;font-size:13px;color:#333;margin-bottom:6px}
+  .pc-sensorsec-h small{display:block;font-weight:normal;color:#999;font-size:10px;
+    margin-top:2px;line-height:1.4}
+  .pc-sns-dev{border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin-bottom:6px}
+  .pc-sns-gate{font-weight:bold;font-size:13px;color:#2c3e50;margin-bottom:4px}
+  .pc-sns-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0}
+  .pc-sns-lane{font-weight:bold;font-size:12px;color:#fff;background:#64748b;
+    border-radius:6px;padding:1px 8px;min-width:46px;text-align:center}
+  .pc-sns-beam{display:inline-flex;align-items:center;gap:4px;font-size:12px;
+    padding:2px 8px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;white-space:nowrap}
+  .pc-sns-beam .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .pc-sns-beam.ok{color:#166534}
+  .pc-sns-beam.ok .dot{background:#16a34a}
+  .pc-sns-beam.none{color:#b91c1c;border-color:#f3b4b4;background:#fdf1f1}
+  .pc-sns-beam.none .dot{background:#dc2626}
+  .pc-sns-beam.idle{color:#94a3b8}
+  .pc-sns-beam.idle .dot{background:#cbd5e1}
+  .pc-sns-stuck{font-size:11px;font-weight:bold;color:#b45309;background:#fff7ed;
+    border:1px solid #fed7aa;border-radius:10px;padding:1px 7px}
+  .pc-sns-ng{font-size:11px;font-weight:bold;color:#dc2626}
+  .pc-sns-okall{font-size:11px;font-weight:bold;color:#16a34a}
+  .pc-sns-idle{font-size:11px;color:#b6c0cc}
+  .pc-ok{color:#16a34a}
+  .pc-ng{color:#dc2626}
+  .pc-sns-lanehdr{display:flex;align-items:center;gap:8px;margin:5px 0 2px;flex-wrap:wrap}
+  .pc-sns-cnt{font-size:11px;color:#555}
+  .pc-sns-cnt.short{color:#b45309;font-weight:bold}
+  .pc-sns-passes{display:flex;flex-wrap:wrap;gap:4px}
+  .pc-sns-pass{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 7px;
+    border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .pc-sns-pass.both{border-color:#bbf7d0;background:#f0fdf4}
+  .pc-sns-pass.half{border-color:#fde3c0;background:#fff7ed}
+  .pc-sns-pass.none{border-color:#f3b4b4;background:#fdf1f1}
+  .pc-sns-pass .ab{font-weight:bold}
+  .pc-sns-pass .ok{color:#16a34a}
+  .pc-sns-pass .ng{color:#dc2626}
+  .pc-sns-pass .dt{color:#64748b}
+  .pc-sns-emptylane{font-size:11px;color:#b6c0cc;padding:1px 4px}
   .c-pos{width:40px;text-align:center;font-weight:bold;color:#2c3e50;vertical-align:middle;font-size:15px}
   /* 結果フラグ・バッジ（サーバー判定を表示。24.1：値は補完せず事実を示す）*/
   .rflag{display:block;margin-top:2px;font-size:10px;font-weight:bold;line-height:1.25;border-radius:6px;padding:1px 3px;white-space:nowrap}
@@ -667,6 +708,16 @@ async function sendSample(){
         </div>
         <div id="pcRawWrap"></div>
       </div>
+
+      <!-- ===== 端末別センサーA/B一覧（感知／記録の可否）：最下部 ===== -->
+      <div class="pc-sensorsec" id="pcSensorSec">
+        <div class="pc-sensorsec-h">端末別センサー通過ログ（レーン別・時刻順）
+          <small>各端末 × レーンで、通過を1回ずつ早い順に羅列。各通過で A穴/B穴の打刻が取れたか（<b class="pc-ok">○</b>=取得／<b class="pc-ng">×</b>=欠落）。
+            両方取れた通過は A→B の時間差(ms)も表示。各レーンの「取得数／期待数」も表示（期待＝GW:周回+1・SE:周回）。
+            両ビーム欠で何も残らなかった取り逃しは記録自体が無いので出ません。</small>
+        </div>
+        <div id="pcSensorWrap"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -720,6 +771,8 @@ function renderPositionChart(){
 
   // 下段：生データ（通過ログ）。レーン凡例の表示/非表示にも追従させるためここで呼ぶ。
   renderRawDetections();
+  // 最下部：端末別センサーA/B一覧（感知／記録の可否）。
+  renderSensorMatrix();
 
   if(!d || !d.lanes || d.lanes.length === 0){
     document.getElementById('pcChartWrap').innerHTML =
@@ -924,6 +977,48 @@ function renderRawDetections(){
     html += '</div></div>';
   });
 
+  wrap.innerHTML = html;
+}
+
+// 最下部：端末(GW/SE)ごと × レーン の「通過ログ」を時刻順に羅列する。
+// build_sensor_matrix() が返す pcData.sensors を使う。A=t_us(A穴)・B=t_us_b(B穴)の打刻有無で○×。
+function renderSensorMatrix(){
+  const wrap = document.getElementById('pcSensorWrap');
+  if(!wrap) return;
+  const sm = pcData && pcData.sensors;
+  if(!sm || !sm.devices || sm.devices.length === 0){
+    wrap.innerHTML = '<div class="pc-raw-empty">センサー情報がありません</div>';
+    return;
+  }
+  const mark = (ok) => ok ? '<span class="ok">○</span>' : '<span class="ng">×</span>';
+  let html = '';
+  sm.devices.forEach(dev => {
+    html += '<div class="pc-sns-dev">';
+    html += '<div class="pc-sns-gate">' + dev.name + '</div>';
+    (dev.lanes || []).forEach(ln => {
+      const exp = (ln.expected != null) ? ('／期待' + ln.expected) : '';
+      const short = (ln.expected != null && ln.got < ln.expected);
+      html += '<div class="pc-sns-lanehdr">';
+      html += '<span class="pc-sns-lane">LANE' + ln.lane + '</span>';
+      html += '<span class="pc-sns-cnt' + (short ? ' short' : '') + '">取得' + ln.got + exp +
+              '　A ' + ln.a_ok + '／B ' + ln.b_ok + (ln.stuck ? ('　張付' + ln.stuck) : '') + '</span>';
+      html += '</div>';
+      if(!ln.passes || ln.passes.length === 0){
+        html += '<div class="pc-sns-emptylane">— 通過記録なし</div>';
+      } else {
+        html += '<div class="pc-sns-passes">';
+        ln.passes.forEach(p => {
+          const cls = (p.a && p.b) ? 'both' : ((p.a || p.b) ? 'half' : 'none');
+          const dt = (p.dt_ms != null) ? ('<span class="dt">Δ' + p.dt_ms + 'ms</span>') : '';
+          const tag = (p.q === 2) ? ' <span class="ng">張付</span>' : '';
+          html += '<span class="pc-sns-pass ' + cls + '">' + p.t_s.toFixed(2) + 's ' +
+                  '<span class="ab">A' + mark(p.a) + ' B' + mark(p.b) + '</span>' + dt + tag + '</span>';
+        });
+        html += '</div>';
+      }
+    });
+    html += '</div>';
+  });
   wrap.innerHTML = html;
 }
 

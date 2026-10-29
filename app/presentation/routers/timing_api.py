@@ -30,7 +30,7 @@ from app.application.timing_sample_irregular import (
     describe_pattern_short as irr_describe,
     summarize_patterns as irr_summary,
 )
-from app.application.timing_chart_service import build_position_chart, build_raw_detections
+from app.application.timing_chart_service import build_position_chart, build_raw_detections, build_sensor_matrix
 from app.application import timing_status_service as status_svc
 from app.application import timing_race_speed_store as speed_store
 from app.domain.rotation import LANES, LayoutElement
@@ -1443,9 +1443,11 @@ async def race_position_chart(
     try:
         ev_rows = await repo.get_events(race_id)
         chart["raw"] = build_raw_detections(race, ev_rows, layout_elems, n_lanes=LANES)
+        chart["sensors"] = build_sensor_matrix(race, ev_rows, layout_elems, n_lanes=LANES)
     except Exception as e:
         print(f"[timing] raw build failed race={race_id}: {type(e).__name__}: {e}", flush=True)
         chart["raw"] = None
+        chart["sensors"] = None
 
     return JSONResponse(chart)
 

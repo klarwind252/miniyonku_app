@@ -217,6 +217,46 @@ static inline void detect_flash() {
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
 enum GwState { ST_SPLASH, ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE, ST_FINISH };
 static GwState s_state = ST_IDLE;
+
+// ★フライング検知（レースモード・赤点灯中=ST_ARMED=スタート前のS/G通過）。20261029。
+//   赤ボタン→赤点灯→ランダム→緑の「赤の間」にマシンがS/Gを通過したらフライング。
+//   演出：赤を点滅＋長め「ピー」で FLYING_HOLD_MS(1秒) だけ“絶対優先”。この1秒間は
+//         別マシンが通過しても緑の通過フラッシュ(detect_flash)は出さない（緑点灯しない）。
+//   レースは止めない。通過の生データは通常どおりspool→サーバーが green_t_us 比較で
+//   jump_start(JS=フライング)の印を付ける（アプリ側は実装済み）。
+static constexpr uint32_t FLYING_HOLD_MS  = 1000;  // フライング優先表示の長さ（1秒・ユーザー確定）
+static constexpr uint32_t FLYING_BLINK_MS = 120;   // 赤点滅の半周期
+static uint32_t s_flying_until_ms = 0;             // 0=非／この millis まで優先窓
+static uint32_t s_flying_blink_at = 0;             // 次の点滅トグル時刻
+static bool     s_flying_red_on   = false;
+static bool     s_flying_seen     = false;         // このレースでフライングがあった事実（灰リセットでクリア）
+static inline bool flying_active() {
+  return s_flying_until_ms && (int32_t)(millis() - s_flying_until_ms) < 0;
+}
+static inline void flying_trigger() {              // フライング通過の瞬間に呼ぶ
+  s_flying_until_ms = millis() + FLYING_HOLD_MS;    // 1秒間フライング優先
+  s_flying_blink_at = millis();
+  s_flying_red_on   = true;
+  s_flying_seen     = true;
+  sig_green(false);                                 // 緑は絶対に出さない
+  sig_red(true);
+  buzzer_start(FLYING_HOLD_MS, BUZZER_F_ERR);        // 長め「ピー」＝1秒・1200Hz（エラー音＝最大音量）
+}
+static inline void flying_tick() {                 // loop毎：赤点滅と窓終了処理
+  if (!s_flying_until_ms) return;
+  uint32_t now = millis();
+  // 窓終了、または赤フェーズを抜けた(緑/計測/待機へ)らフライングLED制御を手放す。
+  if ((int32_t)(now - s_flying_until_ms) >= 0 || s_state != ST_ARMED) {
+    s_flying_until_ms = 0;
+    if (s_state == ST_ARMED) sig_red(true);          // まだ赤フェーズ：赤点灯で戻す
+    return;
+  }
+  if ((int32_t)(now - s_flying_blink_at) >= 0) {     // 点滅トグル
+    s_flying_red_on = !s_flying_red_on;
+    sig_red(s_flying_red_on);
+    s_flying_blink_at = now + FLYING_BLINK_MS;
+  }
+}
 static uint32_t s_splash_ms = 0;                 // スプラッシュ開始時刻（ST_SPLASH中）
 static constexpr uint32_t SPLASH_MS = 3200;      // スプラッシュ総時間（締めの大拡大ぶん延長）
 // 赤押下でSETを「即座に」出すための一発フラグ。on_signal_pressed（ESP-NOW受信
@@ -643,6 +683,7 @@ static void on_reset_pressed() {
   s_green_t_us = 0;
   s_start_shared_us = 0;        // 20260831i：走行式の共通起点も灰リセットでクリア
   sig_all_off();                // ★GW自機の信号灯を全消灯（赤緑・自動消灯予約も解除）
+  s_flying_until_ms = 0; s_flying_seen = false;   // ★フライング優先/記録フラグも待機復帰でクリア
   buzzer_tone(0); s_buzz_off_ms = 0;   // ★スタート音/エラー音を即停止
   Serial.println("[SEQ] RESET -> IDLE (flush queued if data)");
 }
@@ -1590,6 +1631,7 @@ void loop() {
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_roster();              // 接続機材の一覧をシリアルへ（設営確認用・3秒毎）
   tick_sequence();
+  flying_tick();              // ★フライング優先中の赤点滅・窓終了処理
   if (s_set_now_req) { s_set_now_req = false; render_set_now(); }  // 赤押下の即SETをloop文脈で安全に描画
 
   beam::Hit hit;
@@ -1608,6 +1650,7 @@ void loop() {
     //   このガードで「READYなのに内部だけ計測中」を根治（RESET有無に関係なく）。
     if (!s_race_active && s_state != ST_FINISH && hit.quality != 2) begin_internal_race();
     bool was_idle_hit = (s_state == ST_IDLE);   // 通過ピッ判定用（遷移前の状態を保持）
+    bool was_armed_hit = (s_state == ST_ARMED); // ★赤点灯中(スタート前)の通過＝フライング
     // 走行式(TA)：待機のまま最初の「正常通過(q=0/1)」が来たら ON TRACK＋計測開始。
     //   q=2（張り付き＝A1：故障・断線・CO）は通過ではないのでスタートさせない（20260830）。
     if (s_state == ST_IDLE && hit.quality != 2) {
@@ -1624,7 +1667,9 @@ void loop() {
     //   TFTのL列＝「そのレーンでスタートしたマシン」。レーンチェンジしても同じ列に積む。
     // 20260831k：逆走(B→A)はTFT計測対象外＝帰属・ラップに使わない。ただし生データは後段でPUSH。
     //   quality!=2（張り付き除外）に加え、!hit.reverse（逆走除外）を条件に追加。
-    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && !hit.reverse && s_state != ST_FINISH) {
+    // ★ST_ARMED(赤点灯中=スタート前)の通過はフライング。緑起点より前なのでTFTの周回/帰属には
+    //   数えない（生データは後段で必ずspool→サーバーがjump_startで印を付ける）。
+    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && !hit.reverse && s_state != ST_FINISH && s_state != ST_ARMED) {
       int p = hit.lane;                                    // 物理レーン
       uint64_t t = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // q=1でAが欠けたらBで代用
       // ---- ① 帰属（20260831j 全面改訂）：本コースは LC=+1 固定（1→2→3→1・ユーザー確定）----
@@ -1753,10 +1798,15 @@ void loop() {
     Serial.printf("[SG] lane=%u q=%u miss=%u rid=%u cross=%u\n",
                   hit.lane, hit.quality, hit.miss, s_internal_rid,
                   (hit.lane>=1&&hit.lane<=3)?s_lane_cross[hit.lane]:0);
-    // ★通過検知フィードバック（暫定）：通過の瞬間に緑を一瞬＋高音ピッ（全通過で発火）。
-    //   スタート緑の保持中は緑に触れない（detect_flash内でガード）。
-    //   ⚠計測中も毎通過で鳴る。待機中の1回だけにしたい場合は if(was_idle_hit && !s_sg_beeped) で囲う。
-    detect_flash();
+    // ★通過検知フィードバック：
+    //   ・ST_ARMED(赤点灯中=スタート前)の通過＝フライング → 赤点滅＋長め「ピー」で1秒優先。
+    //   ・それ以外は通常の通過フラッシュ（緑一瞬＋高音ピッ）。ただしフライング優先窓(1秒)の
+    //     間は、別マシンが通過しても緑は出さない（フライングが分かるよう絶対優先）。
+    if (was_armed_hit) {
+      flying_trigger();
+    } else if (!flying_active()) {
+      detect_flash();
+    }
     s_sg_beeped = true;                       // 既存フラグ互換のため維持
     (void)was_idle_hit;
   }

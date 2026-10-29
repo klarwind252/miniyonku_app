@@ -311,6 +311,113 @@ def build_raw_detections(race_row, event_rows, layout_elems: list,
     }
 
 
+def build_sensor_matrix(race_row, event_rows, layout_elems: list,
+                        n_lanes: int | None = None) -> dict:
+    """端末(GW/SE)ごと × 物理レーン に、通過を1回ずつ時刻順で並べた「通過ログ」を返す。
+
+    集計ではなく“羅列”。1通過=1行で、その通過で A穴(t_us)・B穴(t_us_b) の打刻が
+    取れたかを出す。両方取れていれば A→B の時間差(dt_ms・3cm間隔の速度の素)も付ける。
+    （miss列に依存せず t_us / t_us_b の有無だけで判定。取り逃し＝両ビーム欠で何も
+      残らなかった通過は、そもそも記録が無いので一覧には出ない＝仕様どおり。）
+
+    期待数(expected_per_lane)：GW(SG)=target_laps+1（スタート通過を含む）／ SE=target_laps。
+
+    戻り値:
+      { "lanes": n,
+        "devices": [
+          {"node_id":6,"name":"GW","kind":"SG","expected_per_lane":4,
+           "lanes":[
+             {"lane":1,"got":K,"expected":4,"a_ok":X,"b_ok":Y,"stuck":S,
+              "passes":[{"t_s":0.00,"a":1,"b":1,"q":0,"dt_ms":20.5}, ...]},
+             ... lane 1..n ]}, ... ] }
+    """
+    try:
+        target_laps = race_row["target_laps"] if race_row is not None else None
+    except Exception:
+        target_laps = None
+
+    course = build_course([
+        LayoutElement(kind=e["kind"] if isinstance(e, dict) else e.kind,
+                      node_id=e["node_id"] if isinstance(e, dict) else e.node_id)
+        for e in layout_elems
+    ])
+    name_by_node = {}
+    kind_by_node = {}
+    ordered_nodes = []
+    sq = 0
+    for g in course.gates:
+        if g.node_id is None:
+            continue
+        if g.kind == "SG":
+            nm = "GW"
+        else:
+            nm = f"SE{sq}"
+            sq += 1
+        name_by_node[g.node_id] = nm
+        kind_by_node[g.node_id] = g.kind
+        ordered_nodes.append(g.node_id)
+
+    rows = list(event_rows)
+    if n_lanes is None:
+        lanes_seen = [(_row_get(r, "lane")) for r in rows]
+        n_lanes = max(lanes_seen) if lanes_seen else 1
+
+    t0 = min((_row_get(r, "t_us") for r in rows), default=0)
+
+    # (node, lane) -> 通過リスト（dict）
+    by_cell = {}
+    for r in rows:
+        node = _row_get(r, "src")
+        lane = _row_get(r, "lane")
+        ta = _row_get(r, "t_us") or 0
+        tb = _row_get(r, "t_us_b") or 0
+        q = _row_get(r, "quality")
+        a = 1 if ta > 0 else 0
+        b = 1 if tb > 0 else 0
+        dt_ms = round((tb - ta) / 1000.0, 2) if (ta > 0 and tb > 0) else None
+        # 並べ替え用の時刻（A優先、無ければB）。表示 t_s は t0 からの相対秒。
+        tsort = ta if ta > 0 else tb
+        by_cell.setdefault((node, lane), []).append({
+            "t_s": round((tsort - t0) / 1_000_000, 3) if tsort else 0.0,
+            "a": a, "b": b, "q": q, "dt_ms": dt_ms, "_sort": tsort,
+        })
+
+    # 台帳外ノードも末尾に
+    for (node, lane) in by_cell:
+        if node not in ordered_nodes:
+            ordered_nodes.append(node)
+            name_by_node.setdefault(node, f"n{node}")
+            kind_by_node.setdefault(node, "SQ")
+
+    devices_out = []
+    for node in ordered_nodes:
+        kind = kind_by_node.get(node, "SQ")
+        if target_laps is None:
+            exp = None
+        elif kind == "SG":
+            exp = int(target_laps) + 1
+        else:
+            exp = int(target_laps)
+        lanes_list = []
+        for lane in range(1, (n_lanes or 1) + 1):
+            passes = sorted(by_cell.get((node, lane), []), key=lambda d: d["_sort"])
+            for d in passes:
+                d.pop("_sort", None)
+            a_ok = sum(1 for d in passes if d["a"])
+            b_ok = sum(1 for d in passes if d["b"])
+            stuck = sum(1 for d in passes if d["q"] == 2)
+            lanes_list.append({
+                "lane": lane, "got": len(passes), "expected": exp,
+                "a_ok": a_ok, "b_ok": b_ok, "stuck": stuck, "passes": passes,
+            })
+        devices_out.append({
+            "node_id": node, "name": name_by_node.get(node, f"n{node}"),
+            "kind": kind, "expected_per_lane": exp, "lanes": lanes_list,
+        })
+
+    return {"lanes": n_lanes, "devices": devices_out}
+
+
 def _row_get(row, key):
     """sqlite Row / dict / tuple のいずれでも値を取れるヘルパー。"""
     if hasattr(row, "keys"):
