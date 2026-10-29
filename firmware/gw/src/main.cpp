@@ -62,8 +62,12 @@
 //   (あ) START_MODE_SHARED=0：各車が自分の初通過(s_lane_first_us[m])を起点にする（DA4走行式の原形）。
 //   ★将来 (あ) に戻す可能性あり（ユーザー指示・忘れないこと）。戻すときはここを 0 にするだけ。
 //   ※signalあり（F1式・緑起点）はこのスイッチと無関係に常に緑時刻が全車共通起点。
+// ★20261029 ユーザー確定：走行式は「各車が自分の初通過」を基準にする＝(あ)。
+//   READYで最初にゲートをくぐった車で計測開始、後から走り出した2台目・3台目は
+//   それぞれ自分のスタート打刻を起点に合計を出す。サーバー(race_builder 走行式)も同じ。
+//   レース(F1式・シグナル)は従来どおり緑の瞬間が全車共通の起点。
 #ifndef START_MODE_SHARED
-#define START_MODE_SHARED 1
+#define START_MODE_SHARED 0
 #endif
 static uint32_t s_layout_id   = DEFAULT_LAYOUT_ID;    // 現在のレイアウトID（起動既定→将来アプリ追従）
 static int      s_target_laps = DEFAULT_TARGET_LAPS;  // 現在の周回数（fetch_layoutで更新）
@@ -77,6 +81,12 @@ static int      s_node_need   = 0;   // レイアウト要求ノード数（fetc
 // 既定値（NVSに設定が無ければこれ＝従来と同じ挙動）。
 static const char* DEF_SERVER_IP   = "133.117.77.69";
 static const char* DEF_SERVER_HOST = "v133-117-77-69.sefs.static.cnode.jp";
+// 店舗スラグ（マルチ店舗。空=既定店舗／"arcadebase"等でその店舗へ投げる）。20261029。
+//   投げ先URLは  https://<host>[/<slug>]/api/timing/...  の形。
+//   既定はビルドフラグ -DSTORE_SLUG=\"arcadebase\"（platformio.ini env:gw6a）。NVS "slug" が優先。
+#ifndef STORE_SLUG
+#define STORE_SLUG ""
+#endif
 
 // 実行時の設定（NVS "m4cfg" が上書き。無ければ既定 / secrets.h）。load_config()で確定。
 static String g_ssid  = WIFI_SSID;
@@ -84,6 +94,7 @@ static String g_pass  = WIFI_PASS;
 static String g_host  = DEF_SERVER_HOST;
 static String g_ip    = DEF_SERVER_IP;
 static String g_token = TIMING_TOKEN;
+static String g_slug  = STORE_SLUG;   // 店舗スラグ（空=既定店舗）。NVS "slug" で上書き可
 // g_channel：起動時の初期ch（ブートストラップ／オフライン集合用）。WiFi接続後は
 //   gw_adopt_wifi_channel() が“スマホAPの実ch”で上書きし、以後はそれが運用ch（状態B）。
 static uint8_t g_channel = ESPNOW_CHANNEL;
@@ -95,6 +106,14 @@ static bool s_dns_ok = false;
 static inline String server_base() {
   return s_dns_ok ? (String("https://") + g_host)
                   : (String("https://") + g_ip);
+}
+// 店舗スラグのパス前置（"/arcadebase"等。空なら前置なし＝既定店舗）。先頭/を保証・末尾/除去。
+static inline String api_prefix() {
+  if (g_slug.isEmpty()) return String("");
+  String s = g_slug;
+  if (!s.startsWith("/")) s = "/" + s;
+  while (s.length() && s.endsWith("/")) s.remove(s.length() - 1);
+  return s;
 }
 // Hostヘッダを付けるべきか（IP直のときだけ必要。ホスト名運用時は不要）。
 static inline bool need_host_header() { return !s_dns_ok; }
@@ -563,7 +582,7 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
 
   WiFiClientSecure _c; _c.setInsecure();            // K4：ローカル生成＋CN検証なし
   HTTPClient http;
-  http.begin(_c, server_base() + "/api/timing/races");   // #9：DNS可ならホスト名/不可ならIP直
+  http.begin(_c, server_base() + api_prefix() + "/api/timing/races");   // #9：DNS可ならホスト名/不可ならIP直
   http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);                         // Host(IP直時のみ)＋トークン
   http.addHeader("Content-Type", "application/json");
@@ -739,7 +758,7 @@ static void forward_join(const proto::JoinBody& jb) {
 
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(_c, server_base() + "/api/timing/join");
+  http.begin(_c, server_base() + api_prefix() + "/api/timing/join");
   http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);
   http.addHeader("Content-Type", "application/json");
@@ -1040,7 +1059,7 @@ static void flush_spool() {
   if (n == 0) return;
   String payload; serializeJson(out, payload);
 
-  String url = server_base() + "/api/timing/races/" + server_id + "/events";
+  String url = server_base() + api_prefix() + "/api/timing/races/" + server_id + "/events";
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
   http.begin(_c, url);
@@ -1111,7 +1130,7 @@ static bool fetch_layout() {
   if (!wifi_up()) return false;
   WiFiClientSecure _c; _c.setInsecure();
   HTTPClient http;
-  http.begin(_c, server_base() + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
+  http.begin(_c, server_base() + api_prefix() + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
   http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
   add_common_headers(http);
   int code = http.GET();
@@ -1223,6 +1242,7 @@ static void load_config() {
     if (p.isKey("host"))  { g_host  = p.getString("host",  g_host);  from_nvs = true; }
     if (p.isKey("ip"))    { g_ip    = p.getString("ip",    g_ip);    from_nvs = true; }
     if (p.isKey("token")) { g_token = p.getString("token", g_token); from_nvs = true; }
+    if (p.isKey("slug"))  { g_slug  = p.getString("slug",  g_slug);  from_nvs = true; }
     if (p.isKey("ch"))    { uint8_t c = p.getUChar("ch", g_channel);
                             if (c >= 1 && c <= 13) { g_channel = c; from_nvs = true; } }
     p.end();
@@ -1231,9 +1251,9 @@ static void load_config() {
   if (g_ssid.isEmpty()) g_ssid = WIFI_SSID;
   if (g_host.isEmpty()) g_host = DEF_SERVER_HOST;
   if (g_ip.isEmpty())   g_ip   = DEF_SERVER_IP;
-  Serial.printf("[CFG] src=%s ch=%d ssid=\"%s\" host=%s ip=%s token=%dB\n",
+  Serial.printf("[CFG] src=%s ch=%d ssid=\"%s\" host=%s ip=%s slug=\"%s\" token=%dB\n",
                 from_nvs ? "NVS" : "default", (int)g_channel,
-                g_ssid.c_str(), g_host.c_str(), g_ip.c_str(), (int)g_token.length());
+                g_ssid.c_str(), g_host.c_str(), g_ip.c_str(), g_slug.c_str(), (int)g_token.length());
 }
 
 void setup() {
@@ -1669,7 +1689,10 @@ void loop() {
     //   quality!=2（張り付き除外）に加え、!hit.reverse（逆走除外）を条件に追加。
     // ★ST_ARMED(赤点灯中=スタート前)の通過はフライング。緑起点より前なのでTFTの周回/帰属には
     //   数えない（生データは後段で必ずspool→サーバーがjump_startで印を付ける）。
-    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && !hit.reverse && s_state != ST_FINISH && s_state != ST_ARMED) {
+    // ★20261029：逆走(hit.reverse=B→A順)を周回から除外しない。実機(GW6)でB受光が不安定だと
+    //   Bの早エッジで“偽逆走”になり、正規の通過が落ちて再同期(2区間合体)やDNFを生んでいた
+    //   （race8 実証）。通過はA打刻で確定し、速度(A→B差)だけ使わない。サーバーも同じ扱い。
+    if (hit.lane >= 1 && hit.lane <= 3 && hit.quality != 2 && s_state != ST_FINISH && s_state != ST_ARMED) {
       int p = hit.lane;                                    // 物理レーン
       uint64_t t = hit.t_a_us ? hit.t_a_us : hit.t_b_us;   // q=1でAが欠けたらBで代用
       // ---- ① 帰属（20260831j 全面改訂）：本コースは LC=+1 固定（1→2→3→1・ユーザー確定）----
