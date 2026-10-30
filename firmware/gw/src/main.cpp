@@ -217,6 +217,11 @@ static inline void sig_on_green() {                    // 緑点灯の唯一の�
   s_red_off_ms   = millis() + GREEN_LEAD_MS;           // 0.05秒後に赤を消す（赤緑オーバーラップ・DC32）
   s_green_off_ms = millis() + GREEN_HOLD_MS;           // 2秒後に緑を自動消灯（DC30）
 }
+// ★20261030 動作変更：READYは常時赤点灯。赤を点灯しっぱなしにする（緑消灯・自動消灯予約も解除）。
+static inline void sig_ready_red() {
+  sig_red(true); sig_green(false);
+  s_green_off_ms = 0; s_red_off_ms = 0; s_detect_green_off_ms = 0;
+}
 static inline void sig_tick() {                        // loop毎に呼ぶ（時間が来たら消灯・非ブロッキング）
   uint32_t now = millis();
   if (s_red_off_ms   && (int32_t)(now - s_red_off_ms)   >= 0) { sig_red(false);   s_red_off_ms = 0; }
@@ -285,6 +290,7 @@ static constexpr uint32_t SPLASH_MS = 3200;      // スプラッシュ総時間�
 // コールバック文脈からも呼ばれる）でSPIを叩くとクラッシュしうるため、ここでは
 // フラグだけ立て、実描画は loop（安全な文脈）で render_set_now() が行う。
 static volatile bool s_set_now_req = false;
+static volatile bool s_green_now_req = false;   // ★即緑→ON TRACK即描画をloop文脈で行う（20261030）
 
 // ---- COMMAND冪等化（SIGNAL二重発火の絶対防止・20260819）----------------
 //  RCは1押下ごとに一意 nonce(=CommandBody.arg) を採番し、その押下の全再送に同値を載せる。
@@ -633,7 +639,7 @@ static void render_ontrack_now();
 // ---- スタートシーケンス制御 -----------------------------------------------
 //  赤ボタン/CMD_SIGNAL共通の入口（docs/03「本体とリモコンで同じ処理」）。
 static void on_signal_pressed() {
-  if (s_state == ST_SPLASH) { s_state = ST_IDLE; Serial.println("[SPLASH] skip -> READY"); return; }
+  if (s_state == ST_SPLASH) { s_state = ST_IDLE; sig_ready_red(); Serial.println("[SPLASH] skip -> READY"); return; }  // ★READY赤点灯
   // 20260831k：二度押しガード（経路非依存）。本体ISRデバウンス・リモコンnonce冪等に加え、
   //   受付関数自体でも直近受付から SIGNAL_GUARD_MS 以内の再入を弾く。状態遷移の隙間や
   //   別経路の重複でも「SETが二度発火／ARMEDが二重開始」しないための最後の砦。
@@ -662,14 +668,17 @@ static void on_signal_pressed() {
   }
   // 演出のみ即実行。HTTPS（レース作成）はここでは一切しない（#20・本関数はESP-NOW
   //  受信コールバック文脈からも呼ばれるため、ブロッキングI/O禁止）。作成はflush時。
+  // ★20261030 動作変更：赤点灯→ランダム→緑のシーケンスを廃止。
+  //   READYは常時赤点灯。赤ボタンを押したら「即・緑」で測定開始（ARMED/ランダム時間なし）。
+  //   緑LED/ブザーはGPIO/ledc直なのでcallback文脈でも安全。ON TRACK描画だけloopへ遅延（SPI回避）。
   begin_internal_race();                          // 内部rid採番＋参加レーン初期化
-  s_red_dur_ms = 2000 + (esp_random() % 3000);   // 2.0〜5.0秒（DC26・旧3〜5秒）。RCも本関数を通るため同じ
-  s_armed_ms   = millis();
-  s_state      = ST_ARMED;
-  s_last_signal_ms = nowm;                        // 20260831k：受付成立→二度押しガード起点
-  sig_on_red();                                   // ★GW自機の赤灯ON（GPIO13直結・緑は消灯）
-  s_set_now_req = true;                           // ★即SET要求（実描画はloopで・コールバック文脈のSPIクラッシュ回避）
-  Serial.printf("[SEQ] ARMED rid=%u red=%ums\n", s_internal_rid, s_red_dur_ms);
+  s_green_t_us = tsync::now_gw_us();              // 即・緑＝green_t_us（F1式起点・全車共通）
+  s_state      = ST_RACE;                          // 計測中へ（ARMED/GREENは経由しない）
+  s_last_signal_ms = nowm;                        // 受付成立→二度押しガード起点
+  sig_on_green();                                 // ★緑点灯（50ms後に赤消灯・2秒で緑自動消灯）
+  buzzer_start(BUZZER_START_MS, BUZZER_F_START);  // ★スタート音「ブー」0.5秒
+  s_green_now_req = true;                          // ★ON TRACK即描画をloopで
+  Serial.printf("[SEQ] GREEN(即) rid=%u t=%llu\n", s_internal_rid, (unsigned long long)s_green_t_us);
 }
 
 // flush_spool / spool_has_data は本関数より後方で定義されるため前方宣言。
@@ -704,7 +713,7 @@ static void on_reset_pressed() {
   s_sg_beeped  = false;         // リセットで「次の1回」を再び鳴らせるようにする（新しい待機セッション）
   s_green_t_us = 0;
   s_start_shared_us = 0;        // 20260831i：走行式の共通起点も灰リセットでクリア
-  sig_all_off();                // ★GW自機の信号灯を全消灯（赤緑・自動消灯予約も解除）
+  sig_ready_red();              // ★20261030：灰リセット→READYは常時赤点灯（旧sig_all_off）
   s_flying_until_ms = 0; s_flying_seen = false;   // ★フライング優先/記録フラグも待機復帰でクリア
   buzzer_tone(0); s_buzz_off_ms = 0;   // ★スタート音/エラー音を即停止
   Serial.println("[SEQ] RESET -> IDLE (flush queued if data)");
@@ -1377,7 +1386,7 @@ static void tick_display() {
   if (s_state == ST_SPLASH) {
     static uint32_t sf_last = 0;
     uint32_t e = millis() - s_splash_ms;
-    if (e >= SPLASH_MS) { s_state = ST_IDLE; Serial.println("[SPLASH] done -> READY"); return; }     // 終了→READY
+    if (e >= SPLASH_MS) { s_state = ST_IDLE; sig_ready_red(); Serial.println("[SPLASH] done -> READY"); return; }     // 終了→READY（★READY赤点灯）
     if (millis() - sf_last >= 33) {                        // 約30fps
       sf_last = millis();
       disp::draw_splash_frame((float)e / (float)SPLASH_MS);
@@ -1657,6 +1666,7 @@ void loop() {
   tick_sequence();
   flying_tick();              // ★フライング優先中の赤点滅・窓終了処理
   if (s_set_now_req) { s_set_now_req = false; render_set_now(); }  // 赤押下の即SETをloop文脈で安全に描画
+  if (s_green_now_req) { s_green_now_req = false; render_ontrack_now(); }  // ★即緑→ON TRACK描画（20261030）
 
   beam::Hit hit;
   int drain = 0;
@@ -1682,6 +1692,7 @@ void loop() {
       //   代わりに s_start_shared_us（最初の1台の初通過＝全車共通起点・(い)）を1回だけ立てる。
       if (!s_start_shared_us) s_start_shared_us = hit.t_a_us ? hit.t_a_us : tsync::now_gw_us();
       s_state      = ST_RACE;          // TFTを ON TRACK に切替
+      sig_all_off();                   // ★20261030：フリー走行はシグナル無し＝READYの赤を消す
       render_ontrack_now();            // 緑同様、即時に計測中画面を描く
       Serial.printf("[TA] START rid=%u t=%llu\n",
                     s_internal_rid, (unsigned long long)s_start_shared_us);

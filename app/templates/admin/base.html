@@ -1374,8 +1374,10 @@ function _showPubToast(msg) {
   //   /admin/tournaments/{id}            … レース情報
   //   /admin/tournaments/{id}/qualifying … 予選
   //   /admin/tournaments/{id}/bracket    … 決勝
+  // ★20261030：スラグ店舗(/<slug>/admin/...)対応。"/admin" の手前を店舗接頭辞として扱う（既定店舗は空）。
+  var M4PFX = location.pathname.split('/admin')[0];
   function isTargetPage(){
-    var p=location.pathname.replace(/\/+$/,'');
+    var p=location.pathname.slice(M4PFX.length).replace(/\/+$/,'');   // ★スラグを除いて判定
     return /^\/admin\/tournaments\/\d+$/.test(p)
         || /^\/admin\/tournaments\/\d+\/qualifying(\/.*)?$/.test(p)
         || /^\/admin\/tournaments\/\d+\/bracket(\/.*)?$/.test(p);
@@ -1581,7 +1583,7 @@ function _showPubToast(msg) {
 
   function poll(){
     // mode=race … 緑ランプありのレースだけ。フリー走行の記録は出さない
-    fetch('/api/timing/pip/latest?limit=3&mode=race',{cache:'no-store'})
+    fetch(M4PFX + '/api/timing/pip/latest?limit=3&mode=race',{cache:'no-store'})   // ★スラグ前置
       .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
       .then(function(d){
         failCount=0;
@@ -1607,7 +1609,7 @@ function _showPubToast(msg) {
   // ⚠ 以前は全ページ共通で localStorage に前回状態を保存・復元していたため、
   //    レース情報を開いても前回展開したままになっていた。ページ種別で毎回決め直す。
   (function(){
-    var p=location.pathname.replace(/\/+$/,'');
+    var p=location.pathname.slice(M4PFX.length).replace(/\/+$/,'');   // ★スラグ除去
     var autoExpand =
          /^\/admin\/tournaments\/\d+\/qualifying(\/.*)?$/.test(p)
       || /^\/admin\/tournaments\/\d+\/bracket(\/.*)?$/.test(p);
