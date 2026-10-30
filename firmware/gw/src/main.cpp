@@ -152,7 +152,9 @@ static constexpr uint32_t BUZZER_F_START   = 1000;  // ブー（スタート）�
 static constexpr uint32_t BUZZER_F_ERR     = 1200;  // ピー（エラー）＝SPT15最大音量点1200Hz
 static constexpr uint32_t BUZZER_MS        = 60;    // 通過ピッ鳴動長（80→40→20→60で実機比較し確定）
 static constexpr uint32_t BUZZER_START_MS  = 500;   // スタート「ブー」長（緑と同時・DC27/DC30）
-static constexpr uint32_t BUZZER_ERR_MS    = 2000;  // エラー「ピー」（2秒・1回だけ・20260831）
+static constexpr uint32_t BUZZER_ERR_MS    = 500;   // エラー/WiFi切断/ノード離脱＝2000Hz・500msに統一（20261030）
+static constexpr uint32_t GOAL_FREQ        = 800;   // ★ゴール(完走)音の周波数（20261030）
+static constexpr uint32_t GOAL_MS          = 500;   // ★ゴール(完走)音の長さ
 static uint32_t s_buzz_off_ms = 0;           // 0=消音中／非0=この millis で消音予定
 static bool     s_sg_beeped   = false;       // ST_IDLE中に既にS/G通過ピッを鳴らしたか（TAの毎回鳴り防止・灰リセットで復活）
 // ledc(PWM)で周波数を出す/止める（コア2.x=ch指定 / 3.x=pin指定・beam.hと同方式）。freq=0で停止。
@@ -177,12 +179,13 @@ static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来�
     s_buzz_off_ms = 0;
   }
 }
+
 // エラー表示の立ち上がり（無→有）でだけ 2秒「ピー」を1回鳴らす。
 //  err_now=エラー面を出しているか。出し続けている間は再鳴動しない（1回だけ）。
 //  エラーが一旦消えて再発したら、また1回鳴る。tick_display（約4fps）から呼ぶ。
 static inline void buzzer_error_edge(bool err_now) {
   static bool prev = false;
-  if (err_now && !prev) buzzer_start(BUZZER_ERR_MS, BUZZER_F_ERR);
+  if (err_now && !prev) buzzer_start(BUZZER_ERR_MS, BUZZER_F_BEEP);  // 2000Hz・500ms（20261030）
   prev = err_now;
 }
 
@@ -199,7 +202,7 @@ static uint32_t s_green_off_ms = 0;   // 0=予約なし／非0=この millis で
 static uint32_t s_red_off_ms   = 0;   // 0=予約なし／非0=この millis で赤を消灯（緑先行の重なり後）
 // ★通過検知フラッシュ（緑シグナルLEDを一瞬＋高音ピッ）。スタート演出とは独立・暫定。
 static constexpr uint32_t DETECT_FLASH_MS = 50;   // 緑を光らせる長さ（一瞬・見えればOK）
-static constexpr uint32_t DETECT_BEEP_MS  = 40;   // 「ピッ」の長さ（一瞬）
+static constexpr uint32_t DETECT_BEEP_MS  = 80;   // 通過「ピッ」の長さ（40→80・少し長く・20261030）
 static uint32_t s_detect_green_off_ms = 0;        // 検知フラッシュの消灯予約（0=なし）
 static inline void sig_red(bool on)   { digitalWrite(PIN_SIG_RED,   on ? HIGH : LOW); }
 static inline void sig_green(bool on) { digitalWrite(PIN_SIG_GREEN, on ? HIGH : LOW); }
@@ -1102,6 +1105,7 @@ static void maybe_autocomplete() {
   //   WiFi接続済みなら送出する（A案・全契機で一貫）。
   s_need_flush    = wifi_up();    // 送信はloopのtick_flushが実行
   s_state         = ST_FINISH;    // 計測終了(FINISH)画面へ（灰リセットで待機に戻る・20260830）
+  buzzer_start(GOAL_MS, GOAL_FREQ);   // ★ゴール(完走)音＝800Hz・500ms 単音（20261030）
   s_sg_beeped     = false;
   s_green_t_us    = 0;
   s_start_shared_us = 0;          // 20260831i：合計(total_ms)は各マシン完走時に保存済みなので安全
@@ -1411,8 +1415,8 @@ static void tick_display() {
     if (s_state == ST_IDLE) {
       if (!init_done) { prev_wifi = wifi_now; prev_have = have_now; init_done = true; }
       else {
-        if (prev_wifi && !wifi_now) { buzzer_start(150); Serial.println("[BEEP] WiFi切断"); }
-        if (have_now < prev_have)   { buzzer_start(150); Serial.println("[BEEP] ノード離脱"); }
+        if (prev_wifi && !wifi_now) { buzzer_start(500); Serial.println("[BEEP] WiFi切断"); }
+        if (have_now < prev_have)   { buzzer_start(500); Serial.println("[BEEP] ノード離脱"); }
         prev_wifi = wifi_now; prev_have = have_now;
       }
     }
@@ -1825,10 +1829,17 @@ void loop() {
     //   ・ST_ARMED(赤点灯中=スタート前)の通過＝フライング → 赤点滅＋長め「ピー」で1秒優先。
     //   ・それ以外は通常の通過フラッシュ（緑一瞬＋高音ピッ）。ただしフライング優先窓(1秒)の
     //     間は、別マシンが通過しても緑は出さない（フライングが分かるよう絶対優先）。
-    if (was_armed_hit) {
-      flying_trigger();
-    } else if (!flying_active()) {
-      detect_flash();
+    //   ★20261030：フィードバックを出すのは「実通過(q!=2)」かつ「FINISH中でない」ときだけ。
+    //     ・q=2(張り付き)は通過ではないので光らせない・鳴らさない。
+    //     ・FINISH中は、完走後にS/Gへ居座った車や余走の再横切りで detect_flash が
+    //       40ms間隔より速く連打され、buzzer_start が消灯予約を上書きし続けて音が途切れず
+    //       “鳴り続ける”原因になっていた（居座り＋GW6のB不安定で顕著）。FINISHは抑止する。
+    if (hit.quality != 2 && s_state != ST_FINISH) {
+      if (was_armed_hit) {
+        flying_trigger();
+      } else if (!flying_active()) {
+        detect_flash();
+      }
     }
     s_sg_beeped = true;                       // 既存フラグ互換のため維持
     (void)was_idle_hit;
