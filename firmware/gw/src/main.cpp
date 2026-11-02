@@ -123,11 +123,85 @@ static void add_common_headers(HTTPClient& http) {
   if (need_host_header()) http.addHeader("Host", g_host);
   if (g_token.length())   http.addHeader("X-Timing-Token", g_token);
 }
+// infra/http_json.h — HTTPS(JSON) 呼び出しの共通化（接続使い回し）
+// ============================================================================
+//  旧 main.cpp では「WiFiClientSecure＋HTTPClient＋タイムアウト＋共通ヘッダ＋POST/GET＋JSON解析」が
+//  create_race / forward_join_now / fetch_layout / flush_spool の4箇所にコピーされていた。ここに1本化。
+//
+//  ★20261031 性能（灰→PUSHが遅い対策）：
+//    ・旧：毎回 WiFiClientSecure を新規生成＝毎回TLSフルハンドシェイク（ESP32で1〜2秒）。
+//      灰1回＝create_race＋events で握手2回＝2〜4秒、rid が複数なら×2ずつ。
+//    ・新：クライアントとHTTPClientを**1組だけ保持**し `setReuse(true)`。同一ホストへの連続要求は
+//      keep-alive で握手なし（数百ms）。サーバー側が切っていれば HTTPClient が自動で張り直す。
+//    ・応答タイムアウト：旧1.5秒はHTTPSがloop内にあった時代の「loopを止めない」ための値。
+//      netタスク化で不要になったので用途別に延長（events=8s/作成=5s/他=3s）。
+//      → サーバーの後処理で1.5秒を超えて“失敗扱い→同じ100件を再POST”していた無駄打ちが消える。
+//  ⚠ netタスク専用（同時に複数スレッドから呼ばない）。
+// ============================================================================
+
+namespace httpj {
+
+static constexpr uint16_t CONNECT_MS = 800;    // 接続は従来どおり0.8秒で諦める（不達の早期判定）
+static constexpr uint16_t T_SHORT_MS = 3000;   // JOIN転送・レイアウト取得
+static constexpr uint16_t T_CREATE_MS= 5000;   // レース作成
+static constexpr uint16_t T_EVENTS_MS= 8000;   // イベント一括POST（サーバー後処理の揺れを吸収）
+
+static WiFiClientSecure* s_cli  = nullptr;     // 1組だけ保持（netタスク専用）
+static HTTPClient*       s_http = nullptr;
+static String            s_last_base;          // ベースURLが変わったら（DNS可否の切替等）張り直す
+
+static void _ensure() {
+  if (!s_cli)  { s_cli = new WiFiClientSecure(); s_cli->setInsecure(); }   // K4：CN検証なし（従来どおり）
+  if (!s_http) { s_http = new HTTPClient(); s_http->setReuse(true); }
+}
+static void _begin(const String& path) {
+  _ensure();
+  String base = server_base() + api_prefix();
+  if (base != s_last_base) { s_http->end(); s_last_base = base; }       // 接続先が変わった＝旧接続を捨てる
+  s_http->begin(*s_cli, base + path);
+  s_http->setConnectTimeout(CONNECT_MS);
+  add_common_headers(*s_http);                                          // Host(IP直時のみ)＋トークン
+}
+static void _finish(int code) {
+  // 接続は保持（reuse）。ただし通信エラー（code<0）なら次回クリーンに張り直す。
+  if (code < 0) { s_http->end(); s_cli->stop(); }
+}
+
+// body 非空=POST(JSON) / 空=GET。HTTPステータスを返す（<0 は接続失敗）。
+// res!=nullptr かつ 200 なら本文をJSON解析して格納（parsed に成否）。
+static int request(const String& path, const String& body, JsonDocument* res,
+                   bool* parsed = nullptr, uint16_t timeout_ms = T_SHORT_MS) {
+  _begin(path);
+  s_http->setTimeout(timeout_ms);
+  int code;
+  if (body.length()) { s_http->addHeader("Content-Type", "application/json"); code = s_http->POST(body); }
+  else               { code = s_http->GET(); }
+  bool ok = false;
+  if (code == 200 && res) ok = (deserializeJson(*res, s_http->getString()) == DeserializationError::Ok);
+  else if (code > 0)      { String _drain = s_http->getString(); (void)_drain; }   // 本文を読み切る（keep-alive維持）
+  if (parsed) *parsed = ok;
+  _finish(code);
+  return code;
+}
+
+// 生バッファ版（自前生成JSON・PSRAMバッファ可）。戻り値はHTTPステータス。
+static int request_raw(const String& path, const char* body, size_t len, uint16_t timeout_ms = T_EVENTS_MS) {
+  _begin(path);
+  s_http->setTimeout(timeout_ms);
+  s_http->addHeader("Content-Type", "application/json");
+  int code = s_http->POST((uint8_t*)body, len);
+  if (code > 0) { String _drain = s_http->getString(); (void)_drain; }   // 本文を読み切る（keep-alive維持）
+  _finish(code);
+  return code;
+}
+
+} // namespace httpj
 
 // ---- fetch_layout の再取得間隔（残課題#14：成功=60s / 失敗=5s のバックオフ）--
 static constexpr uint32_t LAYOUT_OK_MS   = 60000;   // 取得成功後は60秒あける
 static constexpr uint32_t LAYOUT_NG_MS   = 30000;   // ★失敗中は30秒で再試行（旧5秒＝TLSブロック頻発でESP-NOWを邪魔していた・T-9）
 static bool s_layout_ok = false;                    // 直近取得の成否
+static volatile bool s_layout_req = true;           // ★P3：取得要求（起動時true・灰リセットで再要求）。netタスクが消化
 
 // ---- 本体ボタン（docs/07.4）-----------------------------------------------
 static constexpr int PIN_BTN_RED  = 26;   // 赤 SIGNAL（押下LOW・内部プルアップ）
@@ -238,7 +312,10 @@ static inline void detect_flash() {
     sig_green(true);
     s_detect_green_off_ms = millis() + DETECT_FLASH_MS;
   }
-  buzzer_start(DETECT_BEEP_MS, BUZZER_F_BEEP);   // 一瞬「ピッ」＝2kHz（高音）
+  // ★20261031：通過ピッは低優先。鳴動中（スタート/ゴール/フライング/エラーの最中）は出さない。
+  //   旧：無条件に buzzer_start → 緑点灯直後に車がS/Gを横切ると500msのスタート音が80msの
+  //   ピッで上書きされ「スタート音が鳴ったり鳴らなかったり」の原因になっていた（実機確認）。
+  if (!s_buzz_off_ms) buzzer_start(DETECT_BEEP_MS, BUZZER_F_BEEP);   // 一瞬「ピッ」＝2kHz（高音）
 }
 
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
@@ -366,7 +443,7 @@ static bool    s_m_clean[4]    = {true,true,true,true}; // 20260901d：そのマ
 // ※s_m_step（遷移学習 0/+1/+2）は20260831jで廃止。本コースはLC=+1固定（誤学習が誤レーン記録の根因だった）。
 // s_need_flush：送信要求フラグ。全員完走 or 灰ボタンで立て、loopのtick_flushがHTTPSを実行。
 //   （on_reset_pressed はESP-NOWコールバックからも呼ばれるためHTTPSを直接呼ばない・#20）
-static bool     s_need_flush   = false;
+static volatile bool s_need_flush = false;   // ★P2：loopが立て、netタスクが消化（volatile）
 
 // ---- 受信EVENTレコード -----------------------------------------------------
 struct RawEvent {
@@ -578,6 +655,8 @@ static bool wifi_up() {
   }
   return false;                                 // 未接続。呼び出し元は今回は見送る
 }
+// ★20261031 P2：loop側の判定用（begin()を仕掛けない純粋な状態読み）。再接続はnetタスクのwifi_up()が担う。
+static inline bool wifi_connected() { return WiFi.status() == WL_CONNECTED; }
 
 // ---- 新レース作成（layout_id・任意でgreen_t_usを付ける）--------------------
 //  green あり → F1式 / green なし → 走行式（docs/14 DA4）。
@@ -589,21 +668,9 @@ static uint32_t create_race(bool with_green, uint64_t green_us) {
   if (with_green) doc["green_t_us"] = green_us;
   String body; serializeJson(doc, body);
 
-  WiFiClientSecure _c; _c.setInsecure();            // K4：ローカル生成＋CN検証なし
-  HTTPClient http;
-  http.begin(_c, server_base() + api_prefix() + "/api/timing/races");   // #9：DNS可ならホスト名/不可ならIP直
-  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
-  add_common_headers(http);                         // Host(IP直時のみ)＋トークン
-  http.addHeader("Content-Type", "application/json");
-  uint32_t rid = 0;
-  int code = http.POST(body);
-  if (code == 200) {
-    JsonDocument res;
-    if (deserializeJson(res, http.getString()) == DeserializationError::Ok)
-      rid = res["race_id"] | 0;
-  }
-  http.end();
-  return rid;
+  JsonDocument res; bool parsed = false;
+  httpj::request("/api/timing/races", body, &res, &parsed, httpj::T_CREATE_MS);
+  return parsed ? (uint32_t)(res["race_id"] | 0) : 0;
 }
 
 // ★20261012：旧 signal_cmd()（GW→別筐体SG機へ ESP-NOW で赤/緑/リセットを指示）を廃止。
@@ -694,7 +761,8 @@ static void on_reset_pressed() {
   //   s_need_flush を立てず、tick_flush の再試行ループにも入れない。データはspoolに
   //   残し（消さない）、次回の灰押下時にWiFiが繋がっていれば送出する。旧仕様は
   //   要求を立てっぱなしで1.5秒毎に wifi_up() を空振りポーリングし続けていた。
-  if (wifi_up() && spool_has_data()) s_need_flush = true;
+  if (wifi_connected() && spool_has_data()) s_need_flush = true;   // ★P2：loopではbeginしない
+  s_layout_req = true;          // ★P3：灰リセットでレイアウト(周回数等)を再取得（netタスクが実行）
 
   // 24.4⑤：待機画面に入った直後、3秒間だけA1/A2エラーを表示する窓を開く。
   s_post_err_until = millis() + 3000;
@@ -754,7 +822,20 @@ static bool join_rate_ok(const uint8_t* mac) {
 }
 
 // ---- JOIN転送 --------------------------------------------------------------
-static void forward_join(const proto::JoinBody& jb) {
+// ★20261031 P1/P2：JOINのHTTPS転送は netタスクで行う。受信側(loop)はキューに積むだけ。
+//   旧：ESP-NOW受信コールバック(WiFiタスク)内で直接HTTPS → 自分が止めたWiFiタスクの応答を
+//       自分で待つ形になり最大0.8〜2.3秒ESP-NOW受信が全停止（RC/SEの取りこぼし＝反応悪化の一因）。
+static constexpr int JOINQ_N = 4;
+static proto::JoinBody   s_joinq[JOINQ_N];
+static volatile uint8_t  s_joinq_head = 0, s_joinq_tail = 0;   // head=書き手(loop) tail=読み手(net)
+static void forward_join(const proto::JoinBody& jb) {           // loop文脈：キューへ（満杯なら捨てる＝1秒後に再JOINが来る）
+  uint8_t nh = (uint8_t)((s_joinq_head + 1) % JOINQ_N);
+  if (nh == s_joinq_tail) return;
+  s_joinq[s_joinq_head] = jb;
+  __sync_synchronize();
+  s_joinq_head = nh;
+}
+static void forward_join_now(const proto::JoinBody& jb) {       // netタスク文脈：実HTTPS
   if (!join_rate_ok(jb.mac)) return;                  // #18：HTTPS連打を抑止
   if (!wifi_up()) return;
   char mac[18];
@@ -768,37 +849,36 @@ static void forward_join(const proto::JoinBody& jb) {
   doc["nvs_node_id"] = jb.nvs_node_id;
   String body; serializeJson(doc, body);
 
-  WiFiClientSecure _c; _c.setInsecure();
-  HTTPClient http;
-  http.begin(_c, server_base() + api_prefix() + "/api/timing/join");
-  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
-  add_common_headers(http);
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(body);
-  if (code == 200) {
-    JsonDocument res;
-    if (deserializeJson(res, http.getString()) == DeserializationError::Ok) {
-      const char* status = res["status"] | "";
-      if (strcmp(status, "assigned") == 0 && res["node_id"].is<int>()) {
-        int nid = res["node_id"].as<int>();
-        proto::JoinAckBody ack = {};
-        memcpy(ack.mac, jb.mac, 6);
-        ack.node_id = (uint8_t)nid;
-        ack.channel = g_channel;
-        mesh::send(proto::PT_JOIN_ACK, (uint8_t)nid, &ack, sizeof(ack));
-      }
+  JsonDocument res; bool parsed = false;
+  httpj::request("/api/timing/join", body, &res, &parsed);
+  if (parsed) {
+    const char* status = res["status"] | "";
+    if (strcmp(status, "assigned") == 0 && res["node_id"].is<int>()) {
+      int nid = res["node_id"].as<int>();
+      proto::JoinAckBody ack = {};
+      memcpy(ack.mac, jb.mac, 6);
+      ack.node_id = (uint8_t)nid;
+      ack.channel = g_channel;
+      mesh::send(proto::PT_JOIN_ACK, (uint8_t)nid, &ack, sizeof(ack));
     }
   }
-  http.end();
 }
 
 // ---- EVENTスプール ---------------------------------------------------------
 // スプール上限（超過分は古い順に破棄）。
 static constexpr int SPOOL_MAX = 200;
-static int spool_count();   // 後方定義の前方宣言
-// 先頭（最古）から (count-keep) 行を削除して keep 行に収める。
-static void spool_trim_to(int keep) {
-  int total = spool_count();
+// ★20261031 P4：スプール件数はRAMカウンタで持つ（旧：毎回ファイル全行読みで数えていた＝
+//   通過1件ごと・3秒ごとのロスター表示ごとに最大200行/30KBを読んでいた無駄を撤廃）。
+//   append/trim/rewrite の各書き手が正確に更新する。起動時はファイルを空にするので0から。
+static volatile int s_spool_n = 0;
+// ★20261031 P2：スプールは loop(追記) と netタスク(送信・書き戻し) の2タスクが触るため mutex で保護。
+//   ⚠ HTTPS中は必ず解放する（計測中の追記を待たせない）。
+static SemaphoreHandle_t s_spool_mtx = nullptr;
+static inline void spool_lock()   { if (s_spool_mtx) xSemaphoreTake(s_spool_mtx, portMAX_DELAY); }
+static inline void spool_unlock() { if (s_spool_mtx) xSemaphoreGive(s_spool_mtx); }
+// 先頭（最古）から (count-keep) 行を削除して keep 行に収める。⚠呼び出し側がlock済みであること。
+static void spool_trim_to_locked(int keep) {
+  int total = s_spool_n;
   if (total <= keep) return;
   int drop = total - keep;
   File in = LittleFS.open(SPOOL, FILE_READ);
@@ -806,16 +886,17 @@ static void spool_trim_to(int keep) {
   const char* TMP2 = "/spool_trim.jsonl";
   File out = LittleFS.open(TMP2, FILE_WRITE);
   if (!out) { in.close(); return; }
-  int idx = 0;
+  int idx = 0, kept = 0;
   while (in.available()) {
     String line = in.readStringUntil('\n');
     if (line.length() == 0) continue;
-    if (idx >= drop) { out.print(line); out.print('\n'); }   // 古いdrop行はスキップ
+    if (idx >= drop) { out.print(line); out.print('\n'); kept++; }   // 古いdrop行はスキップ
     idx++;
   }
   in.close(); out.close();
   LittleFS.remove(SPOOL);
   LittleFS.rename(TMP2, SPOOL);
+  s_spool_n = kept;
 }
 
 static void spool_append(const RawEvent& e) {
@@ -828,11 +909,12 @@ static void spool_append(const RawEvent& e) {
     if (last_q2_ms[ln] != 0 && (now - last_q2_ms[ln]) < 500) { last_q2_ms[ln] = now; return; }
     last_q2_ms[ln] = now;
   }
-  // 上限：追記前に (SPOOL_MAX-1) 行へ詰めておく（append後にちょうど上限）。
-  spool_trim_to(SPOOL_MAX - 1);
+  spool_lock();
+  // 上限：追記前に (SPOOL_MAX-1) 行へ詰めておく（append後にちょうど上限）。RAM件数で判定＝上限到達時以外はI/Oなし。
+  spool_trim_to_locked(SPOOL_MAX - 1);
 
   File f = LittleFS.open(SPOOL, FILE_APPEND);
-  if (!f) return;
+  if (!f) { spool_unlock(); return; }
   JsonDocument doc;
   doc["device_id"]   = e.src;      // device_id と src は同じ（送信元node_id）
   doc["src"]         = e.src;
@@ -858,24 +940,76 @@ static void spool_append(const RawEvent& e) {
   serializeJson(doc, f);           // 1行1JSON
   f.print('\n');
   f.close();
+  s_spool_n = s_spool_n + 1;
+  spool_unlock();
 }
 
 // ---- 受信ハンドラ ----------------------------------------------------------
+// ★20261031 P1：ESP-NOW受信コールバック（WiFiタスク文脈）では「在席記録」と「時刻同期の即返信」
+//   だけ行い、それ以外はリングバッファに積んで loop（rx_pump）で処理する。
+//   旧：コールバック内で spool_append(LittleFS書込み)・forward_join(HTTPS)・on_reset_pressed 等を
+//       直接実行 → WiFiタスクを塞ぎ、ESP-NOW受信が最大数秒止まる／フラッシュ書込みをWiFiタスクで行う危険。
+//   ⚠ SYNC_REQ は受信瞬間の打刻が精度に効くため、従来どおりコールバック内で即返す。
+struct RxSlot { proto::PktHeader h; int len; uint8_t mac[6]; uint8_t body[232]; };
+static constexpr int RXQ_N = 16;
+static RxSlot            s_rxq[RXQ_N];
+static volatile uint8_t  s_rxq_head = 0, s_rxq_tail = 0;   // head=書き手(コールバック) tail=読み手(loop)
+static volatile uint16_t s_rxq_drop = 0;                    // 満杯で捨てた数（ログ用）
+static void on_recv_main(const proto::PktHeader& h, const uint8_t* body, int body_len, const uint8_t* mac);
 static void on_recv(const proto::PktHeader& h, const uint8_t* body,
-                    int body_len, const uint8_t*) {
+                    int body_len, const uint8_t* mac) {      // ← コールバック文脈（短く・I/Oなし）
   mark_seen(h.src);                    // 在席記録（排他検知の土台・全種別で更新）
+  if (h.type == proto::PT_SYNC_REQ) {
+    if (body_len >= (int)sizeof(proto::SyncBody)) {
+      proto::SyncBody b; memcpy(&b, body, sizeof(b));
+      tsync::gw_reply(h, b);           // 受信瞬間に打刻して即返す（精度維持）
+    }
+    return;
+  }
+  // ★ACKはここで即返す（変更前と同じタイミング）。RCはACK待ち70msなのでloop経由だと再送が増える。
+  if (h.type == proto::PT_EVENT   && body_len >= (int)sizeof(proto::EventBody))   mesh::send_ack(proto::PT_EVENT_ACK,   h.src, h.seq);
+  if (h.type == proto::PT_COMMAND && body_len >= (int)sizeof(proto::CommandBody)) mesh::send_ack(proto::PT_COMMAND_ACK, h.src, h.seq);
+  uint8_t nh = (uint8_t)((s_rxq_head + 1) % RXQ_N);
+  if (nh == s_rxq_tail) { s_rxq_drop = s_rxq_drop + 1; return; }   // 満杯（loop停止中のみ起こりうる）
+  RxSlot& sl = s_rxq[s_rxq_head];
+  sl.h = h;
+  sl.len = body_len > (int)sizeof(sl.body) ? (int)sizeof(sl.body) : (body_len < 0 ? 0 : body_len);
+  if (sl.len) memcpy(sl.body, body, sl.len);
+  if (mac) memcpy(sl.mac, mac, 6); else memset(sl.mac, 0, 6);
+  __sync_synchronize();            // ★R3：スロット書込みを head 更新より先に可視化（core0→core1）
+  s_rxq_head = nh;
+}
+// loop先頭で呼ぶ：溜まった受信を安全な文脈で処理（1周あたり最大8件）。
+static void rx_pump() {
+  int n = 0;
+  while (s_rxq_tail != s_rxq_head && n++ < 8) {
+    __sync_synchronize();
+    RxSlot& sl = s_rxq[s_rxq_tail];
+    on_recv_main(sl.h, sl.body, sl.len, sl.mac);
+    s_rxq_tail = (uint8_t)((s_rxq_tail + 1) % RXQ_N);
+  }
+  static uint16_t last_drop = 0;
+  if (s_rxq_drop != last_drop) { last_drop = s_rxq_drop; Serial.printf("[RXQ] overflow drop=%u\n", last_drop); }
+}
+static void on_recv_main(const proto::PktHeader& h, const uint8_t* body,
+                         int body_len, const uint8_t*) {    // ← loop文脈（I/O可）
   switch (h.type) {
-    case proto::PT_SYNC_REQ: {
-      if (body_len >= (int)sizeof(proto::SyncBody)) {
-        proto::SyncBody b; memcpy(&b, body, sizeof(b));
-        tsync::gw_reply(h, b);
-      }
-    } break;
-
     case proto::PT_EVENT: {
       if (body_len >= (int)sizeof(proto::EventBody)) {
         proto::EventBody b; memcpy(&b, body, sizeof(b));
-        mesh::send_ack(proto::PT_EVENT_ACK, h.src, h.seq);   // ingest前ACK（S5）
+        // ACKは受信コールバック(on_recv)で送信済み（ingest前ACK・S5）
+        // ★20261031 A1：SEの再送（ACK擦れ違い）は seq が変わるため冪等キーでは重複を消せない。
+        //   同一 (src, boot_id, lane, t_us) を直近16件で照合し、同じ通過なら記録しない（ACKは済）。
+        {
+          struct EvKey { uint8_t src, lane; uint32_t boot; uint64_t t; };
+          static EvKey s_ev_recent[16]; static uint8_t s_ev_pos = 0;
+          bool dup = false;
+          for (int i = 0; i < 16; i++)
+            if (s_ev_recent[i].t == b.t_us && s_ev_recent[i].src == h.src &&
+                s_ev_recent[i].boot == h.boot_id && s_ev_recent[i].lane == b.lane && b.t_us != 0) { dup = true; break; }
+          if (dup) { Serial.printf("[EV] dup src=SQ%u lane=%u t=%llu (再送・記録しない)\n", h.src, b.lane, (unsigned long long)b.t_us); break; }
+          s_ev_recent[s_ev_pos] = { h.src, b.lane, h.boot_id, b.t_us }; s_ev_pos = (uint8_t)((s_ev_pos + 1) & 15);
+        }
         RawEvent e{ h.src, h.boot_id, h.seq, b.lane, b.quality, b.t_us, b.t_us_b };
         spool_append(e);
         note_quality(b.quality, h.src, b.lane, b.miss);   // A1/A2/Sync集約（27章・A/Bまで）
@@ -909,8 +1043,7 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
           if (c.code == proto::CMD_SIGNAL) on_signal_pressed();
           else if (c.code == proto::CMD_RESET) on_reset_pressed();
         }
-        // ACK（届いた確認・docs/12 COMMAND_ACK）
-        mesh::send_ack(proto::PT_COMMAND_ACK, h.src, h.seq);
+        // ACK（届いた確認・docs/12 COMMAND_ACK）は受信コールバック(on_recv)で送信済み
       }
     } break;
 
@@ -937,44 +1070,23 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
 
 // ---- スプールに送るべき行があるか（空/存在しないなら false）----------------
 //  24.3：灰ボタンは「溜まっていれば送信・空なら何もしない」。その判定に使う。
-static bool spool_has_data() {
-  if (!LittleFS.exists(SPOOL)) return false;
-  File f = LittleFS.open(SPOOL, FILE_READ);
-  if (!f) return false;
-  bool has = false;
-  while (f.available()) {
-    String line = f.readStringUntil('\n'); line.trim();
-    if (line.length() > 0) { has = true; break; }   // 有効行が1行でもあれば true
-  }
-  f.close();
-  return has;
-}
+static bool spool_has_data() { return s_spool_n > 0; }   // ★P4：RAMカウンタ（ファイルI/Oなし）
 
 // 未送信件数＝スプールの有効行数（TFTバーの Send:N 表示用・2026-08-24）。
-static int spool_count() {
-  if (!LittleFS.exists(SPOOL)) return 0;
-  File f = LittleFS.open(SPOOL, FILE_READ);
-  if (!f) return 0;
-  int n = 0;
-  while (f.available()) {
-    String line = f.readStringUntil('\n'); line.trim();
-    if (line.length() > 0) n++;
-  }
-  f.close();
-  return n;
-}
+static int spool_count() { return s_spool_n; }           // ★P4：RAMカウンタ（ファイルI/Oなし）
 
 // ---- 指定 rid の行を先頭から最大 limit 件だけ除去し、残りを書き戻す（1-c）-----
 //  flush で送れた group_rid の行（最大100件）をスプールから消す。別 rid の行と、
 //  100件上限で送りきれなかった同 rid の残りは持ち越す。照合は冪等キーではなく
 //  「rid一致かつ先頭から limit 件」で足りる（送信は先頭から詰めているため順序一致）。
-static void rewrite_spool_drop_group(uint32_t rid, int limit) {
+//  ⚠呼び出し側がlock済みであること。
+static void rewrite_spool_drop_group_locked(uint32_t rid, int limit) {
   File in = LittleFS.open(SPOOL, FILE_READ);
   if (!in) return;
   const char* TMP = "/spool.tmp";
   File out = LittleFS.open(TMP, FILE_WRITE);
   if (!out) { in.close(); return; }
-  int removed = 0;
+  int removed = 0, kept = 0;
   while (in.available()) {
     String line = in.readStringUntil('\n');
     String t = line; t.trim();
@@ -986,12 +1098,13 @@ static void rewrite_spool_drop_group(uint32_t rid, int limit) {
       removed++;
       continue;
     }
-    out.print(t); out.print('\n');                 // 残りを持ち越し
+    out.print(t); out.print('\n'); kept++;         // 残りを持ち越し
   }
   in.close();
   out.close();
   LittleFS.remove(SPOOL);
   LittleFS.rename(TMP, SPOOL);
+  s_spool_n = kept;
 }
 
 // ---- スプールPOST（200まで消さない・S8／内部ridグループ→サーバーrace_id翻訳）---
@@ -1000,44 +1113,48 @@ static void rewrite_spool_drop_group(uint32_t rid, int limit) {
 //    ・既に作成済み(s_ridmap)ならそれを再利用（100件超の分割2回目以降）。
 //    ・未作成なら“今ここで” create_race（グループ内 grn の最大値＝緑があればF1式）で採番し、
 //      s_ridmap に記録。これが「作成POSTも終了時に集約」の実体。
-//  ⚠ 必ずloop文脈(tick_flush)から呼ぶこと（HTTPSブロッキング・#20）。
+//  ★20261031 P2：netタスク(core0)から呼ぶ。loopは止まらない。スプール読み書きはlock、HTTPS中は解放。
+//    （旧：loop文脈でTLS2回＝2〜6秒loopが止まり「灰→READYが出ない」原因。ファイル全読み3回も1回に集約）
 static void flush_spool() {
-  if (!wifi_up()) return;  // WiFi接続進行中は送らない（封じない・s_need_flush維持で1.5秒後に再試行・2026-08-24e）
-  if (!LittleFS.exists(SPOOL)) return;
-  File f = LittleFS.open(SPOOL, FILE_READ);
-  if (!f) return;
+  if (!wifi_up()) return;  // WiFi接続進行中は送らない（封じない・s_need_flush維持で再試行・2026-08-24e）
 
-  // まず先頭の有効行から「今回送るグループの内部rid」を決める。
+  // ★1回の走査で「先頭グループのrid」「そのgrn最大」「送るevents（最大100件）」を同時に集める。
   uint32_t group_rid = 0;
-  bool group_found = false;
+  bool     group_found = false;
+  uint64_t group_green = 0;                        // グループ内 grn の最大値（0=走行式）
+  JsonDocument out;
+  JsonArray arr = out["events"].to<JsonArray>();
+  int n = 0;
+  bool capped = false;
+
+  spool_lock();
+  if (!LittleFS.exists(SPOOL)) { spool_unlock(); return; }
+  File f = LittleFS.open(SPOOL, FILE_READ);
+  if (!f) { spool_unlock(); return; }
   while (f.available()) {
     String line = f.readStringUntil('\n'); line.trim();
     if (line.length() == 0) continue;
     JsonDocument ev;
-    if (deserializeJson(ev, line) != DeserializationError::Ok) continue;
-    group_rid = ev["rid"] | 0;
-    group_found = true;
-    break;
+    if (deserializeJson(ev, line) != DeserializationError::Ok) continue; // 壊れた行は捨てる
+    uint32_t r = ev["rid"] | 0;
+    if (!group_found) { group_rid = r; group_found = true; }
+    if (r != group_rid) continue;                           // 別グループは今回送らない
+    uint64_t g = ev["grn"] | (uint64_t)0;
+    if (g > group_green) group_green = g;
+    if (capped) continue;                                   // 100件超は grn だけ見て積まない
+    ev.remove("rid");                                       // rid/grn は内部用。送信payloadから除く
+    ev.remove("grn");
+    arr.add(ev);
+    n++;
+    if (n >= 100) capped = true;                            // 1回のPOSTは100件まで
   }
   f.close();
-  if (!group_found) return;   // 有効行なし
+  spool_unlock();
+  if (!group_found || n == 0) return;   // 有効行なし
 
-  // 内部rid → サーバーrace_id を確定。未作成ならグループの緑(最大)を拾って create_race。
+  // 内部rid → サーバーrace_id を確定。未作成ならグループの緑(最大)で create_race（HTTPS・lock外）。
   uint32_t server_id = ridmap_lookup(group_rid);
   if (server_id == 0) {
-    uint64_t group_green = 0;                       // グループ内 grn の最大値（0=走行式）
-    f = LittleFS.open(SPOOL, FILE_READ);
-    if (!f) return;
-    while (f.available()) {
-      String line = f.readStringUntil('\n'); line.trim();
-      if (line.length() == 0) continue;
-      JsonDocument ev;
-      if (deserializeJson(ev, line) != DeserializationError::Ok) continue;
-      if ((uint32_t)(ev["rid"] | 0) != group_rid) continue;
-      uint64_t g = ev["grn"] | (uint64_t)0;
-      if (g > group_green) group_green = g;
-    }
-    f.close();
     server_id = create_race(/*with_green=*/group_green != 0, group_green);  // ここで初めてサーバー作成
     if (server_id == 0) {                            // WiFi/TLS失敗：送らずデータは残す
       Serial.println("[POST] create_race 失敗（データ保持・再試行）");
@@ -1047,39 +1164,9 @@ static void flush_spool() {
     Serial.printf("[POST] rid(int)=%u -> race=%u%s\n",
                   group_rid, server_id, group_green ? " (F1)" : " (run)");
   }
-
-  // group（内部rid==group_rid）の行だけを最大100件、events配列へ積む。
-  f = LittleFS.open(SPOOL, FILE_READ);
-  if (!f) return;
-  JsonDocument out;
-  JsonArray arr = out["events"].to<JsonArray>();
-  int n = 0;
-  bool capped = false;
-  while (f.available()) {
-    String line = f.readStringUntil('\n'); line.trim();
-    if (line.length() == 0) continue;
-    JsonDocument ev;
-    if (deserializeJson(ev, line) != DeserializationError::Ok) continue; // 壊れた行は捨てる
-    if ((uint32_t)(ev["rid"] | 0) != group_rid) continue;   // 別グループは今回送らない
-    ev.remove("rid");                                       // rid/grn は内部用。送信payloadから除く
-    ev.remove("grn");
-    arr.add(ev);
-    n++;
-    if (n >= 100) { capped = true; break; }                // 1回のPOSTは100件まで
-  }
-  f.close();
-  if (n == 0) return;
   String payload; serializeJson(out, payload);
 
-  String url = server_base() + api_prefix() + "/api/timing/races/" + server_id + "/events";
-  WiFiClientSecure _c; _c.setInsecure();
-  HTTPClient http;
-  http.begin(_c, url);
-  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
-  add_common_headers(http);
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(payload);
-  http.end();
+  int code = httpj::request("/api/timing/races/" + String(server_id) + "/events", payload, nullptr, nullptr, httpj::T_EVENTS_MS);
 
   if (code != 200) {
     Serial.printf("[POST] events 失敗 code=%d\n", code);
@@ -1087,7 +1174,9 @@ static void flush_spool() {
   }
 
   // 送信成功：送った group_rid の行を（最大100件ぶん）スプールから除去。
-  rewrite_spool_drop_group(group_rid, n);
+  spool_lock();
+  rewrite_spool_drop_group_locked(group_rid, n);
+  spool_unlock();
   Serial.printf("[POST] race=%u %d件 送信%s\n", server_id, n, capped ? "（続きあり・同rid）" : "");
 }
 
@@ -1107,12 +1196,12 @@ static void maybe_autocomplete() {
   if (!(any && all)) return;
 
   Serial.printf("[SEQ] 全員完走 rid=%u -> FINISH表示%s\n", s_internal_rid,
-                wifi_up() ? "＋自動送信" : "（WiFi未接続・送信は次の灰で）");
+                wifi_connected() ? "＋自動送信" : "（WiFi未接続・送信は次の灰で）");
   s_race_active   = false;        // レースを閉じる
   // 20260904 改修②：WiFi未接続なら自動送信も立てない（FINISH中の空振りポーリング回避）。
   //   データはspoolに保持され、FINISH→灰でIDLE復帰時に on_reset_pressed が
   //   WiFi接続済みなら送出する（A案・全契機で一貫）。
-  s_need_flush    = wifi_up();    // 送信はloopのtick_flushが実行
+  s_need_flush    = wifi_connected();   // 送信はnetタスクのtick_flushが実行（★P2）
   s_state         = ST_FINISH;    // 計測終了(FINISH)画面へ（灰リセットで待機に戻る・20260830）
   buzzer_start(GOAL_MS, GOAL_FREQ);   // ★ゴール(完走)音＝800Hz・500ms 単音（20261030）
   s_sg_beeped     = false;
@@ -1126,10 +1215,11 @@ static void maybe_autocomplete() {
 //  s_need_flush が立っている間、throttleしつつ flush_spool を回す。flush_spool は
 //  1回で1グループ(最大100件)送るので、スプールが空になるまで複数tickで送り切る。
 //  送信失敗時は要求を残したまま再試行する（データはスプールに保持され消えない）。
+//  ★20261031 P2：loopからは呼ばない。netタスク(net_task)が呼ぶ。
 static void tick_flush() {
   if (!s_need_flush) return;
   static uint32_t last = 0;
-  if (millis() - last < 1500) return;      // 1.5秒に1回まで（TLS連打防止）
+  if (millis() - last < 300) return;       // ★0.3秒間隔（接続使い回しで握手が無くなったので短縮。旧1.5秒）
   last = millis();
   if (!spool_has_data()) { s_need_flush = false; return; }
   flush_spool();                            // 1グループ送信（失敗ならデータ保持・再試行）
@@ -1141,43 +1231,54 @@ static void tick_flush() {
 //  戻り値：取得成功=true。呼び出し間隔は tick_fetch_layout がバックオフ管理（#14）。
 static bool fetch_layout() {
   if (!wifi_up()) return false;
-  WiFiClientSecure _c; _c.setInsecure();
-  HTTPClient http;
-  http.begin(_c, server_base() + api_prefix() + "/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw");
-  http.setConnectTimeout(800); http.setTimeout(1500);   // ★不達でも最長0.8秒で諦める（初回赤の取りこぼし対策・T-9）
-  add_common_headers(http);
-  int code = http.GET();
-  bool ok = false;
-  if (code == 200) {
-    JsonDocument res;
-    if (deserializeJson(res, http.getString()) == DeserializationError::Ok) {
-      int laps  = res["target_laps"] | 0;
-      int nodes = res["node_count"]  | 0;
-      s_node_need = (nodes >= 0 && nodes <= 6) ? nodes : 0;   // 使用SQ数（0..6）。異常値は0=未取得扱い
-      int lc    = res["lc_count"]    | 0;
-      float len = res["lap_length_m"] | 0.0f;
-      // #8-a：取得できた周回数を実行時変数へ反映（0や異常値は無視して既定を維持）
-      if (laps >= 1 && laps <= 99) s_target_laps = laps;
-      Serial.printf("[LAYOUT] id=%u laps=%d nodes=%d lc=%d len=%.1fm\n",
-                    s_layout_id, laps, nodes, lc, len);
-      ok = true;
-    }
+  JsonDocument res; bool ok = false;
+  int code = httpj::request("/api/timing/layouts/" + String((int)s_layout_id) + "/for_gw", String(), &res, &ok);
+  if (ok) {
+    int laps  = res["target_laps"] | 0;
+    int nodes = res["node_count"]  | 0;
+    s_node_need = (nodes >= 0 && nodes <= 6) ? nodes : 0;   // 使用SQ数（0..6）。異常値は0=未取得扱い
+    int lc    = res["lc_count"]    | 0;
+    float len = res["lap_length_m"] | 0.0f;
+    if (laps >= 1 && laps <= 99) s_target_laps = laps;     // #8-a：取得できた周回数を反映
+    Serial.printf("[LAYOUT] id=%u laps=%d nodes=%d lc=%d len=%.1fm\n", s_layout_id, laps, nodes, lc, len);
   }
   if (!ok) Serial.printf("[LAYOUT] fetch NG code=%d\n", code);
-  http.end();
   return ok;
 }
 
-// ---- fetch_layout の呼び出し間隔管理（#14：成功60s / 失敗5s）---------------
+// ---- fetch_layout の契機管理 ------------------------------------------------
+//  ★20261031 P3：netタスクから呼ぶ（loopは止まらない）。周期は変更前と同じ 成功60s/失敗30s を維持し、
+//    さらに灰リセット時は即時再取得（アプリで周回数を変えた直後に反映しやすく）。
+//    旧：loop文脈で60秒ごとに0.8〜2.3秒止まり、その瞬間の赤/RCが効かなかった。
 static void tick_fetch_layout() {
-  if (s_state != ST_IDLE) return;   // SET〜計測中は通信で止めない（描画・ボタン最優先・2026-08-24e）
+  if (s_state != ST_IDLE) return;   // SET〜計測中は取得しない（変更前と同じ：周回数をレース中に変えない）
+  if (!wifi_connected()) return;                                // WiFi未接続は“失敗”に数えない（接続した瞬間に即取得）
   static uint32_t last = 0;
-  static bool first = true;
-  uint32_t interval = s_layout_ok ? LAYOUT_OK_MS : LAYOUT_NG_MS;
-  if (!first && (millis() - last) < interval) return;
-  first = false;
-  last  = millis();
+  uint32_t interval = s_layout_ok ? LAYOUT_OK_MS : LAYOUT_NG_MS;   // 成功60s/失敗30s（変更前と同じ周期）
+  bool due = (last == 0) || ((millis() - last) >= interval);
+  if (!s_layout_req && !due) return;                            // 灰リセット要求 or 周期到来で取得
+  last = millis();
   s_layout_ok = fetch_layout();
+  if (s_layout_ok) s_layout_req = false;
+}
+
+// ---- netタスク（core0）：HTTPSは全部ここ。loop(core1)は一切止まらない ----------
+//  ★20261031 P2/P3：flush（送信）・layout取得・JOIN転送・WiFi再接続の面倒を見る。
+//   ・s_need_flush / s_layout_req / JOINキュー は loop が立て、ここが消化する。
+//   ・スプールのファイルI/Oは spool_lock で排他、HTTPS中は解放（計測中の追記を待たせない）。
+//   ・wifi_up() を定期的に呼ぶことで切断時の再begin(15秒間隔)もここで継続する。
+static void net_task(void*) {
+  for (;;) {
+    wifi_up();                                   // 接続維持（未接続なら15秒間隔でbegin）
+    tick_flush();                                // 送信要求があれば1グループ送る
+    tick_fetch_layout();                         // 60秒周期＋灰リセット即時
+    while (s_joinq_tail != s_joinq_head) {       // JOIN転送（レート制限はforward_join_now内）
+      proto::JoinBody jb = s_joinq[s_joinq_tail];
+      s_joinq_tail = (uint8_t)((s_joinq_tail + 1) % JOINQ_N);
+      forward_join_now(jb);
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
 }
 
 // ---- 本体ボタン読み取り ----------------------------------------------------
@@ -1305,7 +1406,10 @@ void setup() {
   s_state = ST_SPLASH; s_splash_ms = millis(); Serial.println("[SPLASH] start");   // 開始（非ブロッキング・loopで描画）
   disp::g_status.gw_id = NODE_ID;
   disp::g_status.ch    = g_channel;
-  wifi_up();
+  // ★20261031 P2：HTTPS・WiFi維持は netタスク(core0)へ。loop(core1)はTLSで止まらない。
+  s_spool_mtx = xSemaphoreCreateMutex();
+  if (xTaskCreatePinnedToCore(net_task, "net", 16384, nullptr, 1, nullptr, 0) != pdPASS)
+    Serial.println("[NET] task create FAILED（送信・レイアウト取得が動きません）");
   Serial.println("稼働開始。赤=スタート(READY時のみ) / 灰=RESET(即時)。");
 }
 
@@ -1658,6 +1762,7 @@ static void tick_display() {
 }
 
 void loop() {
+  rx_pump();                  // ★P1：ESP-NOW受信（EVENT/COMMAND/JOIN等）をloop文脈で処理
   tick_buttons();
   buzzer_tick();              // ブザー非ブロッキング消音（ledc・20261012）
   sig_tick();                 // ★信号灯の非ブロッキング消灯（赤は緑+50ms/緑は緑+2秒・DC30/DC32）
@@ -1859,9 +1964,7 @@ void loop() {
   // 20260821：POSTは「全員完走(自動)」と「灰ボタン(手動)」の2契機のみ。
   //   計測中はサーバー通信ゼロ（受信→内部ridで刻む→LittleFSへ溜める→TFTのみ）。
   maybe_autocomplete();  // 有効レーンが全員規定周回完了なら s_need_flush を立てる（DA15）
-  tick_flush();          // 送信要求があればloop文脈でHTTPS実行（#20・全送信の唯一の出口）
-
-  tick_fetch_layout();   // #14：成功60s/失敗5sのバックオフで /for_gw を取得
+  // ★20261031 P2/P3：tick_flush / tick_fetch_layout は netタスクへ移設（loopでHTTPSしない）。
   tick_display();        // TFT描画：全画面フル更新（状態機械に同期・約4fps）
   tick_time_field();     // 案B：ON TRACK経過秒だけ約30fpsで部分更新（機敏に動かす）
 }

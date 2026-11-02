@@ -152,6 +152,112 @@ select{background:#fff}
 </style>
 {% block head %}{% endblock %}
 {% block extra_head %}{% endblock %}
+<!-- ============ 通信ガード（★20261031）：オフライン中は一切コミットさせない ============
+  背景：テザリングが切れた状態で結果入力を続けたところ、画面上は○×が付いたのに保存されていなかった。
+        結果入力のJSは「先に画面を更新→後からPOST→失敗は console のみ」の楽観更新が約50箇所あり、
+        クラウド版には死活監視も無かった。
+  方針：個別のJSを直すのではなく、管理画面全体に1枚のガードを掛ける。
+    ① navigator.onLine と 5秒ごとの /health 疎通（タイムアウト4秒・2回連続失敗でオフライン判定）
+       ※テザリング切断は WiFi 自体は繋がったまま＝onLine は true のまま。疎通確認が必須。
+    ② オフライン中は更新系 fetch（POST/PUT/PATCH/DELETE）と <form> 送信を全てブロックし、全画面を赤く遮蔽
+    ③ 更新系 fetch が通信エラー／20秒タイムアウトしたら即遮蔽＋「保存されていません」
+    ④ 復帰したら自動で再読込（サーバーの真実で描き直す＝楽観更新の○×を消す）。再読込後に注意帯を1回表示
+  除外：/health・/view/host-sync・/api/admin-heartbeat・/admin/update/ping（観覧同期や死活は失敗しても害なし）
+-->
+<script>
+(function(){
+  var PFX = {{ (request.scope.get('root_path', '') if request else '') | tojson }};
+  var SOFT = ['/view/host-sync', '/api/admin-heartbeat', '/admin/update/ping', '/health'];
+  var PING_MS = 5000, PING_TIMEOUT_MS = 4000, FAIL_TO_OFFLINE = 2, FETCH_TIMEOUT_MS = 20000;
+  var offline = false, failStreak = 0, sinceMs = 0, overlay = null, timerEl = null, reasonEl = null, tick = null;
+
+  function el(){ 
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'm4netguard';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(160,0,0,.93);color:#fff;'
+      + 'display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;'
+      + 'font-family:system-ui,sans-serif;padding:24px;cursor:not-allowed;';
+    overlay.innerHTML = '<div style="font-size:42px;font-weight:900;letter-spacing:.1em">通信が切れています</div>'
+      + '<div id="m4ng-reason" style="margin-top:10px;font-size:18px;opacity:.95"></div>'
+      + '<div style="margin-top:18px;font-size:22px;font-weight:700;background:#fff;color:#a00;padding:10px 18px;border-radius:8px">この間の入力は保存されません</div>'
+      + '<div id="m4ng-timer" style="margin-top:14px;font-size:16px;opacity:.9"></div>'
+      + '<div style="margin-top:8px;font-size:14px;opacity:.85">テザリング／Wi-Fi を確認してください。復帰すると自動で画面を読み直します。</div>'
+      + '<button type="button" id="m4ng-reload" style="margin-top:22px;font-size:16px;padding:10px 22px;border:0;border-radius:8px;background:#222;color:#fff;cursor:pointer">今すぐ再読込</button>';
+    document.body.appendChild(overlay);
+    timerEl = overlay.querySelector('#m4ng-timer'); reasonEl = overlay.querySelector('#m4ng-reason');
+    overlay.querySelector('#m4ng-reload').addEventListener('click', function(){ location.reload(); });
+    return overlay;
+  }
+  function show(reason){
+    if (!document.body) { document.addEventListener('DOMContentLoaded', function(){ show(reason); }); return; }
+    el().style.display = 'flex'; reasonEl.textContent = reason || '';
+    if (!tick) tick = setInterval(function(){ timerEl.textContent = '切断から ' + Math.round((Date.now()-sinceMs)/1000) + ' 秒'; }, 1000);
+  }
+  function hide(){ if (overlay) overlay.style.display = 'none'; if (tick) { clearInterval(tick); tick = null; } }
+  function goOffline(reason){
+    if (!offline) { offline = true; sinceMs = Date.now(); try { sessionStorage.setItem('m4ng_lost', String(sinceMs)); } catch(e){} }
+    show(reason);
+  }
+  function goOnline(){
+    if (!offline) return;
+    offline = false; hide();
+    location.reload();            // ★サーバーの真実で描き直す（楽観更新で付いた○×を消す）
+  }
+
+  // ---- 疎通確認（/health・5秒ごと） ----
+  var _fetch = window.fetch;
+  function ping(){
+    var ctrl = new AbortController(); var t = setTimeout(function(){ ctrl.abort(); }, PING_TIMEOUT_MS);
+    _fetch(PFX + '/' + 'health?_=' + Date.now(), {cache:'no-store', signal: ctrl.signal, credentials:'same-origin'})
+      .then(function(r){ clearTimeout(t); if (r.ok) { failStreak = 0; if (offline) goOnline(); } else { fail('サーバー応答異常 ' + r.status); } })
+      .catch(function(){ clearTimeout(t); fail('サーバーに届きません'); });
+  }
+  function fail(reason){ failStreak++; if (failStreak >= FAIL_TO_OFFLINE || !navigator.onLine) goOffline(reason); }
+  setInterval(ping, PING_MS);
+  window.addEventListener('offline', function(){ goOffline('ネットワーク切断（端末がオフライン）'); });
+  window.addEventListener('online',  function(){ failStreak = 0; ping(); });
+  if (navigator.onLine === false) goOffline('ネットワーク切断（端末がオフライン）');
+
+  // ---- 更新系 fetch のガード ----
+  function pathOf(input){ try { return new URL((typeof input === 'string') ? input : input.url, location.href).pathname; } catch(e){ return String(input); } }
+  function isSoft(p){ for (var i=0;i<SOFT.length;i++) if (p.indexOf(SOFT[i]) >= 0) return true; return false; }
+  window.fetch = function(input, init){
+    var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    var mutating = (method !== 'GET' && method !== 'HEAD');
+    if (!mutating || isSoft(pathOf(input))) return _fetch.apply(this, arguments);
+    if (offline) { show('オフラインのため送信を中止しました'); return Promise.reject(new TypeError('M4 netguard: offline, request blocked')); }
+    var init2 = Object.assign({}, init || {}); var ctrl = null, t = null;
+    if (!init2.signal) { ctrl = new AbortController(); init2.signal = ctrl.signal; t = setTimeout(function(){ ctrl.abort(); }, FETCH_TIMEOUT_MS); }
+    return _fetch.call(this, input, init2).then(function(r){
+      if (t) clearTimeout(t);
+      if (r.status >= 500) { show('サーバーエラー ' + r.status + '（保存されていない可能性）'); setTimeout(hide, 4000); }
+      return r;
+    }).catch(function(e){
+      if (t) clearTimeout(t);
+      goOffline('送信に失敗しました（' + (e && e.name === 'AbortError' ? 'タイムアウト' : '通信エラー') + '）');
+      throw e;
+    });
+  };
+  // ---- 通常の <form method="post"> 送信もブロック ----
+  document.addEventListener('submit', function(ev){
+    var m = ((ev.target && ev.target.method) || 'get').toLowerCase();
+    if (m !== 'get' && offline) { ev.preventDefault(); ev.stopImmediatePropagation(); show('オフラインのため送信を中止しました'); }
+  }, true);
+
+  // ---- 再読込後の注意帯（直前の切断で入力が消えた可能性を知らせる・1回だけ） ----
+  document.addEventListener('DOMContentLoaded', function(){
+    var lost = null; try { lost = sessionStorage.getItem('m4ng_lost'); sessionStorage.removeItem('m4ng_lost'); } catch(e){}
+    if (!lost) return;
+    var b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147482000;background:#ffd400;color:#000;font-weight:800;padding:12px 16px;text-align:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+    b.innerHTML = '通信が切れていた間の入力は保存されていません。画面をサーバーの内容で読み直しました。<b>結果を確認して、抜けていれば入れ直してください。</b> '
+      + '<button type="button" style="margin-left:12px;padding:4px 12px;border:0;border-radius:6px;background:#000;color:#ffd400;cursor:pointer">閉じる</button>';
+    b.querySelector('button').addEventListener('click', function(){ b.remove(); });
+    document.body.appendChild(b);
+  });
+})();
+</script>
 <!-- カメラスキャン共通部品（QR/CODE128・オフライン同梱）。全管理画面で1回だけ読み込む -->
 <script src="/static/js/zxing.min.js"></script>
 <script src="/static/js/camera-scan.js"></script>
@@ -1374,8 +1480,11 @@ function _showPubToast(msg) {
   //   /admin/tournaments/{id}            … レース情報
   //   /admin/tournaments/{id}/qualifying … 予選
   //   /admin/tournaments/{id}/bracket    … 決勝
-  // ★20261030：スラグ店舗(/<slug>/admin/...)対応。"/admin" の手前を店舗接頭辞として扱う（既定店舗は空）。
-  var M4PFX = location.pathname.split('/admin')[0];
+  // ★20261031：スラグ店舗(/<slug>/admin/...)対応。店舗接頭辞はサーバー(root_path)から注入する。
+  //   ⚠ 旧 split('/admin') は、店舗ミドルウェアがJS内の '/admin' リテラルまで '/<slug>/admin' に
+  //     書き換えるため、スラグ店舗で常に空文字になりPIPが消えていた。クォート付き '/api…' も同様に
+  //     書き換わるので、fetch先は '/' と 'api/…' に分けて二重前置を避ける。
+  var M4PFX = {{ (request.scope.get('root_path', '') if request else '') | tojson }};
   function isTargetPage(){
     var p=location.pathname.slice(M4PFX.length).replace(/\/+$/,'');   // ★スラグを除いて判定
     return /^\/admin\/tournaments\/\d+$/.test(p)
@@ -1583,7 +1692,7 @@ function _showPubToast(msg) {
 
   function poll(){
     // mode=race … 緑ランプありのレースだけ。フリー走行の記録は出さない
-    fetch(M4PFX + '/api/timing/pip/latest?limit=3&mode=race',{cache:'no-store'})   // ★スラグ前置
+    fetch(M4PFX + '/' + 'api/timing/pip/latest?limit=3&mode=race',{cache:'no-store'})   // ★スラグ前置（リテラル分割＝ミドルウェア書換え回避）
       .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
       .then(function(d){
         failCount=0;

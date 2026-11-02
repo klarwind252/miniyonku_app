@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from app.domain.rotation import (
     build_course, LayoutElement, expected_lane, expected_sg_lane,
+    expected_passes, expected_passes_per_lane,
 )
 
 
@@ -265,10 +266,7 @@ def build_raw_detections(race_row, event_rows, layout_elems: list,
     for g in course.gates:
         if g.node_id is None:
             continue
-        if g.kind == "SG":
-            expected[g.node_id] = (target_laps + 1) * n_lanes
-        else:
-            expected[g.node_id] = target_laps * n_lanes
+        expected[g.node_id] = expected_passes(g.kind, target_laps, n_lanes)   # ★C7：一本化
 
     # 端末（ゲート＝node_id）ごとに検出を集める（時刻順）。
     # 1端末は全レーンの通過を拾うので、各検出に物理レーンを添える。
@@ -392,12 +390,7 @@ def build_sensor_matrix(race_row, event_rows, layout_elems: list,
     devices_out = []
     for node in ordered_nodes:
         kind = kind_by_node.get(node, "SQ")
-        if target_laps is None:
-            exp = None
-        elif kind == "SG":
-            exp = int(target_laps) + 1
-        else:
-            exp = int(target_laps)
+        exp = None if target_laps is None else expected_passes_per_lane(kind, target_laps)   # ★C7：一本化
         lanes_list = []
         for lane in range(1, (n_lanes or 1) + 1):
             passes = sorted(by_cell.get((node, lane), []), key=lambda d: d["_sort"])

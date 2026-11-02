@@ -32,6 +32,7 @@ from app.domain.rotation import (
     identify_start_lane,
     LayoutElement,
     LANES,
+    expected_passes,
 )
 
 
@@ -132,7 +133,7 @@ class RaceResult:
         done.sort(key=lambda m: m.total_time_us)  # type: ignore[arg-type]
         # E5(24.39)：DNF・計測中は完了者の後ろ。未完了どうしは周回数の多い順
         #   （途中経過を活かし、より進んだ車を上に）。
-        notdone.sort(key=lambda m: m.completed_laps, reverse=True)
+        notdone.sort(key=lambda m: (-m.completed_laps, m.start_lane))   # 同周回はレーン順（決定的）
         return done + notdone
 
 
@@ -163,10 +164,10 @@ def _events_complete(
     def cnt(gate_index: int) -> int:
         return sum(len(v) for (ln, gi), v in grouped.items() if gi == gate_index)
 
-    if cnt(sg_gate.index) != lanes * (target_laps + 1):
+    if cnt(sg_gate.index) != expected_passes("SG", target_laps, lanes):   # ★C7：式は rotation に一本化
         return False
     for g in course.gates:
-        if g.kind == "SQ" and cnt(g.index) != lanes * target_laps:
+        if g.kind == "SQ" and cnt(g.index) != expected_passes("SQ", target_laps, lanes):
             return False
     return True
 
@@ -235,39 +236,87 @@ def _reconstruct_incomplete(
 
     machine_passings: dict[int, dict[int, dict[int, tuple[int, PassEvent]]]] = {}
 
-    for s in range(1, lanes + 1):
-        # スタート打刻（緑直後・物理レーン=s）
-        L0 = expected_sg_lane(s, 0, rot, lanes)
-        # スタート窓：F1式(緑一斉)は緑後に初周がもたつく車がいるので広め(1.2*avg)。
-        #   走行式は t0=最初の打刻なので先頭車の起点は必ず近傍＝狭め(0.6*avg)で誤取り込みを避ける。
-        _sw = 1.2 if mode == "f1" else 0.6
-        st = claim(L0, sg_index, t0 - 1, t0 + _sw * avg, t0)
-        if st is None:
-            continue  # スタート打刻なし＝このレーンはデータなし（DNS等）。枠は作らない。
-        sgmap: dict[int, tuple[int, PassEvent]] = {0: st}
+    # ★20261101：確定の順序を「レーンごとに深さ優先」→「①全車のスタート ②S/G通過を時刻順に、
+    #   そのレーンを次に期待している車のうち予測時刻に最も近い車へ帰属」に変更。
+    #   旧実装はレーン1から順に1台ずつ全周を確定していたため、
+    #     ・空きレーン(DNS)の枠が広いスタート窓で他車の1周目を“スタート”として先取り → 幽霊マシン
+    #       （実データ arcadebase race116：F1式・レーン2,3の2台が教科書どおり3周→サーバーだけ幽霊＋DNF）
+    #     ・処理順が早い車が未来の通過を独占し、本来の持ち主がDNF（race60 等）
+    #   が起きていた。時刻順＋予測最近なら処理順に依存せず、GWの追跡（期待レーン+1）とも整合する。
+    #   窓：1周目は global avg、2周目以降は自分の1周ペースの (MIN_LAP_US, 2.5倍]（従来どおり）。
+    START_MAX_US = 6_000_000
+    if mode == "f1":
+        # 一斉スタート：緑の少し後まで。フライング（緑より前の通過）もその車のスタートなので下限は広く取る。
+        start_lo = min(sg_all) - 1
+        start_hi = t0 + min(0.5 * avg, START_MAX_US)
+    else:
+        # 走行式：時差スタート（2台目・3台目が後から走り出す）を認める＝窓は無制限（GWと同じ）。
+        #   既存車の期待を新規スタートより優先するので、旧実装のような横取りは起きない。
+        start_lo = t0 - 1
+        start_hi = t0 + 0.6 * avg          # 先頭グループの起点（従来どおり）。時差スタートは下の allow_new で別途許可
 
-        # 1周目（自ペース未知→globalの avg で窓）
-        L1 = expected_sg_lane(s, 1, rot, lanes)
-        p1 = claim(L1, sg_index, st[0] + MIN_LAP_US, st[0] + 2.5 * avg, st[0] + avg)
-        comp = 0
-        if p1 is not None:
-            sgmap[1] = p1
-            lap_s = max(p1[0] - st[0], 1)
-            last = p1[0]
-            comp = 1
-            # 2周目以降は自分の1周ペースで窓を絞る（横取り=約1周ズレは窓外で棄却）
-            for p in range(2, target_laps + 1):
-                Lp = expected_sg_lane(s, p, rot, lanes)
-                cp = claim(Lp, sg_index, last + MIN_LAP_US, last + 2.5 * lap_s, last + lap_s)
-                if cp is None:
-                    break
-                sgmap[p] = cp
-                last = cp[0]
-                comp = p
+    # ①② S/G通過を時刻順に処理。各通過は
+    #      (a) そのレーンを次に期待している走行中の車（自ペース窓内）のうち予測時刻に最も近い車へ
+    #      (b) 該当車がいなければ、そのレーンが未出走かつスタート窓内なら「新規スタート」
+    #    の順で帰属する（GWの追跡と同じ優先順位：既存車の期待 ＞ 新規エントリー）。
+    #    ※旧実装は全レーンのスタートを先に確定していたため、1台走行で L2 の1周目が
+    #      「レーン2の新規スタート」に化けた（arcadebase race26）。
+    sgmaps: dict[int, dict[int, tuple[int, PassEvent]]] = {}
+    state: dict[int, dict] = {}   # s -> {next_p, last, pace}
+    sg_items = sorted((it for (ph, gi), l in avail.items() if gi == sg_index for it in l), key=lambda it: it[0])
+    for it in sg_items:
+        if it[2]:
+            continue
+        t = it[0]
+        phys = it[1].lane
+        # (a) 既存車の期待
+        best = None
+        for s, stt in state.items():
+            p = stt["next_p"]
+            if p > target_laps:
+                continue                  # 完走済み
+            if expected_sg_lane(s, p, rot, lanes) != phys:
+                continue
+            pace = avg if stt["pace"] is None else stt["pace"]
+            lo, hi, pred = stt["last"] + MIN_LAP_US, stt["last"] + 2.5 * pace, stt["last"] + pace
+            if not (lo < t <= hi):
+                continue
+            d = abs(t - pred)
+            if best is None or d < best[1]:
+                best = (s, d)
+        if best is not None:
+            s = best[0]
+            stt = state[s]
+            it[2] = True
+            p = stt["next_p"]
+            sgmaps[s][p] = (t, it[1])
+            if p == 1:
+                stt["pace"] = max(t - stt["last"], 1)
+            stt["last"] = t
+            stt["next_p"] = p + 1
+            continue
+        # (b) 新規スタート（スタートレーン s は物理レーン phys と同じ：passing=0）
+        #   F1式：スタート窓内のみ。走行式：先頭車の起点近傍、または「他の車がまだ走っている間」
+        #   （走行中の車の自ペース窓内）の時差スタートのみ。全車が完走/停止して窓が閉じた後の通過は
+        #   走り直し・迷い打刻なので新規扱いしない（幽霊DNFを作らない）。
+        s = phys
+        if mode == "f1":
+            allow_new = start_lo < t <= start_hi
+        else:
+            allow_new = (start_lo < t <= start_hi) or any(
+                stt["next_p"] <= target_laps and t <= stt["last"] + 2.5 * (stt["pace"] or avg)
+                for stt in state.values())
+        if 1 <= s <= lanes and s not in sgmaps and allow_new:
+            it[2] = True
+            sgmaps[s] = {0: (t, it[1])}
+            state[s] = {"next_p": 1, "last": t, "pace": None}
+            continue
+        # どの車の期待にも合わず新規スタートでもない通過（余走・居座り・他車の誤検知）は捨てる
 
+    # ③ 各完了周のSQを、期待物理レーン＋周内時間窓（予測最近）で付与（出力はレーン順＝旧実装と同じ挿入順）
+    for s, sgmap in sorted(sgmaps.items()):
+        comp = max(sgmap.keys())
         gates_map: dict[int, dict[int, tuple[int, PassEvent]]] = {sg_index: sgmap}
-
-        # 各完了周のSQを、期待物理レーン＋周内時間窓（予測最近）で付与
         for k in range(1, comp + 1):
             lo = sgmap[k - 1][0]
             hi = sgmap[k][0]
@@ -280,7 +329,6 @@ def _reconstruct_incomplete(
                 got = claim(phys, g.index, lo, hi, pred)
                 if got is not None:
                     gates_map.setdefault(g.index, {})[k] = got
-
         machine_passings[s] = gates_map
 
     return machine_passings
@@ -424,8 +472,13 @@ def build_race(
             # G1(24.53)：フライング検知。F1式で1周目S/G通過が緑(t0)より前なら
             #   その車はマイナスF1タイム＝フライング。total符号ではなく1周目通過で判定
             #   （完走してtotalが正に戻るケースもあるため）。判断はここ(サーバー)に集約・24.1。
+            #   ★20261101：判定対象を「スタート通過(passing 0)」に訂正。旧実装は passing 1（1周目完了）を
+            #   見ていたため、緑の2.3秒前にスタートラインを切った実データ（arcadebase race52）でも
+            #   JS が立たなかった。passing 1 の条件も保険として残す。
+            start0 = sg_map.get(0)
             first = sg_map.get(1)
-            if first is not None and t0 is not None and first[0] < t0:
+            if t0 is not None and ((start0 is not None and start0[0] < t0)
+                                   or (first is not None and first[0] < t0)):
                 mres.jump_start = True
         else:
             final = sg_map.get(target_laps)

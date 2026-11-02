@@ -77,6 +77,20 @@ class CourseModel:
     lc_count: int
 
 
+def expected_passes_per_lane(kind: str, target_laps: int) -> int:
+    """1レーンあたりの期待通過回数（★20261031 C7：4箇所に散っていた式を一本化）。
+
+    - S/G（kind="SG"）: target_laps + 1 … スタート打刻（passing=0）を含む
+    - それ以外のゲート（SQ）: target_laps
+    """
+    return int(target_laps) + 1 if kind == "SG" else int(target_laps)
+
+
+def expected_passes(kind: str, target_laps: int, n_lanes: int) -> int:
+    """全レーン合計の期待通過回数（= expected_passes_per_lane × レーン数）。"""
+    return expected_passes_per_lane(kind, target_laps) * int(n_lanes)
+
+
 def build_course(layout: list[LayoutElement]) -> CourseModel:
     """通過順レイアウトから CourseModel を構築する。
 

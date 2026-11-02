@@ -398,7 +398,7 @@ class TimingRaceRepository:
 
     async def get_events(self, race_id: int):
         async with self.db.execute(
-            "SELECT src, lane, t_us, t_us_b, quality, seq FROM timing_events "
+            "SELECT id, src, lane, t_us, t_us_b, quality, seq FROM timing_events "   # ★C11：id を含める（点除外の to_event_id 用）
             "WHERE race_id = ? ORDER BY t_us",
             (race_id,),
         ) as cur:

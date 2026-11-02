@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app.domain.rotation import build_course, LayoutElement
+from app.domain.rotation import build_course, LayoutElement, expected_passes
 
 STATUS_CONFIRMED = "confirmed"
 STATUS_NEEDS_REVIEW = "needs_review"
@@ -40,10 +40,7 @@ def expected_counts(layout_elems: list, target_laps: int, n_lanes: int) -> dict:
     for g in course.gates:
         if g.node_id is None:
             continue
-        if g.kind == "SG":
-            exp[g.node_id] = (target_laps + 1) * n_lanes
-        else:
-            exp[g.node_id] = target_laps * n_lanes
+        exp[g.node_id] = expected_passes(g.kind, target_laps, n_lanes)   # ★C7：一本化
     return exp
 
 

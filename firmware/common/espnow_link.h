@@ -9,6 +9,7 @@
 // ============================================================================
 #pragma once
 #include <Arduino.h>
+#include <esp_arduino_version.h>   // ESP_ARDUINO_VERSION_MAJOR（2.x/3.x 両対応のため）
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
@@ -39,13 +40,35 @@ static uint8_t s_seen_pos = 0;
 
 static inline uint64_t now_us() { return (uint64_t)esp_timer_get_time(); }
 
+// ★20261031 A7：受信コールバック(WiFiタスク/core0)と送信側(loop/core1)が同じリングを触るため
+//   クリティカルセクションで保護（数十ns・従来は無保護で稀に1枠が壊れ得た）。
+static portMUX_TYPE s_seen_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool seen_before(uint8_t src, uint32_t boot, uint32_t seq) {
+  bool hit = false;
+  portENTER_CRITICAL(&s_seen_mux);
   for (int i = 0; i < 64; i++)
-    if (s_seen[i].src == src && s_seen[i].boot == boot && s_seen[i].seq == seq)
-      return true;
-  s_seen[s_seen_pos] = { src, boot, seq };
-  s_seen_pos = (s_seen_pos + 1) & 63;
-  return false;
+    if (s_seen[i].src == src && s_seen[i].boot == boot && s_seen[i].seq == seq) { hit = true; break; }
+  if (!hit) {
+    s_seen[s_seen_pos] = { src, boot, seq };
+    s_seen_pos = (s_seen_pos + 1) & 63;
+  }
+  portEXIT_CRITICAL(&s_seen_mux);
+  return hit;
+}
+
+// ★20261031 A6：esp_now_send の戻り値を監視（混雑時の ESP_ERR_ESPNOW_NO_MEM 等を黙殺しない）。
+//   連続失敗はまとめて 1 秒に 1 行だけログ（送信経路は変えない）。
+static uint32_t s_send_fail = 0, s_send_fail_log_ms = 0;
+static inline void checked_send(const uint8_t* buf, size_t len) {
+  esp_err_t e = esp_now_send(BCAST, buf, len);
+  if (e != ESP_OK) {
+    s_send_fail++;
+    uint32_t now = millis();
+    if (now - s_send_fail_log_ms >= 1000) {
+      s_send_fail_log_ms = now;
+      Serial.printf("[MESH] esp_now_send err=%d (fails=%lu)\n", (int)e, (unsigned long)s_send_fail);
+    }
+  }
 }
 
 // ---- 送信 ------------------------------------------------------------------
@@ -68,7 +91,7 @@ static void send(uint8_t type, uint8_t dst,
   if (body_len) memcpy(buf + sizeof(h), body, body_len);
   // 自分が出したものも重複排除リングに載せておく（中継の跳ね返り対策）
   seen_before(h.src, h.boot_id, h.seq);
-  esp_now_send(BCAST, buf, sizeof(h) + body_len);
+  checked_send(buf, sizeof(h) + body_len);
 }
 
 // ---- 中継（受信したブロードキャストをTTL減算して撒き直す）------------------
@@ -81,7 +104,7 @@ static void relay(proto::PktHeader h, const uint8_t* body, int body_len) {
   uint8_t buf[250];
   memcpy(buf, &h, sizeof(h));
   if (body_len > 0) memcpy(buf + sizeof(h), body, body_len);
-  esp_now_send(BCAST, buf, sizeof(h) + body_len);
+  checked_send(buf, sizeof(h) + body_len);
 }
 
 // ---- 受信コールバック（旧来型シグネチャ・当環境に合わせる）----------------
@@ -114,11 +137,14 @@ static void on_recv_raw(const uint8_t* mac, const uint8_t* data, int len) {
 static bool begin(uint8_t my_id, uint8_t channel, RecvHandler handler) {
   s_my_id   = my_id;
   s_handler = handler;
-  s_boot_id = esp_random();              // 起動ごと（docs/12.1）
   s_seq     = 0;
   s_cur_ch  = channel;
 
   WiFi.mode(WIFI_STA);
+  // ★20261031 A4：boot_id は RF 起動後に採る。IDF の esp_random は RF 停止中は乱数品質が保証されず、
+  //   毎回同じ値だと冪等キー(src,boot,seq)で新しい通過が過去と誤認され捨てられる恐れがあった。
+  s_boot_id = esp_random();              // 起動ごと（docs/12.1）
+  if (s_boot_id == 0) s_boot_id = 1;
   esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
   esp_wifi_set_ps(WIFI_PS_NONE);          // ★ESP-NOW安定化：WiFi省電力を無効化。
                                           //   AP接続時のモデムスリープでESP-NOW受信が
@@ -131,7 +157,14 @@ static bool begin(uint8_t my_id, uint8_t channel, RecvHandler handler) {
   peer.encrypt = false;
   esp_now_add_peer(&peer);
 
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  // Arduino core 3.x（IDF5）は受信コールバックの第1引数が esp_now_recv_info_t*。旧型(2.x)へ橋渡し。
+  esp_now_register_recv_cb([](const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+    on_recv_raw(info ? info->src_addr : nullptr, data, len);
+  });
+#else
   esp_now_register_recv_cb(on_recv_raw);
+#endif
   return true;
 }
 
@@ -179,7 +212,7 @@ static void send_ack(uint8_t type, uint8_t dst, uint32_t acked_seq) {
   h.reserved1 = acked_seq;      // ★受領したseqを載せる（gate側が照合）
   memcpy(buf, &h, sizeof(h));
   seen_before(h.src, h.boot_id, h.seq);
-  esp_now_send(BCAST, buf, sizeof(h));
+  checked_send(buf, sizeof(h));
 }
 
 } // namespace mesh

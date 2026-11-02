@@ -12,7 +12,7 @@ GWからのPOSTは、環境変数 TIMING_TOKEN があれば X-Timing-Token を�
 import os
 import time
 
-from fastapi import APIRouter, Request, Depends, HTTPException, Header
+from fastapi import APIRouter, Request, Depends, HTTPException, Header, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 import aiosqlite
 
@@ -21,7 +21,7 @@ from app.infrastructure.db.repositories.timing_repository import (
     TimingRaceRepository,
     TimingLayoutRepository,
 )
-from app.application.timing_race_service import build_race_result
+from app.application.timing_race_service import build_race_result, invalidate_race_result_cache
 from app.application import timing_best_service as best_svc
 from app.application import timing_bridge_service as bridge_svc
 from app.application import timing_speed_service as spd_svc
@@ -131,10 +131,72 @@ async def set_race_green(
     return JSONResponse({"updated": updated})
 
 
+async def _post_ingest_work(store, db_path: str, race_id: int) -> None:
+    """受信後の後処理（速度保存→ベスト更新→状態判定→TA viewへpush）。
+
+    ★20261031：応答後にバックグラウンドで実行する（旧：応答前に同期実行）。
+      GWは応答を待つだけで後処理結果を使わないのに、後処理が重いと GW 側タイムアウト→
+      同じバッチを再POST（冪等で捨てるが毎回再計算）という“無駄打ち”を生んでいた。
+    ⚠ リクエストのDB接続は応答後に閉じられ、店舗ContextVarも戻されるため、
+      店舗を自分でセットし直し、専用接続を開いて処理する。
+    """
+    from app.core.store_context import current_store
+    token = current_store.set(store)
+    try:
+        db = await aiosqlite.connect(db_path)
+        db.row_factory = aiosqlite.Row
+        try:
+            await db.execute("PRAGMA busy_timeout=5000")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            await db.execute("PRAGMA foreign_keys=ON")
+            repo = TimingRaceRepository(db)
+            # 速度・平均を計算して保存（ベストは保存値を読むので先）。
+            try:
+                await speed_store.compute_and_store_speeds(db, race_id)
+                await db.commit()
+            except Exception as e:
+                print(f"[timing] speed store failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+            # ベスト記録を更新（保存済みの速度を使う）。
+            try:
+                await best_svc.update_for_race(
+                    db, race_id, build_race_result, *(await _speed_fns_for_race(db, race_id))
+                )
+            except Exception as e:
+                print(f"[timing] bests update failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+            # 二段構えDB（I群 §24.71）: status を自動判定して書き込む。
+            try:
+                race2, result2 = await build_race_result(db, race_id)
+                if result2 is not None:
+                    lrepo = TimingLayoutRepository(db)
+                    elem_rows = await lrepo.get_elements(race2["layout_id"])
+                    layout_elems = [{"kind": e["kind"], "node_id": e["node_id"]} for e in elem_rows]
+                    ev_rows = await repo.get_events(race_id)
+                    status, _detail = status_svc.judge_status(
+                        result2, layout_elems, ev_rows,
+                        target_laps=race2["target_laps"], n_lanes=LANES,
+                    )
+                    await repo.update_status(race_id, status)
+            except Exception as e:
+                print(f"[timing] status judge failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+        finally:
+            await db.close()
+    except Exception as e:
+        print(f"[timing] post-ingest failed race={race_id}: {type(e).__name__}: {e}", flush=True)
+    finally:
+        current_store.reset(token)
+    # TA view（FHD計測ビューア）へ push（後処理完了後＝結果が確定してから）。失敗は無視。
+    try:
+        from app.services import live_events
+        live_events.publish(store.id if store is not None else 0, "ta")
+    except Exception:
+        pass
+
+
 @router.post("/api/timing/races/{race_id}/events")
 async def post_events(
     race_id: int,
     request: Request,
+    background: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
     x_timing_token: str | None = Header(default=None),
     _guard: bool = Depends(require_m4laps),
@@ -169,52 +231,15 @@ async def post_events(
     except (KeyError, ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=f"bad event: {e}")
 
-    # 速度・平均を計算して保存（都度計算をやめ、受信時に書き込む）。
-    # ⚠ ベスト更新より先に保存する（ベストは保存値を読むため）。
-    try:
-        await speed_store.compute_and_store_speeds(db, race_id)
-        await db.commit()
-    except Exception as e:
-        print(f"[timing] speed store failed race={race_id}: {type(e).__name__}: {e}", flush=True)
-
-    # ベスト記録を更新（保存済みの速度を使う）。
-    # 失敗しても受信自体は成功として扱う（記録の取りこぼしを防ぐため）
-    bests = {}
-    try:
-        bests = await best_svc.update_for_race(
-            db, race_id, build_race_result, *(await _speed_fns_for_race(db, race_id))
-        )
-    except Exception as e:
-        print(f"[timing] bests update failed race={race_id}: {type(e).__name__}: {e}", flush=True)
-
-    # 二段構えDB（I群 §24.71）: 受信時に status を自動判定して書き込む。
-    #   全車完走 or 全車CO → confirmed / それ以外 → needs_review
-    # 失敗しても受信自体は成功扱い（判定は表示・集計の補助であり、生データは既に保存済み）。
-    try:
-        race2, result2 = await build_race_result(db, race_id)
-        if result2 is not None:
-            lrepo = TimingLayoutRepository(db)
-            elem_rows = await lrepo.get_elements(race2["layout_id"])
-            layout_elems = [{"kind": e["kind"], "node_id": e["node_id"]} for e in elem_rows]
-            ev_rows = await repo.get_events(race_id)
-            status, _detail = status_svc.judge_status(
-                result2, layout_elems, ev_rows,
-                target_laps=race2["target_laps"], n_lanes=LANES,
-            )
-            await repo.update_status(race_id, status)
-    except Exception as e:
-        print(f"[timing] status judge failed race={race_id}: {type(e).__name__}: {e}", flush=True)
-
-    # TA view（FHD計測ビューア）へ即時push（新結果到着を知らせる）。失敗は無視（受信は成功扱い）。
-    try:
-        from app.services import live_events
-        _st = getattr(request.state, "store", None)
-        live_events.publish(_st.id if _st is not None else 0, "ta")
-    except Exception:
-        pass
+    # ★後処理（速度→ベスト→状態→TA push）は応答後にバックグラウンドで。
+    #   新規挿入ゼロ（＝GWの再送・全件重複）なら何も変わらないので後処理自体をスキップ＝無駄打ち吸収。
+    if inserted > 0:
+        from app.infrastructure.db.connection import current_db_path
+        _store = getattr(request.state, "store", None)
+        background.add_task(_post_ingest_work, _store, current_db_path(), race_id)
 
     return JSONResponse({"inserted": inserted, "duplicate": duplicate,
-                         "bests_updated": bests})
+                         "bests_updated": {}})   # 後処理は非同期化したため空（GWは参照しない）
 
 
 # ---------------------------------------------------------------------------
@@ -329,12 +354,14 @@ async def results_page(
     rows = []          # 表示する明細行（1行=1レーンの1周）
     # 速度の設定状況（1レースでも設定済みなら True）。画面下の注記に使う。
     speed_ready = {"pass_speed": False, "lap_avg": False}
+    _cfg_by_layout: dict = {}   # ★性能：速度設定はレイアウト単位。1日分のレース数ぶん同じ問合せを繰り返さない
 
     for r in races:
         rid = r["id"]
         try:
             race, result = await build_race_result(db, rid)
-        except Exception:
+        except Exception as e:
+            print(f"[timing] results: build failed race={rid}: {type(e).__name__}: {e}", flush=True)   # C13：黙って消さない
             continue
         if race is None or result is None:
             continue
@@ -342,154 +369,23 @@ async def results_page(
         # 速度は反映時に計算・保存済み。ここでは読むだけ（都度計算しない）。
         stored = await speed_store.load_speeds(db, rid)
         # 画面の注記用：どの指標が実測できる設定になっているか
-        cfg = await spd_svc.load_speed_config(db, race["layout_id"])
+        _lid = race["layout_id"]
+        if _lid not in _cfg_by_layout:
+            _cfg_by_layout[_lid] = await spd_svc.load_speed_config(db, _lid)
+        cfg = _cfg_by_layout[_lid]
         _ok = spd_svc.is_configured(cfg)
         speed_ready["pass_speed"] = speed_ready["pass_speed"] or _ok["pass_speed"]
         speed_ready["lap_avg"] = speed_ready["lap_avg"] or _ok["lap_avg"]
 
-        def _pass_speed(lane, lap_no, sector_idx):
-            # sector_idx は 0=S/G通過, 1..7=各区間（保存キーと同じ）
-            return stored["sec"].get((lane, lap_no, sector_idx))
-
         # このレースの日のベスト（ハイライト判定に使う）
         bst = day_best.get((race["created_at"] or "")[:10], {})
+        # ★20261031 C3：明細行の組み立ては rows_for_race に一本化（TA view と同一実装）
+        rows.extend(rows_for_race(race, result, stored, bst, list_row=r))
 
-        # 順位（POS）は合計タイム昇順で決める
-        ranked = result.ranking()
-        pos_map = {m.start_lane: i for i, m in enumerate(ranked, start=1)}
-        # ただし表示は必ずレーン番号順（1,2,3…）にする。
-        # 毎回同じ位置に同じレーンが来るので、現場で見比べやすい。
-        ordered = sorted(ranked, key=lambda m: m.start_lane)
-
-        top_us = None
-        for m in ordered:
-            if m.total_time_us is not None:
-                top_us = m.total_time_us
-                break
-
-        # このレースの総行数（＝各マシンの周回数の合計）。時刻セルの結合に使う。
-        race_row_count = sum(max(1, len(m.laps)) for m in ordered)
-        race_row_index = 0
-
-        for m in ordered:
-            pos = pos_map.get(m.start_lane)
-            gap = None
-            if m.total_time_us is not None and top_us is not None:
-                gap = round((m.total_time_us - top_us) / 1e6, 3)
-
-            # MAX SPEED：区間通過速度の最大（反映時に計算・保存済み）
-            max_ms = stored["lane"].get(m.start_lane, {}).get("max_ms")
-
-            # TOTAL Av. = LAP Av. の平均（反映時に計算・保存済み）
-            total_avg = stored["lane"].get(m.start_lane, {}).get("total_avg")
-
-            lap_count = max(1, len(m.laps))
-
-            for li, lap in enumerate(m.laps or [None]):
-                # --- SECTOR 0〜7 ---
-                # 0 = S/G通過（その周の起点）／1〜7 = 各区間
-                sectors = [None] * 8
-                if lap is not None:
-                    # S/G通過：1周目は計測開始の瞬間なので速度なし
-                    sg_ms = (None if lap.lap == 1
-                             else _pass_speed(m.start_lane, lap.lap, 0))
-                    sectors[0] = {
-                        "s": None,
-                        "ms": sg_ms,
-                        "sg": True,
-                        # S/Gは区間0。通過速度は全区間の最高速(max_ms)と比べる
-                        "rank_ms": _best_rank(sg_ms, bst.get("max_ms")),
-                        "rank_s": 0,
-                    }
-                    for idx, sec in enumerate(lap.sectors):
-                        if idx + 1 > 7:
-                            break
-                        sp = _pass_speed(m.start_lane, lap.lap, idx + 1)
-                        sectors[idx + 1] = {
-                            "s": round(sec.dt_us / 1e6, 3),
-                            "ms": sp,
-                            "sg": False,
-                            # その日のベストか（タイムは最小・速度は最大）
-                            # 区間ごとに独立して順位を判定する（S1はS1の中で）
-                            "rank_s": _best_rank(
-                                sec.dt_us / 1e6,
-                                bst.get(best_svc.sector_metric(idx + 1))),
-                            "rank_ms": _best_rank(
-                                sp, bst.get(best_svc.sector_speed_metric(idx + 1))),
-                        }
-
-                lap_avg = (stored["lap"].get((m.start_lane, lap.lap))
-                           if lap is not None else None)
-                rows.append({
-                    # --- その日のベスト判定（ハイライト用） ---
-                    # その日の上位3傑の何位か（0=該当なし）
-                    "rank_total": _best_rank(
-                        m.total_time_us / 1e6 if m.total_time_us else None,
-                        bst.get("total")),
-                    "rank_max": _best_rank(max_ms, bst.get("max_ms")),
-                    "rank_total_avg": _best_rank(total_avg, bst.get("total_avg")),
-                    "rank_lap": _best_rank(
-                        lap.lap_time_us / 1e6 if lap is not None else None,
-                        bst.get("lap")),
-                    "rank_lap_avg": _best_rank(lap_avg, bst.get("lap_avg")),
-                    "race_id": rid,
-                    "created_at": race["created_at"],
-                    "date_part": _split_ts(race["created_at"])[0],
-                    "time_part": _split_ts(race["created_at"])[1],
-                    "heat_id": race["heat_id"],
-                    "mode": result.mode,               # 'f1'=レース / 'run'=フリー
-                    "sample_note": (r["sample_note"] if "sample_note" in r.keys() else None),
-                    "sample_note_lines": _format_sample_note_lines(
-                        r["sample_note"] if "sample_note" in r.keys() else None),
-                    "status": (r["status"] if "status" in r.keys() else "confirmed"),
-                    "jump_start": m.jump_start,         # G1(24.53)：フライング=JS表示
-                    "missing": m.missing,               # E1(24.37)：欠測あり=⚠要確認表示
-                    "dnf": m.dnf,                       # E5(24.39)：CO=DNF表示
-                    "pos": pos,
-                    "start_lane": m.start_lane,
-                    "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
-                    "max_ms": max_ms,
-                    "total_avg_ms": total_avg,
-                    "gap": gap,
-                    # LAP
-                    "lap_no": lap.lap if lap is not None else None,
-                    "lap_s": round(lap.lap_time_us / 1e6, 3) if lap is not None else None,
-                    "lap_avg_ms": lap_avg,
-                    "sectors": sectors,
-                    # 結合制御
-                    "is_first_of_lane": li == 0,       # レーンの先頭行（POS等を結合）
-                    "lane_row_count": lap_count,
-                    "is_first_of_race": race_row_index == 0,   # レースの先頭行（時刻を結合）
-                    "race_row_count": race_row_count,
-                })
-                race_row_index += 1
-
-    # --- 当日のベスト（09:00〜翌08:59 の24時間・各項目の1位だけ）---
-    # 深夜まで走る運用があるため、カレンダーの日付ではなく09:00区切りで集計する。
-    # 保持済みの timing_bests はカレンダー日付キーなのでここでは使わず、その場で計算する。
-    ts_from, ts_to, today_label = best_svc.business_day_window()
-    today_bests: list[dict] = []
-    today_race_count = 0
-    try:
-        today_races = await repo.list_races_between_ts(ts_from, ts_to)
-        if today_races:
-            t_sf, t_lf, t_tf = await _speed_fns_for_races(db, [r["id"] for r in today_races])
-            agg = await best_svc.aggregate_range(
-                db,
-                date_from=ts_from, date_to=ts_to, mode=None,
-                list_fn=lambda a, b: repo.list_races_between_ts(a, b),
-                build_fn=build_race_result,
-                speed_fn=t_sf, lap_avg_fn=t_lf, total_avg_fn=t_tf,
-            )
-            today_race_count = agg["race_count"]
-            today_bests = [x for x in _best_items(agg["bests"])
-                           if x["value"] is not None]
-    except Exception:
-        # ベストが出せなくても一覧そのものは表示する
-        today_bests = []
-
-    # 明細表と同じ列に並べるため、metric名で引ける形にもしておく
-    today_best_map = {x["key"]: x for x in today_bests}
+    # --- 当日のベスト（09:00〜翌08:59）：★C3 today_best_map_for に一本化（TA view と同一集計）---
+    _tb = await today_best_map_for(db)
+    ts_from, ts_to, today_label = _tb["today_from"], _tb["today_to"], _tb["today_label"]
+    today_bests, today_best_map, today_race_count = _tb["today_bests"], _tb["today_best_map"], _tb["today_race_count"]
 
     return templates.TemplateResponse(
         "admin/timing_results.html",
@@ -539,6 +435,7 @@ async def delete_race(
         raise HTTPException(status_code=404, detail="race not found")
     day = (race["created_at"] or "")[:10]
     n_events = await repo.delete_race(race_id)
+    invalidate_race_result_cache(race_id)   # ★組み立てキャッシュも破棄（idは再利用されないが念のため）
 
     # 削除したレースがベストだった場合に備え、その日のベストを再計算する
     # （消した記録がベストのまま残らないようにするため）
@@ -555,8 +452,8 @@ async def delete_race(
                 lambda d: repo.list_races_by_date(d, limit=500),
                 build_race_result, sf, lf, tf,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[timing] delete: day recalc failed day={day}: {type(e).__name__}: {e}", flush=True)
 
     return JSONResponse({"ok": True, "race_id": race_id,
                          "deleted_events": n_events,
@@ -653,8 +550,8 @@ async def create_sample_race(
         # 速度を先に保存（ベストは保存値を読むため）
         try:
             await speed_store.compute_and_store_speeds(db, race_id)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[timing] sample: speed store failed race={race_id}: {type(e).__name__}: {e}", flush=True)
 
         # 受信口と同じくベスト記録を更新する（失敗しても投入自体は成功扱い）
         try:
@@ -662,8 +559,8 @@ async def create_sample_race(
                 db, race_id, build_race_result,
                 *(await _speed_fns_for_race(db, race_id))
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[timing] sample: bests update failed race={race_id}: {type(e).__name__}: {e}", flush=True)
 
         # 二段構えDB（I群 §24.71）: サンプルも受信口と同じく status を判定。
         # イレギュラー有のサンプルはここで needs_review に振り分けられる。
@@ -677,8 +574,8 @@ async def create_sample_race(
                     result2, le2, ev2,
                     target_laps=race2["target_laps"], n_lanes=LANES)
                 await rrepo.update_status(race_id, st)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[timing] sample: status judge failed race={race_id}: {type(e).__name__}: {e}", flush=True)
         race_ids.append(race_id)
 
     # 区間数が少ないと、FINISHを35秒前後にしたとき1区間が2秒に収まらない。
@@ -1090,8 +987,8 @@ async def reset_ht_group(
             "UPDATE timing_races SET applied_ht_group_id = NULL WHERE applied_ht_group_id = ?",
             (group_id,),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[timing] ht reset: unlink races failed group={group_id}: {type(e).__name__}: {e}", flush=True)
     await db.commit()
 
     fin = await qual_mod._ht_finalize_group(tid, heat_no, group_id, dict(rnd), None, db)
@@ -1115,7 +1012,8 @@ async def _pick_race(db, repo, race_id: int | None):
     for r in await repo.list_races(limit=20):
         try:
             race, result = await build_race_result(db, r["id"])
-        except Exception:
+        except Exception as e:
+            print(f"[timing] pick: build failed race={r['id']}: {type(e).__name__}: {e}", flush=True)
             continue
         if result is not None and result.ranking():
             return race, result
@@ -1173,7 +1071,8 @@ async def pip_latest(
             continue
         try:
             race, result = await build_race_result(db, rid)
-        except Exception:
+        except Exception as e:
+            print(f"[timing] pip: build failed race={rid}: {type(e).__name__}: {e}", flush=True)
             continue
         if race is None:
             continue
@@ -1378,24 +1277,12 @@ async def _speed_fns_for_races(db, race_ids: list[int]):
 
 
 async def _speed_fns_for_race(db, race_id: int):
-    """レースIDから (speed_fn, lap_avg_fn, total_avg_fn) を作る。
+    """レースIDから (speed_fn, lap_avg_fn, total_avg_fn) を作る（複数レース版の特例・★C6で一本化）。
 
-    ⚠ 反映時に保存済みの timing_race_speeds を読む（都度計算しない）。
-       呼び出し前に compute_and_store_speeds が済んでいる前提。
+    旧実装は sector 番号の 0基点/1基点変換を複数レース版と逆向きに別実装していた
+    （`sno-1` と `idx+1`）。等価だが2箇所に暗黙の契約があったので、複数版に委譲する。
     """
-    st = await speed_store.load_speeds(db, race_id)
-
-    def speed_fn(_rid, lane, sector_idx, lap=1):
-        # 保存は sector_no=1..7（0=S/G）。ここは 0基点 idx で来るので +1。
-        return st["sec"].get((lane, lap, sector_idx + 1))
-
-    def lap_avg_fn(_rid, lane, lap):
-        return st["lap"].get((lane, lap))
-
-    def total_avg_fn(_rid, lane, _total_us=None, _laps=None):
-        return st["lane"].get(lane, {}).get("total_avg")
-
-    return speed_fn, lap_avg_fn, total_avg_fn
+    return await _speed_fns_for_races(db, [race_id])
 
 
 @router.get("/api/timing/races/{race_id}/chart")
@@ -1524,21 +1411,126 @@ async def layout_for_gw(
     if not lay:
         return JSONResponse({"detail": "layout not found"}, status_code=404)
     elems = await repo.get_elements(layout_id)
+    # ★20261031 C12：位置インデックス（e[2]/lay[0]…）→ 列名参照。SELECTの列順変更でGW向けAPIが黙って壊れない。
     nodes = [
-        {"node_id": e[3], "kind": e[2]}
-        for e in elems if e[2] != "LC" and e[3] is not None
+        {"node_id": e["node_id"], "kind": e["kind"]}
+        for e in elems if e["kind"] != "LC" and e["node_id"] is not None
     ]
-    lc_count = sum(1 for e in elems if e[2] == "LC")
+    lc_count = sum(1 for e in elems if e["kind"] == "LC")
     return JSONResponse({
-        "layout_id": lay[0],
-        "name": lay[1],
-        "target_laps": lay[2],
-        "lap_length_m": lay[3],
+        "layout_id": lay["id"],
+        "name": lay["name"],
+        "target_laps": lay["target_laps"],
+        "lap_length_m": lay["lap_length_m"],
         "lc_count": lc_count,
         "nodes": nodes,
         "node_count": len(nodes),
-        "updated_at": lay[5],
+        "updated_at": lay["updated_at"],
     })
+
+
+def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> list[dict]:
+    """1レース分の明細行（1行=1レーンの1周）。★20261031 C3：results_page と TA view の唯一の実装。
+
+    race     : timing_races 行（created_at / heat_id を参照）
+    result   : RaceResult
+    stored   : speed_store.load_speeds() の戻り（反映時に保存済みの速度）
+    bst      : その日のベスト {metric: [1位,2位,3位]}（ハイライト順位）
+    list_row : 一覧の行（sample_note / status を持つ）。無ければ race から読む。
+    """
+    src = list_row if list_row is not None else race
+    _keys = src.keys() if hasattr(src, "keys") else []
+    sample_note = src["sample_note"] if "sample_note" in _keys else None
+    status = src["status"] if "status" in _keys else "confirmed"
+    _rkeys = race.keys() if hasattr(race, "keys") else []
+    created_at = race["created_at"] if "created_at" in _rkeys else None
+    heat_id = race["heat_id"] if "heat_id" in _rkeys else None
+    rid = race["id"] if "id" in _rkeys else None
+
+    def _pass_speed(lane, lap_no, sector_idx):
+        # sector_idx は 0=S/G通過, 1..7=各区間（保存キーと同じ）
+        return stored["sec"].get((lane, lap_no, sector_idx))
+
+    # 順位（POS）は合計タイム昇順で決める。表示は必ずレーン番号順（現場で見比べやすい）。
+    ranked = result.ranking()
+    pos_map = {m.start_lane: i for i, m in enumerate(ranked, start=1)}
+    ordered = sorted(ranked, key=lambda m: m.start_lane)
+    top_us = None
+    for m in ordered:
+        if m.total_time_us is not None:
+            top_us = m.total_time_us
+            break
+    # このレースの総行数（＝各マシンの周回数の合計）。時刻セルの結合に使う。
+    race_row_count = sum(max(1, len(m.laps)) for m in ordered)
+    race_row_index = 0
+    rows: list[dict] = []
+    for m in ordered:
+        pos = pos_map.get(m.start_lane)
+        gap = None
+        if m.total_time_us is not None and top_us is not None:
+            gap = round((m.total_time_us - top_us) / 1e6, 3)
+        max_ms = stored["lane"].get(m.start_lane, {}).get("max_ms")         # MAX SPEED
+        total_avg = stored["lane"].get(m.start_lane, {}).get("total_avg")   # TOTAL Av.
+        lap_count = max(1, len(m.laps))
+        for li, lap in enumerate(m.laps or [None]):
+            # --- SECTOR 0〜7：0 = S/G通過（その周の起点）／1〜7 = 各区間 ---
+            sectors = [None] * 8
+            if lap is not None:
+                sg_ms = (None if lap.lap == 1 else _pass_speed(m.start_lane, lap.lap, 0))   # 1周目は速度なし
+                sectors[0] = {
+                    "s": None, "ms": sg_ms, "sg": True,
+                    "rank_ms": _best_rank(sg_ms, bst.get("max_ms")),   # S/Gは全区間の最高速(max_ms)と比べる
+                    "rank_s": 0,
+                }
+                for idx, sec in enumerate(lap.sectors):
+                    if idx + 1 > 7:
+                        break
+                    sp = _pass_speed(m.start_lane, lap.lap, idx + 1)
+                    sectors[idx + 1] = {
+                        "s": round(sec.dt_us / 1e6, 3), "ms": sp, "sg": False,
+                        # その日のベストか（タイムは最小・速度は最大）。区間ごとに独立して判定。
+                        "rank_s": _best_rank(sec.dt_us / 1e6, bst.get(best_svc.sector_metric(idx + 1))),
+                        "rank_ms": _best_rank(sp, bst.get(best_svc.sector_speed_metric(idx + 1))),
+                    }
+            lap_avg = (stored["lap"].get((m.start_lane, lap.lap)) if lap is not None else None)
+            rows.append({
+                # --- その日のベスト判定（ハイライト用）：上位3傑の何位か（0=該当なし） ---
+                "rank_total": _best_rank(m.total_time_us / 1e6 if m.total_time_us else None, bst.get("total")),
+                "rank_max": _best_rank(max_ms, bst.get("max_ms")),
+                "rank_total_avg": _best_rank(total_avg, bst.get("total_avg")),
+                "rank_lap": _best_rank(lap.lap_time_us / 1e6 if lap is not None else None, bst.get("lap")),
+                "rank_lap_avg": _best_rank(lap_avg, bst.get("lap_avg")),
+                "race_id": rid,
+                "created_at": created_at,
+                "date_part": _split_ts(created_at)[0],
+                "time_part": _split_ts(created_at)[1],
+                "heat_id": heat_id,
+                "mode": result.mode,               # 'f1'=レース / 'run'=フリー
+                "sample_note": sample_note,
+                "sample_note_lines": _format_sample_note_lines(sample_note),
+                "status": status,
+                "jump_start": m.jump_start,         # G1(24.53)：フライング=JS表示
+                "missing": m.missing,               # E1(24.37)：欠測あり=⚠要確認表示
+                "dnf": m.dnf,                       # E5(24.39)：CO=DNF表示
+                "pos": pos,
+                "start_lane": m.start_lane,
+                "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
+                "max_ms": max_ms,
+                "total_avg_ms": total_avg,
+                "gap": gap,
+                # LAP
+                "lap_no": lap.lap if lap is not None else None,
+                "lap_s": round(lap.lap_time_us / 1e6, 3) if lap is not None else None,
+                "lap_avg_ms": lap_avg,
+                "sectors": sectors,
+                # 結合制御
+                "is_first_of_lane": li == 0,       # レーンの先頭行（POS等を結合）
+                "lane_row_count": lap_count,
+                "is_first_of_race": race_row_index == 0,   # レースの先頭行（時刻を結合）
+                "race_row_count": race_row_count,
+            })
+            race_row_index += 1
+    return rows
 
 
 async def build_result_rows(db, race_id: int):
@@ -1560,76 +1552,21 @@ async def build_result_rows(db, race_id: int):
     dkey = (race["created_at"] or "")[:10]
     stored_bests = await best_svc.load_bests(db, "day", dkey) if dkey else {}
     bst = {k: [x["value"] for x in v] for k, v in stored_bests.items()}
-
-    def _pass_speed(lane, lap_no, sector_idx):
-        return stored["sec"].get((lane, lap_no, sector_idx))
-
-    ranked = result.ranking()
-    pos_map = {m.start_lane: i for i, m in enumerate(ranked, start=1)}
-    ordered = sorted(ranked, key=lambda m: m.start_lane)
-    top_us = None
-    for m in ordered:
-        if m.total_time_us is not None:
-            top_us = m.total_time_us
-            break
-    race_row_count = sum(max(1, len(m.laps)) for m in ordered)
-    race_row_index = 0
-    rows = []
-    for m in ordered:
-        pos = pos_map.get(m.start_lane)
-        gap = None
-        if m.total_time_us is not None and top_us is not None:
-            gap = round((m.total_time_us - top_us) / 1e6, 3)
-        max_ms = stored["lane"].get(m.start_lane, {}).get("max_ms")
-        total_avg = stored["lane"].get(m.start_lane, {}).get("total_avg")
-        lap_count = max(1, len(m.laps))
-        for li, lap in enumerate(m.laps or [None]):
-            sectors = [None] * 8
-            if lap is not None:
-                sg_ms = (None if lap.lap == 1
-                         else _pass_speed(m.start_lane, lap.lap, 0))
-                sectors[0] = {"s": None, "ms": sg_ms, "sg": True,
-                              "rank_ms": _best_rank(sg_ms, bst.get("max_ms")),
-                              "rank_s": 0}
-                for idx, sec in enumerate(lap.sectors):
-                    if idx + 1 > 7:
-                        break
-                    sp = _pass_speed(m.start_lane, lap.lap, idx + 1)
-                    sectors[idx + 1] = {
-                        "s": round(sec.dt_us / 1e6, 3), "ms": sp, "sg": False,
-                        "rank_s": _best_rank(sec.dt_us / 1e6,
-                                             bst.get(best_svc.sector_metric(idx + 1))),
-                        "rank_ms": _best_rank(sp,
-                                              bst.get(best_svc.sector_speed_metric(idx + 1))),
-                    }
-            lap_avg = (stored["lap"].get((m.start_lane, lap.lap))
-                       if lap is not None else None)
-            rows.append({
-                "rank_total": _best_rank(
-                    m.total_time_us / 1e6 if m.total_time_us else None, bst.get("total")),
-                "rank_max": _best_rank(max_ms, bst.get("max_ms")),
-                "rank_total_avg": _best_rank(total_avg, bst.get("total_avg")),
-                "rank_lap": _best_rank(
-                    lap.lap_time_us / 1e6 if lap is not None else None, bst.get("lap")),
-                "rank_lap_avg": _best_rank(lap_avg, bst.get("lap_avg")),
-                "pos": pos, "start_lane": m.start_lane,
-                "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
-                "max_ms": max_ms, "total_avg_ms": total_avg, "gap": gap,
-                "dnf": m.dnf, "jump_start": m.jump_start, "missing": m.missing,
-                "lap_no": lap.lap if lap is not None else None,
-                "lap_s": round(lap.lap_time_us / 1e6, 3) if lap is not None else None,
-                "lap_avg_ms": lap_avg, "sectors": sectors,
-                "is_first_of_lane": li == 0, "lane_row_count": lap_count,
-                "is_first_of_race": race_row_index == 0, "race_row_count": race_row_count,
-            })
-            race_row_index += 1
+    # ★20261031 C3：results_page と同一実装（rows_for_race）。従来は約110行のコピーで、
+    #   既に race_id/日時/mode/sample_note/status の列差分が生じていた（本関数側に無かった）。
+    #   一本化により TA view 側にもそれらのキーが付く（追加のみ・既存キーは不変）。
+    rows = rows_for_race(race, result, stored, bst, list_row=race)
     return {"race": race, "mode": result.mode, "has_result": True, "rows": rows}
 
 
 async def today_best_map_for(db):
-    """当日（09:00〜翌08:59）のベストを results_page と同じ集計で作る。TA view 最下部用。"""
+    """当日（09:00〜翌08:59）のベスト集計。results_page と TA view の両方がこれを使う（★C3 一本化）。
+
+    深夜まで走る運用があるため、カレンダーの日付ではなく09:00区切りで集計する。
+    保持済みの timing_bests はカレンダー日付キーなのでここでは使わず、その場で計算する。
+    """
     repo = TimingRaceRepository(db)
-    ts_from, ts_to, _label = best_svc.business_day_window()
+    ts_from, ts_to, today_label = best_svc.business_day_window()
     today_bests = []
     today_race_count = 0
     try:
@@ -1643,9 +1580,12 @@ async def today_best_map_for(db):
             )
             today_race_count = agg["race_count"]
             today_bests = [x for x in _best_items(agg["bests"]) if x["value"] is not None]
-    except Exception:
+    except Exception as e:
+        print(f"[timing] today bests failed: {type(e).__name__}: {e}", flush=True)   # ベストが出せなくても一覧は表示する
         today_bests = []
     return {
+        "today_bests": today_bests,
         "today_best_map": {x["key"]: x for x in today_bests},
+        "today_label": today_label,
         "today_from": ts_from, "today_to": ts_to, "today_race_count": today_race_count,
     }

@@ -27,7 +27,8 @@ static constexpr uint8_t FW_MINOR = 1;
 // ---- 送信中イベント（ACK待ち・最大4回再送・docs/12 EVENT）----------------
 struct Pending {
   bool     used;
-  uint32_t seq;         // このEVENTのヘッダseq（ACK照合用）
+  uint32_t seq;         // 直近に送ったヘッダseq（LOST通知用）
+  uint32_t seqs[4];     // ★20261031 A1：試行ごとのseq（ACKは「どの試行に対する受領」でも照合して外す）
   uint8_t  tries;
   uint32_t last_ms;
   proto::EventBody body;
@@ -80,9 +81,14 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
 
     case proto::PT_EVENT_ACK: {
       uint32_t acked_seq = h.reserved1;                // GWが載せた受領seq
-      for (int i = 0; i < PENDING_MAX; i++)
-        if (s_pending[i].used && s_pending[i].seq == acked_seq)
-          s_pending[i].used = false;                   // 受領確認 → 外す
+      // ★20261031 A1：旧実装は「最新の試行のseq」だけ照合していた。第k回のACKが第k+1回送信後
+      //   （60ms超の遅れ）に届くと照合に失敗して無視され、不要な再送→GWに同じ通過が別seqで
+      //   重複記録／4回とも擦れ違うと偽LOST、になっていた。全試行のseqで照合する。
+      for (int i = 0; i < PENDING_MAX; i++) {
+        if (!s_pending[i].used) continue;
+        for (uint8_t k = 0; k < s_pending[i].tries && k < 4; k++)
+          if (s_pending[i].seqs[k] == acked_seq) { s_pending[i].used = false; break; }
+      }
     } break;
 
     case proto::PT_HEARTBEAT: {
@@ -147,6 +153,7 @@ static void service_pending() {
     }
     mesh::send(proto::PT_EVENT, 6 /*GW*/, &p.body, sizeof(p.body));
     p.seq     = mesh::last_seq();   // 直近に送ったseq
+    if (p.tries < 4) p.seqs[p.tries] = p.seq;   // ★A1：試行ごとのseqを記録
     p.tries  += 1;
     p.last_ms = nowm;
   }

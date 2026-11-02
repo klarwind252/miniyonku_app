@@ -53,13 +53,13 @@ static bool s_assigned = false;
 static volatile bool s_cmd_acked = false;   // COMMAND_ACK受信フラグ（recvコールバックが立てる）
 
 // ---- COMMAND 3連射（同一 nonce を全弾に載せる。ACKは上位で待つ）------------
-static void send_command(uint8_t code, uint32_t nonce = 0) {
+static void send_command(uint8_t code, uint32_t nonce = 0, int shots = 3) {
   proto::CommandBody c = {};
   c.code = code;
   c.arg  = nonce;                            // ★押下ごとに一意（GW側で重複排除の鍵）
-  for (int i = 0; i < 3; i++) {              // 3連射（取りこぼし対策・docs/12 S10）
+  for (int i = 0; i < shots; i++) {          // 既定3連射（スリープ版・docs/12 S10）。常時起動版は1発＋時間差再送
     mesh::send(proto::PT_COMMAND, 6 /*GW*/, &c, sizeof(c));
-    delay(3);
+    if (i + 1 < shots) delay(3);
   }
 }
 
@@ -68,6 +68,11 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
                     int body_len, const uint8_t*) {
   if (h.type == proto::PT_COMMAND_ACK) {     // GWがCOMMANDを受領した確認
     s_cmd_acked = true;
+    return;
+  }
+  // ★20261031：GWビーコンの計測中フラグを取り込む（SEと同じ）。計測中はch走査に入らない＝押下が消えない。
+  if (h.type == proto::PT_HEARTBEAT && proto::kind_of(h.src) == proto::KIND_GW && body_len >= 1) {
+    chfollow::note_gw_racing(body[0] != 0);
     return;
   }
   if (h.type == proto::PT_JOIN_ACK && body_len >= (int)sizeof(proto::JoinAckBody)) {
@@ -241,7 +246,38 @@ static void tick_presence() {
   else             mesh::send(proto::PT_HEARTBEAT, 6, nullptr, 0);
 }
 
+// ★20261031：常時起動版の送信を「送りっぱなし3連射」から「ACK待ち＋時間差再送（ノンブロッキング）」へ。
+//   旧：3発を約6msに固めて送るだけ。全ノードが同時に中継するので3発がまとめて衝突し、ACKも見ていなかった。
+//       ch走査中（GWの声が12秒途絶→0.5秒ずつch巡回）の押下はそのまま消えていた。
+//   新：1発送って COMMAND_ACK を待つ。来なければ 40〜70ms（乱数）あけて再送、最大4回。
+//       在圏外（走査中）は 100ms 間隔で最大2秒まで保留再送＝在圏が戻った瞬間に届く。
+//       nonce は同一なので GW 側は二重発火しない（冪等化・docs/12）。
+static uint8_t  s_pend_code  = 0;      // 0=保留なし
+static uint32_t s_pend_nonce = 0;
+static uint32_t s_pend_born  = 0;      // 押下時刻
+static uint32_t s_pend_last  = 0;      // 直近送信時刻
+static uint8_t  s_pend_tries = 0;      // 在圏中の送信回数
+static void fire(uint8_t code) {
+  uint32_t n = esp_random(); if (!n) n = 1;
+  s_pend_code = code; s_pend_nonce = n; s_pend_born = millis(); s_pend_tries = 0; s_pend_last = 0;
+  s_cmd_acked = false;
+}
+static void service_cmd() {
+  if (!s_pend_code) return;
+  uint32_t now = millis();
+  if (s_cmd_acked) { Serial.printf("[CMD] ack tries=%u %lums\n", s_pend_tries, (unsigned long)(now - s_pend_born)); s_pend_code = 0; return; }
+  bool contact = in_contact();
+  if (contact && s_pend_tries >= 4) { Serial.println("[CMD] give up (no ACK x4)"); s_pend_code = 0; return; }
+  if (now - s_pend_born > 2000) { Serial.println("[CMD] give up (out of contact 2s)"); s_pend_code = 0; return; }
+  uint32_t gap = contact ? (40u + (esp_random() & 31u)) : 100u;   // 在圏中は40〜71ms・走査中は100ms
+  if (s_pend_last != 0 && (now - s_pend_last) < gap) return;
+  send_command(s_pend_code, s_pend_nonce, /*shots=*/1);
+  s_pend_last = now;
+  if (contact) s_pend_tries++;
+}
+
 void setup() {
+  Serial.setTxTimeoutMs(0);   // ★ホスト未読でもブロックしない（XIAO CDC：モニタ未接続時に println が数十ms止まる対策）
   Serial.begin(115200);
   delay(300);
   Serial.printf("\n=== M4LAPS Remote RC%d ===\n", NODE_ID);
@@ -255,9 +291,8 @@ void setup() {
 void loop() {
   chfollow::tick(send_join);
   tick_presence();
-  if (s_red.pressed())  { uint32_t n = esp_random(); if(!n)n=1;
-                          send_command(proto::CMD_SIGNAL, n); Serial.println("[BTN] SIGNAL"); }
-  if (s_gray.pressed()) { uint32_t n = esp_random(); if(!n)n=1;
-                          send_command(proto::CMD_RESET,  n); Serial.println("[BTN] RESET");  }
+  if (s_red.pressed())  { fire(proto::CMD_SIGNAL); Serial.println("[BTN] SIGNAL"); }
+  if (s_gray.pressed()) { fire(proto::CMD_RESET);  Serial.println("[BTN] RESET");  }
+  service_cmd();              // ★ACK待ち＋時間差再送（ノンブロッキング）
 }
 #endif
