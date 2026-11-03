@@ -32,6 +32,8 @@
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#define LOG_TO_FS 1
+#include "gwlog.h"      // ★20261102 全ログ記録（時刻プレフィックス＋PSRAMリング＋/gwlog.txt）。以降の Serial は gwlog::out
 #include "protocol.h"
 #include "espnow_link.h"
 #include "timesync.h"
@@ -171,6 +173,7 @@ static void _finish(int code) {
 // res!=nullptr かつ 200 なら本文をJSON解析して格納（parsed に成否）。
 static int request(const String& path, const String& body, JsonDocument* res,
                    bool* parsed = nullptr, uint16_t timeout_ms = T_SHORT_MS) {
+  uint32_t t0 = millis();
   _begin(path);
   s_http->setTimeout(timeout_ms);
   int code;
@@ -181,6 +184,8 @@ static int request(const String& path, const String& body, JsonDocument* res,
   else if (code > 0)      { String _drain = s_http->getString(); (void)_drain; }   // 本文を読み切る（keep-alive維持）
   if (parsed) *parsed = ok;
   _finish(code);
+  Serial.printf("[HTTP] %s %s -> %d (%lums%s)\n", body.length() ? "POST" : "GET", path.c_str(), code,
+                (unsigned long)(millis() - t0), (res && code == 200) ? (ok ? " json ok" : " json NG") : "");   // ★20261102 全要求を記録
   return code;
 }
 
@@ -189,9 +194,11 @@ static int request_raw(const String& path, const char* body, size_t len, uint16_
   _begin(path);
   s_http->setTimeout(timeout_ms);
   s_http->addHeader("Content-Type", "application/json");
+  uint32_t t0 = millis();
   int code = s_http->POST((uint8_t*)body, len);
   if (code > 0) { String _drain = s_http->getString(); (void)_drain; }   // 本文を読み切る（keep-alive維持）
   _finish(code);
+  Serial.printf("[HTTP] POST %s %uB -> %d (%lums)\n", path.c_str(), (unsigned)len, code, (unsigned long)(millis() - t0));
   return code;
 }
 
@@ -240,6 +247,7 @@ static inline void buzzer_tone(uint32_t freq) {
 #endif
 }
 static inline void buzzer_start(uint32_t ms, uint32_t freq = BUZZER_F_BEEP) {   // 非ブロッキング開始
+  Serial.printf("[BUZ] %luHz %lums%s\n", (unsigned long)freq, (unsigned long)ms, s_buzz_off_ms ? " (上書き)" : "");   // ★20261102
   buzzer_tone(freq);
   s_buzz_off_ms = millis() + ms;
   if (s_buzz_off_ms == 0) s_buzz_off_ms = 1; // millis境界で0になる稀ケースを回避
@@ -251,6 +259,7 @@ static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来�
   if (s_buzz_off_ms && (int32_t)(millis() - s_buzz_off_ms) >= 0) {
     buzzer_tone(0);
     s_buzz_off_ms = 0;
+    Serial.println("[BUZ] off");   // ★20261102
   }
 }
 
@@ -278,8 +287,12 @@ static uint32_t s_red_off_ms   = 0;   // 0=予約なし／非0=この millis で
 static constexpr uint32_t DETECT_FLASH_MS = 50;   // 緑を光らせる長さ（一瞬・見えればOK）
 static constexpr uint32_t DETECT_BEEP_MS  = 80;   // 通過「ピッ」の長さ（40→80・少し長く・20261030）
 static uint32_t s_detect_green_off_ms = 0;        // 検知フラッシュの消灯予約（0=なし）
-static inline void sig_red(bool on)   { digitalWrite(PIN_SIG_RED,   on ? HIGH : LOW); }
-static inline void sig_green(bool on) { digitalWrite(PIN_SIG_GREEN, on ? HIGH : LOW); }
+// ★20261102：点灯/消灯の「変化」だけログに残す（フライング点滅も含む）
+static bool s_sig_red_on = false, s_sig_green_on = false;
+static inline void sig_red(bool on)   { digitalWrite(PIN_SIG_RED,   on ? HIGH : LOW);
+                                        if (on != s_sig_red_on)   { s_sig_red_on = on;   Serial.printf("[SIG] red=%d\n",   on ? 1 : 0); } }
+static inline void sig_green(bool on) { digitalWrite(PIN_SIG_GREEN, on ? HIGH : LOW);
+                                        if (on != s_sig_green_on) { s_sig_green_on = on; Serial.printf("[SIG] green=%d\n", on ? 1 : 0); } }
 static inline void sig_all_off() {                     // 全消灯＋予約解除（RESET/完走時）
   sig_red(false); sig_green(false); s_green_off_ms = 0; s_red_off_ms = 0;
 }
@@ -321,6 +334,11 @@ static inline void detect_flash() {
 // ---- スタート演出の状態機械（docs/12.3）-----------------------------------
 enum GwState { ST_SPLASH, ST_IDLE, ST_ARMED, ST_GREEN, ST_RACE, ST_FINISH };
 static GwState s_state = ST_IDLE;
+static char gwlog_state_char() {   // ★20261102 ログ行頭の状態文字：S=splash I=READY A=armed G=green R=race F=finish
+  switch (s_state) { case ST_SPLASH: return 'S'; case ST_IDLE: return 'I'; case ST_ARMED: return 'A';
+                     case ST_GREEN: return 'G'; case ST_RACE: return 'R'; case ST_FINISH: return 'F'; }
+  return '?';
+}
 
 // ★フライング検知（レースモード・赤点灯中=ST_ARMED=スタート前のS/G通過）。20261029。
 //   赤ボタン→赤点灯→ランダム→緑の「赤の間」にマシンがS/Gを通過したらフライング。
@@ -632,26 +650,62 @@ static uint32_t s_wifi_try_ms = 0;      // 直近 begin() を仕掛けた時刻
 static bool     s_wifi_began  = false;  // begin() 済みか
 static bool     s_wifi_was_up = false;  // 接続完了エッジ検出用
 static constexpr uint32_t WIFI_RETRY_MS = 15000;
+// ★20261102 再点検で追加：WiFi再接続の「スキャン」がESP-NOWを殺す問題への対策。
+//  (a) Arduinoコア2.xは既定で自動再接続ON＝APが見つからない/切れると、コアが内部で
+//      WiFi.begin() を即・無限に繰り返す。begin()のたびにSTAは全13chをスキャンし（1〜3秒）、
+//      その間ESP-NOWは自分のchにいない＝SE/RCのパケットを取りこぼし、ACKも出せない。
+//      スマホのテザリングが落ちた/届かない状態では、これが連続して「リモコンがほぼ効かない・
+//      SEがLOST」になる。→ 自動再接続を切り、再試行はここ（netタスク・15秒間隔）だけにする。
+//  (b) 計測中（ARMED/GREEN/RACE）は再接続を仕掛けない（スキャンで通過EVENTを落とさない）。
+//  (c) 一度つながったAPのchが分かっていれば、再接続は原則そのchだけをスキャン（約0.1秒・
+//      ESP-NOWの空白が13分の1）。4回に1回は全chスキャン（スマホがchを変えた場合の追従）。
+static uint8_t  s_wifi_known_ch = 0;    // 直近に接続できたAPのch（0=未知）
+static uint8_t  s_wifi_tries    = 0;    // 再接続の試行回数（全chスキャンの周期用）
 
 static bool wifi_up() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!s_wifi_was_up) {                       // 接続完了の立ち上がりで1回だけ
       s_wifi_was_up = true;
+      Serial.printf("[WIFI] connected ssid=\"%s\" ip=%s rssi=%d\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());   // ★20261102
       WiFi.setSleep(false);                     // ★AP接続で省電力が戻るのを再無効化（ESP-NOW脱落防止・T-8）
       probe_dns(); gw_adopt_wifi_channel();     // DNS判定＋実ch採用（従来どおり）
+      { uint8_t p = 0; wifi_second_chan_t s = WIFI_SECOND_CHAN_NONE;
+        if (esp_wifi_get_channel(&p, &s) == ESP_OK && p >= 1 && p <= 13) s_wifi_known_ch = p; }
+      s_wifi_tries = 0;
     }
     return true;
   }
+  if (s_wifi_was_up) Serial.printf("[WIFI] lost status=%d\n", (int)WiFi.status());   // ★20261102 切断の瞬間
   s_wifi_was_up = false;
   uint32_t now = millis();
+  // ★(d) chガード：接続失敗のスキャン後にSTAの実chが運用ch(g_channel)からズレたままなら戻す。
+  //   （未接続STAのchは誰も守ってくれない。ズレたままだとSE/RCのパケットを一切受けられない）
+  //   直近 begin() から8秒以上経っている＝スキャン/接続手続き中ではない時だけ・2秒に1回だけ確認する。
+  if (s_wifi_began && (now - s_wifi_try_ms) >= 8000) {
+    static uint32_t s_chk_ms = 0;
+    if (now - s_chk_ms >= 2000) {
+      s_chk_ms = now;
+      uint8_t p = 0; wifi_second_chan_t s = WIFI_SECOND_CHAN_NONE;
+      if (esp_wifi_get_channel(&p, &s) == ESP_OK && p != g_channel && g_channel >= 1 && g_channel <= 13) {
+        esp_wifi_set_channel(g_channel, WIFI_SECOND_CHAN_NONE);
+        Serial.printf("[CH] guard: STA ch=%u -> %u (ESP-NOW運用chへ戻す)\n", p, g_channel);
+      }
+    }
+  }
+  // ★(b) 計測中は再接続（＝スキャン）を仕掛けない。待機に戻ってから再試行する。
+  if (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) return false;
   if (!s_wifi_began || (now - s_wifi_try_ms) >= WIFI_RETRY_MS) {
     s_wifi_began  = true;
     s_wifi_try_ms = now;
+    WiFi.setAutoReconnect(false);               // ★(a) コア内部の無限 begin() ループを止める（再試行はここだけ）
     // DNSを明示（ルーターがDNS未配布でも解決を試せるように）。SSID接続前に設定。
     WiFi.config(IPAddress(0,0,0,0), IPAddress(0,0,0,0), IPAddress(0,0,0,0),
                 IPAddress(8,8,8,8), IPAddress(1,1,1,1));
-    WiFi.begin(g_ssid.c_str(), g_pass.c_str()); // 非ブロッキング：完了待ちしない
-    Serial.println("[WIFI] begin (non-blocking)");
+    // ★(c) 既知chがあれば原則そのchだけ（4回に1回は全ch）。未知なら全chスキャン。
+    uint8_t ch = (s_wifi_known_ch && (s_wifi_tries % 4) != 3) ? s_wifi_known_ch : 0;
+    s_wifi_tries++;
+    WiFi.begin(g_ssid.c_str(), g_pass.c_str(), ch); // 非ブロッキング：完了待ちしない
+    Serial.printf("[WIFI] begin (non-blocking) scan=%s\n", ch ? "known-ch" : "all-ch");
   }
   return false;                                 // 未接続。呼び出し元は今回は見送る
 }
@@ -1039,7 +1093,11 @@ static void on_recv_main(const proto::PktHeader& h, const uint8_t* body,
         proto::CommandBody c; memcpy(&c, body, sizeof(c));
         // ★冪等化：同一押下(src,nonce=c.arg)の再送はアクションを実行しない。
         //   別ch再送・ACK駆動再送・中継の遅延重複でも SIGNAL が二度発火しない（絶対NG対策）。
-        if (!cmd_nonce_seen(h.src, c.arg)) {
+        bool dup = cmd_nonce_seen(h.src, c.arg);
+        Serial.printf("[CMD] from RC%u code=%s nonce=%08lx%s%s\n", h.src,
+                      c.code == proto::CMD_SIGNAL ? "SIGNAL" : c.code == proto::CMD_RESET ? "RESET" : "?",
+                      (unsigned long)c.arg, dup ? " (重複・無視)" : "", (h.flags & proto::FLAG_RELAYED) ? " via relay" : "");   // ★20261102
+        if (!dup) {
           if (c.code == proto::CMD_SIGNAL) on_signal_pressed();
           else if (c.code == proto::CMD_RESET) on_reset_pressed();
         }
@@ -1218,6 +1276,12 @@ static void maybe_autocomplete() {
 //  ★20261031 P2：loopからは呼ばない。netタスク(net_task)が呼ぶ。
 static void tick_flush() {
   if (!s_need_flush) return;
+  // ★20261102：計測中（ARMED/GREEN/RACE）は送信を始めない（要求は保持＝FINISH/待機で再開）。
+  //   送信自体はnetタスク(core0)なのでloopは止まらないが、flush_spool はスプールのファイル全読み・
+  //   送信済み行の書き戻し（フラッシュ消去/書込み）を spool_lock 下で行う。計測中に走ると
+  //   loop側の spool_append（通過記録）がロック待ちで止まり、TFT/ESP-NOW処理が遅れる。
+  //   「灰→すぐ赤」で前レースの送信が計測にかぶるケースを切る（HTTPS進行中の1グループは完了まで続く）。
+  if (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) return;
   static uint32_t last = 0;
   if (millis() - last < 300) return;       // ★0.3秒間隔（接続使い回しで握手が無くなったので短縮。旧1.5秒）
   last = millis();
@@ -1277,6 +1341,7 @@ static void net_task(void*) {
       s_joinq_tail = (uint8_t)((s_joinq_tail + 1) % JOINQ_N);
       forward_join_now(jb);
     }
+    gwlog::persist(!(s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE));   // ★20261102 ログ保存（計測中はしない）
     vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
@@ -1300,10 +1365,10 @@ static void IRAM_ATTR isr_btn_gray() {
 
 static void tick_buttons() {
   // 赤：ISRラッチ消化（loop停止中の押下も失われない）。受付判定はon_signal_pressed側。
-  if (s_red_evt) { s_red_evt = false; on_signal_pressed(); }
+  if (s_red_evt) { s_red_evt = false; Serial.println("[BTN] red (本体)"); on_signal_pressed(); }
 
   // 灰：ISRラッチで単押し即RESET（長押し機能は廃止・2026-08-24）。
-  if (s_gray_evt) { s_gray_evt = false; on_reset_pressed(); }
+  if (s_gray_evt) { s_gray_evt = false; Serial.println("[BTN] gray (本体)"); on_reset_pressed(); }
 }
 
 // ---- GW自身の在席ビーコン（相手GWが「GW2台」を検知できるように）------------
@@ -1373,6 +1438,8 @@ static void load_config() {
 void setup() {
   Serial.begin(115200);
   delay(300);
+  gwlog::set_state_fn(gwlog_state_char);
+  gwlog::log_boot("GW");
   Serial.printf("\n=== M4LAPS Gateway GW%d (VE) ===\n", NODE_ID);
   load_config();   // NVS "m4cfg" を読む（無ければ secrets.h 既定）。以後は g_* を使用
   pinMode(PIN_BTN_RED,  INPUT_PULLUP);
@@ -1445,10 +1512,12 @@ static void tick_time_field() {
 // ---- SET画面の即時描画（赤押下の即応・tick_displayの250msゲートを迂回）------
 //  on_signal_pressed から呼ぶ。ARMEDに入った瞬間、状態機械の次周(最大250ms後)を
 //  待たずに SET 全面を1回転送する。以後の維持描画は tick_display(ST_ARMED)が担う。
+static void frame_sig_invalidate();   // ★20261103 前方宣言（定義は静止画面シグネチャの所）
 static void render_set_now() {
   if (!disp::ready()) return;
   disp::draw_set(false);        // blink未使用
   s_show_ontrack = false;       // 経過秒フィールドを重ねない
+  frame_sig_invalidate();       // ★20261103
   disp::commit();               // ステータスバーを重ねて即転送
 }
 
@@ -1463,6 +1532,7 @@ static void render_ontrack_now() {
   disp::draw_ontrack(elapsed, /*blink=*/true, s_target_laps);
   s_show_ontrack = true;        // 以降、経過秒フィールドを約30fpsで重ねる
   s_time_force   = true;        // 20260901f：即repaintでフル描画直後の隙を無くす
+  frame_sig_invalidate();       // ★20261103 画面はON TRACK＝次に静止画面へ戻るときは必ず描き直す
   disp::commit();               // ステータスバーを重ねて即転送
 }
 
@@ -1477,6 +1547,14 @@ static uint32_t fnv1a(const void* p, size_t n, uint32_t h = 2166136261u) {
   return h;
 }
 static uint32_t s_frame_sig_prev = 0;
+// ★20261103 バグ修正：「灰を押してもON TRACKのまま」の根本原因。
+//   静止画面(READY/SET/FINISH)の再描画抑止は s_frame_sig_prev（状態＋g_status のハッシュ）と比較するが、
+//   ON TRACK は別経路（render_ontrack_now / ST_RACE の ot_sig_prev）で描くため s_frame_sig_prev を更新しない。
+//   READY→赤→（完走せず）灰→READY と戻ると、READYのハッシュが前回READYと同一＝「変化なし」と判定され
+//   READY を描かず ON TRACK が画面に残った（g_status に変化が無い短い繰り返しで必ず再現）。
+//   対策：状態が変わった最初のフレームは必ず描く（前回描いた状態を覚え、違えばシグネチャを無効化）。
+static GwState s_drawn_state = ST_SPLASH;
+static void frame_sig_invalidate() { s_frame_sig_prev = 0xFFFFFFFFu; }
 //  状態＋g_status全域（バーの全項目・ID一覧・READYの本日ベスト）を含む共通シグネチャ。
 //  g_status/g_runはstatic(ゼロ初期化)なのでパディングは常に0＝ハッシュは決定的。
 static uint32_t frame_sig_base() {
@@ -1502,6 +1580,7 @@ static void tick_display() {
   if (millis() - last < 250) return;     // 約4fps（●点滅もこの周期）
   last = millis();
   blink = !blink;
+  if (s_state != s_drawn_state) { s_drawn_state = s_state; frame_sig_invalidate(); }   // ★20261103 状態遷移の初回は必ず描く
 
   // ステータス更新（NODE充足は残課題#8で実数へ。今はJOIN実数の反映口のみ用意）
   disp::g_status.wifi_ok = (WiFi.status() == WL_CONNECTED);
@@ -1762,6 +1841,7 @@ static void tick_display() {
 }
 
 void loop() {
+  gwlog::service_serial();    // ★20261102 PCから log / logtail / logclear / logstat
   rx_pump();                  // ★P1：ESP-NOW受信（EVENT/COMMAND/JOIN等）をloop文脈で処理
   tick_buttons();
   buzzer_tick();              // ブザー非ブロッキング消音（ledc・20261012）

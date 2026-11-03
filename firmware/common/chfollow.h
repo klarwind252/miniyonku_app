@@ -51,10 +51,12 @@ inline void tick(JoinSender send_join) {
   const bool in_contact = (last != 0) && (nowm - last < SWEEP_AFTER_MS);
 
   if (in_contact) {
+    if (sweeping) Serial.printf("[CH] GW在圏 ch=%u（走査終了）\n", mesh::channel());   // ★20261102
     sweeping = false;
     if (!persisted) {                    // 在圏が確立した最初の一度だけ学習値を保存
       cfg::save_channel(mesh::channel());
       persisted = true;
+      Serial.printf("[CH] locked ch=%u (NVS保存)\n", mesh::channel());   // ★20261102
     }
     return;
   }
@@ -72,6 +74,7 @@ inline void tick(JoinSender send_join) {
   if (!sweeping) {
     sweeping = true; first_dwell = true;
     last_hop = nowm;
+    Serial.printf("[CH] GW無音%lus -> 走査開始（現ch=%u でJOIN再送）\n", (unsigned long)((nowm - last) / 1000), mesh::channel());   // ★20261102
     if (send_join) send_join();          // 現chで即JOIN（chは動かさない）
     return;
   }
@@ -80,6 +83,7 @@ inline void tick(JoinSender send_join) {
   if (first_dwell) { first_dwell = false; }
   uint8_t next = (uint8_t)((mesh::channel() % 13) + 1);   // 1..13 を巡回
   mesh::set_channel(next);
+  Serial.printf("[CH] hop -> ch%u\n", next);   // ★20261102
   if (send_join) send_join();            // GWの即HEARTBEATを誘発し、正chで在圏回復
 }
 

@@ -1,0 +1,135 @@
+12:50:16.720 > ets Jul 29 2019 12:21:46
+12:50:16.720 > 
+12:50:16.720 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+12:50:16.720 > configsip: 0, SPIWP:0xee
+12:50:16.720 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+12:50:16.720 > mode:DIO, clock div:2
+12:50:16.720 > load:0x3fff0030,len:1184
+12:50:16.720 > load:0x40078000,len:13232
+12:50:16.720 > load:0x40080400,len:3028
+  #0  0x40080400 in _init at ??:?
+
+12:50:16.720 > entry 0x400805e4
+12:50:16.720 > E (498) esp_core_dump_flash: No core du����ѥѥ���found!
+12:50:16.720 > E (498) esp_core_dump_flash: No core dump partition found!
+12:50:16.720 > [      0.779 I] ==== BOOT GW reset=POWERON ====
+12:50:16.720 > [      0.779 I] 
+12:50:16.720 > [      0.779 I] === M4LAPS Gateway GW6 (VE) ===
+12:50:16.720 > [      0.787 I] [CFG] src=NVS ch=2 ssid="iPhone" host=v133-117-77-69.sefs.static.cnode.jp ip=133.117.77.69 slug="arcadebase" token=0B
+12:50:16.720 > [      0.818 I] [SPOOL] 起動時クリア（空作成）
+12:50:16.720 > [      0.818 I] PSRAM=4192107 (VE normal: approx 4MB mapped of 8MB)
+12:50:16.720 > [      0.903 I] [BEAM] mask=0x7  L1:A_OK/B_OK L2:A_OK/B_OK L3:A_OK/B_OK 
+12:50:16.849 > [      1.258 S] [SPLASH] start
+12:50:16.849 > [      1.258 S] 稼働開始。赤=スタート(READY時のみ) / 灰=RESET(即時)。
+12:50:16.849 > [      1.270 S] [WIFI] begin (non-blocking) scan=all-ch
+12:50:16.941 > [      1.375 S] [WIFI] connected ssid="iPhone" ip=172.20.10.2 rssi=-36
+12:50:16.953 > [      1.386 S] [DNS] OK v133-117-77-69.sefs.static.cnode.jp -> 133.117.77.69（ホスト名運用へ）
+12:50:16.959 > [      1.387 S] [CH] adopt WiFi ch=6 (was 2)
+12:50:18.692 > [      3.125 S] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:19.914 > [      4.346 S] [HTTP] POST /api/timing/join -> 404 (2448ms)
+12:50:20.110 > [      4.544 I] [SIG] red=1
+12:50:20.110 > [      4.544 I] [SPLASH] done -> READY
+12:50:21.691 > [      6.124 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:22.737 > [      7.170 I] [CMD] from RC8 code=SIGNAL nonce=db9d70a4
+12:50:22.737 > [      7.171 R] [SIG] green=1
+12:50:22.743 > [      7.171 R] [BUZ] 1000Hz 500ms
+12:50:22.743 > [      7.171 R] [SEQ] GREEN(即) rid=1 t=7171225
+12:50:22.823 > [      7.259 R] [SIG] red=0
+12:50:23.134 > [      7.567 R] [HTTP] GET /api/timing/layouts/1/for_gw -> -11 (3019ms)
+12:50:23.140 > [      7.567 R] [LAYOUT] fetch NG code=-11
+12:50:23.236 > [      7.671 R] [BUZ] off
+12:50:23.252 > [      7.685 R] [CMD] from RC8 code=RESET nonce=4622895e
+12:50:23.252 > [      7.686 I] [SIG] red=1
+12:50:23.258 > [      7.686 I] [SIG] green=0
+12:50:23.258 > [      7.686 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:23.289 > [      7.722 I] [CMD] from RC8 code=RESET nonce=4622895e (重複・無視)
+12:50:24.692 > [      9.124 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:25.254 > [      9.687 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (1969ms json ok)
+12:50:25.259 > [      9.688 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:25.811 > [     10.245 I] [CMD] from RC8 code=SIGNAL nonce=84fdbad3
+12:50:25.811 > [     10.245 R] [SIG] green=1
+12:50:25.817 > [     10.245 R] [BUZ] 1000Hz 500ms
+12:50:25.817 > [     10.246 R] [SEQ] GREEN(即) rid=2 t=10245777
+12:50:25.899 > [     10.333 R] [CMD] from RC8 code=SIGNAL nonce=84fdbad3 (重複・無視)
+12:50:25.904 > [     10.333 R] [SIG] red=0
+12:50:26.106 > [     10.539 R] [CMD] from RC8 code=RESET nonce=f1c0b49a
+12:50:26.106 > [     10.539 I] [SIG] red=1
+12:50:26.112 > [     10.540 I] [SIG] green=0
+12:50:26.112 > [     10.540 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:26.270 > [     10.703 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (123ms json ok)
+12:50:26.275 > [     10.704 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:27.692 > [     12.124 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:30.559 > [     14.992 I] [CMD] from RC8 code=RESET nonce=fd3978df
+12:50:30.559 > [     14.992 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:30.688 > [     15.121 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (113ms json ok)
+12:50:30.693 > [     15.122 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:30.698 > [     15.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:30.794 > [     15.227 I] [CMD] from RC8 code=RESET nonce=9fcf2fb3
+12:50:30.794 > [     15.228 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:30.904 > [     15.338 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (105ms json ok)
+12:50:30.910 > [     15.338 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:30.987 > [     15.420 I] [CMD] from RC8 code=RESET nonce=9fdcba07
+12:50:30.987 > [     15.420 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:31.107 > [     15.541 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (93ms json ok)
+12:50:31.112 > [     15.542 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:31.500 > [     15.933 I] [CMD] from RC8 code=RESET nonce=4e58b729
+12:50:31.500 > [     15.934 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:31.539 > [     15.973 I] [CMD] from RC8 code=RESET nonce=4e58b729 (重複・無視)
+12:50:31.622 > [     16.056 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (103ms json ok)
+12:50:31.627 > [     16.057 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:31.699 > [     16.132 I] [CMD] from RC8 code=RESET nonce=4ed98986
+12:50:31.699 > [     16.133 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:31.825 > [     16.259 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (93ms json ok)
+12:50:31.831 > [     16.260 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:31.855 > [     16.289 I] [CMD] from RC8 code=RESET nonce=f7105752
+12:50:31.855 > [     16.289 I] [SEQ] RESET -> IDLE (flush queued if data)
+12:50:31.982 > [     16.415 I] [HTTP] GET /api/timing/layouts/1/for_gw -> 200 (95ms json ok)
+12:50:31.988 > [     16.416 I] [LAYOUT] id=1 laps=3 nodes=1 lc=1 len=198.0m
+12:50:33.699 > [     18.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:36.699 > [     21.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:39.700 > [     24.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:42.699 > [     27.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:45.700 > [     30.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:48.416 > [     32.848 I] [HTTP] POST /api/timing/join -> 404 (104ms)
+12:50:48.699 > [     33.132 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:51.708 > [     36.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:54.708 > [     39.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:50:57.708 > [     42.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:00.709 > [     45.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:03.709 > [     48.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:06.709 > [     51.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:09.709 > [     54.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:12.708 > [     57.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:15.709 > [     60.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:18.709 > [     63.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:19.412 > [     63.844 I] [HTTP] POST /api/timing/join -> 404 (103ms)
+12:51:21.708 > [     66.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:24.709 > [     69.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:27.708 > [     72.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:30.709 > [     75.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:33.709 > [     78.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:34.992 > [     79.425 I] [HTTP] GET /api/timing/layouts/1/for_gw -> -11 (3010ms)
+12:51:34.998 > [     79.425 I] [LAYOUT] fetch NG code=-11
+12:51:36.709 > [     81.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:39.709 > [     84.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:42.709 > [     87.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:45.709 > [     90.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:48.709 > [     93.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:51.709 > [     96.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:52.286 > [     96.717 I] [HTTP] POST /api/timing/join -> 404 (1978ms)
+12:51:54.709 > [     99.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:51:57.709 > [    102.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:00.709 > [    105.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:03.709 > [    108.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:05.047 > [    109.480 I] [HTTP] GET /api/timing/layouts/1/for_gw -> -11 (3019ms)
+12:52:05.053 > [    109.480 I] [LAYOUT] fetch NG code=-11
+12:52:06.709 > [    111.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:09.709 > [    114.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:12.709 > [    117.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:15.708 > [    120.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:18.708 > [    123.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:21.708 > [    126.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:23.445 > [    127.877 I] [HTTP] POST /api/timing/join -> 404 (2148ms)
+12:52:24.709 > [    129.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:27.710 > [    132.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)
+12:52:30.710 > [    135.141 I] [LINK] SQ:- RC:8 SG:- GW7:- (activeSG=10)

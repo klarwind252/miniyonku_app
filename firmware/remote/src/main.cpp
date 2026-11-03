@@ -64,10 +64,17 @@ static void send_command(uint8_t code, uint32_t nonce = 0, int shots = 3) {
 }
 
 // ---- 受信 -------------------------------------------------------------------
+// ★20261102：COMMAND_ACK は「この押下で送ったseq」との照合を通ったときだけ受理する（常時起動版）。
+//   スリープ版は1起床=1押下なので従来どおり無条件受理。
+#if USE_DEEP_SLEEP
+static inline bool ack_matches_pending(uint32_t) { return true; }
+#else
+static bool ack_matches_pending(uint32_t acked_seq);   // 定義は常時起動版ブロック（後方）
+#endif
 static void on_recv(const proto::PktHeader& h, const uint8_t* body,
                     int body_len, const uint8_t*) {
   if (h.type == proto::PT_COMMAND_ACK) {     // GWがCOMMANDを受領した確認
-    s_cmd_acked = true;
+    if (ack_matches_pending(h.reserved1)) s_cmd_acked = true;
     return;
   }
   // ★20261031：GWビーコンの計測中フラグを取り込む（SEと同じ）。計測中はch走査に入らない＝押下が消えない。
@@ -249,31 +256,61 @@ static void tick_presence() {
 // ★20261031：常時起動版の送信を「送りっぱなし3連射」から「ACK待ち＋時間差再送（ノンブロッキング）」へ。
 //   旧：3発を約6msに固めて送るだけ。全ノードが同時に中継するので3発がまとめて衝突し、ACKも見ていなかった。
 //       ch走査中（GWの声が12秒途絶→0.5秒ずつch巡回）の押下はそのまま消えていた。
-//   新：1発送って COMMAND_ACK を待つ。来なければ 40〜70ms（乱数）あけて再送、最大4回。
-//       在圏外（走査中）は 100ms 間隔で最大2秒まで保留再送＝在圏が戻った瞬間に届く。
+//   新：1発送って COMMAND_ACK を待つ。来なければ 40〜70ms（乱数）あけて再送（最初の4発）、
+//       以降は120ms間隔で、押下から最大2.5秒まで粘る（20261102・旧「4発/約165msで諦め」を拡張）。
+//       在圏外（走査中）は 100ms 間隔の保留再送＝在圏が戻った瞬間に届く。
 //       nonce は同一なので GW 側は二重発火しない（冪等化・docs/12）。
+// ★20261102 再点検で修正：
+//   (1) 旧コードは4発目を送った直後のloop周回で即「give up」していた＝4発目のACKを待たずに捨てる
+//       （実質3発・約165msしか粘らない）。GWはTFT全面描画(約60〜100ms)・LittleFS書込み・WiFi再接続
+//       スキャン(1〜3秒)で受信処理や送信が止まる時間があり、165msの窓だと押下がまるごと消えていた。
+//   (2) 再送窓を「最初の4発は40〜71ms間隔、以降は120ms間隔で最大 CMD_WINDOW_MS(2.5秒)」へ拡張。
+//       ACK駆動なので正常時は1発で止まる（電波を増やさない）。nonce同一＝GWは二度発火しない。
+//   (3) ACKは「自分がこの押下で送ったseq」と照合する（GWは受領seqを reserved1 に載せて返す）。
+//       旧コードは種別だけで判定していたため、直前の押下のACKが遅れて届くと新しい押下が
+//       送りもせずに「ACK済み」扱いになり得た。
+static constexpr uint32_t CMD_WINDOW_MS   = 2500;  // 押下を粘る総時間（在圏・走査中とも）
+static constexpr uint8_t  CMD_FAST_TRIES  = 4;     // 速い再送（40〜71ms）の回数
+static constexpr uint32_t CMD_SLOW_GAP_MS = 120;   // 以降の再送間隔
+static constexpr uint8_t  CMD_SEQ_N       = 24;    // この押下で送ったseqの記録数（2.5s/40ms≒最大22発）
 static uint8_t  s_pend_code  = 0;      // 0=保留なし
 static uint32_t s_pend_nonce = 0;
 static uint32_t s_pend_born  = 0;      // 押下時刻
 static uint32_t s_pend_last  = 0;      // 直近送信時刻
-static uint8_t  s_pend_tries = 0;      // 在圏中の送信回数
+static uint8_t  s_pend_tries = 0;      // 送信回数（在圏・走査中を問わず）
+static uint32_t s_pend_seqs[CMD_SEQ_N];
+static uint8_t  s_pend_seq_n = 0;
 static void fire(uint8_t code) {
   uint32_t n = esp_random(); if (!n) n = 1;
   s_pend_code = code; s_pend_nonce = n; s_pend_born = millis(); s_pend_tries = 0; s_pend_last = 0;
+  s_pend_seq_n = 0;
   s_cmd_acked = false;
+}
+// COMMAND_ACK（ヘッダ reserved1=受領seq）が、この押下で送ったどれかのseqに一致するか。
+//   reserved1==0 は旧GW互換（seq未搭載）＝従来どおり種別だけで受理。
+static bool ack_matches_pending(uint32_t acked_seq) {
+  if (acked_seq == 0) return true;
+  for (uint8_t i = 0; i < s_pend_seq_n; i++) if (s_pend_seqs[i] == acked_seq) return true;
+  return false;
 }
 static void service_cmd() {
   if (!s_pend_code) return;
   uint32_t now = millis();
   if (s_cmd_acked) { Serial.printf("[CMD] ack tries=%u %lums\n", s_pend_tries, (unsigned long)(now - s_pend_born)); s_pend_code = 0; return; }
+  if (now - s_pend_born > CMD_WINDOW_MS) {
+    Serial.printf("[CMD] give up (no ACK tries=%u contact=%d)\n", s_pend_tries, in_contact() ? 1 : 0);
+    s_pend_code = 0; return;
+  }
   bool contact = in_contact();
-  if (contact && s_pend_tries >= 4) { Serial.println("[CMD] give up (no ACK x4)"); s_pend_code = 0; return; }
-  if (now - s_pend_born > 2000) { Serial.println("[CMD] give up (out of contact 2s)"); s_pend_code = 0; return; }
-  uint32_t gap = contact ? (40u + (esp_random() & 31u)) : 100u;   // 在圏中は40〜71ms・走査中は100ms
+  uint32_t gap;
+  if (!contact)                          gap = 100u;                         // 走査中：100ms保留再送（在圏復帰の瞬間に届く）
+  else if (s_pend_tries < CMD_FAST_TRIES) gap = 40u + (esp_random() & 31u);  // 在圏：最初は40〜71ms
+  else                                   gap = CMD_SLOW_GAP_MS;              // 在圏：以降120ms
   if (s_pend_last != 0 && (now - s_pend_last) < gap) return;
   send_command(s_pend_code, s_pend_nonce, /*shots=*/1);
+  if (s_pend_seq_n < CMD_SEQ_N) s_pend_seqs[s_pend_seq_n++] = mesh::last_seq();   // 送ったseqを記録（ACK照合用）
   s_pend_last = now;
-  if (contact) s_pend_tries++;
+  s_pend_tries++;
 }
 
 void setup() {

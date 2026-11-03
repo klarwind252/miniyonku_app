@@ -8,6 +8,7 @@
 // ============================================================================
 #include <Arduino.h>
 #include <WiFi.h>
+#include "gwlog.h"       // ★20261102 全ログ：行頭に[経過秒 状態]（SEはファイル無し・PC側 log2file で残す）
 #include "protocol.h"
 #include "espnow_link.h"
 #include "chfollow.h"
@@ -31,6 +32,7 @@ struct Pending {
   uint32_t seqs[4];     // ★20261031 A1：試行ごとのseq（ACKは「どの試行に対する受領」でも照合して外す）
   uint8_t  tries;
   uint32_t last_ms;
+  uint32_t first_ms;    // ★20261102 初送時刻（ログ用）
   proto::EventBody body;
 };
 static constexpr int    PENDING_MAX = 8;
@@ -72,7 +74,7 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
     case proto::PT_JOIN_ACK: {
       if (body_len >= (int)sizeof(proto::JoinAckBody)) {
         proto::JoinAckBody b; memcpy(&b, body, sizeof(b));
-        if (b.node_id == NODE_ID) s_assigned = true;   // IDはenv固定・上書きしない
+        if (b.node_id == NODE_ID) { if (!s_assigned) Serial.printf("[JOIN] ack node=%u ch=%u\n", b.node_id, b.channel); s_assigned = true; }   // IDはenv固定・上書きしない
         // ch追従（状態B）：GWが載せた運用ch（=WiFi実ch）へ念のため合わせる。通常は
         //   走査で既に同chに居るが、GWのch移動直後などのズレをここでも吸収する。
         if (b.channel >= 1 && b.channel <= 13) mesh::set_channel(b.channel);
@@ -87,7 +89,10 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
       for (int i = 0; i < PENDING_MAX; i++) {
         if (!s_pending[i].used) continue;
         for (uint8_t k = 0; k < s_pending[i].tries && k < 4; k++)
-          if (s_pending[i].seqs[k] == acked_seq) { s_pending[i].used = false; break; }
+          if (s_pending[i].seqs[k] == acked_seq) {
+            Serial.printf("[ACK] lane=%u seq=%lu try=%u/%u %lums\n", s_pending[i].body.lane, (unsigned long)acked_seq,
+                          k + 1, s_pending[i].tries, (unsigned long)(millis() - s_pending[i].first_ms));   // ★20261102
+            s_pending[i].used = false; break; }
       }
     } break;
 
@@ -110,6 +115,7 @@ static void enqueue_event(const beam::Hit& hit) {
     p.used = true;
     p.tries = 0;
     p.last_ms = 0;   // すぐ送る
+    p.first_ms = millis();   // ★20261102 ログ用（初送→ACKまでの時間）
     p.body.lane    = hit.lane;
     // 張り付き(2/A1)は同期状態に依らない異常通知なので未同期でも 2 を保つ。
     //   それ以外は S4 に従い未同期なら 3 で上書き。
@@ -153,6 +159,7 @@ static void service_pending() {
     }
     mesh::send(proto::PT_EVENT, 6 /*GW*/, &p.body, sizeof(p.body));
     p.seq     = mesh::last_seq();   // 直近に送ったseq
+    if (p.tries > 0) Serial.printf("[EV] resend lane=%u seq=%lu try=%u\n", p.body.lane, (unsigned long)p.seq, p.tries + 1);   // ★20261102
     if (p.tries < 4) p.seqs[p.tries] = p.seq;   // ★A1：試行ごとのseqを記録
     p.tries  += 1;
     p.last_ms = nowm;
@@ -196,6 +203,7 @@ static void tick_presence() {
 void setup() {
   Serial.begin(115200);
   delay(300);
+  gwlog::log_boot("SE");
   Serial.printf("\n=== M4LAPS Sector SQ%d ===\n", NODE_ID);
   memset(s_pending, 0, sizeof(s_pending));
 

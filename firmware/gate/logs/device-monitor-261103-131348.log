@@ -1,0 +1,17 @@
+13:13:49.909 > ets Jul 29 2019 12:21:46
+13:13:49.909 > 
+13:13:49.909 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+13:13:49.909 > configsip: 0, SPIWP:0xee
+13:13:49.909 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+13:13:49.909 > mode:DIO, clock div:2
+13:13:49.909 > load:0x3fff0030,len:1184
+13:13:49.909 > load:0x40078000,len:13232
+13:13:49.909 > load:0x40080400,len:3028
+  #0  0x40080400 in _init at ??:?
+
+13:13:49.909 > entry 0x400805e4
+13:13:49.909 > 
+13:13:49.909 > === M4LAPS Sector SQ2 ===
+13:13:49.909 > [BEAM] mask=0x7  L1:A_OK/B_OK L2:A_OK/B_OK L3:A_OK/B_OK 
+13:13:49.909 > ch=7 で稼働（GWのchへ自動追従）。SYNCとビーム待受け開始。
+13:13:50.100 > [EV] lane=2 q=0 tA=1092399 tB=1097522
