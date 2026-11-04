@@ -1491,6 +1491,13 @@ function _showPubToast(msg) {
         || /^\/admin\/tournaments\/\d+\/qualifying(\/.*)?$/.test(p)
         || /^\/admin\/tournaments\/\d+\/bracket(\/.*)?$/.test(p);
   }
+  // タイムアタック予選は SIGNAL（緑ランプ）を使うとは限らないので、
+  // レース（緑あり）・フリー走行（緑なし）の両方をPIPに出す（mode=all）。
+  // それ以外のページは従来どおり緑ランプありのレースのみ（mode=race）。
+  function pipMode(){
+    var p=location.pathname.slice(M4PFX.length).replace(/\/+$/,'');   // ★スラグを除いて判定
+    return /^\/admin\/tournaments\/\d+\/qualifying\/time-attack(\/.*)?$/.test(p) ? 'all' : 'race';
+  }
   if(!isTargetPage()){
     if(pip) pip.remove();   // 対象外のページでは存在ごと消す
     return;
@@ -1691,8 +1698,9 @@ function _showPubToast(msg) {
   }
 
   function poll(){
-    // mode=race … 緑ランプありのレースだけ。フリー走行の記録は出さない
-    fetch(M4PFX + '/' + 'api/timing/pip/latest?limit=3&mode=race',{cache:'no-store'})   // ★スラグ前置（リテラル分割＝ミドルウェア書換え回避）
+    // mode=race … 緑ランプありのレースだけ（既定）。
+    // タイムアタック予選だけ mode=all（SIGNAL未使用でもフリー走行を拾う。pipMode()で判定）。
+    fetch(M4PFX + '/' + 'api/timing/pip/latest?limit=3&mode=' + pipMode(),{cache:'no-store'})   // ★スラグ前置（リテラル分割＝ミドルウェア書換え回避）
       .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
       .then(function(d){
         failCount=0;

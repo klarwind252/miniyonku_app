@@ -1235,6 +1235,23 @@ async def pip_latest(
                                  if (g["grp_count"] or 1) > 1 else _rl)
             else:
                 applied_label = f"グループ{group_id}"
+        else:
+            # タイムアタック予選：reflect は timing_races（heat_id/applied_*）ではなく
+            # time_attack_runs.race_id に記録される。この計測レースがどのレーサーの
+            # 何回目の走行へ使われたかを引いてラベル化する（PIPに「反映済」を出すため）。
+            async with db.execute(
+                """SELECT tar.run_no, r.name
+                     FROM time_attack_runs tar
+                     JOIN entries e ON e.id = tar.entry_id
+                     JOIN racers  r ON r.id = e.racer_id
+                    WHERE tar.race_id = ?
+                    ORDER BY tar.run_no
+                    LIMIT 1""",
+                (rid,),
+            ) as cur:
+                ta = await cur.fetchone()
+            if ta:
+                applied_label = f"TA {ta['name']} {ta['run_no']}回目"
 
         out.append({
             "race_id": rid,
