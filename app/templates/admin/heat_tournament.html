@@ -584,7 +584,7 @@
   </div>
 
   <div id="ht-cards-{{ hno }}" style="padding:8px 16px 4px">
-  {# 結果入力カードの要否（M4LAPS ON/OFF で統一）：図から入力できる通常ラウンドは非表示(display:none)・決勝/3位/敗者復活は表示。 #}
+  {# 結果入力カードの要否（決勝ブラケットと同じ流儀）：M4LAPS ON=全ラウンドのカードを表示（通常ラウンドも「反映」ボタンで反映可）／M4LAPS OFF=図から入力できる通常ラウンドは非表示(display:none)・決勝/3位/敗者復活は表示。 #}
   {% set _normal_rounds = (rounds | rejectattr('round_type','equalto','final') | rejectattr('round_type','equalto','third') | list) %}
   {% set sorted_rounds = (_normal_rounds
                        + (rounds | selectattr('round_type','equalto','third') | list)
