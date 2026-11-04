@@ -993,18 +993,34 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         ) as cur:
             ow_heats_all = [dict(r) for r in await cur.fetchall()]
         ow_open_heats = []  # 未確定（status!='done'）の組
+        ow_heats = []       # 全組（レーススケジュール一覧用。確定済み＝勝者・CO・計測タイム込み）
         for h in ow_heats_all:
-            if h["status"] == "done":
-                continue
             async with db.execute(
-                """SELECT hl.entry_id, hl.lane_no, r.name
-                   FROM heat_lanes hl JOIN entries e ON e.id=hl.entry_id
+                """SELECT hl.id AS lane_id, hl.entry_id, hl.lane_no, r.name,
+                          hr.win, hr.is_co, hr.total_time
+                   FROM heat_lanes hl
+                   JOIN entries e ON e.id=hl.entry_id
                    JOIN racers r ON r.id=e.racer_id
+                   LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id
                    WHERE hl.heat_id=? ORDER BY hl.lane_no""",
                 (h["id"],),
             ) as cur:
                 members = [dict(r) for r in await cur.fetchall()]
-            ow_open_heats.append({"heat_id": h["id"], "heat_no": h["heat_no"], "members": members})
+            is_done = (h["status"] == "done")
+            winner = next((m for m in members if (m.get("win") or 0) == 1), None)
+            ow_heats.append({
+                "heat_id": h["id"],
+                "heat_no": h["heat_no"],
+                "done": is_done,
+                "members": members,
+                "winner_entry_id": (winner["entry_id"] if winner else None),
+                "winner_name": (winner["name"] if winner else None),
+                # 確定済みで勝者なし＝「該当者なし（全員CO）」
+                "no_winner": (is_done and winner is None),
+            })
+            if not is_done:
+                ow_open_heats.append({"heat_id": h["id"], "heat_no": h["heat_no"],
+                                      "members": members})
         # 現段階の通過者数
         ow_passed = await _ow_passed_count(tid, ow_stage_no, db)
         # 現段階のレーサー状態（通過者一覧・敗退者数など）
@@ -1062,6 +1078,7 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             "ow_is_last_stage": ow_stage_no >= ow_stage_count,
             "ow_pending": ow_pending,
             "ow_open_heats": ow_open_heats,
+            "ow_heats": ow_heats,
             "ow_passed": ow_passed,
             "ow_advance_count": ow_stage.get("advance_count") or 0,
             "ow_max_runs": ow_stage.get("max_runs") or 0,
@@ -6871,22 +6888,18 @@ async def _ow_mark_eliminated_for_heat(tid: int, stage_no: int, stage: dict, ent
             )
 
 
-@router.post("/{tid}/qualifying/order-winner/heat/{heat_id}/win")
-async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """勝ち抜け：組の1着を入力する（〇×）。
-    form:
-      win_entry_id : 1着のentry_id。'0' または空/'none' の場合は「該当者なし（全員CO）」。
-    処理:
-      heat_results更新 → 1着のwins+1 → 通過判定(passed/passed_seq) →
-      枠到達で段階closed → 敗退判定(runs>=max_runsをeliminated) → heat done。
+async def _ow_apply_win(tid: int, heat_id: int, win_eid: int | None, db,
+                        *, lane_times: dict | None = None) -> dict:
+    """勝ち抜け：heat_id の組へ 1着(win_eid; None=該当者なし) を適用する共有処理。
+
+    手動入力（order_winner_set_win）と M4LAPS 反映（timing_api）の両方から呼ぶ。
+    lane_times: {lane_id: total_time(秒)} を渡すと heat_results.total_time に記録する
+                （M4LAPS反映用。手動時は None で無処理）。
+    戻り値: 画面向けの結果 dict（呼び出し側で JSONResponse に包む）。ok=False はエラー。
+
+    処理: heat_results更新 → 1着のwins+1 → 通過判定(passed/passed_seq) →
+          枠到達で段階closed → 敗退判定(runs>=max_runsをeliminated) → heat done。
     """
-    from fastapi.responses import JSONResponse
-
-    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
-        t = await cur.fetchone()
-    if not t or dict(t).get("qualifying_type") != "order_winner":
-        return JSONResponse({"ok": False, "message": "対象外のレースです"})
-
     # heat と段階の整合（heats.round_no に stage_no を格納している）
     async with db.execute(
         "SELECT id, round_no, status FROM heats WHERE id=? AND tournament_id=?",
@@ -6894,11 +6907,11 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
     ) as cur:
         heat = await cur.fetchone()
     if not heat:
-        return JSONResponse({"ok": False, "message": "組が見つかりません"})
+        return {"ok": False, "message": "組が見つかりません"}
     stage_no = heat["round_no"]
     stage = await _ow_stage_row(tid, stage_no, db)
     if not stage:
-        return JSONResponse({"ok": False, "message": "段階設定が見つかりません"})
+        return {"ok": False, "message": "段階設定が見つかりません"}
 
     # 組のレーン（entry_id）一覧
     async with db.execute(
@@ -6907,18 +6920,11 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
     ) as cur:
         lanes = [dict(r) for r in await cur.fetchall()]
     if not lanes:
-        return JSONResponse({"ok": False, "message": "組にレーサーがいません"})
+        return {"ok": False, "message": "組にレーサーがいません"}
     lane_entry_ids = [ln["entry_id"] for ln in lanes]
 
-    form = await request.form()
-    raw_win = (form.get("win_entry_id") or "").strip().lower()
-    win_eid = None
-    if raw_win and raw_win not in ("0", "none", "co", "null"):
-        if not raw_win.isdigit():
-            return JSONResponse({"ok": False, "message": "win_entry_id が不正です"})
-        win_eid = int(raw_win)
-        if win_eid not in lane_entry_ids:
-            return JSONResponse({"ok": False, "message": "1着指定がこの組にいません"})
+    if win_eid is not None and win_eid not in lane_entry_ids:
+        return {"ok": False, "message": "1着指定がこの組にいません"}
 
     # ---- heat_results を更新（1着=win1/rank1、他=win0。該当者なしは全員 is_co=1）----
     for ln in lanes:
@@ -6937,6 +6943,11 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
             (ln["lane_id"], win, rank, is_co),
         )
         await _restore_total_time(db, ln["lane_id"], _tt)
+        # M4LAPS反映：計測の合計タイムを上書き記録（手動時は lane_times=None で無処理）
+        if lane_times is not None:
+            _mt = lane_times.get(ln["lane_id"])
+            if _mt is not None:
+                await _restore_total_time(db, ln["lane_id"], _mt)
 
     passed_now = None
     stage_closed = False
@@ -6992,7 +7003,7 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
             row = await cur.fetchone()
             passed_name = row["name"] if row else None
 
-    return JSONResponse({
+    return {
         "ok": True,
         "stage_no": stage_no,
         "passed_entry_id": passed_now,
@@ -7006,7 +7017,142 @@ async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aio
             ("該当者なしで確定しました" if win_eid is None else "結果を保存しました")
         ) + ("　★通過枠が埋まり、この段階を終了しました" if stage_closed else ""),
         "reload": True,
-    })
+    }
+
+
+async def _ow_undo_heat(tid: int, heat_id: int, db) -> dict:
+    """勝ち抜け：確定済みの組を未確定(pending)に戻す（1着の修正・再反映用）。
+
+    - その組の勝者(heat_results.win=1)の wins を1戻し、通過していて規定未達になれば racing へ戻す。
+    - 段階が closed（枠埋まり終了）なら枠割れになるので running に戻す。
+    - この組メンバーの eliminated は racing に戻す（再適用時に runs>=max_runs なら自動で再敗退）。
+    - heat_results は消して heat を pending へ。runs は走行の事実なので変更しない。
+      計測の total_time は残す（再反映・再入力で使えるように）。
+    """
+    async with db.execute(
+        "SELECT id, round_no, status FROM heats WHERE id=? AND tournament_id=?",
+        (heat_id, tid),
+    ) as cur:
+        heat = await cur.fetchone()
+    if not heat:
+        return {"ok": False, "message": "組が見つかりません"}
+    stage_no = heat["round_no"]
+    stage = await _ow_stage_row(tid, stage_no, db)
+    win_target = (stage["win_target"] or 1) if stage else 1
+
+    async with db.execute(
+        "SELECT hl.id AS lane_id, hl.entry_id FROM heat_lanes hl WHERE hl.heat_id=? ORDER BY hl.lane_no",
+        (heat_id,),
+    ) as cur:
+        lanes = [dict(r) for r in await cur.fetchall()]
+    lane_entry_ids = [ln["entry_id"] for ln in lanes]
+
+    # 現在の勝者（heat_results.win=1）
+    prev_win_eid = None
+    for ln in lanes:
+        async with db.execute(
+            "SELECT win FROM heat_results WHERE heat_lane_id=?", (ln["lane_id"],)
+        ) as cur:
+            r = await cur.fetchone()
+        if r and (r["win"] or 0) == 1:
+            prev_win_eid = ln["entry_id"]
+            break
+
+    # 勝者の wins を1戻し、通過していて規定未達なら racing へ戻す
+    if prev_win_eid is not None:
+        rc = await _ow_get_racer(tid, stage_no, prev_win_eid, db)
+        if rc:
+            new_wins = max(0, (rc["wins"] or 0) - 1)
+            await db.execute(
+                "UPDATE order_winner_racers SET wins=? WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+                (new_wins, tid, stage_no, prev_win_eid),
+            )
+            if rc["status"] == "passed" and new_wins < win_target:
+                await db.execute(
+                    "UPDATE order_winner_racers SET status='racing', passed_seq=NULL "
+                    "WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+                    (tid, stage_no, prev_win_eid),
+                )
+
+    # この組メンバーの eliminated を racing に戻す（再適用で再判定される）
+    for eid in lane_entry_ids:
+        rc = await _ow_get_racer(tid, stage_no, eid, db)
+        if rc and rc["status"] == "eliminated":
+            await db.execute(
+                "UPDATE order_winner_racers SET status='racing' "
+                "WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+                (tid, stage_no, eid),
+            )
+
+    # 段階の開閉を再評価：取消で通過数が枠未満になったら running に戻す
+    # （他の通過者で枠が埋まったままなら closed を維持する）
+    if stage and (await _ow_passed_count(tid, stage_no, db)) < (stage["advance_count"] or 0):
+        await db.execute(
+            "UPDATE order_winner_stages SET status='running' "
+            "WHERE tournament_id=? AND stage_no=? AND status='closed'",
+            (tid, stage_no),
+        )
+
+    # heat_results を消して heat を未確定へ（total_time は計測の事実なので保持する）
+    for ln in lanes:
+        _tt = await _keep_total_time(db, ln["lane_id"])
+        await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (ln["lane_id"],))
+        if _tt is not None:
+            await db.execute(
+                "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points, is_co) "
+                "VALUES (?,0,0,0,0,0,0)",
+                (ln["lane_id"],),
+            )
+            await _restore_total_time(db, ln["lane_id"], _tt)
+    await db.execute("UPDATE heats SET status='pending' WHERE id=?", (heat_id,))
+    await db.commit()
+
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+    return {"ok": True, "reload": True, "message": "この組の結果を取り消しました"}
+
+
+@router.post("/{tid}/qualifying/order-winner/heat/{heat_id}/win")
+async def order_winner_set_win(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """勝ち抜け：組の1着を入力する（〇×）。
+    form: win_entry_id … 1着のentry_id。'0'/空/'none' のときは「該当者なし（全員CO）」。
+    実処理は _ow_apply_win（M4LAPS反映と共有）。"""
+    from fastapi.responses import JSONResponse
+
+    async with db.execute(
+        "SELECT 1 FROM tournaments WHERE id=? AND qualifying_type='order_winner'", (tid,)
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "message": "対象外のレースです"})
+
+    form = await request.form()
+    raw_win = (form.get("win_entry_id") or "").strip().lower()
+    win_eid = None
+    if raw_win and raw_win not in ("0", "none", "co", "null"):
+        if not raw_win.isdigit():
+            return JSONResponse({"ok": False, "message": "win_entry_id が不正です"})
+        win_eid = int(raw_win)
+
+    result = await _ow_apply_win(tid, heat_id, win_eid, db)
+    return JSONResponse(result)
+
+
+@router.post("/{tid}/qualifying/order-winner/heat/{heat_id}/reset")
+async def order_winner_reset_heat(tid: int, heat_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """勝ち抜け：確定済みの組を未確定に戻す（1着の修正用）。"""
+    from fastapi.responses import JSONResponse
+
+    async with db.execute(
+        "SELECT 1 FROM tournaments WHERE id=? AND qualifying_type='order_winner'", (tid,)
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "message": "対象外のレースです"})
+
+    result = await _ow_undo_heat(tid, heat_id, db)
+    return JSONResponse(result)
 
 
 # ---- 1-c: もう1周追加（枠割れ救済）・次段階遷移・リセット系 ----

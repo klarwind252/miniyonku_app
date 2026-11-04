@@ -1066,6 +1066,108 @@ async def reset_ht_group(
     return JSONResponse(fin)
 
 
+@router.post("/api/timing/apply/ow-heat/{heat_id}")
+async def apply_latest_to_ow_heat(
+    heat_id: int,
+    race_id: int | None = None,
+    force: bool = False,
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    """最新（またはPIP選択）の計測結果を「並び順（勝ち抜け）」の組へ反映する。
+
+    勝ち抜けは1着だけが勝ち上がるので、計測の1位（完走した最速）を1着として自動入力する。
+    全員CO（完走なし）のときは「該当者なし」で確定する。
+    突き合わせは slot(lane_no) ↔ start_lane。順位確定・通過/敗退判定は
+    qualifying._ow_apply_win を共用（手動入力と同一ロジック）。
+    """
+    from app.presentation.routers import qualifying as qual_mod
+
+    # 対象の組（heats）と大会種別
+    async with db.execute(
+        """SELECT h.id, h.tournament_id, h.round_no AS stage_no, h.status,
+                  t.qualifying_type
+             FROM heats h JOIN tournaments t ON t.id = h.tournament_id
+            WHERE h.id = ?""",
+        (heat_id,),
+    ) as cur:
+        heat = await cur.fetchone()
+    if heat is None:
+        raise HTTPException(status_code=404, detail="組が見つかりません")
+    if heat["qualifying_type"] != "order_winner":
+        raise HTTPException(status_code=400, detail="勝ち抜け以外のレースです")
+    tid = heat["tournament_id"]
+
+    # 既に確定済みなら上書き確認（決勝/予選と同じ 409 流儀）
+    if not force and heat["status"] == "done":
+        return JSONResponse(
+            {"ok": False, "reason": "warning",
+             "warnings": [{"code": "already_has_result",
+                           "message": "この組には既に結果が入力されています。上書きされます。"}]},
+            status_code=409,
+        )
+
+    repo = TimingRaceRepository(db)
+    race, result = await _pick_race(db, repo, race_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="反映できる計測結果がありません")
+
+    # 既に別の組へ反映済みの計測結果か（重複反映の警告）
+    if not force:
+        keys = race.keys() if hasattr(race, "keys") else []
+        prev = race["heat_id"] if "heat_id" in keys else None
+        if prev is not None and int(prev) != int(heat_id):
+            return JSONResponse(
+                {"ok": False, "reason": "warning",
+                 "warnings": [{"code": "already_applied_to_other",
+                               "message": "この計測結果は既に別の組へ反映済みです。"
+                                          "同じ結果を二重に使うことになります。"}]},
+                status_code=409,
+            )
+
+    # 組のレーン（lane_no ↔ start_lane で突き合わせ）
+    async with db.execute(
+        "SELECT hl.id AS lane_id, hl.lane_no, hl.entry_id "
+        "FROM heat_lanes hl WHERE hl.heat_id=? ORDER BY hl.lane_no",
+        (heat_id,),
+    ) as cur:
+        lanes = [dict(r) for r in await cur.fetchall()]
+    if not lanes:
+        raise HTTPException(status_code=400, detail="組にレーサーがいません")
+
+    ranking = _ranking_payload(result)
+    m = bridge_svc.match_ranking_to_lanes(ranking, lanes)
+    matched = m["matched"]
+    if not matched:
+        raise HTTPException(status_code=400,
+                            detail="計測レーンと組のレーンが一致しません")
+
+    # 1着＝完走した最速（rank最小で dnf でない）。全員COなら該当者なし（win_eid=None）。
+    win_eid = None
+    for x in sorted(matched, key=lambda mm: int(mm["rank"])):
+        if not x.get("dnf"):
+            win_eid = x["entry_id"]
+            break
+    # レーンごとの計測タイム（heat_results.total_time へ記録＝一覧表示に使う）
+    lane_times = {x["lane_id"]: x.get("total_time") for x in matched}
+
+    res = await qual_mod._ow_apply_win(tid, heat_id, win_eid, db, lane_times=lane_times)
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail=res.get("message") or "反映できませんでした")
+
+    # どのレースを反映したか記録（PIPの「反映済」表示・重複反映の検出に使う）
+    try:
+        await db.execute("UPDATE timing_races SET heat_id=? WHERE id=?", (heat_id, race["id"]))
+        await db.commit()
+    except Exception:
+        pass
+
+    res["race_id"] = race["id"]
+    res["unmatched_lanes"] = m.get("unmatched_lanes", [])
+    res["unmatched_records"] = m.get("unmatched_records", [])
+    return JSONResponse(res)
+
+
 async def _pick_race(db, repo, race_id: int | None):
     """反映元のレースを決める。race_id 未指定なら記録のある最新レース。"""
     if race_id is not None:
@@ -1168,10 +1270,15 @@ async def pip_latest(
         applied_label = None
         if heat_id is not None:
             async with db.execute(
-                "SELECT heat_no, round_no FROM heats WHERE id = ?", (heat_id,)
+                "SELECT h.heat_no, h.round_no, t.qualifying_type "
+                "FROM heats h JOIN tournaments t ON t.id = h.tournament_id WHERE h.id = ?",
+                (heat_id,),
             ) as cur:
                 h = await cur.fetchone()
-            if h and h["round_no"]:
+            if h and h["qualifying_type"] == "order_winner":
+                # 勝ち抜け：heats.round_no に段階(1次/2次…)を格納している
+                applied_label = f"勝ち抜け {h['round_no']}次 レース{h['heat_no']}"
+            elif h and h["round_no"]:
                 applied_label = f"予選{h['round_no']}回目 レース{h['heat_no']}"
             elif h:
                 applied_label = f"レース{h['heat_no']}"

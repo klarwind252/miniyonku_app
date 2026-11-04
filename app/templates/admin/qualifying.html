@@ -229,6 +229,8 @@
 </style>
 {% endblock %}
 {% block content %}
+{# M4LAPS（連動ラップタイマー）有効条件。bracket/heat_tournament と同一。勝ち抜けの反映ボタン等で使用 #}
+{% set m4_on = IS_CLOUD and request.state.m4laps_licensed and (t.use_m4laps is not defined or t.use_m4laps != 0) %}
 {% raw %}
 <button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
 <style>
@@ -403,32 +405,62 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     <div style="color:#95a5a6;font-size:13px;margin-bottom:6px">待機列は空です。</div>
     {% endif %}
 
-    {# 未確定の組（1着入力対象） #}
-    {% if ow_open_heats %}
-    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#2c3e50">走行中の組（1着を入力）<span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">⠿ をドラッグでコース（出走レーン）を入れ替え</span></div>
+    {# ── レーススケジュール（確定・未確定を一覧。1着＝勝ち上がり。M4LAPS反映対応）──
+       並び順ポイントと同じく「作った組＝レース」を一覧表示する。
+       結果入力は 1着（勝ち上がり）を選ぶだけ。M4LAPS ON なら［反映］で計測1位を自動入力。 #}
+    {% if ow_heats %}
+    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#2c3e50">
+      レーススケジュール <span class="badge">{{ ow_heats|length }} レース</span>
+      <span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">各レースの1着（🏁）をクリック{% if m4_on %}／［反映］でM4LAPS計測1位を自動入力{% endif %}。⠿ドラッグでコース入れ替え（未確定のみ）</span>
+    </div>
     <div style="display:flex;flex-direction:column;gap:10px">
-      {% for h in ow_open_heats %}
-      <div style="border:2px solid #8e44ad;border-radius:10px;padding:12px 14px;background:#fff">
-        <div style="font-size:13px;color:#8e44ad;font-weight:bold;margin-bottom:8px">第{{ h.heat_no }}レース</div>
-        <div class="ow-lane-group" data-heat-id="{{ h.heat_id }}" data-tid="{{ t.id }}"
+      {% for h in ow_heats %}
+      <div style="border:2px solid {% if h.done %}#27ae60{% else %}#8e44ad{% endif %};border-radius:10px;padding:10px 12px;background:{% if h.done %}#f4fbf6{% else %}#fff{% endif %}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-size:13px;color:{% if h.done %}#1e8449{% else %}#8e44ad{% endif %};font-weight:bold">第{{ h.heat_no }}レース</span>
+          {% if h.done %}
+            {% if h.no_winner %}
+            <span style="font-size:11px;background:#fdecea;color:#c0392b;border-radius:8px;padding:1px 8px;font-weight:bold">該当者なし</span>
+            {% else %}
+            <span style="font-size:11px;background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 8px;font-weight:bold">🏁 {{ h.winner_name }} 勝ち上がり</span>
+            {% endif %}
+          {% else %}
+            <span style="font-size:11px;background:#f3e9fb;color:#8e44ad;border-radius:8px;padding:1px 8px;font-weight:bold">未確定</span>
+          {% endif %}
+          <span style="margin-left:auto;display:flex;gap:6px">
+            {% if h.done and not is_finalized %}
+            <button type="button" class="m4-undo-btn" onclick="owResetHeat({{ h.heat_id }})" title="この組の結果を取り消して1着を入力し直します">取消</button>
+            {% elif not h.done and m4_on and not is_finalized %}
+            <button type="button" class="m4-apply-btn" onclick="owApplyM4({{ h.heat_id }}, this)" title="M4LAPS計測の1位を1着として自動入力します">反映</button>
+            {% endif %}
+          </span>
+        </div>
+        <div {% if not h.done %}class="ow-lane-group" data-heat-id="{{ h.heat_id }}" data-tid="{{ t.id }}"{% endif %}
              style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           {% for m in h.members %}
+          {% set is_win = (h.winner_entry_id == m.entry_id) %}
           <div class="ow-lane" data-entry-id="{{ m.entry_id }}" data-lane-no="{{ m.lane_no }}"
-               style="display:inline-flex;align-items:center;gap:4px;border:2px solid #27ae60;border-radius:8px;background:#fff;padding:0 4px 0 6px">
+               style="display:inline-flex;align-items:center;gap:6px;border:2px solid {% if is_win %}#f1c40f{% elif h.done %}#dfe4ea{% else %}#27ae60{% endif %};border-radius:8px;background:{% if is_win %}#fffbe6{% else %}#fff{% endif %};padding:4px 8px">
+            {% if not h.done %}
             <span class="ow-lane-handle" title="ドラッグでコース（出走レーン）を入れ替え"
                   style="cursor:grab;color:#9aa3ad;font-size:15px;line-height:1;user-select:none;touch-action:none">&#10303;</span>
-            <button type="button" class="ow-win-btn"
-                    onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})"
-                    style="padding:8px 12px;border:none;background:transparent;color:#1e8449;font-size:15px;font-weight:bold;cursor:pointer">
-              🏁 {{ m.name }}
-            </button>
+            {% endif %}
+            <span style="display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;border-radius:4px;font-size:11px;font-weight:bold;color:#fff;background:{{ ['#2980b9','#e74c3c','#27ae60','#8e44ad','#95a5a6'][((m.lane_no-1)%5)] }}">{{ m.lane_no }}</span>
+            {% if not h.done %}
+            <button type="button" class="ow-win-btn" onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})"
+                    style="padding:4px 8px;border:none;background:transparent;color:#1e8449;font-size:15px;font-weight:bold;cursor:pointer">🏁 {{ m.name }}</button>
+            {% else %}
+            <span style="font-size:14px;font-weight:bold;color:{% if is_win %}#b7950b{% else %}#636e72{% endif %}">{% if is_win %}🏁 {% endif %}{{ m.name }}</span>
+            {% endif %}
+            {% if m.total_time is not none %}
+            <span style="font-size:12px;color:#8395a7;font-variant-numeric:tabular-nums" title="M4LAPS計測の合計タイム">{{ '%.3f'|format(m.total_time) }}</span>
+            {% endif %}
           </div>
           {% endfor %}
-          <button type="button"
-                  onclick="owSetWin({{ h.heat_id }}, 0)"
-                  style="padding:8px 16px;border:2px solid #95a5a6;border-radius:8px;background:#f8f9fa;color:#636e72;font-size:14px;cursor:pointer">
-            該当者なし（全員CO）
-          </button>
+          {% if not h.done %}
+          <button type="button" onclick="owSetWin({{ h.heat_id }}, 0)"
+                  style="padding:6px 14px;border:2px solid #95a5a6;border-radius:8px;background:#f8f9fa;color:#636e72;font-size:13px;cursor:pointer">該当者なし（全員CO）</button>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -505,6 +537,47 @@ async function owSetWin(heatId, winEntryId){
                            'win_entry_id=' + encodeURIComponent(winEntryId));
   owMsg(res.message || '', res.ok);
   if(res.reload){ setTimeout(function(){ location.reload(); }, 500); }
+}
+// M4LAPS：計測1位を1着として自動入力（決勝/予選の反映と同じ流儀。PIP選択＞最新）
+async function owApplyM4(heatId, btn, force){
+  const orig = btn.dataset.origLabel || btn.textContent;
+  btn.dataset.origLabel = orig;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const picked = (typeof m4pipSelectedRaceId === 'function') ? m4pipSelectedRaceId() : null;
+    const qs = [];
+    if (picked) qs.push('race_id=' + picked);
+    if (force)  qs.push('force=true');
+    const url = '/api/timing/apply/ow-heat/' + heatId + (qs.length ? '?' + qs.join('&') : '');
+    const res = await fetch(url, {method:'POST'});
+    if(res.status === 409){
+      const d = await res.json();
+      const msg = (d.warnings || []).map(function(w){ return '・' + w.message; }).join('\n');
+      btn.disabled = false; btn.textContent = orig;
+      if(confirm(msg + '\n\nそれでも反映しますか？')){ return owApplyM4(heatId, btn, true); }
+      return;
+    }
+    if(res.ok){
+      const d = await res.json();
+      let extra = '';
+      if(d.unmatched_lanes && d.unmatched_lanes.length) extra += '\n※ 計測記録が無いレーン: ' + d.unmatched_lanes.join(', ');
+      if(d.unmatched_records && d.unmatched_records.length) extra += '\n※ 対応するレーンが無い記録: レーン' + d.unmatched_records.join(', ');
+      if(extra) alert((d.message || '反映しました。') + extra);
+      owMsg(d.message || '反映しました。', true);
+      setTimeout(function(){ location.reload(); }, 400);
+      return;
+    }
+    let detail=''; try{ const e = await res.json(); detail = e.detail || ''; }catch(_){}
+    alert('反映できませんでした。(' + res.status + ')' + (detail ? '\n' + detail : ''));
+  }catch(e){ alert('通信エラーが発生しました: ' + e); }
+  btn.disabled = false; btn.textContent = orig;
+}
+// 確定済みの組を未確定に戻す（1着の入力し直し・再反映用）
+async function owResetHeat(heatId){
+  if(!confirm('この組の結果を取り消して、1着を入力し直せる状態に戻します。よろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/heat/' + heatId + '/reset', '');
+  owMsg(res.message || '', res.ok);
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 400); }
 }
 async function owAddRun(){
   if(!confirm('この段階の最大走行回数を1増やして、敗退者を再スキャン可能にします。よろしいですか？')) return;
@@ -966,7 +1039,9 @@ document.addEventListener('DOMContentLoaded', function(){
 {% endif %}
 
 <!-- ① レーススケジュール（全幅・インライン入力） -->
-<div class="card">
+{# 勝ち抜け(order_winner)は専用のレーススケジュール一覧を上で描画するため、
+   点式の汎用スケジュール/順位表カードは丸ごと非表示にする（構造は保持）。 #}
+<div class="card"{% if is_order_winner %} style="display:none"{% endif %}>
   <div class="card-header">
     レーススケジュール
     <span class="badge">{{ heats|length }} レース</span>
@@ -1530,7 +1605,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <span style="font-size:12px">（エントリー{{ entries|length }}名{% if is_roundrobin %} / 総レース数 {{ (entries|length * (entries|length - 1) // 2) }}{% endif %}）</span>
     </div>
     {% endif %}
-{% if not is_heat_roundrobin %}
+{% if not is_heat_roundrobin and not is_order_winner %}
       {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は値の右にチップで羅列（左端に落とさない） #}
       {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
       <div class="card" style="margin-top:32px">
@@ -1596,9 +1671,9 @@ document.addEventListener('DOMContentLoaded', function(){
       {% endif %}
 {# none_roundrobin: 順位表 + 勝敗表を横並び。それ以外は順位表を全幅にする #}
 {% if is_none_roundrobin %}
-<div class="qual-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+<div class="qual-cols" style="{% if is_order_winner %}display:none;{% endif %}display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
 {% else %}
-<div>
+<div{% if is_order_winner %} style="display:none"{% endif %}>
 {% endif %}
   <div class="card">
     <div class="card-header">
@@ -1769,7 +1844,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
 {# エントリー一覧：予選順位表の下に全幅で。読み仮名順に横へ羅列して折り返す（省スペース） #}
 {% if not is_none_roundrobin %}
-<div class="card" style="margin-top:16px">
+<div class="card" style="margin-top:16px{% if is_order_winner %};display:none{% endif %}">
   <div class="card-header" style="font-size:13px">エントリー <span class="badge">{{ entries|length }}</span>
     <span style="font-size:11px;color:#95a5a6;font-weight:normal;margin-left:8px">読み仮名順</span>
   </div>
