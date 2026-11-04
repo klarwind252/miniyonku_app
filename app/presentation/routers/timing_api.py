@@ -297,8 +297,10 @@ async def results_page(
     """計測結果の一覧（レーン×周回の明細）。
 
     既定は最新10レース。表示件数は 10/30/50 から選ぶ。
-    from_date〜to_date（YYYY-MM-DD）を指定すると、営業日ルール
-    （from_date 09:00 〜 to_date 08:59:59）で計測日を絞り込む。
+    from_date〜to_date（YYYY-MM-DD）を指定すると、営業日ルールで計測日を
+    絞り込む。from_date・to_date はどちらも「計測日（カレンダー日）」として扱い、
+    範囲は from_date 09:00 〜 to_date の翌朝 08:59:59。from=to=同じ日なら、その
+    営業日1日分（09:00〜翌08:59）になる。
     date=YYYY-MM-DD は旧リンク互換（その日のカレンダー日で表示）。
 
     1行 = 1レーンの1周。TS/CASE/POS/LANE/TOTAL はレーンごとに rowspan で結合し、
@@ -317,7 +319,9 @@ async def results_page(
     # 例) 現在が 07-30 なら from_date=07-30・to_date=07-31。
     _bw_from, _bw_to, _bw_label = best_svc.business_day_window()
     default_from_date = _bw_from[:10]
-    default_to_date = _bw_to[:10]
+    # ★既定の終了日は「営業日ラベル（=その計測日そのもの）」。翌朝の日付ではない。
+    #   終端は下の窓計算で内部的に翌日08:59へ繰り下げる。
+    default_to_date = _bw_label
 
     current_range = None
     range_from_date = default_from_date
@@ -330,8 +334,16 @@ async def results_page(
         # 期間絞り込み（営業日ルール：開始日09:00〜終了日の翌朝08:59:59）
         fd = from_date or default_from_date
         td = to_date or default_to_date
+        # 営業日ルール：選んだ計測日の 09:00 から、その日の翌朝 08:59:59 まで。
+        # to_date は「選んだ計測日そのもの（カレンダー日）」として扱い、終端を翌日へ
+        # 繰り下げる。こうしないと from=to=同じ日のとき窓が逆転して0件になる（旧バグ）。
+        from datetime import datetime as _dt, timedelta as _tdelta
         ts_from = f"{fd} 09:00:00"
-        ts_to = f"{td} 08:59:59"
+        try:
+            _td_next = (_dt.strptime(td, "%Y-%m-%d") + _tdelta(days=1)).strftime("%Y-%m-%d")
+        except Exception:
+            _td_next = td
+        ts_to = f"{_td_next} 08:59:59"
         # list_races_between_ts は古い順で返るため、表示用に新しい順へ反転
         races = list(reversed(await repo.list_races_between_ts(ts_from, ts_to, limit=2000)))
         current_range = {"from": fd, "to": td}
