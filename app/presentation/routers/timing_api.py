@@ -419,6 +419,60 @@ async def results_page(
     )
 
 
+@router.get("/admin/timing/export")
+async def export_db(
+    request: Request,
+    _guard: bool = Depends(require_m4laps),
+):
+    """現在の店舗のDBを丸ごと安全コピー(.backup)してダウンロードさせる。
+
+    生のSQLite 1ファイルなので、timing_events(t_us/t_us_b/quality/excluded)・
+    レイアウト・速度・ベストまで全部入り＝解析用の決定版。店舗はリクエスト
+    コンテキストから解決するので、開いている店舗のDBが確実に落ちる。
+    """
+    import sqlite3
+    import tempfile
+    import datetime
+    from starlette.background import BackgroundTask
+    from fastapi.responses import FileResponse
+    from app.infrastructure.db.connection import current_db_path
+
+    src_path = current_db_path()
+    if not os.path.exists(src_path):
+        raise HTTPException(status_code=404, detail="store db not found")
+
+    slug = "default"
+    try:
+        from app.core.store_context import get_current_store
+        st = get_current_store()
+        if st and st.slug:
+            slug = st.slug
+    except Exception:
+        pass
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"m4laps_{slug}_{ts}.db"
+
+    # ライブDBをロックせず安全にスナップショット（WALも正しく取り込める）
+    fd, tmp_path = tempfile.mkstemp(prefix="m4laps_export_", suffix=".db")
+    os.close(fd)
+    src = sqlite3.connect(src_path)
+    try:
+        dst = sqlite3.connect(tmp_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+    return FileResponse(
+        tmp_path,
+        media_type="application/octet-stream",
+        filename=fname,
+        background=BackgroundTask(os.remove, tmp_path),
+    )
+
+
 @router.post("/admin/timing/results/{race_id}/delete")
 async def delete_race(
     race_id: int,
