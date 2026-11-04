@@ -1070,6 +1070,16 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             and e["entry_id"] not in ow_in_open
         ]
 
+        # 本エントリー（この段階の対象者）数・この段階のスキャン済（受付済み）人数。
+        # order（ポイント）のヘッダ「本エントリーN名／スキャン済M名」と同じ表示に使う。
+        ow_total_entries = len(ow_target_all)
+        async with db.execute(
+            "SELECT COUNT(DISTINCT entry_id) AS n FROM order_queue "
+            "WHERE tournament_id=? AND stage_no=?",
+            (tid, ow_stage_no),
+        ) as cur:
+            ow_scanned_this_stage = (await cur.fetchone())["n"] or 0
+
         order_winner_ctx = {
             "ow_stage_no": ow_stage_no,
             "ow_stage": ow_stage,
@@ -1087,6 +1097,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             "ow_passed_list": ow_passed_list,
             "ow_eliminated_count": ow_eliminated_count,
             "ow_unscanned": ow_unscanned,
+            "ow_total_entries": ow_total_entries,
+            "ow_scanned_this_stage": ow_scanned_this_stage,
         }
 
     # レーサー別ベスト（予選順位表に表示）。反映済みヒートのみ対象・1パス集計。
@@ -6817,6 +6829,26 @@ async def order_winner_make_group(tid: int, request: Request, db: aiosqlite.Conn
     form = await request.form()
     force_single = (form.get("force_single") or "") in ("1", "true", "on")
 
+    # 人数指定（order と同じ）：待機列の先頭から size 人だけ切り出して1組確定
+    size_raw = (form.get("size") or "")
+    if size_raw in ("2", "3"):
+        size = int(size_raw)
+        lane_count = dict(t).get("lane_count") or 3
+        if size > lane_count:
+            return JSONResponse({"ok": False, "message": f"このレースは最大{lane_count}人組です"})
+        pending = await _ow_queue_pending(tid, stage_no, db)
+        if len(pending) < size:
+            return JSONResponse({"ok": False, "message": f"待機列が{size}人未満です"})
+        members = pending[:size]
+        ids = [m["id"] for m in members]
+        ph = ",".join("?" * len(ids))
+        await db.execute(f"UPDATE order_queue SET consumed=1 WHERE id IN ({ph})", ids)
+        await _ow_create_heat(tid, stage_no, [m["entry_id"] for m in members], db)
+        await db.commit()
+        pending = await _ow_queue_pending(tid, stage_no, db)
+        return JSONResponse({"ok": True, "message": f"{size}人組を確定しました",
+                             "made_groups": 1, "queue_count": len(pending), "reload": True})
+
     pending = await _ow_queue_pending(tid, stage_no, db)
     q = len(pending)
     if q == 0:
@@ -6851,6 +6883,48 @@ async def order_winner_make_group(tid: int, request: Request, db: aiosqlite.Conn
         "ok": True,
         "message": f"{made}組を確定しました",
         "made_groups": made,
+        "queue_count": len(pending),
+        "reload": True,
+    })
+
+
+@router.post("/{tid}/qualifying/order-winner/cancel-queue")
+async def order_winner_cancel_queue(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """勝ち抜け：待機列にいるレーサー1人の走行受付を取り消す（order と同じ）。
+    未消化(consumed=0)の order_queue 行のみ対象。組確定済みは対象外。
+    取り消すと本人は再び「未受付（再スキャン可能）」に戻る。"""
+    from fastapi.responses import JSONResponse
+
+    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
+        t = await cur.fetchone()
+    if not t or dict(t).get("qualifying_type") != "order_winner":
+        return JSONResponse({"ok": False, "message": "対象外のレースです"})
+
+    stage_no = await _ow_current_stage(tid, t, db)
+    form = await request.form()
+    raw_qid = (form.get("queue_id") or "").strip()
+    if not raw_qid.isdigit():
+        return JSONResponse({"ok": False, "message": "queue_id が不正です"})
+    queue_id = int(raw_qid)
+
+    async with db.execute(
+        """SELECT oq.id, r.name
+           FROM order_queue oq
+           JOIN entries e ON e.id=oq.entry_id
+           JOIN racers r ON r.id=e.racer_id
+           WHERE oq.id=? AND oq.tournament_id=? AND oq.stage_no=? AND oq.consumed=0""",
+        (queue_id, tid, stage_no),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return JSONResponse({"ok": False, "message": "対象が待機列にいません（既に組確定済みの可能性）"})
+
+    await db.execute("DELETE FROM order_queue WHERE id=?", (queue_id,))
+    await db.commit()
+    pending = await _ow_queue_pending(tid, stage_no, db)
+    return JSONResponse({
+        "ok": True,
+        "message": f"{row['name']} の受付を取り消しました",
         "queue_count": len(pending),
         "reload": True,
     })
