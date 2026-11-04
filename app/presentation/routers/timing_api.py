@@ -1148,10 +1148,13 @@ async def apply_latest_to_ow_heat(
         if not x.get("dnf"):
             win_eid = x["entry_id"]
             break
-    # レーンごとの計測タイム（heat_results.total_time へ記録＝一覧表示に使う）
+    # レーンごとの計測タイム・着順（order と同じ「1位/2位/3位・CO・FINISH」表示に使う）
     lane_times = {x["lane_id"]: x.get("total_time") for x in matched}
+    lane_ranks = {x["lane_id"]: {"rank": x.get("rank"), "is_co": bool(x.get("dnf"))}
+                  for x in matched}
 
-    res = await qual_mod._ow_apply_win(tid, heat_id, win_eid, db, lane_times=lane_times)
+    res = await qual_mod._ow_apply_win(tid, heat_id, win_eid, db,
+                                       lane_times=lane_times, lane_ranks=lane_ranks)
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("message") or "反映できませんでした")
 

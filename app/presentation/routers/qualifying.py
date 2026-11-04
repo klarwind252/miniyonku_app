@@ -997,7 +997,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         for h in ow_heats_all:
             async with db.execute(
                 """SELECT hl.id AS lane_id, hl.entry_id, hl.lane_no, r.name,
-                          hr.win, hr.is_co, hr.total_time
+                          COALESCE(r.yomi,'') AS yomi,
+                          hr.win, hr.is_co, hr.rank, hr.total_time
                    FROM heat_lanes hl
                    JOIN entries e ON e.id=hl.entry_id
                    JOIN racers r ON r.id=e.racer_id
@@ -6960,12 +6961,15 @@ async def _ow_mark_eliminated_for_heat(tid: int, stage_no: int, stage: dict, ent
 
 
 async def _ow_apply_win(tid: int, heat_id: int, win_eid: int | None, db,
-                        *, lane_times: dict | None = None) -> dict:
+                        *, lane_times: dict | None = None,
+                        lane_ranks: dict | None = None) -> dict:
     """勝ち抜け：heat_id の組へ 1着(win_eid; None=該当者なし) を適用する共有処理。
 
     手動入力（order_winner_set_win）と M4LAPS 反映（timing_api）の両方から呼ぶ。
-    lane_times: {lane_id: total_time(秒)} を渡すと heat_results.total_time に記録する
-                （M4LAPS反映用。手動時は None で無処理）。
+    lane_times: {lane_id: total_time(秒)} を渡すと heat_results.total_time に記録する。
+    lane_ranks: {lane_id: {"rank": n, "is_co": bool}} を渡すと計測の全着順を格納する
+                （M4LAPS反映用。表示を order と同じ「1位/2位/3位・CO」にするため）。
+                手動時は None で、1着のみ rank1・他は未着順。
     戻り値: 画面向けの結果 dict（呼び出し側で JSONResponse に包む）。ok=False はエラー。
 
     処理: heat_results更新 → 1着のwins+1 → 通過判定(passed/passed_seq) →
@@ -6997,28 +7001,36 @@ async def _ow_apply_win(tid: int, heat_id: int, win_eid: int | None, db,
     if win_eid is not None and win_eid not in lane_entry_ids:
         return {"ok": False, "message": "1着指定がこの組にいません"}
 
-    # ---- heat_results を更新（1着=win1/rank1、他=win0。該当者なしは全員 is_co=1）----
+    # ---- heat_results を更新 ----
+    # 手動：1着=win1/rank1、他=win0（該当者なしは全員 is_co=1）。
+    # M4LAPS反映（lane_ranks あり）：計測の全着順(1位/2位/3位)・CO を格納し、1着に win=1。
     for ln in lanes:
         eid = ln["entry_id"]
-        if win_eid is not None and eid == win_eid:
+        lid = ln["lane_id"]
+        is_win = (win_eid is not None and eid == win_eid)
+        if lane_ranks is not None and lid in lane_ranks:
+            info = lane_ranks[lid]
+            is_co = 1 if info.get("is_co") else 0
+            rank = 0 if is_co else int(info.get("rank") or 0)
+            win = 1 if is_win else 0
+        elif is_win:
             win, rank, is_co = 1, 1, 0
         else:
-            # 1着以外。該当者なし（全員CO）のときは is_co=1、通常敗はrank0/is_co0
             win, rank = 0, 0
             is_co = 1 if win_eid is None else 0
-        _tt = await _keep_total_time(db, ln["lane_id"])
-        await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (ln["lane_id"],))
+        _tt = await _keep_total_time(db, lid)
+        await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lid,))
         await db.execute(
             "INSERT INTO heat_results (heat_lane_id, win, best_time, lap_count, rank, points, is_co) "
             "VALUES (?,?,0,0,?,0,?)",
-            (ln["lane_id"], win, rank, is_co),
+            (lid, win, rank, is_co),
         )
-        await _restore_total_time(db, ln["lane_id"], _tt)
+        await _restore_total_time(db, lid, _tt)
         # M4LAPS反映：計測の合計タイムを上書き記録（手動時は lane_times=None で無処理）
         if lane_times is not None:
-            _mt = lane_times.get(ln["lane_id"])
+            _mt = lane_times.get(lid)
             if _mt is not None:
-                await _restore_total_time(db, ln["lane_id"], _mt)
+                await _restore_total_time(db, lid, _mt)
 
     passed_now = None
     stage_closed = False

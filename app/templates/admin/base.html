@@ -1491,12 +1491,16 @@ function _showPubToast(msg) {
         || /^\/admin\/tournaments\/\d+\/qualifying(\/.*)?$/.test(p)
         || /^\/admin\/tournaments\/\d+\/bracket(\/.*)?$/.test(p);
   }
-  // タイムアタック予選は SIGNAL（緑ランプ）を使うとは限らないので、
+  // タイムアタック予選・並び順（勝ち抜け）は SIGNAL（緑ランプ）を使うとは限らないので、
   // レース（緑あり）・フリー走行（緑なし）の両方をPIPに出す（mode=all）。
   // それ以外のページは従来どおり緑ランプありのレースのみ（mode=race）。
+  // 勝ち抜けは URL が /qualifying で order と同じため、種別は t から注入して判定する。
+  var M4_QTYPE = {{ (t.qualifying_type if (t is defined and t and t.qualifying_type is defined) else '') | tojson }};
   function pipMode(){
     var p=location.pathname.slice(M4PFX.length).replace(/\/+$/,'');   // ★スラグを除いて判定
-    return /^\/admin\/tournaments\/\d+\/qualifying\/time-attack(\/.*)?$/.test(p) ? 'all' : 'race';
+    if(/^\/admin\/tournaments\/\d+\/qualifying\/time-attack(\/.*)?$/.test(p)) return 'all';
+    if(M4_QTYPE === 'order_winner') return 'all';
+    return 'race';
   }
   if(!isTargetPage()){
     if(pip) pip.remove();   // 対象外のページでは存在ごと消す

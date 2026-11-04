@@ -456,65 +456,75 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     <div style="color:#95a5a6;font-size:13px;margin-bottom:6px">待機列は空です。</div>
     {% endif %}
 
-    {# ── レーススケジュール（確定・未確定を一覧。1着＝勝ち上がり。M4LAPS反映対応）──
-       並び順ポイントと同じく「作った組＝レース」を一覧表示する。
-       結果入力は 1着（勝ち上がり）を選ぶだけ。M4LAPS ON なら［反映］で計測1位を自動入力。 #}
+    {# ── レーススケジュール（order＜並び順ポイント＞と同じ表デザイン：
+       状態(反映/取消)・#・コース列・順位バッジ・FINISH）。
+       結果入力＝レーサー名クリックで1着（勝ち上がり）。M4LAPS ON なら［反映］で計測を取り込み。
+       1着だけが自動で次のラウンドへ進む。 #}
     {% if ow_heats %}
-    <div style="margin:16px 0 6px;font-weight:bold;font-size:14px;color:#2c3e50">
-      レーススケジュール <span class="badge">{{ ow_heats|length }} レース</span>
-      <span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">各レースの1着（🏁）をクリック{% if m4_on %}／［反映］でM4LAPS計測1位を自動入力{% endif %}。⠿ドラッグでコース入れ替え（未確定のみ）</span>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      {% for h in ow_heats %}
-      <div style="border:2px solid {% if h.done %}#27ae60{% else %}#8e44ad{% endif %};border-radius:10px;padding:10px 12px;background:{% if h.done %}#f4fbf6{% else %}#fff{% endif %}">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          <span style="font-size:13px;color:{% if h.done %}#1e8449{% else %}#8e44ad{% endif %};font-weight:bold">第{{ h.heat_no }}レース</span>
-          {% if h.done %}
-            {% if h.no_winner %}
-            <span style="font-size:11px;background:#fdecea;color:#c0392b;border-radius:8px;padding:1px 8px;font-weight:bold">該当者なし</span>
-            {% else %}
-            <span style="font-size:11px;background:#eafaf1;color:#1e8449;border-radius:8px;padding:1px 8px;font-weight:bold">🏁 {{ h.winner_name }} 勝ち上がり</span>
-            {% endif %}
-          {% else %}
-            <span style="font-size:11px;background:#f3e9fb;color:#8e44ad;border-radius:8px;padding:1px 8px;font-weight:bold">未確定</span>
-          {% endif %}
-          <span style="margin-left:auto;display:flex;gap:6px">
-            {% if h.done and not is_finalized %}
-            <button type="button" class="m4-undo-btn" onclick="owResetHeat({{ h.heat_id }})" title="この組の結果を取り消して1着を入力し直します">取消</button>
-            {% elif not h.done and m4_on and not is_finalized %}
-            <button type="button" class="m4-apply-btn" onclick="owApplyM4({{ h.heat_id }}, this)" title="M4LAPS計測の1位を1着として自動入力します">反映</button>
-            {% endif %}
-          </span>
-        </div>
-        <div {% if not h.done %}class="ow-lane-group" data-heat-id="{{ h.heat_id }}" data-tid="{{ t.id }}"{% endif %}
-             style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          {% for m in h.members %}
-          {% set is_win = (h.winner_entry_id == m.entry_id) %}
-          <div class="ow-lane" data-entry-id="{{ m.entry_id }}" data-lane-no="{{ m.lane_no }}"
-               style="display:inline-flex;align-items:center;gap:6px;border:2px solid {% if is_win %}#f1c40f{% elif h.done %}#dfe4ea{% else %}#27ae60{% endif %};border-radius:8px;background:{% if is_win %}#fffbe6{% else %}#fff{% endif %};padding:4px 8px">
-            {% if not h.done %}
-            <span class="ow-lane-handle" title="ドラッグでコース（出走レーン）を入れ替え"
-                  style="cursor:grab;color:#9aa3ad;font-size:15px;line-height:1;user-select:none;touch-action:none">&#10303;</span>
-            {% endif %}
-            <span style="display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;border-radius:4px;font-size:11px;font-weight:bold;color:#fff;background:{{ ['#2980b9','#e74c3c','#27ae60','#8e44ad','#95a5a6'][((m.lane_no-1)%5)] }}">{{ m.lane_no }}</span>
-            {% if not h.done %}
-            <button type="button" class="ow-win-btn" onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})"
-                    style="padding:4px 8px;border:none;background:transparent;color:#1e8449;font-size:15px;font-weight:bold;cursor:pointer">🏁 {{ m.name }}</button>
-            {% else %}
-            <span style="font-size:14px;font-weight:bold;color:{% if is_win %}#b7950b{% else %}#636e72{% endif %}">{% if is_win %}🏁 {% endif %}{{ m.name }}</span>
-            {% endif %}
-            {% if m.total_time is not none %}
-            <span style="font-size:12px;color:#8395a7;font-variant-numeric:tabular-nums" title="M4LAPS計測の合計タイム">{{ '%.3f'|format(m.total_time) }}</span>
-            {% endif %}
-          </div>
-          {% endfor %}
-          {% if not h.done %}
-          <button type="button" onclick="owSetWin({{ h.heat_id }}, 0)"
-                  style="padding:6px 14px;border:2px solid #95a5a6;border-radius:8px;background:#f8f9fa;color:#636e72;font-size:13px;cursor:pointer">該当者なし（全員CO）</button>
-          {% endif %}
-        </div>
+    <div class="card" style="margin:12px 0 0">
+      <div class="card-header">
+        レーススケジュール <span class="badge">{{ ow_heats|length }} レース</span>
+        <span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">レーサー名クリックで1着（勝ち上がり）{% if m4_on %}／［反映］でM4LAPS計測を取り込み{% endif %}。1着だけが次のラウンドへ進みます。</span>
       </div>
-      {% endfor %}
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+          <tbody>
+          {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
+          {% for h in ow_heats %}
+          <tr class="race-row" id="ow-row-{{ h.heat_id }}" style="border-bottom:1px solid #f0f0f0">
+            <td class="st">
+              <div style="display:flex;align-items:center;gap:4px;justify-content:flex-start">
+                {% if h.done %}
+                  {% if is_finalized %}<span style="font-size:11px;color:#95a5a6">確定済</span>
+                  {% else %}<button type="button" class="m4-undo-btn" onclick="owResetHeat({{ h.heat_id }})" title="このレースの結果を取り消して入力し直します">取消</button>{% endif %}
+                {% elif m4_on and not is_finalized %}
+                  <button type="button" class="m4-apply-btn" onclick="owApplyM4({{ h.heat_id }}, this)" title="ラップタイマーの計測結果をこのレースに反映します">反映</button>
+                {% endif %}
+              </div>
+            </td>
+            <td style="color:#636e72;font-weight:bold">{{ loop.index }}</td>
+            {% for col in course_cols %}
+              {% set ml = (h.members | selectattr('lane_no','equalto',col) | list) %}
+              {% if ml %}{% set m = ml[0] %}
+              <td>
+                <div class="rc" style="display:flex;align-items:center;gap:6px">
+                  <div class="rc-rank"
+                       style="min-width:48px;height:48px;border-radius:5px;font-size:14px;font-weight:bold;margin-right:10px;
+                              border:2px solid {% if m.is_co %}#e74c3c{% elif m.rank %}{{ rc.get(m.rank,'#95a5a6') }}{% else %}#dee2e6{% endif %};
+                              background:{% if m.is_co %}#fdf0f0{% elif m.rank %}#fff{% else %}#fafafa{% endif %};
+                              color:{% if m.is_co %}#e74c3c{% elif m.rank %}{{ rc.get(m.rank,'#2c3e50') }}{% else %}#bdc3c7{% endif %};
+                              display:flex;align-items:center;justify-content:center;padding:0 6px;user-select:none">
+                    {% if m.is_co %}CO{% elif m.rank %}{{ m.rank }}位{% else %}—{% endif %}
+                  </div>
+                  <div class="rc-body"{% if not h.done %} onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})" title="このレーサーを1着（勝ち上がり）にする" style="display:flex;align-items:center;gap:8px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0"{% else %} style="display:flex;align-items:center;gap:8px;height:48px;flex:1 1 auto;min-width:0"{% endif %}>
+                    <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
+                      <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</strong>
+                      {% if m.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.yomi }}</span>{% endif %}
+                    </div>
+                    <span class="rc-gap" style="flex:1 1 auto"></span>
+                    {% if m.total_time is not none %}
+                    <span class="rc-finish{% if m.rank %} fin-r{{ m.rank }}{% endif %}" title="FINISHタイム（ラップタイマー）"
+                          style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(m.total_time) }}</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+              {% else %}
+              <td style="color:#bdc3c7;text-align:center">ー</td>
+              {% endif %}
+            {% endfor %}
+            <td class="ed" style="text-align:center">
+              {% if not h.done and not is_finalized %}
+              <button type="button" onclick="owSetWin({{ h.heat_id }}, 0)" title="該当者なし（全員CO）"
+                      style="font-size:10px;padding:2px 4px;border:1px solid #e74c3c;border-radius:4px;color:#e74c3c;background:#fff;cursor:pointer;white-space:nowrap">全CO</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
     {% endif %}
 
