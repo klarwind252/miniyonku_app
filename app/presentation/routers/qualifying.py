@@ -6659,8 +6659,8 @@ async def _ow_create_heat(tid: int, stage_no: int, entry_ids: list[int], db) -> 
 
 
 async def _ow_make_groups(tid: int, t, stage_no: int, db, force_all: bool = False) -> int:
-    """待機列の未消化分から組を切り出す。
-    自動（force_all=False）: 残り5人超のときのみ 3人優先・端数2 で切り出す（残り5人以下は手動へ）。
+    """待機列の未消化分から組を切り出す（order＜並び順ポイント＞と同一ロジック）。
+    自動（force_all=False）: 3人優先・端数2（_order_chunk_sizes）。2人以上たまれば即オート。
     手動/終了（force_all=True）: 端数含め可能な限り切り出す（1人残りは呼び出し側の方針に従う）。
     戻り値: 新規作成した組数。
     """
@@ -6668,9 +6668,6 @@ async def _ow_make_groups(tid: int, t, stage_no: int, db, force_all: bool = Fals
     pending = await _ow_queue_pending(tid, stage_no, db)
     q = len(pending)
     if q < 2:
-        return 0
-    # 勝ち抜けの自動確定ゲート：残り5人以下は自動で組まない（手動に委ねる）
-    if not force_all and q <= 5:
         return 0
 
     sizes = _order_chunk_sizes(q, lane_count, force_all=force_all)
