@@ -1456,7 +1456,7 @@ function _showPubToast(msg) {
   @media(max-width:700px){ #m4pip{display:none} }
   @media print{ #m4pip{display:none} }
 </style>
-<div id="m4pip" class="collapsed" style="display:none">
+<div id="m4pip" class="collapsed">
   <div class="pip-head" onclick="m4pipToggle()">
     <span class="pip-dot" id="m4pipDot"></span>
     <span class="pip-title">⏱ ラップタイマー</span>
@@ -1475,6 +1475,7 @@ function _showPubToast(msg) {
   var head=pip ? pip.querySelector('.pip-head') : null;
   var lastSig='';
   var failCount=0;
+  if(!pip || !body || !dot || !btn) return;   // 要素が無ければ何もしない（JSエラーで他の処理を巻き込まない）
 
   // ---- 表示するページを限定（レース情報／予選／決勝のみ） ----
   //   /admin/tournaments/{id}            … レース情報
@@ -1700,7 +1701,8 @@ function _showPubToast(msg) {
       .then(function(d){
         failCount=0;
         var races=(d && d.races) || [];
-        pip.style.display = races.length ? '' : 'none';
+        // ★ 計測0件でも隠さない（常に表示。0件なら「まだ計測記録がありません」を出す）
+        pip.style.display = '';
         var sig=JSON.stringify(races);
         if(sig!==lastSig){
           lastSig=sig;
@@ -1711,7 +1713,12 @@ function _showPubToast(msg) {
       })
       .catch(function(){
         failCount++;
-        if(failCount>=3){ pip.style.display='none'; }
+        // ★ 通信失敗でも隠さない。状態が分かるよう本文に表示する
+        pip.style.display = '';
+        if(failCount>=3){
+          body.innerHTML='<div class="pip-empty">ラップタイマーに接続できません（再試行中）</div>';
+          lastSig='';
+        }
       });
   }
 

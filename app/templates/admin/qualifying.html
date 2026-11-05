@@ -466,9 +466,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         レーススケジュール <span class="badge">{{ ow_heats|length }} レース</span>
         <span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">レーサー名クリックで1着（勝ち上がり）{% if m4_on %}／［反映］でM4LAPS計測を取り込み{% endif %}。1着だけが次のラウンドへ進みます。</span>
       </div>
-      <div class="card-body" style="padding:0;overflow-x:auto">
-        <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
-          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+      <div class="card-body" style="padding:0">
+        <table class="sched-tbl" style="width:100%;table-layout:fixed">
+          <thead><tr><th class="st" style="width:72px">状態</th><th class="no" style="width:28px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 140px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:40px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
           {% for h in ow_heats %}
@@ -1187,9 +1187,12 @@ document.addEventListener('DOMContentLoaded', function(){
 {% endif %}
 
 <!-- ① レーススケジュール（全幅・インライン入力） -->
-{# 勝ち抜け(order_winner)は専用のレーススケジュール一覧を上で描画するため、
-   点式の汎用スケジュール/順位表カードは丸ごと非表示にする（構造は保持）。 #}
-<div class="card"{% if is_order_winner %} style="display:none"{% endif %}>
+{# 勝ち抜け(order_winner)は専用のレーススケジュール/結果表を上の ow 節で描画するため、
+   ここから下（点式の汎用スケジュール/順位表/エントリー/各種スクリプト）は丸ごと描画しない。
+   ★ display:none は使わない：この汎用カードは閉じ構造が崩れており、後続(base.html の PIP)を
+     内側に巻き込むため、display:none にすると勝ち抜けだけ PIP ごと消えてしまう。 #}
+{% if not is_order_winner %}
+<div class="card">
   <div class="card-header">
     レーススケジュール
     <span class="badge">{{ heats|length }} レース</span>
@@ -3053,4 +3056,5 @@ async function applyTimingToHeat(heatId, btn, force){
 })();
 </script>
 {% endif %}
+{% endif %}{# /not is_order_winner：汎用スケジュール〜スクリプトは勝ち抜けでは描画しない #}
 {% endblock %}
