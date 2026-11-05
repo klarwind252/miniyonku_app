@@ -1064,11 +1064,28 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         ow_status_map = {x["entry_id"]: x["status"] for x in ow_racers}
         ow_in_queue = {p["entry_id"] for p in ow_pending}
         ow_in_open = {m["entry_id"] for h in ow_open_heats for m in h["members"]}
-        ow_unscanned = [
-            e for e in ow_target_all
-            if ow_status_map.get(e["entry_id"]) not in ("passed", "eliminated")
-            and e["entry_id"] not in ow_in_queue
-            and e["entry_id"] not in ow_in_open
+        # 走行回数マップ（entry_id -> runs / wins / status）。各一覧に走行回数を添える。
+        ow_runs_map = {x["entry_id"]: (x["runs"] or 0) for x in ow_racers}
+        ow_wins_map = {x["entry_id"]: (x["wins"] or 0) for x in ow_racers}
+        ow_max_runs_v = ow_stage.get("max_runs") or 0
+        ow_unscanned = []
+        for e in ow_target_all:
+            st = ow_status_map.get(e["entry_id"])
+            if st in ("passed", "eliminated"):
+                continue
+            if e["entry_id"] in ow_in_queue or e["entry_id"] in ow_in_open:
+                continue
+            e2 = dict(e)
+            e2["runs"] = ow_runs_map.get(e["entry_id"], 0)
+            e2["wins"] = ow_wins_map.get(e["entry_id"], 0)
+            ow_unscanned.append(e2)
+        # 通過済みでも規定回数まで走れる（再走可能）な人の一覧。
+        #   待機列・出走中でなく、走行回数が max_runs 未満の通過者。
+        ow_rerun_list = [
+            p for p in ow_passed_list
+            if (p["runs"] or 0) < ow_max_runs_v
+            and p["entry_id"] not in ow_in_queue
+            and p["entry_id"] not in ow_in_open
         ]
 
         # 本エントリー（この段階の対象者）数・この段階のスキャン済（受付済み）人数。
@@ -1098,6 +1115,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
             "ow_passed_list": ow_passed_list,
             "ow_eliminated_count": ow_eliminated_count,
             "ow_unscanned": ow_unscanned,
+            "ow_rerun_list": ow_rerun_list,
+            "ow_runs_map": ow_runs_map,
             "ow_total_entries": ow_total_entries,
             "ow_scanned_this_stage": ow_scanned_this_stage,
         }
@@ -6756,12 +6775,13 @@ async def order_winner_scan(tid: int, request: Request, db: aiosqlite.Connection
 
     rc = await _ow_get_racer(tid, stage_no, entry_id, db)
     if rc:
-        if rc["status"] == "passed":
-            return JSONResponse({"ok": False, "message": f"{ent['name']}：既に通過しています"})
+        # 敗退者はスキャン不可
         if rc["status"] == "eliminated":
             return JSONResponse({"ok": False, "message": f"{ent['name']}：走行回数を使い切っています（敗退）"})
+        # 通過済みでも規定回数までは走行可。規定回数に達した場合のみ締め切り
         if (rc["runs"] or 0) >= (stage["max_runs"] or 0):
-            return JSONResponse({"ok": False, "message": f"{ent['name']}：規定回数（{stage['max_runs']}回）走行済みです"})
+            suffix = "（通過済み）" if rc["status"] == "passed" else ""
+            return JSONResponse({"ok": False, "message": f"{ent['name']}：規定回数（{stage['max_runs']}回）走行済みです{suffix}"})
 
     # ---- 二重並びチェック（当該段階で未消化の待機列にいる / 未完了の組にいる）----
     async with db.execute(
@@ -7377,6 +7397,33 @@ async def order_winner_reopen(tid: int, db: aiosqlite.Connection = Depends(get_d
     )
     await db.commit()
     return JSONResponse({"ok": True, "stage_no": stage_no})
+
+
+@router.post("/{tid}/qualifying/order-winner/close-stage")
+async def order_winner_close_stage(tid: int, db: aiosqlite.Connection = Depends(get_db)):
+    """現段階を手動で終了（closed）にする。
+    通過枠（advance_count）が埋まっていなくても、現在の通過者で締めて次へ進めるようにする。
+    誤って締めた場合は「この段階を再開」で running に戻せる。"""
+    from fastapi.responses import JSONResponse
+    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
+        t = await cur.fetchone()
+    if not t or dict(t).get("qualifying_type") != "order_winner":
+        return JSONResponse({"ok": False, "message": "対象外のレースです"})
+    stage_no = await _ow_current_stage(tid, t, db)
+    await db.execute(
+        "UPDATE order_winner_stages SET status='closed' "
+        "WHERE tournament_id=? AND stage_no=?",
+        (tid, stage_no),
+    )
+    await db.commit()
+    passed = await _ow_passed_count(tid, stage_no, db)
+    return JSONResponse({
+        "ok": True,
+        "stage_no": stage_no,
+        "passed_count": passed,
+        "message": f"{stage_no}次予選を終了しました（通過 {passed}名）。「次へ」で進めます。",
+        "reload": True,
+    })
 
 
 async def _ow_delete_stage_heats(tid: int, stage_no: int, db) -> None:

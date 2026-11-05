@@ -361,15 +361,26 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   <style>@keyframes unscannedPulse{0%,100%{box-shadow:0 0 0 3px rgba(231,76,60,.5)}50%{box-shadow:0 0 0 7px rgba(231,76,60,.12)}}</style>
 
-  {# 段階タブ #}
+  {# 段階タブ：各次予選で勝ち上がり（通過）できる人数を併記 #}
   {% if ow_stages|length > 1 %}
-  <div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0;align-items:flex-end">
     {% for s in ow_stages %}
-    <span style="padding:5px 14px;border-radius:16px 16px 0 0;font-size:13px;font-weight:bold;
+    <span style="padding:5px 14px;border-radius:16px 16px 0 0;font-size:13px;font-weight:bold;display:inline-flex;align-items:center;gap:6px;
                  {% if s.stage_no == ow_stage_no %}background:#8e44ad;color:#fff{% elif s.status=='closed' %}background:#d5f5e3;color:#1e8449{% else %}background:#f0f0f0;color:#95a5a6{% endif %}">
       {{ s.stage_no }}次{% if s.status=='closed' %} ✓{% endif %}
+      <span style="font-size:11px;font-weight:bold;padding:1px 8px;border-radius:10px;
+                   {% if s.stage_no == ow_stage_no %}background:rgba(255,255,255,.22);color:#fff{% else %}background:#fff;color:#8e44ad;border:1px solid #d7c3ea{% endif %}">
+        勝ち上がり {{ s.advance_count or 0 }}名
+      </span>
     </span>
     {% endfor %}
+  </div>
+  {% else %}
+  {# 単一段階でも勝ち上がり人数を明示 #}
+  <div style="padding:8px 16px 0">
+    <span style="font-size:12px;font-weight:bold;color:#8e44ad;padding:3px 12px;border-radius:12px;background:#f4ecf9;border:1px solid #d7c3ea">
+      この予選で勝ち上がり {{ ow_advance_count }}名
+    </span>
   </div>
   {% endif %}
 
@@ -400,6 +411,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% if u.pre_seq_no is not none %}{{ '%04d'|format(u.pre_seq_no) }}{% else %}—{% endif %}
           </span>
           <strong>{{ u.name }}</strong>{% if u.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ u.yomi }}</span>{% endif %}
+          <span style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:#fdebd0;color:#a04000;border:1px solid #f0c9a8">走行 {{ u.runs or 0 }}/{{ ow_max_runs }}</span>
         </div>
         {% endfor %}
       </div>
@@ -407,6 +419,25 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div style="color:#a04000;font-size:13px">未スキャンのレーサーはいません（全員スキャン済み）。</div>
       {% endif %}
     </div>
+
+    {# 通過済みでも規定回数まで走れる（再走可能）レーサー：名前クリックで追加スキャン受付 #}
+    {% if ow_rerun_list and not is_finalized %}
+    <div style="margin-bottom:7px;padding:12px 16px;background:#eafaf1;border:2px dashed #27ae60;border-radius:10px">
+      <div style="font-size:13px;font-weight:bold;color:#1e8449;margin-bottom:9px">
+        通過済み・規定回数まで再走可能（{{ ow_rerun_list|length }}名）<span style="font-weight:normal;font-size:12px;color:#148f77;margin-left:8px">勝ち上がり済みでも最大{{ ow_max_runs }}回までは走行できます。名前クリックで追加受付。</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {% for u in ow_rerun_list %}
+        <div onclick="owScanEntry({{ u.entry_id }})" title="クリックで追加の出走スキャン"
+             style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border:1px solid #abebc6;border-radius:20px;font-size:14px;cursor:pointer">
+          <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ u.passed_seq }}</span>
+          <strong>{{ u.name }}</strong>
+          <span style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:#eafaf1;color:#1e8449;border:1px solid #abebc6">走行 {{ u.runs or 0 }}/{{ ow_max_runs }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     {% else %}
     <div style="padding:12px 16px;background:#e8f8f0;border:1px solid #a9dfbf;border-radius:8px;color:#1e8449;margin-bottom:7px;font-weight:bold">
       ✓ {{ ow_stage_no }}次予選は通過枠（{{ ow_advance_count }}名）が埋まり終了しました。
@@ -544,6 +575,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#eafaf1;border:1px solid #abebc6;border-radius:20px;font-size:14px">
         <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ x.passed_seq }}</span>
         <strong>{{ x.name }}</strong>
+        <span style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:#fff;color:#1e8449;border:1px solid #abebc6">走行 {{ x.runs or 0 }}/{{ ow_max_runs }}</span>
+        {% if (x.runs or 0) < ow_max_runs %}<span style="font-size:10px;color:#e67e22;font-weight:bold">再走可</span>{% endif %}
       </div>
       {% endfor %}
     </div>
