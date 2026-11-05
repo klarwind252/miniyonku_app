@@ -336,8 +336,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="font-size:18px;font-weight:bold">並び順（勝ち抜け）</span>
     <span style="font-size:20px;font-weight:bold;color:#fff;background:#8e44ad;padding:4px 18px;border-radius:8px;letter-spacing:1px">
-      {{ ow_stage_no }}次予選{% if ow_is_last_stage %}（最終）{% endif %} / 全{{ ow_stage_count }}段階
+      {{ ow_stage_no }}次予選{% if ow_is_last_stage %}（最終）{% endif %}
     </span>
+    <span style="font-size:15px;font-weight:bold;color:#8e44ad;letter-spacing:.5px">/ 全{{ ow_stage_count }}段階</span>
     {% if ow_stage_status == 'closed' %}
       <span class="badge" style="background:#c0392b;color:#fff">この段階は終了</span>
     {% endif %}
@@ -466,9 +467,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         レーススケジュール <span class="badge">{{ ow_heats|length }} レース</span>
         <span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">レーサー名クリックで1着（勝ち上がり）{% if m4_on %}／［反映］でM4LAPS計測を取り込み{% endif %}。1着だけが次のラウンドへ進みます。</span>
       </div>
-      <div class="card-body" style="padding:0">
-        <table class="sched-tbl" style="width:100%;table-layout:fixed">
-          <thead><tr><th class="st" style="width:72px">状態</th><th class="no" style="width:28px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 140px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:40px"></th></tr></thead>
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table class="sched-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse">
+          <thead><tr><th class="st" style="width:64px">状態</th><th class="no" style="width:26px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 134px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
           {% for h in ow_heats %}
@@ -487,25 +488,24 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% for col in course_cols %}
               {% set ml = (h.members | selectattr('lane_no','equalto',col) | list) %}
               {% if ml %}{% set m = ml[0] %}
-              <td>
-                <div class="rc" style="display:flex;align-items:center;gap:6px">
+              <td style="overflow:hidden">
+                <div class="rc" style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden">
                   <div class="rc-rank"
-                       style="min-width:48px;height:48px;border-radius:5px;font-size:14px;font-weight:bold;margin-right:10px;
+                       style="flex:0 0 auto;min-width:34px;height:40px;border-radius:5px;font-size:13px;font-weight:bold;margin-right:6px;
                               border:2px solid {% if m.is_co %}#e74c3c{% elif m.rank %}{{ rc.get(m.rank,'#95a5a6') }}{% else %}#dee2e6{% endif %};
                               background:{% if m.is_co %}#fdf0f0{% elif m.rank %}#fff{% else %}#fafafa{% endif %};
                               color:{% if m.is_co %}#e74c3c{% elif m.rank %}{{ rc.get(m.rank,'#2c3e50') }}{% else %}#bdc3c7{% endif %};
-                              display:flex;align-items:center;justify-content:center;padding:0 6px;user-select:none">
+                              display:flex;align-items:center;justify-content:center;padding:0 4px;user-select:none">
                     {% if m.is_co %}CO{% elif m.rank %}{{ m.rank }}位{% else %}—{% endif %}
                   </div>
-                  <div class="rc-body"{% if not h.done %} onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})" title="このレーサーを1着（勝ち上がり）にする" style="display:flex;align-items:center;gap:8px;height:48px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0"{% else %} style="display:flex;align-items:center;gap:8px;height:48px;flex:1 1 auto;min-width:0"{% endif %}>
-                    <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2">
-                      <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</strong>
+                  <div class="rc-body"{% if not h.done %} onclick="owSetWin({{ h.heat_id }}, {{ m.entry_id }})" title="このレーサーを1着（勝ち上がり）にする" style="display:flex;align-items:center;gap:6px;height:40px;cursor:pointer;user-select:none;flex:1 1 auto;min-width:0;overflow:hidden"{% else %} style="display:flex;align-items:center;gap:6px;height:40px;flex:1 1 auto;min-width:0;overflow:hidden"{% endif %}>
+                    <div class="rc-names" style="display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2;flex:1 1 auto">
+                      <strong class="rc-name" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</strong>
                       {% if m.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.yomi }}</span>{% endif %}
                     </div>
-                    <span class="rc-gap" style="flex:1 1 auto"></span>
                     {% if m.total_time is not none %}
                     <span class="rc-finish{% if m.rank %} fin-r{{ m.rank }}{% endif %}" title="FINISHタイム（ラップタイマー）"
-                          style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(m.total_time) }}</span>
+                          style="flex:0 0 auto;font-size:15px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap">{{ '%.3f'|format(m.total_time) }}</span>
                     {% endif %}
                   </div>
                 </div>
@@ -541,20 +541,22 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     </div>
     {% endif %}
 
-    {# 段階制御ボタン #}
+    {# 段階制御ボタン（少し大きめ：padding 12px 24px・font 15px） #}
     <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid #eee;padding-top:14px">
       {% if ow_stage_status == 'closed' %}
         {% if ow_is_last_stage %}
-        <button type="button" class="btn btn-success" style="font-weight:bold;padding:10px 22px" onclick="owNextStage()">🏆 決勝進出を確定</button>
+        <button type="button" class="btn btn-success" style="font-weight:bold;padding:12px 24px;font-size:15px" onclick="owNextStage()">🏆 決勝進出を確定</button>
         {% else %}
-        <button type="button" class="btn btn-primary" style="font-weight:bold;padding:10px 22px;background:#8e44ad;border-color:#8e44ad" onclick="owNextStage()">➡ 次の予選（{{ ow_stage_no + 1 }}次）へ進む</button>
+        <button type="button" class="btn btn-primary" style="font-weight:bold;padding:12px 24px;font-size:15px;background:#8e44ad;border-color:#8e44ad" onclick="owNextStage()">➡ 次の予選（{{ ow_stage_no + 1 }}次）へ進む</button>
         {% endif %}
-        <button type="button" class="btn" style="background:#f39c12;color:#fff" onclick="owReopen()">この段階を再開</button>
+        <button type="button" class="btn" style="background:#f39c12;color:#fff;padding:12px 20px;font-size:15px" onclick="owReopen()">{{ ow_stage_no }}次予選を再開</button>
       {% else %}
-        <button type="button" class="btn" style="background:#e67e22;color:#fff;font-weight:bold" onclick="owAddRun()">🔁 もう1周追加（枠が埋まらないとき）</button>
+        <button type="button" class="btn" style="background:#e67e22;color:#fff;font-weight:bold;padding:12px 24px;font-size:15px" onclick="owAddRun()">🔁 もう1周追加（枠が埋まらないとき）</button>
+        {# ●次予選を終了：通過枠が埋まらなくても、この段階を手動で締めて次へ進めるようにする #}
+        <button type="button" class="btn" style="background:#c0392b;color:#fff;font-weight:bold;padding:12px 24px;font-size:15px" onclick="owCloseStage()">🏁 {{ ow_stage_no }}次予選を終了</button>
       {% endif %}
-      <button type="button" class="btn" style="background:#fff;color:#c0392b;border:1px solid #c0392b;margin-left:auto" onclick="owResetStage()">この段階をリセット</button>
-      <button type="button" class="btn" style="background:#fff;color:#c0392b;border:1px solid #c0392b" onclick="owResetAll()">全リセット</button>
+      <button type="button" class="btn" style="background:#fff;color:#c0392b;border:1px solid #c0392b;padding:12px 20px;font-size:15px;margin-left:auto" onclick="owResetStage()">{{ ow_stage_no }}次予選をリセット</button>
+      <button type="button" class="btn" style="background:#fff;color:#c0392b;border:1px solid #c0392b;padding:12px 20px;font-size:15px" onclick="owResetAll()">全リセット</button>
     </div>
   </div>
 </div>
@@ -732,6 +734,13 @@ async function owAddRun(){
   const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/add-run', '');
   owMsg(res.message || '', res.ok);
   if(res.reload){ setTimeout(function(){ location.reload(); }, 500); }
+}
+// この段階を手動で終了（通過枠が埋まらなくても締める）。以後は「次の予選へ進む／決勝進出を確定」が出る
+async function owCloseStage(){
+  if(!confirm('{{ ow_stage_no }}次予選をここで終了します。\n（通過枠が埋まっていなくても、現在の通過者で締めて次へ進めます）\nよろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/close-stage', '');
+  owMsg(res.message || '', res.ok);
+  if(res.reload){ setTimeout(function(){ location.reload(); }, 400); }
 }
 async function owNextStage(){
   const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/next-stage', '');
@@ -921,30 +930,30 @@ document.addEventListener('DOMContentLoaded', function(){
     </style>
     <div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #f0f0f0;padding-top:12px">
       {% if order_mode == 'round' and order_status != 'closed' and _next_round_exists %}
-      <button type="button" class="btn btn-warning btn-sm{% if _ready_next %} next-round-ready{% endif %}" onclick="orderRoundEnd('round')"
+      <button type="button" class="btn btn-warning{% if _ready_next %} next-round-ready{% endif %}" style="font-size:15px;padding:0 24px;font-weight:bold" onclick="orderRoundEnd('round')"
               title="このラウンドを締めて次のラウンドへ進みます（待機列の残りも組にします）">
         次のラウンドへ →
       </button>
       {% endif %}
       {% if order_status != 'closed' %}
-      <button type="button" class="btn btn-danger btn-sm{% if _ready_close %} close-ready{% endif %}" onclick="orderRoundEnd('close')"
+      <button type="button" class="btn btn-danger{% if _ready_close %} close-ready{% endif %}" style="font-size:15px;padding:0 24px;font-weight:bold" onclick="orderRoundEnd('close')"
               title="予選全体を終了して順位を確定します">
         予選を終了
       </button>
       {% endif %}
       {% if order_mode == 'round' and order_status != 'closed' %}
-      <button type="button" class="btn btn-success btn-sm" onclick="orderAddRound()"
+      <button type="button" class="btn btn-success" style="font-size:15px;padding:0 24px;font-weight:bold" onclick="orderAddRound()"
               title="規定回数を1回増やして、もう1ラウンド走らせます">
         ＋ ラウンド追加
       </button>
       {% endif %}
       {% if order_status == 'closed' %}
-      <button type="button" class="btn btn-primary btn-sm" onclick="orderReopen()"
+      <button type="button" class="btn btn-primary" style="font-size:15px;padding:0 24px;font-weight:bold" onclick="orderReopen()"
               title="予選を予選中の状態に戻します（入力済みの結果は維持されます）">
         予選を再開
       </button>
       {% endif %}
-      <button type="button" class="btn btn-light btn-sm" style="margin-left:auto;color:#c0392b"
+      <button type="button" class="btn btn-light" style="margin-left:auto;color:#c0392b;font-size:15px;padding:0 20px"
               onclick="orderReset()" title="待機列・組・結果をすべて消去してやり直します">
         全リセット
       </button>
