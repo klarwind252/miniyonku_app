@@ -11,6 +11,7 @@ from datetime import date
 from datetime import date as date_cls
 
 from app.infrastructure.db.connection import get_db
+from app.presentation.safe_json import safe_json_dumps  # S4: <script>向け安全JSON
 
 from app.services.barcode import build_code
 
@@ -360,8 +361,7 @@ async def tournament_list(request: Request, db: aiosqlite.Connection = Depends(g
 
             results_map[tid] = br_result
 
-    import json as _json
-    all_tournaments_json = _json.dumps([
+    all_tournaments_json = safe_json_dumps([
         {
             "id": t["id"],
             "name": t["name"],
@@ -371,7 +371,7 @@ async def tournament_list(request: Request, db: aiosqlite.Connection = Depends(g
             "regulation": t["regulation"] or "",
         }
         for t in tournaments
-    ], ensure_ascii=False)
+    ])
 
     return templates.TemplateResponse("admin/tournaments.html", {
         "request": request,
@@ -1823,7 +1823,7 @@ async def tournament_edit_form(tid: int, request: Request, db: aiosqlite.Connect
         "time_slot_labels": TIME_SLOT_LABELS,
         "regulation_labels": await get_regulation_labels(db),
         "qualifying_labels": QUALIFYING_LABELS,
-        "order_winner_stages_json": json.dumps(ow_stages, ensure_ascii=False),
+        "order_winner_stages_json": safe_json_dumps(ow_stages),
         "garappa_enabled": garappa_enabled,
         "m4laps_licensed": m4laps_licensed,
         "race_assets": await _load_race_assets(tid, db),

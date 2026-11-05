@@ -4,6 +4,7 @@
 業務ロジック・SQL・HTML生成はここには一切置かない。
 """
 import os
+import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -18,7 +19,6 @@ from app.presentation.onprem_auth import add_onprem_auth
 from app.presentation.middleware.store_resolver import add_store_resolver
 from app.presentation.middleware.security import add_security_headers
 from app.presentation.middleware.m4laps_license import add_m4laps_license
-from app.presentation.middleware.poll_cache import add_poll_cache
 
 # ルーター（未移行モジュールは旧パスのまま＝互換シム経由で動作）
 from app.routers import admin, tournaments
@@ -40,6 +40,25 @@ from app.presentation.routers.timing_api import router as timing_api_router
 
 app = FastAPI(title="ミニ四駆レース管理システム", version="1.0.0")
 
+_mw_logger = logging.getLogger("m4laps.middleware")
+
+
+def _trusted_client_ip(request) -> str:
+    """X-Forwarded-For からクライアントIPを得る（S9）。
+    既定（M4_TRUSTED_PROXY_COUNT 未設定/0）は従来どおり先頭を採用＝挙動不変。
+    信頼プロキシ段数 N を設定すると右から N 番目（プロキシが実際に見たIP）を採る。"""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        try:
+            n = int(os.getenv("M4_TRUSTED_PROXY_COUNT", "0"))
+        except ValueError:
+            n = 0
+        if n > 0 and len(parts) >= n:
+            return parts[-n]
+        return parts[0] if parts else ""
+    return request.client.host if request.client else ""
+
 # クラウド版のみ：固定トークン認証（店舗別）を有効化（オンプレ版では無効＝従来挙動）。
 # ミドルウェアは「後に追加したものが外側（先に実行）」。店舗リゾルバを認証より外側に
 # 置く必要があるため、add_auth を先、add_store_resolver を後に呼ぶ。
@@ -47,9 +66,6 @@ add_auth(app)
 # オンプレ版のLAN公開時：ONPREM_ADMIN_PIN 設定時のみ /admin をPIN保護（既定は無効＝従来挙動）。
 add_onprem_auth(app)
 add_store_resolver(app)
-# 観覧ポーリングの重複生成を畳み込む超短TTLキャッシュ。
-# 既定は無効（M4_POLL_CACHE_MS 未設定/<=0 で純粋スルー＝従来挙動）。
-add_poll_cache(app)
 # M4LAPSライセンス状態を request.state にセット（クラウドのadmin画面でのみ判定）。
 add_m4laps_license(app)
 # 最外周（最後に追加＝先に実行）：HTTPS強制とセキュリティヘッダを全応答へ。
@@ -66,11 +82,10 @@ async def _audit_mw(request, call_next):
             from app.services import audit_log
             store = getattr(request.state, "store", None)
             skey = (getattr(store, "slug", "") or "default")
-            xff = request.headers.get("x-forwarded-for", "")
-            ip = (xff.split(",")[0].strip() if xff else (request.client.host if request.client else ""))
+            ip = _trusted_client_ip(request)  # S9: 信頼プロキシ考慮（既定は従来どおり先頭）
             audit_log.record(skey, ip, request.method, path, response.status_code)
     except Exception:
-        pass
+        _mw_logger.exception("audit log failed (request not affected)")  # C4: 無言失敗をやめる
     return response
 
 
@@ -112,7 +127,7 @@ async def _publish_mw(request, call_next):
             finally:
                 current_store.reset(tok)
     except Exception:
-        pass
+        _mw_logger.exception("publish scheduling failed (request not affected)")  # C4
     return response
 
 

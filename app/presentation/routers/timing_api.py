@@ -15,6 +15,7 @@ import time
 from fastapi import APIRouter, Request, Depends, HTTPException, Header, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 import aiosqlite
+import secrets
 
 from app.infrastructure.db.connection import get_db
 from app.infrastructure.db.repositories.timing_repository import (
@@ -58,7 +59,8 @@ def _check_token(x_timing_token: str | None):
     （TIMING_TOKEN_REQUIRED=1 のときは未設定を拒否＝安全側強制）。"""
     if _TOKEN_REQUIRED and not TIMING_TOKEN:
         raise HTTPException(status_code=503, detail="TIMING_TOKEN not configured")
-    if TIMING_TOKEN and x_timing_token != TIMING_TOKEN:
+    # S2: 定数時間比較に統一（タイミング攻撃対策）。未設定時の素通し挙動は従来どおり。
+    if TIMING_TOKEN and not secrets.compare_digest(x_timing_token or "", TIMING_TOKEN):
         raise HTTPException(status_code=401, detail="invalid timing token")
 
 

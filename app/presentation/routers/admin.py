@@ -6,6 +6,7 @@ import os
 
 from app.infrastructure.db.connection import get_db
 from app.core.config import IS_CLOUD, PUBLIC_BASE_URL, PUBLIC_HTML_DIR
+from app.presentation.safe_json import safe_json_dumps  # S4: <script>向け安全JSON
 
 router = APIRouter()
 
@@ -130,7 +131,7 @@ async def dashboard(request: Request, db: aiosqlite.Connection = Depends(get_db)
         "day_count": day_count,
         "night_count": night_count,
         "racer_count": racer_count,
-        "all_tournaments_json": json.dumps(all_tournaments, ensure_ascii=False),
+        "all_tournaments_json": safe_json_dumps(all_tournaments),
         "last_held": last_held,
     })
 
