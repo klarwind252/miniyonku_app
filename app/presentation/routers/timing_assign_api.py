@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -41,7 +42,8 @@ _TIMING_TOKEN = os.environ.get("TIMING_TOKEN", "")
 
 def _auth_gw(token: str | None) -> None:
     # 既存 timing_api と同じ方針：TOKEN未設定ならローカル運用として素通し。
-    if _TIMING_TOKEN and token != _TIMING_TOKEN:
+    # S2: 定数時間比較に統一（タイミング攻撃対策）。未設定時の素通し挙動は従来どおり。
+    if _TIMING_TOKEN and not secrets.compare_digest(token or "", _TIMING_TOKEN):
         raise HTTPException(status_code=401, detail="invalid timing token")
 
 
