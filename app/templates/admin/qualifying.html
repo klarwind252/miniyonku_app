@@ -339,6 +339,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {{ ow_stage_no }}次予選{% if ow_is_last_stage %}（最終）{% endif %}
     </span>
     <span style="font-size:15px;font-weight:bold;color:#8e44ad;letter-spacing:.5px">/ 全{{ ow_stage_count }}段階</span>
+    {# 「全2段階」と「通過」の間に未受付（0名=緑／1名以上=赤強調） #}
+    <span style="font-size:16px;font-weight:bold;padding:4px 14px;border-radius:8px;{% if ow_unscanned|length >= 1 %}background:#e74c3c;color:#fff;box-shadow:0 0 0 3px rgba(231,76,60,.3){% else %}background:#eafaf1;color:#1e8449;border:1px solid #a9e5c3{% endif %}">
+      未受付 {{ ow_unscanned|length }}名
+    </span>
     {# 「1次予選 / 全2段階」の右隣に通過状況を表示（少し大きめ） #}
     <span style="font-size:16px;color:#2c3e50;font-weight:bold;margin-left:6px">
       通過 <span style="color:#27ae60;font-size:22px">{{ ow_passed }}</span> / {{ ow_advance_count }}名
@@ -466,8 +470,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         レーススケジュール <span class="badge">{{ ow_heats|length }} レース</span>
         <span style="font-weight:normal;font-size:12px;color:#8e44ad;margin-left:8px">レーサー名クリックで1着（勝ち上がり）{% if m4_on %}／［反映］でM4LAPS計測を取り込み{% endif %}。1着だけが次のラウンドへ進みます。</span>
       </div>
-      <div class="card-body" style="padding:0;overflow-x:auto">
-        <table class="sched-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse">
+      {# ★横スクロール対策：box-sizing:border-box で padding を幅に含め、カラム合計を100%ちょうどに収める #}
+      <style>
+        #ow-sched{width:100%;table-layout:fixed;border-collapse:collapse}
+        #ow-sched th, #ow-sched td{box-sizing:border-box;padding:4px 6px;overflow:hidden}
+      </style>
+      <div class="card-body" style="padding:0;overflow-x:hidden">
+        <table id="ow-sched" class="sched-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse">
           <thead><tr><th class="st" style="width:64px">状態</th><th class="no" style="width:26px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 134px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
@@ -577,6 +586,25 @@ function owMsg(text, ok){
 const OW_EP = '/admin/tournaments/{{ t.id }}/qualifying/order-winner';
 const OW_MSG_KEY = 'owScanLastMsg_{{ t.id }}';
 const OW_PANEL_KEY = 'owUnscannedOpen_{{ t.id }}';
+// 反映/取消/確定などで location.reload() してもスクロール位置を維持する（再読込時のみ復元）
+const OW_SCROLL_KEY = 'owScroll_{{ t.id }}';
+window.addEventListener('beforeunload', function(){
+  try{ sessionStorage.setItem(OW_SCROLL_KEY, String(window.scrollY || window.pageYOffset || 0)); }catch(e){}
+});
+(function(){
+  var isReload = false;
+  try{
+    var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+    if(nav){ isReload = (nav.type === 'reload'); }
+    else if(performance.navigation){ isReload = (performance.navigation.type === 1); }
+  }catch(e){}
+  if(!isReload){ try{ sessionStorage.removeItem(OW_SCROLL_KEY); }catch(e){} return; }
+  var y=null; try{ var v=sessionStorage.getItem(OW_SCROLL_KEY); if(v!==null){ y=parseInt(v,10); } }catch(e){}
+  if(y===null || isNaN(y) || y<=0) return;
+  if('scrollRestoration' in history) history.scrollRestoration='manual';
+  var tries=0; function restore(){ window.scrollTo(0,y); if(++tries<15) setTimeout(restore,70); }
+  if(document.readyState==='complete') restore(); else window.addEventListener('load', restore);
+})();
 function toggleOwUnscanned(){
   const panel = document.getElementById('owUnscannedPanel');
   if(!panel) return;
