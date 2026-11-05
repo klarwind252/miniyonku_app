@@ -32,7 +32,7 @@
 .m4-apply-btn:active{background:#113a92}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
 /* 組を解散して待機列へ戻すボタン（未確定の組の訂正用）。反映の下に小さく置く */
-.ow-toqueue-btn{font-size:11px;padding:3px 7px;border:1px solid #8e44ad;border-radius:4px;
+.ow-toqueue-btn{font-size:10px;padding:2px 5px;border:1px solid #8e44ad;border-radius:4px;
   color:#8e44ad;background:#fff;cursor:pointer;white-space:nowrap;font-weight:bold;line-height:1.1}
 .ow-toqueue-btn:hover{background:#f3e9f8}
 .ow-toqueue-btn:disabled{opacity:.5;cursor:wait}
@@ -507,23 +507,18 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       </style>
       <div class="card-body" style="padding:0;overflow-x:hidden">
         <table id="ow-sched" class="sched-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse">
-          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 212px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:92px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
           {% for h in ow_heats %}
           <tr class="race-row" id="ow-row-{{ h.heat_id }}" style="border-bottom:1px solid #f0f0f0">
             <td class="st">
-              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
+              <div style="display:flex;align-items:center;gap:4px;justify-content:flex-start">
                 {% if h.done %}
                   {% if is_finalized %}<span style="font-size:11px;color:#95a5a6">確定済</span>
                   {% else %}<button type="button" class="m4-undo-btn" onclick="owResetHeat({{ h.heat_id }})" title="このレースの結果を取り消して入力し直します">取消</button>{% endif %}
-                {% else %}
-                  {% if m4_on and not is_finalized %}
+                {% elif m4_on and not is_finalized %}
                   <button type="button" class="m4-apply-btn" onclick="owApplyM4({{ h.heat_id }}, this)" title="ラップタイマーの計測結果をこのレースに反映します">反映</button>
-                  {% endif %}
-                  {% if not is_finalized %}
-                  <button type="button" class="ow-toqueue-btn" onclick="owHeatToQueue({{ h.heat_id }})" title="この組を解散して待機列（出走待ち）へ戻します。各レーサーの出走回数も1戻します">⟲ 戻す</button>
-                  {% endif %}
                 {% endif %}
               </div>
             </td>
@@ -560,8 +555,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% endfor %}
             <td class="ed" style="text-align:center">
               {% if not h.done and not is_finalized %}
-              <button type="button" onclick="owSetWin({{ h.heat_id }}, 0)" title="該当者なし（全員CO）"
-                      style="font-size:10px;padding:2px 4px;border:1px solid #e74c3c;border-radius:4px;color:#e74c3c;background:#fff;cursor:pointer;white-space:nowrap">全CO</button>
+              <div style="display:flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap">
+                <button type="button" onclick="owSetWin({{ h.heat_id }}, 0)" title="該当者なし（全員CO）"
+                        style="font-size:10px;padding:2px 4px;border:1px solid #e74c3c;border-radius:4px;color:#e74c3c;background:#fff;cursor:pointer;white-space:nowrap">全CO</button>
+                <button type="button" class="ow-toqueue-btn" onclick="owHeatToQueue({{ h.heat_id }})" title="この組を解散して待機列（出走待ち）へ戻します。各レーサーの出走回数も1戻します">⟲ 戻す</button>
+              </div>
               {% endif %}
             </td>
           </tr>
