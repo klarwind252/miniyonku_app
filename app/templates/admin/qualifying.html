@@ -779,6 +779,12 @@ document.addEventListener('DOMContentLoaded', function(){
     {% else %}
       <span class="badge" style="background:#16a085;color:#fff">フリー走行制</span>
     {% endif %}
+    {# ラウンドの右隣に「未受付 ●名」を分かりやすく表示（0名=緑／1名以上=赤で強調） #}
+    {% if order_mode == 'round' %}
+    <span style="font-size:16px;font-weight:bold;padding:4px 14px;border-radius:8px;{% if order_unscanned|length >= 1 %}background:#e74c3c;color:#fff;box-shadow:0 0 0 3px rgba(231,76,60,.3){% else %}background:#eafaf1;color:#1e8449;border:1px solid #a9e5c3{% endif %}">
+      未受付 {{ order_unscanned|length }}名
+    </span>
+    {% endif %}
     {% if order_status == 'closed' %}
       <span class="badge" style="background:#c0392b;color:#fff">予選終了</span>
     {% endif %}
