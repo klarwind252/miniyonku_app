@@ -98,17 +98,35 @@ async def _audit_mw(request, call_next):
 import re as _re_pub
 _PUB_TL_RE = _re_pub.compile(r"/tournaments/\d+/(status|edit|edit-final|delete)$")
 _PUB_RENAME_RE = _re_pub.compile(r"/tournaments/\d+/entries/\d+/rename-racer$")
-# エントリーの追加・一括追加・削除・他レースからコピーは観覧ページの「エントリー一覧」を
-# 変える。これらは host-sync（ページ切替）を伴わないため、ここで再生成を予約しないと
-# 参加者向け静的HTMLが「エントリー 0名」のまま更新されない。
+# ★20261105 監査：観覧ページ（entries/racers/timing_bests/app_settings を読む）を変える
+#   更新系のうち、host-sync（ページ切替）を伴わず再生成が予約されていなかった経路を網羅。
+#   予選（全形式・タイムアタック含む /qualifying/）と決勝（/bracket/）は既に上の判定で網羅済み。
+# (1) レース画面のエントリー一覧を変える操作（追加・一括・削除・コピー・事前エントリー受付→本エントリー昇格）
 _PUB_ENTRY_RE = _re_pub.compile(
-    r"/tournaments/\d+/(add-entry|add-entries-bulk|remove-entry/\d+|copy-entries/\d+)$"
+    r"/tournaments/\d+/("
+    r"add-entry|add-entries-bulk|add-listed-entries|remove-entry/\d+|copy-entries/\d+"
+    r"|scan-reception|scan-walkin|pre-entries/\d+/check-in"
+    r")$"
 )
+# (2) レーサー画面からのエントリー操作・レーサー名変更/削除（観覧は racers.name を表示）。
+#     CSVインポート確定は既存レーサー名を update_identity で書き換えるため同様に対象。
+_PUB_RACER_RE = _re_pub.compile(
+    r"/admin/racers/(edit|delete|entry-single|remove-entry-single|entry-today|cancel-visit)/\d+"
+    r"|/admin/racers/import-commit$"
+)
+# (3) M4LAPS 計測結果の削除（観覧のベスト表・RECORD HOLDERS が変わる）
+_PUB_TIMING_DEL_RE = _re_pub.compile(r"/admin/timing/results/\d+/delete$")
 
 def _needs_publish(path: str) -> bool:
     if "/qualifying/" in path or "/bracket/" in path or "/api/timing/apply/" in path:
         return True
     if _PUB_TL_RE.search(path) or _PUB_RENAME_RE.search(path) or _PUB_ENTRY_RE.search(path):
+        return True
+    if _PUB_RACER_RE.search(path) or _PUB_TIMING_DEL_RE.search(path):
+        return True
+    # (4) 観覧の表示内容に影響する設定（M4LAPSライセンス有効/無効・表示言語・レギュレーション名）
+    if "/admin/settings/m4laps/" in path or path.endswith("/admin/settings/language/save") \
+       or path.endswith("/admin/settings/regulations/save"):
         return True
     # 参加者向けHTMLの見た目・待機画面に影響する設定変更（スライドショー・背景・
     # PWAアイコン/manifest・店名・配信設定）。/telop は /api/telop の動的取得のため対象外。
