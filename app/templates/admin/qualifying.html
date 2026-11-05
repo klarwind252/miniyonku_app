@@ -1459,10 +1459,16 @@ document.addEventListener('DOMContentLoaded', function(){
               {% if ((t.qualifying_type == 'point') or is_order) and has_any_result %}
               {% set _st = standings | selectattr('entry_id','equalto', lane.entry_id) | list | first %}
               {% if _st %}
-              {% set _inzone = (_st.rank is not none) and finalists and (_st.rank <= finalists) %}
-              {% set _border = _st.is_tied_cutoff %}
-              <span title="現在 {{ _st.points }}pt・{% if _border %}当落線上{% elif _inzone %}決勝進出圏内{% else %}圏外{% endif %}"
-                    style="flex:0 0 auto;margin-left:8px;font-size:15px;font-weight:bold;font-variant-numeric:tabular-nums;white-space:nowrap;color:{% if _border %}#e74c3c{% elif _inzone %}#2563eb{% else %}#95a5a6{% endif %}">{{ _st.points }}pt</span>
+              {# 合計ポイントで当落ラインを引く：進出枠 finalists 番目のポイント＝ボーダー。
+                 ボーダーより上=青（進出圏内）/ ボーダーと同点=赤（当落線上）/ 下=灰（圏外）。
+                 枠より人数が少なければ全員圏内（青）。 #}
+              {% set _bp = (standings[finalists-1].total_points) if (finalists and (standings|length) >= finalists) else None %}
+              {% set _pts = _st.total_points or 0 %}
+              {% if _bp is none or _pts > _bp %}{% set _col, _lbl = '#2563eb', 'ボーダーより上（決勝進出圏内）' %}
+              {% elif _pts == _bp %}{% set _col, _lbl = '#e74c3c', '当落線上（ボーダー同点）' %}
+              {% else %}{% set _col, _lbl = '#95a5a6', 'ボーダーより下（圏外）' %}{% endif %}
+              <span title="現在 {{ _pts }}pt・{{ _lbl }}"
+                    style="flex:0 0 auto;margin-left:8px;font-size:15px;font-weight:bold;font-variant-numeric:tabular-nums;white-space:nowrap;color:{{ _col }}">{{ _pts }}pt</span>
               {% endif %}
               {% endif %}
               <span class="rc-gap" style="flex:1 1 auto"></span>

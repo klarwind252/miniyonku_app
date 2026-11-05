@@ -1731,14 +1731,44 @@ async def tournament_delete(tid: int, db: aiosqlite.Connection = Depends(get_db)
         await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN (SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", hids)
         await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", hids)
         await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", hids)
-    # 並び順（勝ち抜け・v6.0b）/ 並び順（ポイント制・v5.6）:
-    # order_queue と order_winner_racers は entries を FK 参照しているため、
-    # entries を消す前に先に消す必要がある（順序を誤ると FK 制約違反）。
+    # PRAGMA foreign_keys=ON のため、entries / brackets を FK 参照する子テーブルを
+    # 親より先に全て削除する（1つでも残すと DELETE で FOREIGN KEY constraint failed）。
+    # ── entries を FK 参照（＝先に消さないと entries 削除で落ちる）──
     await db.execute("DELETE FROM order_queue WHERE tournament_id=?", (tid,))
     await db.execute("DELETE FROM order_winner_racers WHERE tournament_id=?", (tid,))
     await db.execute("DELETE FROM order_winner_stages WHERE tournament_id=?", (tid,))
-    # 決勝トーナメント設定
+    # タイムアタック：time_attack_runs は entries を FK 参照。これが未削除だと
+    # entries 削除時に FOREIGN KEY constraint failed になる（本不具合の原因）。
+    await db.execute("DELETE FROM time_attack_runs WHERE tournament_id=?", (tid,))
+    # ── 決勝トーナメント（旧 brackets/match_results）：match_results は brackets を FK 参照 ──
+    await db.execute(
+        "DELETE FROM match_results WHERE bracket_id IN (SELECT id FROM brackets WHERE tournament_id=?)",
+        (tid,))
     await db.execute("DELETE FROM brackets WHERE tournament_id=?", (tid,))
+    # ── 以下は FK 制約は無いが、削除漏れの孤児データを残さないため掃除する。
+    #    万一テーブルが無い環境でも落ちないよう個別に握りつぶす。 ──
+    async def _safe_del(sql):
+        try:
+            await db.execute(sql, (tid,))
+        except Exception:
+            pass
+    # 決勝ブラケット（新：bracket_rounds→groups→slots/results/slot_ranks）
+    await _safe_del("DELETE FROM bracket_slot_ranks WHERE group_id IN (SELECT g.id FROM bracket_groups g JOIN bracket_rounds r ON r.id=g.round_id WHERE r.tournament_id=?)")
+    await _safe_del("DELETE FROM bracket_results   WHERE group_id IN (SELECT g.id FROM bracket_groups g JOIN bracket_rounds r ON r.id=g.round_id WHERE r.tournament_id=?)")
+    await _safe_del("DELETE FROM bracket_slots     WHERE group_id IN (SELECT g.id FROM bracket_groups g JOIN bracket_rounds r ON r.id=g.round_id WHERE r.tournament_id=?)")
+    await _safe_del("DELETE FROM bracket_groups    WHERE round_id IN (SELECT id FROM bracket_rounds WHERE tournament_id=?)")
+    await _safe_del("DELETE FROM bracket_rounds    WHERE tournament_id=?")
+    # ヒートトーナメント（ht_rounds→groups→slots/results/slot_ranks）＋ 決勝補助
+    await _safe_del("DELETE FROM ht_slot_ranks WHERE group_id IN (SELECT g.id FROM ht_groups g JOIN ht_rounds r ON r.id=g.round_id WHERE r.tournament_id=?)")
+    await _safe_del("DELETE FROM ht_results    WHERE group_id IN (SELECT g.id FROM ht_groups g JOIN ht_rounds r ON r.id=g.round_id WHERE r.tournament_id=?)")
+    await _safe_del("DELETE FROM ht_slots      WHERE group_id IN (SELECT g.id FROM ht_groups g JOIN ht_rounds r ON r.id=g.round_id WHERE r.tournament_id=?)")
+    await _safe_del("DELETE FROM ht_groups     WHERE round_id IN (SELECT id FROM ht_rounds WHERE tournament_id=?)")
+    await _safe_del("DELETE FROM ht_rounds     WHERE tournament_id=?")
+    await _safe_del("DELETE FROM heat_finals       WHERE tournament_id=?")
+    await _safe_del("DELETE FROM ht_finalist_seeds WHERE tournament_id=?")
+    await _safe_del("DELETE FROM race_assets       WHERE tournament_id=?")
+    await _safe_del("DELETE FROM entry_form_tokens WHERE tournament_id=?")
+    # ── 親テーブル ──
     await db.execute("DELETE FROM entries WHERE tournament_id=?", (tid,))
     # マスタ非使用レースの隠しレーサー（このレース専用）も後始末（仕様書12.1）
     await db.execute(
