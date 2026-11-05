@@ -229,6 +229,15 @@
 </style>
 {% endblock %}
 {% block content %}
+{# 走行回数バッジ：残り回数で色分け（未走行=灰 / 残2以上=青 / 残1=橙 / 残0=赤） #}
+{% macro runs_badge(runs, max_runs) %}
+{% set r = runs or 0 %}{% set left = (max_runs or 0) - r %}
+{% if r == 0 %}{% set bg, fg, bd = '#ecf0f1', '#7f8c8d', '#d5dbdb' %}
+{% elif left >= 2 %}{% set bg, fg, bd = '#d6eaf8', '#1f618d', '#aed6f1' %}
+{% elif left == 1 %}{% set bg, fg, bd = '#fdebd0', '#a04000', '#f0c9a8' %}
+{% else %}{% set bg, fg, bd = '#fadbd8', '#922b21', '#f1948a' %}{% endif %}
+<span title="走行 {{ r }}回 / 残り{{ left if left > 0 else 0 }}回" style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:{{ bg }};color:{{ fg }};border:1px solid {{ bd }}">{{ r }}/{{ max_runs }}</span>
+{%- endmacro %}
 {# M4LAPS（連動ラップタイマー）有効条件。bracket/heat_tournament と同一。勝ち抜けの反映ボタン等で使用 #}
 {% set m4_on = IS_CLOUD and request.state.m4laps_licensed and (t.use_m4laps is not defined or t.use_m4laps != 0) %}
 {% raw %}
@@ -411,7 +420,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% if u.pre_seq_no is not none %}{{ '%04d'|format(u.pre_seq_no) }}{% else %}—{% endif %}
           </span>
           <strong>{{ u.name }}</strong>{% if u.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ u.yomi }}</span>{% endif %}
-          <span style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:#fdebd0;color:#a04000;border:1px solid #f0c9a8">走行 {{ u.runs or 0 }}/{{ ow_max_runs }}</span>
+          {{ runs_badge(u.runs, ow_max_runs) }}
         </div>
         {% endfor %}
       </div>
@@ -432,7 +441,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
              style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border:1px solid #abebc6;border-radius:20px;font-size:14px;cursor:pointer">
           <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ u.passed_seq }}</span>
           <strong>{{ u.name }}</strong>
-          <span style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:#eafaf1;color:#1e8449;border:1px solid #abebc6">走行 {{ u.runs or 0 }}/{{ ow_max_runs }}</span>
+          {{ runs_badge(u.runs, ow_max_runs) }}
         </div>
         {% endfor %}
       </div>
@@ -575,7 +584,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#eafaf1;border:1px solid #abebc6;border-radius:20px;font-size:14px">
         <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ x.passed_seq }}</span>
         <strong>{{ x.name }}</strong>
-        <span style="font-size:11px;font-weight:bold;padding:1px 7px;border-radius:9px;background:#fff;color:#1e8449;border:1px solid #abebc6">走行 {{ x.runs or 0 }}/{{ ow_max_runs }}</span>
+        {{ runs_badge(x.runs, ow_max_runs) }}
         {% if (x.runs or 0) < ow_max_runs %}<span style="font-size:10px;color:#e67e22;font-weight:bold">再走可</span>{% endif %}
       </div>
       {% endfor %}
@@ -2165,14 +2174,35 @@ document.addEventListener('DOMContentLoaded', function(){
 const TID = {{ t.id }};
 const IS_RR = {{ 'true' if (is_roundrobin or is_heat_roundrobin or is_none_roundrobin) else 'false' }};
 
-// ── スクロール位置の復元 ──────────────────────────────────
+// ── スクロール位置の保存＆復元 ────────────────────────────
+// 反映／取消／確定などで location.reload() してもスクロール位置を維持する。
+// （従来は復元側だけで保存側が無く、反映すると必ず最上部に戻っていた）
 (function() {
   const key = 'qualifying_scroll_' + TID;
-  const saved = sessionStorage.getItem(key);
-  if (saved !== null) {
-    sessionStorage.removeItem(key);
-    requestAnimationFrame(() => window.scrollTo(0, parseInt(saved, 10)));
+  if ('scrollRestoration' in history) { try { history.scrollRestoration = 'manual'; } catch(e){} }
+  // リロード直前にスクロール位置を保存（URLも一緒に保存し、別ページでは復元しない）
+  function _saveScroll(){
+    // ヒート生成でフォーカス指定があるときは、そちら優先（保存しない）
+    try { if (sessionStorage.getItem('hr_focus_heat_' + TID)) return; } catch(e){}
+    try { sessionStorage.setItem(key, JSON.stringify({
+      y: window.scrollY || window.pageYOffset || 0, path: location.pathname
+    })); } catch(e){}
   }
+  window.addEventListener('pagehide', _saveScroll);
+  window.addEventListener('beforeunload', _saveScroll);
+  // 読み込み後：同じURLなら保存位置へ復元（内容の高さ確定まで数回リトライ）
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw !== null) {
+      sessionStorage.removeItem(key);
+      let o = null;
+      try { o = JSON.parse(raw); } catch(_){ o = { y: parseInt(raw, 10) || 0, path: location.pathname }; }
+      if (o && o.path === location.pathname && !sessionStorage.getItem('hr_focus_heat_' + TID)) {
+        const y = o.y || 0;
+        [0, 120, 360, 600].forEach(function(d){ setTimeout(function(){ window.scrollTo(0, y); }, d); });
+      }
+    }
+  } catch(e){}
 })();
 
 // ── ヒートスケジュール生成（スクロール位置を保持） ────────

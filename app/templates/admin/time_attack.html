@@ -253,6 +253,32 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
 <script>
 const TA_TID = {{ t.id }};
+
+// ── スクロール位置の保存＆復元 ────────────────────────────
+// 反映（taFetchM4 → taReload）でページを再読込してもスクロール位置を維持する。
+(function() {
+  const key = 'ta_scroll_' + TA_TID;
+  if ('scrollRestoration' in history) { try { history.scrollRestoration = 'manual'; } catch(e){} }
+  function _saveScroll(){
+    try { sessionStorage.setItem(key, JSON.stringify({
+      y: window.scrollY || window.pageYOffset || 0, path: location.pathname
+    })); } catch(e){}
+  }
+  window.addEventListener('pagehide', _saveScroll);
+  window.addEventListener('beforeunload', _saveScroll);
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw !== null) {
+      sessionStorage.removeItem(key);
+      let o = null;
+      try { o = JSON.parse(raw); } catch(_){ o = { y: parseInt(raw, 10) || 0, path: location.pathname }; }
+      if (o && o.path === location.pathname) {
+        const y = o.y || 0;
+        [0, 120, 360, 600].forEach(function(d){ setTimeout(function(){ window.scrollTo(0, y); }, d); });
+      }
+    }
+  } catch(e){}
+})();
 const TA_FINALIST_N = {{ finalist_n }};
 
 function taRow(el){ return el.closest('tr'); }
