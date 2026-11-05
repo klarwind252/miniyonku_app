@@ -570,20 +570,26 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     </div>
     {% endif %}
 
-    {# 通過者（＝再走可能枠に統合）：通過済みを一覧表示。段階が開いていて未確定・規定回数未満なら名前クリックで追加出走スキャン受付 #}
+    {# 通過者（＝再走可能枠に統合）：通過済みを一覧表示。
+       クリック（追加出走）可否は ow_rerun_list（runs<max かつ 待機列にも出走中の組にもいない通過者）に一致させる。
+       すでに待機列/出走中の通過者は「出走予定」と表示し、クリック不可（二重並び防止）。 #}
     {% if ow_passed_list %}
+    {% set ow_rerun_ids = ow_rerun_list | map(attribute='entry_id') | list %}
     <div style="margin-top:16px;padding:14px 18px;background:#eafaf1;border:2px dashed #27ae60;border-radius:10px">
       <div style="font-size:17px;font-weight:bold;color:#1e8449;margin-bottom:10px">
         通過者・規定回数まで再走可能（{{ ow_passed_list|length }}名）<span style="font-weight:normal;font-size:13px;color:#148f77;margin-left:8px">勝ち上がり済みでも最大{{ ow_max_runs }}回までは走行できます。名前クリックで追加受付。</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         {% for x in ow_passed_list %}
-        {% set _can_rerun = (ow_stage_status != 'closed') and (not is_finalized) and ((x.runs or 0) < ow_max_runs) %}
-        <div {% if _can_rerun %}onclick="owScanEntry({{ x.entry_id }})" title="クリックで追加の出走スキャン"{% endif %}
-             style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border:1px solid #abebc6;border-radius:20px;font-size:14px;{% if _can_rerun %}cursor:pointer{% endif %}">
+        {% set _can_rerun = (ow_stage_status != 'closed') and (not is_finalized) and (x.entry_id in ow_rerun_ids) %}
+        {# クリック不可のうち、回数が残っている人（＝待機列/出走中）は「出走予定」を添える #}
+        {% set _scheduled = (not _can_rerun) and ((x.runs or 0) < ow_max_runs) and (not is_finalized) and (ow_stage_status != 'closed') %}
+        <div {% if _can_rerun %}onclick="owScanEntry({{ x.entry_id }})" title="クリックで追加の出走スキャン"{% elif _scheduled %}title="すでに待機列または出走中の組に入っています"{% endif %}
+             style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border:1px solid #abebc6;border-radius:20px;font-size:14px;{% if _can_rerun %}cursor:pointer{% else %}opacity:.72{% endif %}">
           <span style="display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#27ae60;color:#fff;border-radius:50%;font-size:12px;font-weight:bold">{{ x.passed_seq }}</span>
           <strong>{{ x.name }}</strong>
           {{ runs_badge(x.runs, ow_max_runs) }}
+          {% if _scheduled %}<span style="font-size:10px;font-weight:bold;color:#2980b9;background:#eaf2fb;border:1px solid #c7ddf5;border-radius:8px;padding:1px 6px">出走予定</span>{% endif %}
         </div>
         {% endfor %}
       </div>
