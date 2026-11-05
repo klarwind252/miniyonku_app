@@ -1536,7 +1536,7 @@ async def heat_edit_form(tid: int, heat_id: int, request: Request, db: aiosqlite
 @router.post("/{tid}/qualifying/heat/{heat_id}/edit")
 async def heat_edit_save(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """手動割り当て保存"""
-    async with db.execute("SELECT status FROM heats WHERE id=? AND tournament_id=?", (heat_id, tid)) as cur:
+    async with db.execute("SELECT status, round_no FROM heats WHERE id=? AND tournament_id=?", (heat_id, tid)) as cur:
         heat = await cur.fetchone()
     if not heat or heat["status"] == "done":
         return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
@@ -1547,6 +1547,13 @@ async def heat_edit_save(tid: int, heat_id: int, request: Request, db: aiosqlite
 
     async with db.execute("SELECT id as lane_id, lane_no FROM heat_lanes WHERE heat_id=? ORDER BY lane_no", (heat_id,)) as cur:
         existing_lanes = {r["lane_no"]: dict(r) for r in await cur.fetchall()}
+
+    # 勝ち抜け(order_winner)は走行回数・待機列(order_queue)の整合が必要なため、編集前のメンバーを控える
+    _ow_edit = (dict(t).get("qualifying_type") == "order_winner")
+    ow_old_entries = set()
+    if _ow_edit:
+        async with db.execute("SELECT entry_id FROM heat_lanes WHERE heat_id=?", (heat_id,)) as cur:
+            ow_old_entries = {r["entry_id"] for r in await cur.fetchall()}
 
     qual_type = dict(t).get("qualifying_type", "")
     is_rr_family = is_roundrobin(t) or qual_type in ("heat_roundrobin", "none_roundrobin")
@@ -1581,6 +1588,55 @@ async def heat_edit_save(tid: int, heat_id: int, request: Request, db: aiosqlite
             else:
                 # 空きコースへの新規割り当て：レーン行を新規作成
                 await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, ln, eid))
+
+    # 勝ち抜け：メンバー増減に合わせて走行回数と待機列を同期（ポイント制等には無い処理）
+    #   外れた人 → runs-1・待機列へ戻す / 入った人 → runs+1・待機列行を消費(無ければ作成)してこの組に紐付け
+    if _ow_edit:
+        stage_no = heat["round_no"]
+        ow_new_entries = set(seen_entries)
+        for eid in (ow_old_entries - ow_new_entries):
+            await db.execute(
+                "UPDATE order_winner_racers SET runs = MAX(runs - 1, 0) "
+                "WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+                (tid, stage_no, eid))
+            await db.execute(
+                "UPDATE order_queue SET consumed=0, heat_id=NULL "
+                "WHERE tournament_id=? AND stage_no=? AND entry_id=? AND heat_id=?",
+                (tid, stage_no, eid, heat_id))
+            async with db.execute(
+                "SELECT 1 FROM order_queue WHERE tournament_id=? AND stage_no=? AND entry_id=? AND consumed=0 LIMIT 1",
+                (tid, stage_no, eid)) as c2:
+                _ex = await c2.fetchone()
+            if not _ex:
+                async with db.execute(
+                    "SELECT COALESCE(MAX(scan_seq),0) AS mx FROM order_queue WHERE tournament_id=? AND stage_no=?",
+                    (tid, stage_no)) as c3:
+                    _nseq = ((await c3.fetchone())["mx"] or 0) + 1
+                await db.execute(
+                    "INSERT INTO order_queue (tournament_id, entry_id, scan_seq, round_no, stage_no, consumed) "
+                    "VALUES (?,?,?,?,?,0)",
+                    (tid, eid, _nseq, stage_no, stage_no))
+        for eid in (ow_new_entries - ow_old_entries):
+            await _ow_ensure_racer(tid, stage_no, eid, db)
+            await db.execute(
+                "UPDATE order_winner_racers SET runs = runs + 1 "
+                "WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+                (tid, stage_no, eid))
+            async with db.execute(
+                "SELECT id FROM order_queue WHERE tournament_id=? AND stage_no=? AND entry_id=? AND consumed=0 ORDER BY scan_seq LIMIT 1",
+                (tid, stage_no, eid)) as c4:
+                _q = await c4.fetchone()
+            if _q:
+                await db.execute("UPDATE order_queue SET consumed=1, heat_id=? WHERE id=?", (heat_id, _q["id"]))
+            else:
+                async with db.execute(
+                    "SELECT COALESCE(MAX(scan_seq),0) AS mx FROM order_queue WHERE tournament_id=? AND stage_no=?",
+                    (tid, stage_no)) as c5:
+                    _nseq = ((await c5.fetchone())["mx"] or 0) + 1
+                await db.execute(
+                    "INSERT INTO order_queue (tournament_id, entry_id, scan_seq, round_no, stage_no, consumed, heat_id) "
+                    "VALUES (?,?,?,?,?,1,?)",
+                    (tid, eid, _nseq, stage_no, stage_no, heat_id))
 
     await db.commit()
     return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)

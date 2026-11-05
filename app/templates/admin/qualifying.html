@@ -507,7 +507,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       </style>
       <div class="card-body" style="padding:0;overflow-x:hidden">
         <table id="ow-sched" class="sched-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse">
-          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 212px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:92px"></th></tr></thead>
+          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 192px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:72px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
           {% set ow_passed_ids = ow_passed_list | map(attribute='entry_id') | list %}
@@ -570,7 +570,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               <div style="display:flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap">
                 <button type="button" onclick="owSetWin({{ h.heat_id }}, 0)" title="該当者なし（全員CO）"
                         style="font-size:10px;padding:2px 4px;border:1px solid #e74c3c;border-radius:4px;color:#e74c3c;background:#fff;cursor:pointer;white-space:nowrap">全CO</button>
-                <button type="button" class="ow-toqueue-btn" onclick="owHeatToQueue({{ h.heat_id }})" title="この組を解散して待機列（出走待ち）へ戻します。各レーサーの出走回数も1戻します">⟲ 戻す</button>
+                <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ h.heat_id }}/edit"
+                   title="このレースの内容を編集します（コース・レーサーの入れ替え）"
+                   style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">✏️</a>
               </div>
               {% endif %}
             </td>
@@ -1452,8 +1454,9 @@ document.addEventListener('DOMContentLoaded', function(){
                 {% if lane.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
               </div>
               {# 名前の右に現在のポイントと当落を色分け表示（ポイント制／並び順ポイント制のみ）。
-                 進出圏内=青 / 当落線上(同率ボーダー)=赤 / 圏外=灰 #}
-              {% if (t.qualifying_type == 'point') or is_order %}
+                 進出圏内=青 / 当落線上(同率ボーダー)=赤 / 圏外=灰
+                 まだ結果が1つも無い（全員0pt同率）うちは意味が無く赤だらけになるので出さない #}
+              {% if ((t.qualifying_type == 'point') or is_order) and has_any_result %}
               {% set _st = standings | selectattr('entry_id','equalto', lane.entry_id) | list | first %}
               {% if _st %}
               {% set _inzone = (_st.rank is not none) and finalists and (_st.rank <= finalists) %}
