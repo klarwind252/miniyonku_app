@@ -98,11 +98,17 @@ async def _audit_mw(request, call_next):
 import re as _re_pub
 _PUB_TL_RE = _re_pub.compile(r"/tournaments/\d+/(status|edit|edit-final|delete)$")
 _PUB_RENAME_RE = _re_pub.compile(r"/tournaments/\d+/entries/\d+/rename-racer$")
+# エントリーの追加・一括追加・削除・他レースからコピーは観覧ページの「エントリー一覧」を
+# 変える。これらは host-sync（ページ切替）を伴わないため、ここで再生成を予約しないと
+# 参加者向け静的HTMLが「エントリー 0名」のまま更新されない。
+_PUB_ENTRY_RE = _re_pub.compile(
+    r"/tournaments/\d+/(add-entry|add-entries-bulk|remove-entry/\d+|copy-entries/\d+)$"
+)
 
 def _needs_publish(path: str) -> bool:
     if "/qualifying/" in path or "/bracket/" in path or "/api/timing/apply/" in path:
         return True
-    if _PUB_TL_RE.search(path) or _PUB_RENAME_RE.search(path):
+    if _PUB_TL_RE.search(path) or _PUB_RENAME_RE.search(path) or _PUB_ENTRY_RE.search(path):
         return True
     # 参加者向けHTMLの見た目・待機画面に影響する設定変更（スライドショー・背景・
     # PWAアイコン/manifest・店名・配信設定）。/telop は /api/telop の動的取得のため対象外。

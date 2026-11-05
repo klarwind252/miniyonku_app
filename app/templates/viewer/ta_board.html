@@ -31,8 +31,11 @@
   .hi .no{font-size:2.0vh;font-weight:800;min-width:3.2em}
   .hi .mt{font-size:1.4vh;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .hi .md{font-size:1.25vh;color:var(--dim);font-weight:700}
+  /* 右端：その計測の最速トータルタイム */
+  .hi .bt{font-size:1.6vh;font-weight:800;color:var(--fg);flex:0 0 auto;
+    font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:.4vw}
   .hi.active{background:var(--fg);color:var(--bg)}              /* ハイライト=反転 */
-  .hi.active .mt,.hi.active .md{color:var(--bg)}
+  .hi.active .mt,.hi.active .md,.hi.active .bt{color:var(--bg)}
   #live{padding:.9vh 1vw;border-top:1px solid var(--line);font-size:1.4vh;font-weight:800;color:var(--dim);
     display:flex;align-items:center;gap:.5vw}
   #live .dot{width:1.1vh;height:1.1vh;border-radius:50%;background:#3a3a3e}
@@ -128,6 +131,7 @@
       border-bottom:1px solid var(--line);padding:3.2vw 4vw}
     .hi .no{font-size:5vw;min-width:3.6em}
     .hi .mt{display:inline;font-size:3.6vw}
+    .hi .bt{font-size:4.4vw;margin-left:2vw}
     #live{display:none}
     /* 戻るボタン＝最下部に常時固定（絶対に隠さない） */
     #ta-exit{order:3;flex:0 0 auto;display:block;text-align:center;padding:3.8vw;font-size:4.2vw;
@@ -176,6 +180,7 @@
   var QS   = location.search || "";
   function fmtClock(iso){ if(!iso)return ""; var t=String(iso).replace("T"," ");
     var m=t.match(/(\d{2})-(\d{2})\D+(\d{2}):(\d{2})/); return m?(m[1]+"/"+m[2]+" "+m[3]+":"+m[4]):t; }
+  function fmtSec(v){ var n=parseFloat(v); return isFinite(n)?n.toFixed(3):""; }   // 秒→小数3桁（例 36.220）
   function el(t,c,x){ var e=document.createElement(t); if(c)e.className=c; if(x!=null)e.textContent=x; return e; }
 
   var current=null, pinnedByUser=false, hist=[];
@@ -187,6 +192,8 @@
       var row=el("div","hi"+(r.race_id===current?" active":""));
       row.appendChild(el("span","no","#"+r.race_id));
       row.appendChild(el("span","mt",(r.heat_tag!=null?("ヒート"+r.heat_tag+" "):"")+fmtClock(r.created_at)));
+      var bt=fmtSec(r.best_total);                         // その計測の最速トータルタイム
+      if(bt) row.appendChild(el("span","bt",bt));          // 値がある時だけ右端に表示
       row.onclick=function(){ pinnedByUser=true; show(r.race_id); };
       box.appendChild(row);
     });

@@ -782,15 +782,35 @@ async def public_ta_list(request: Request, db: aiosqlite.Connection = Depends(ge
         return "race" if g is not None else "free"
 
     repo = TimingRaceRepository(db)
+    races = await repo.list_races(limit=1000)
+
+    # 各レースの最速トータルタイム（秒）を1クエリで取得。
+    # timing_bests（scope='race', metric='total', rank=1）に受信時へ保持済みの値を読むだけ。
+    best_total_by_race = {}
+    try:
+        async with db.execute(
+            "SELECT scope_key, value FROM timing_bests "
+            "WHERE scope='race' AND metric='total' AND rank=1"
+        ) as cur:
+            for br in await cur.fetchall():
+                try:
+                    best_total_by_race[int(br["scope_key"])] = float(br["value"])
+                except (TypeError, ValueError):
+                    pass
+    except Exception:
+        best_total_by_race = {}   # ベストが読めなくても一覧は出す
+
     rows = []
-    for r in await repo.list_races(limit=1000):
+    for r in races:
         keys = r.keys() if hasattr(r, "keys") else []
+        rid = r["id"]
         rows.append({
-            "race_id": r["id"],
+            "race_id": rid,
             "created_at": (r["created_at"] if "created_at" in keys else None),
             "target_laps": (r["target_laps"] if "target_laps" in keys else None),
             "heat_tag": (r["heat_tag"] if "heat_tag" in keys else None),
             "mode": _mode(r),
+            "best_total": best_total_by_race.get(rid),   # 秒・最速トータル（無ければ null）
         })
     return JSONResponse({"races": rows})
 
