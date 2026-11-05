@@ -7258,6 +7258,101 @@ async def order_winner_reset_heat(tid: int, heat_id: int, db: aiosqlite.Connecti
     return JSONResponse(result)
 
 
+async def _ow_dissolve_heat(tid: int, heat_id: int, db) -> dict:
+    """勝ち抜け：未確定(pending)の組を解散し、メンバーを待機列（出走待ち）へ戻す。
+    - 各メンバーの runs を1戻す（組確定で +1 していた走行回数の取り消し）。
+    - order_queue の該当行を未消化(consumed=0, heat_id=NULL)へ戻す。行が無ければ再作成する。
+    - heat_lanes / heat_results / heat を削除する。
+    ※ 確定済み(done)の組は対象外。先に「取消」で未確定へ戻してから使う。
+    """
+    async with db.execute(
+        "SELECT id, round_no, status FROM heats WHERE id=? AND tournament_id=?",
+        (heat_id, tid),
+    ) as cur:
+        heat = await cur.fetchone()
+    if not heat:
+        return {"ok": False, "message": "組が見つかりません"}
+    if (heat["status"] or "") == "done":
+        return {"ok": False, "message": "確定済みの組です。先に「取消」で未確定に戻してください"}
+    stage_no = heat["round_no"]
+
+    async with db.execute(
+        "SELECT hl.id AS lane_id, hl.entry_id, r.name "
+        "FROM heat_lanes hl "
+        "JOIN entries e ON e.id=hl.entry_id "
+        "JOIN racers r ON r.id=e.racer_id "
+        "WHERE hl.heat_id=? ORDER BY hl.lane_no",
+        (heat_id,),
+    ) as cur:
+        lanes = [dict(r) for r in await cur.fetchall()]
+    entry_ids = [ln["entry_id"] for ln in lanes]
+    names = [ln["name"] for ln in lanes]
+
+    # runs を1戻す（0未満にはしない）
+    for eid in entry_ids:
+        await db.execute(
+            "UPDATE order_winner_racers SET runs = MAX(runs - 1, 0) "
+            "WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+            (tid, stage_no, eid),
+        )
+
+    # この組の order_queue 行を待機列（未消化）へ戻す
+    await db.execute(
+        "UPDATE order_queue SET consumed=0, heat_id=NULL "
+        "WHERE tournament_id=? AND stage_no=? AND heat_id=?",
+        (tid, stage_no, heat_id),
+    )
+    # 行が見つからないメンバー（手動追加等）は新規に待機列へ入れ直す
+    for eid in entry_ids:
+        async with db.execute(
+            "SELECT 1 FROM order_queue WHERE tournament_id=? AND stage_no=? AND entry_id=? AND consumed=0 LIMIT 1",
+            (tid, stage_no, eid),
+        ) as cur:
+            exists = await cur.fetchone()
+        if not exists:
+            async with db.execute(
+                "SELECT COALESCE(MAX(scan_seq),0) AS mx FROM order_queue WHERE tournament_id=? AND stage_no=?",
+                (tid, stage_no),
+            ) as cur:
+                next_seq = ((await cur.fetchone())["mx"] or 0) + 1
+            await db.execute(
+                "INSERT INTO order_queue (tournament_id, entry_id, scan_seq, round_no, stage_no, consumed) "
+                "VALUES (?,?,?,?,?,0)",
+                (tid, eid, next_seq, stage_no, stage_no),
+            )
+
+    # heat_results（念のため）→ heat_lanes → heat を削除
+    for ln in lanes:
+        await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (ln["lane_id"],))
+    await db.execute("DELETE FROM heat_lanes WHERE heat_id=?", (heat_id,))
+    await db.execute("DELETE FROM heats WHERE id=? AND tournament_id=?", (heat_id, tid))
+    await db.commit()
+
+    pending = await _ow_queue_pending(tid, stage_no, db)
+    who = "・".join(names) if names else "この組"
+    return {
+        "ok": True,
+        "message": f"{who} を待機列へ戻しました（出走回数も1戻しました）",
+        "queue_count": len(pending),
+        "reload": True,
+    }
+
+
+@router.post("/{tid}/qualifying/order-winner/heat/{heat_id}/to-queue")
+async def order_winner_heat_to_queue(tid: int, heat_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """勝ち抜け：未確定の組を解散して待機列（出走待ち）へ戻す（走行回数も1戻す）。"""
+    from fastapi.responses import JSONResponse
+
+    async with db.execute(
+        "SELECT 1 FROM tournaments WHERE id=? AND qualifying_type='order_winner'", (tid,)
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "message": "対象外のレースです"})
+
+    result = await _ow_dissolve_heat(tid, heat_id, db)
+    return JSONResponse(result)
+
+
 # ---- 1-c: もう1周追加（枠割れ救済）・次段階遷移・リセット系 ----
 
 @router.post("/{tid}/qualifying/order-winner/add-run")

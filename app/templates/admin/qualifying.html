@@ -31,6 +31,11 @@
 .m4-apply-btn:hover{background:#1546b0}
 .m4-apply-btn:active{background:#113a92}
 .m4-apply-btn:disabled{opacity:.5;cursor:wait}
+/* 組を解散して待機列へ戻すボタン（未確定の組の訂正用）。反映の下に小さく置く */
+.ow-toqueue-btn{font-size:11px;padding:3px 7px;border:1px solid #8e44ad;border-radius:4px;
+  color:#8e44ad;background:#fff;cursor:pointer;white-space:nowrap;font-weight:bold;line-height:1.1}
+.ow-toqueue-btn:hover{background:#f3e9f8}
+.ow-toqueue-btn:disabled{opacity:.5;cursor:wait}
 /* 取り消しボタン：反映と同じ大きさ（48×48）。取消は淡い赤（従来デザイン） */
 .m4-undo-btn{width:48px;height:48px;font-size:13px;border:1px solid #f5b7b1;border-radius:5px;
   background:#fdf0ef;color:#c0392b;cursor:pointer;white-space:nowrap;font-weight:bold;
@@ -508,12 +513,17 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% for h in ow_heats %}
           <tr class="race-row" id="ow-row-{{ h.heat_id }}" style="border-bottom:1px solid #f0f0f0">
             <td class="st">
-              <div style="display:flex;align-items:center;gap:4px;justify-content:flex-start">
+              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
                 {% if h.done %}
                   {% if is_finalized %}<span style="font-size:11px;color:#95a5a6">確定済</span>
                   {% else %}<button type="button" class="m4-undo-btn" onclick="owResetHeat({{ h.heat_id }})" title="このレースの結果を取り消して入力し直します">取消</button>{% endif %}
-                {% elif m4_on and not is_finalized %}
+                {% else %}
+                  {% if m4_on and not is_finalized %}
                   <button type="button" class="m4-apply-btn" onclick="owApplyM4({{ h.heat_id }}, this)" title="ラップタイマーの計測結果をこのレースに反映します">反映</button>
+                  {% endif %}
+                  {% if not is_finalized %}
+                  <button type="button" class="ow-toqueue-btn" onclick="owHeatToQueue({{ h.heat_id }})" title="この組を解散して待機列（出走待ち）へ戻します。各レーサーの出走回数も1戻します">⟲ 戻す</button>
+                  {% endif %}
                 {% endif %}
               </div>
             </td>
@@ -819,6 +829,13 @@ async function owApplyM4(heatId, btn, force){
 async function owResetHeat(heatId){
   if(!confirm('この組の結果を取り消して、1着を入力し直せる状態に戻します。よろしいですか？')) return;
   const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/heat/' + heatId + '/reset', '');
+  if(res.reload){ await owSoftRefresh(); }
+  owMsg(res.message || '', res.ok);
+}
+// 未確定の組を解散して待機列（出走待ち）へ戻す。各レーサーの出走回数も1戻す（スケジュール訂正用）
+async function owHeatToQueue(heatId){
+  if(!confirm('この組を解散して、メンバーを待機列（出走待ち）へ戻します。\n各レーサーの出走回数も1戻します。よろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/heat/' + heatId + '/to-queue', '');
   if(res.reload){ await owSoftRefresh(); }
   owMsg(res.message || '', res.ok);
 }
