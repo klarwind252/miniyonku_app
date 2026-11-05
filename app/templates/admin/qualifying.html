@@ -510,6 +510,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 212px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:92px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
+          {% set ow_passed_ids = ow_passed_list | map(attribute='entry_id') | list %}
           {% for h in ow_heats %}
           <tr class="race-row" id="ow-row-{{ h.heat_id }}" style="border-bottom:1px solid #f0f0f0">
             <td class="st">
@@ -541,10 +542,21 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                       <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</strong>
                       {% if m.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.yomi }}</span>{% endif %}
                     </div>
+                    {# 勝ち上がり（通過）済みのレーサーは名前の直後に表示。再走中でも一目で分かるように #}
+                    {% if m.entry_id in ow_passed_ids %}
+                    <span class="ow-passed-tag" title="この段階を勝ち上がり済み（通過済み）"
+                          style="flex:0 0 auto;font-size:11px;font-weight:bold;color:#1e8449;background:#eafaf1;border:1px solid #abebc6;border-radius:9px;padding:2px 8px;white-space:nowrap">✓ 勝ち上がり済</span>
+                    {% endif %}
                     <span class="rc-gap" style="flex:1 1 auto"></span>
                     {% if m.total_time is not none %}
                     <span class="rc-finish{% if m.rank %} fin-r{{ m.rank }}{% endif %}" title="FINISHタイム（ラップタイマー）"
                           style="font-size:16px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;padding-right:6px">{{ '%.3f'|format(m.total_time) }}</span>
+                    {% endif %}
+                    {# このレーサーだけをこの組から外して待機列へ戻す（ポイント制の取消と同趣旨） #}
+                    {% if not h.done and not is_finalized %}
+                    <button type="button" title="このレーサーをこの組から外して待機列（出走待ち）へ戻す（出走回数も1戻す）"
+                            onclick="event.stopPropagation(); owCancelMember({{ h.heat_id }}, {{ m.entry_id }}, '{{ m.name|e }}')"
+                            style="flex:0 0 auto;margin-left:6px;padding:3px 9px;line-height:1;border:none;border-radius:5px;background:#e74c3c;color:#fff;font-size:12px;font-weight:bold;cursor:pointer;white-space:nowrap">取消</button>
                     {% endif %}
                   </div>
                 </div>
@@ -764,9 +776,7 @@ async function owCancelQueue(queueId, name){
   else { owMsg('✗ ' + (res.message||''), false); }
 }
 async function owMakeGroupSize(size, remaining){
-  if(remaining > 0){
-    if(!confirm(remaining + '名がまだスキャンされていません。\n確定すると' + remaining + '名が余る可能性があります。\n（棄権の場合はそのまま確定してください）\n\n' + size + '人組で確定しますか？')) return;
-  }
+  // 手動で「○人組で確定」を押した時点で確定してよい操作のため、確認ダイアログは出さない
   const res = await owPost(OW_EP + '/make-group', 'size=' + size);
   if(res.reload || res.ok){ await owSoftRefresh(); }
   owMsg(res.message || '', res.ok);
@@ -840,6 +850,13 @@ async function owResetHeat(heatId){
 async function owHeatToQueue(heatId){
   if(!confirm('この組を解散して、メンバーを待機列（出走待ち）へ戻します。\n各レーサーの出走回数も1戻します。よろしいですか？')) return;
   const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/heat/' + heatId + '/to-queue', '');
+  if(res.reload){ await owSoftRefresh(); }
+  owMsg(res.message || '', res.ok);
+}
+// 未確定の組から「このレーサー1人だけ」を待機列（出走待ち）へ戻す。出走回数も1戻す
+async function owCancelMember(heatId, entryId, name){
+  if(!confirm((name || 'このレーサー') + ' をこの組から外して待機列（出走待ち）へ戻します。\n出走回数も1戻します。よろしいですか？')) return;
+  const res = await owPost('/admin/tournaments/{{ t.id }}/qualifying/order-winner/heat/' + heatId + '/cancel-member', 'entry_id=' + encodeURIComponent(entryId));
   if(res.reload){ await owSoftRefresh(); }
   owMsg(res.message || '', res.ok);
 }
@@ -1238,14 +1255,7 @@ async function orderMakeGroup(size){
   location.reload();
 }
 async function orderMakeGroupWithConfirm(size, remaining){
-  // 未スキャンが残っている場合は警告
-  if(remaining > 0){
-    const msg = remaining + '名がまだスキャンされていません。\n'
-      + '確定すると' + remaining + '名が余る可能性があります。\n\n'
-      + '（棄権の場合はそのまま確定してください）\n\n'
-      + size + '人組で確定しますか？';
-    if(!confirm(msg)) return;
-  }
+  // 手動で「○人組で確定」を押した時点で確定してよい操作のため、確認ダイアログは出さない
   await orderMakeGroup(size);
 }
 async function orderRoundEnd(mode){
@@ -1441,6 +1451,17 @@ document.addEventListener('DOMContentLoaded', function(){
                 <strong class="rc-name" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.name }}</strong>
                 {% if lane.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
               </div>
+              {# 名前の右に現在のポイントと当落を色分け表示（ポイント制／並び順ポイント制のみ）。
+                 進出圏内=青 / 当落線上(同率ボーダー)=赤 / 圏外=灰 #}
+              {% if (t.qualifying_type == 'point') or is_order %}
+              {% set _st = standings | selectattr('entry_id','equalto', lane.entry_id) | list | first %}
+              {% if _st %}
+              {% set _inzone = (_st.rank is not none) and finalists and (_st.rank <= finalists) %}
+              {% set _border = _st.is_tied_cutoff %}
+              <span title="現在 {{ _st.points }}pt・{% if _border %}当落線上{% elif _inzone %}決勝進出圏内{% else %}圏外{% endif %}"
+                    style="flex:0 0 auto;margin-left:8px;font-size:15px;font-weight:bold;font-variant-numeric:tabular-nums;white-space:nowrap;color:{% if _border %}#e74c3c{% elif _inzone %}#2563eb{% else %}#95a5a6{% endif %}">{{ _st.points }}pt</span>
+              {% endif %}
+              {% endif %}
               <span class="rc-gap" style="flex:1 1 auto"></span>
               {% if _finish is not none %}
               {% set _frank = _ir.get('finish_rank') %}
@@ -1453,7 +1474,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {% if t.qualifying_type == 'order' and heat.id not in done_heat_ids and order_status != 'closed' and not is_finalized %}
             <button type="button" title="このレーサーの走行受付を取り消す"
                     onclick="event.stopPropagation(); orderCancelMember({{ heat.id }}, {{ lane.entry_id }}, '{{ lane.name|e }}')"
-                    style="margin-left:6px;width:40px;height:40px;line-height:1;padding:0;border:none;border-radius:50%;background:#e74c3c;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">×</button>
+                    style="flex:0 0 auto;margin-left:6px;padding:4px 10px;line-height:1;border:none;border-radius:5px;background:#e74c3c;color:#fff;font-size:13px;font-weight:bold;cursor:pointer;white-space:nowrap">取消</button>
             {% endif %}
             {% endif %}
           </div>

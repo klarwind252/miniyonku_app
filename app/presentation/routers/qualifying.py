@@ -7353,6 +7353,116 @@ async def order_winner_heat_to_queue(tid: int, heat_id: int, db: aiosqlite.Conne
     return JSONResponse(result)
 
 
+async def _ow_cancel_member(tid: int, heat_id: int, entry_id: int, db) -> dict:
+    """勝ち抜け：未確定(pending)の組から「1人だけ」待機列（出走待ち）へ戻す。
+    - そのレーサーの runs を1戻す。
+    - order_queue の該当行を未消化(consumed=0, heat_id=NULL)へ戻す。無ければ再作成。
+    - heat_lanes / heat_results（本人ぶん）を削除。組は残りメンバーで継続。
+    - 残りが0人になった組は削除する。
+    ※ 確定済み(done)の組は対象外（先に「取消」で未確定に戻す）。
+    ※「⟲ 戻す」が組ごとなのに対し、こちらは1人だけ。再編成はしない。
+    """
+    async with db.execute(
+        "SELECT id, round_no, status FROM heats WHERE id=? AND tournament_id=?",
+        (heat_id, tid),
+    ) as cur:
+        heat = await cur.fetchone()
+    if not heat:
+        return {"ok": False, "message": "組が見つかりません"}
+    if (heat["status"] or "") == "done":
+        return {"ok": False, "message": "確定済みの組です。先に「取消」で未確定に戻してください"}
+    stage_no = heat["round_no"]
+
+    # 対象レーサーがこの組にいるか（lane_id 取得）
+    async with db.execute(
+        "SELECT hl.id AS lane_id, r.name "
+        "FROM heat_lanes hl "
+        "JOIN entries e ON e.id=hl.entry_id "
+        "JOIN racers r ON r.id=e.racer_id "
+        "WHERE hl.heat_id=? AND hl.entry_id=?",
+        (heat_id, entry_id),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return {"ok": False, "message": "対象レーサーがこの組にいません"}
+    lane_id = row["lane_id"]
+    name = row["name"]
+
+    # runs を1戻す（0未満にしない）
+    await db.execute(
+        "UPDATE order_winner_racers SET runs = MAX(runs - 1, 0) "
+        "WHERE tournament_id=? AND stage_no=? AND entry_id=?",
+        (tid, stage_no, entry_id),
+    )
+
+    # order_queue を待機列へ戻す（この組・本人ぶん）。無ければ新規に入れ直す
+    await db.execute(
+        "UPDATE order_queue SET consumed=0, heat_id=NULL "
+        "WHERE tournament_id=? AND stage_no=? AND entry_id=? AND heat_id=?",
+        (tid, stage_no, entry_id, heat_id),
+    )
+    async with db.execute(
+        "SELECT 1 FROM order_queue WHERE tournament_id=? AND stage_no=? AND entry_id=? AND consumed=0 LIMIT 1",
+        (tid, stage_no, entry_id),
+    ) as cur:
+        exists = await cur.fetchone()
+    if not exists:
+        async with db.execute(
+            "SELECT COALESCE(MAX(scan_seq),0) AS mx FROM order_queue WHERE tournament_id=? AND stage_no=?",
+            (tid, stage_no),
+        ) as cur:
+            next_seq = ((await cur.fetchone())["mx"] or 0) + 1
+        await db.execute(
+            "INSERT INTO order_queue (tournament_id, entry_id, scan_seq, round_no, stage_no, consumed) "
+            "VALUES (?,?,?,?,?,0)",
+            (tid, entry_id, next_seq, stage_no, stage_no),
+        )
+
+    # 本人のレーン・結果を削除
+    await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (lane_id,))
+    await db.execute("DELETE FROM heat_lanes WHERE id=?", (lane_id,))
+
+    # 残りメンバー数を確認。0人なら組を削除
+    async with db.execute(
+        "SELECT COUNT(*) AS n FROM heat_lanes WHERE heat_id=?", (heat_id,)
+    ) as cur:
+        remain = (await cur.fetchone())["n"] or 0
+    deleted = False
+    if remain == 0:
+        await db.execute("DELETE FROM heats WHERE id=? AND tournament_id=?", (heat_id, tid))
+        deleted = True
+    await db.commit()
+
+    pending = await _ow_queue_pending(tid, stage_no, db)
+    tail = "（組は空になったため削除）" if deleted else f"（この組は残り{remain}人で継続）"
+    return {
+        "ok": True,
+        "message": f"{name} を待機列へ戻しました（出走回数も1戻しました）{tail}",
+        "queue_count": len(pending),
+        "reload": True,
+    }
+
+
+@router.post("/{tid}/qualifying/order-winner/heat/{heat_id}/cancel-member")
+async def order_winner_cancel_member(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """勝ち抜け：未確定の組から1人だけ待機列（出走待ち）へ戻す（走行回数も1戻す）。"""
+    from fastapi.responses import JSONResponse
+
+    async with db.execute(
+        "SELECT 1 FROM tournaments WHERE id=? AND qualifying_type='order_winner'", (tid,)
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "message": "対象外のレースです"})
+
+    form = await request.form()
+    raw_eid = (form.get("entry_id") or "").strip()
+    if not raw_eid.isdigit():
+        return JSONResponse({"ok": False, "message": "entry_id が不正です"})
+
+    result = await _ow_cancel_member(tid, heat_id, int(raw_eid), db)
+    return JSONResponse(result)
+
+
 # ---- 1-c: もう1周追加（枠割れ救済）・次段階遷移・リセット系 ----
 
 @router.post("/{tid}/qualifying/order-winner/add-run")
