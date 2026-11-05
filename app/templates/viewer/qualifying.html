@@ -519,7 +519,26 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <span style="font-size:14px;color:#7f8c8d;font-weight:normal">{% if qualifying_type == 'order' and order_round_mode == 'round' %}{{ heats | selectattr('round_no','equalto',order_current_round) | list | length }}{% elif qualifying_type == 'order_winner' %}{{ heats | selectattr('round_no','equalto',ow_stage_no) | list | length }}レース（{{ ow_stage_no }}次予選）{% else %}{{ heats|length }}レース{% endif %}</span>
       </div>
 
-      {% if all_heats_complete %}
+      {% if is_none_roundrobin %}
+      {# 即決勝（総当たり）：予選でも決勝待ちでもない。同率があれば「○位決定戦」の対象者を案内する。 #}
+        {% if deciding_groups_nr and not is_confirmed_nr %}
+        <div style="margin:6px 0 14px;padding:14px 16px;background:#2a1012;border:2px solid #e74c3c;border-radius:8px">
+          {% for grp in deciding_groups_nr %}
+          {% if grp.decide_positions|length == 1 %}{% set dtitle = grp.decide_positions[0]|string + '位決定戦' %}{% else %}{% set dtitle = grp.decide_positions[0]|string + '〜' + grp.decide_positions[-1]|string + '位決定戦' %}{% endif %}
+          <div style="{% if not loop.first %}margin-top:10px;{% endif %}text-align:center">
+            <div style="color:#ff6b6b;font-weight:bold;font-size:15px">⚔️ {{ dtitle }}があります</div>
+            <div style="color:#f0a0a0;font-size:14px;margin-top:6px">
+              対象：{% for p in grp.tied_players %}<span style="font-weight:bold;color:#ecf0f1">{{ p.name }}</span>（{{ p.wins }}勝{{ p.losses }}敗）{% if not loop.last %}　<span style="color:#ff6b6b">vs</span>　{% endif %}{% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% elif all_heats_complete and not deciding_groups_nr %}
+        <div style="margin:6px 0 14px;padding:14px 16px;background:#0f2a1e;border:2px solid #27ae60;border-radius:8px;text-align:center;color:#27ae60;font-weight:bold;font-size:15px">
+          🏁 全レース終了
+        </div>
+        {% endif %}
+      {% elif all_heats_complete %}
       <div style="margin:6px 0 14px;padding:14px 16px;background:#0f2a1e;border:2px solid #27ae60;border-radius:8px;text-align:center;color:#27ae60;font-weight:bold;font-size:15px">
         🏁 予選終了　決勝をお待ちください
       </div>

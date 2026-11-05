@@ -935,6 +935,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
     # none_roundrobin: 確定済み順位 top3_nr
     is_confirmed_nr = False
     top3_nr = [None, None, None]
+    deciding_groups_nr = []   # [{decide_positions, tied_players, decided, all_decided}]
     if qt == "none_roundrobin":
         is_confirmed_nr = dict(t).get("status") == "complete"
         decided_map = {}
@@ -985,6 +986,28 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         for pos in (1, 2, 3):
             matched = [st for st in standings if _final_preview.get(st["entry_id"]) == pos]
             top3_nr.append(matched[0] if matched else None)
+
+        # 決定戦（同率解消）グループ：1〜3位の同率グループのみ。admin（qualifying.py）と同じ規則で、
+        # 観覧にも「○位決定戦があります（対象：誰と誰）」を出すために算出する。
+        _proc_dg = set()
+        for pos in (1, 2, 3):
+            if pos in _proc_dg:
+                continue
+            tied = [st for st in standings if st.get("rank") == pos]
+            if len(tied) >= 2:
+                n = len(tied)
+                max_decide = min(pos + n - 2, 3)
+                decide_positions = list(range(pos, max_decide + 1))
+                decided = {p: next((st for st in tied if decided_map.get(st["entry_id"]) == p), None)
+                           for p in decide_positions}
+                deciding_groups_nr.append({
+                    "decide_positions": decide_positions,
+                    "tied_players": tied,
+                    "decided": decided,
+                    "all_decided": all(decided[p] is not None for p in decide_positions),
+                })
+                for p in range(pos, pos + n):
+                    _proc_dg.add(p)
 
     # 決勝進出レーサー（heat_tournament は決勝結果から順位付け、それ以外は advanced=1 のポイント順）
     # none_roundrobin は決勝画面なので finalists_list 不要
@@ -1299,6 +1322,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         "is_none_roundrobin": qt == "none_roundrobin",
         "is_confirmed_nr": is_confirmed_nr,
         "top3_nr": top3_nr,
+        "deciding_groups_nr": deciding_groups_nr,
         "has_any_result": any(
             lane.get("win") is not None
             for lanes in heat_lanes.values()
