@@ -49,14 +49,15 @@ def _trusted_client_ip(request) -> str:
     信頼プロキシ段数 N を設定すると右から N 番目（プロキシが実際に見たIP）を採る。"""
     xff = request.headers.get("x-forwarded-for", "")
     if xff:
-        parts = [p.strip() for p in xff.split(",") if p.strip()]
         try:
             n = int(os.getenv("M4_TRUSTED_PROXY_COUNT", "0"))
         except ValueError:
             n = 0
-        if n > 0 and len(parts) >= n:
-            return parts[-n]
-        return parts[0] if parts else ""
+        if n > 0:
+            parts = [p.strip() for p in xff.split(",") if p.strip()]
+            if len(parts) >= n:
+                return parts[-n]
+        return xff.split(",")[0].strip()   # 既定（n=0）：原本と完全に同一の式
     return request.client.host if request.client else ""
 
 # クラウド版のみ：固定トークン認証（店舗別）を有効化（オンプレ版では無効＝従来挙動）。

@@ -43,7 +43,9 @@ _TIMING_TOKEN = os.environ.get("TIMING_TOKEN", "")
 def _auth_gw(token: str | None) -> None:
     # 既存 timing_api と同じ方針：TOKEN未設定ならローカル運用として素通し。
     # S2: 定数時間比較に統一（タイミング攻撃対策）。未設定時の素通し挙動は従来どおり。
-    if _TIMING_TOKEN and not secrets.compare_digest(token or "", _TIMING_TOKEN):
+    # bytes で比較する：str 版は非ASCII文字で TypeError(500) になるため（ヘッダは latin-1 で届きうる）。
+    if _TIMING_TOKEN and not secrets.compare_digest(
+            (token or "").encode("utf-8"), _TIMING_TOKEN.encode("utf-8")):
         raise HTTPException(status_code=401, detail="invalid timing token")
 
 

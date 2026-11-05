@@ -60,7 +60,9 @@ def _check_token(x_timing_token: str | None):
     if _TOKEN_REQUIRED and not TIMING_TOKEN:
         raise HTTPException(status_code=503, detail="TIMING_TOKEN not configured")
     # S2: 定数時間比較に統一（タイミング攻撃対策）。未設定時の素通し挙動は従来どおり。
-    if TIMING_TOKEN and not secrets.compare_digest(x_timing_token or "", TIMING_TOKEN):
+    # bytes で比較する：str 版は非ASCII文字で TypeError(500) になるため（ヘッダは latin-1 で届きうる）。
+    if TIMING_TOKEN and not secrets.compare_digest(
+            (x_timing_token or "").encode("utf-8"), TIMING_TOKEN.encode("utf-8")):
         raise HTTPException(status_code=401, detail="invalid timing token")
 
 
