@@ -384,8 +384,37 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       var selOld = document.getElementById('m4-racer-select');
       var selVal = selOld ? selOld.value : null;
       var sx = window.scrollX, sy = window.scrollY;
-      // 更新箇所だけ差し替え
-      live.innerHTML = fresh.innerHTML;
+      // 更新箇所だけ差し替え。
+      // fresh は DOMParser がフルHTMLとして（初回ロードと同じ解析器で）正しく解析済みのノード。
+      // 旧実装の live.innerHTML = fresh.innerHTML は「一度文字列化して断片として再パース」するため、
+      // 崩れ気味のHTMLでは文書パースと断片パースの自動補正が食い違い、standings-table 等の
+      // クラス付与やテーブル構造が失われてスタイルが外れることがある。
+      // 解析済みノードを直接移植して、初回ロードと同一構造を保つ。
+      try {
+        while(live.firstChild){ live.removeChild(live.firstChild); }
+        var _kids = Array.prototype.slice.call(fresh.childNodes);
+        for(var _i=0; _i<_kids.length; _i++){
+          live.appendChild(document.importNode(_kids[_i], true));
+        }
+      } catch(e){
+        live.innerHTML = fresh.innerHTML;   // 念のためのフォールバック
+      }
+      // head の <style>（extra_style 等）も fresh 文書に合わせて補正しておく（欠落・不整合時の保険）。
+      // data-m4part 印の付いたものだけ毎回入れ替えるので無制限には増えない。
+      try {
+        var _fh = (doc.head ? doc.head.querySelectorAll('style') : null);
+        if(_fh && _fh.length){
+          var _lh = document.head;
+          var _old = _lh.querySelectorAll('style[data-m4part="1"]');
+          for(var _o=0; _o<_old.length; _o++){ _old[_o].remove(); }
+          for(var _s=0; _s<_fh.length; _s++){
+            var _st = document.createElement('style');
+            _st.setAttribute('data-m4part','1');
+            _st.textContent = _fh[_s].textContent;
+            _lh.appendChild(_st);
+          }
+        }
+      } catch(e){}
       // 決勝ツリーの二重表示ガード（差し替えで重複が入っても最初の1つだけ残す）
       if(typeof window._m4DedupBracket === 'function'){
         try { window._m4DedupBracket(); } catch(e){}
