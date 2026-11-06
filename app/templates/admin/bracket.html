@@ -1217,8 +1217,10 @@ window.initBracketConnectors = initBracketConnectors;
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-bottom:10px{% if _hide_card %};display:none{% endif %}">
   {% for gd in rg %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
-  {# 決勝ラウンドだけ：結果未確定のあいだ、レーサー行をドラッグして出走レーン（コース）を入れ替え可能にする #}
-  {% set _lane_sortable = (rnd_label == '決勝') and not result %}
+  {# 全ラウンド（準決勝・決勝ほか）：結果未確定のあいだ、レーサー行を ⠿ でドラッグして
+     出走レーン（1・2・3コース）を入れ替え可能にする。結果確定済みの組は安全のため不可
+     （先に「取消」で結果を戻してから並び替える）。 #}
+  {% set _lane_sortable = not result %}
   <div class="bracket-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
     <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span>グループ{{ g.group_no }}</span>
