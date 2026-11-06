@@ -143,6 +143,10 @@
 .win-btn { width:40px; height:40px; border:2px solid #dee2e6; border-radius:6px; cursor:pointer; font-size:20px; font-weight:bold; background:#fff; transition:all .12s; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; padding:0; }
 .win-btn.sel { border-color:#27ae60; background:#eafaf1; color:#27ae60; }
 .rank-select { padding:5px 8px; border:1px solid #ced4da; border-radius:6px; font-size:13px; background:#fff; }
+/* 決勝カードも他ラウンドと同じく1行に収める：DD・レーン番号・レーサー名・タイム・プルダウンを
+   横並び（折り返し禁止）。名前は flex で伸縮し、プルダウンは右端へ。各行で縦列が揃う。 */
+.bracket-group.final-group .slot-row{flex-wrap:nowrap}
+.bracket-group.final-group .rank-select{flex:0 0 auto;width:auto;min-width:56px;margin-left:4px}
 .round-header { font-size:15px; font-weight:bold; color:#fff; padding:6px 16px; display:block; margin-bottom:7px; border-radius:6px; }
 .rh-normal { background:linear-gradient(90deg, #2980b9 0%, #5dade2 100%); }
 .rh-final { background:linear-gradient(90deg, #d4a017 0%, #f4d03f 100%); }
