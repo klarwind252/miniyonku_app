@@ -1437,7 +1437,7 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
 
     # 全エントリー（決勝進出者がいない場合に表示）
     async with db.execute(
-        """SELECT e.entry_order, r.name, r.yomi FROM entries e
+        """SELECT e.id AS id, e.entry_order, r.name, r.yomi FROM entries e
            JOIN racers r ON r.id=e.racer_id
            WHERE e.tournament_id=? AND e.status='active'
            ORDER BY r.yomi, r.name""",
@@ -1737,9 +1737,21 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
                     "lap_avg": bm.get("lap_avg"),
                 })
 
+    # エントリー一覧の各レーサー名の右に出す「ベストタイム（TOTAL BEST）」。
+    # M4LAPS ON のときだけ辞書を作る（OFFなら空＝非表示）。記録前は key 無し→
+    # テンプレ側で「--.---」プレースホルダを表示する。
+    m4laps_use = (dict(t).get("use_m4laps", 1) != 0)
+    entry_best_total = {}
+    if m4laps_use:
+        for _r in m4laps_rows:
+            if _r.get("total") is not None:
+                entry_best_total[_r["entry_id"]] = _r["total"]
+
     return templates.TemplateResponse("viewer/bracket.html", {
         "request": request,
         "is_public_html": (request.query_params.get("_public") == "1"),
+        "m4laps_use": m4laps_use,
+        "entry_best_total": entry_best_total,
         "t": t,
         "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),
         "m4laps_rows": m4laps_rows,

@@ -8,6 +8,10 @@
 .entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:140px}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .entry-yomi{font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.entry-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.entry-top .entry-name{flex:1 1 auto;min-width:0}
+.entry-best{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:bold;color:#4fd1c5;font-size:16px;white-space:nowrap}
+.entry-best.none{color:#51606e;font-weight:normal}
 /* 最終結果ポディウム：スマホでも1・2・3位を横一列に */
 .br-final-podium{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
 @media(max-width:480px){
@@ -309,7 +313,17 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div class="entry-grid">
         {% for e in entries %}
         <div class="entry-card">
-          <span class="entry-name">{{ e.name }}</span>
+          <div class="entry-top">
+            <span class="entry-name">{{ e.name }}</span>
+            {% if m4laps_use %}
+              {% set _bt = entry_best_total.get(e.id) %}
+              {% if _bt is not none %}
+              <span class="entry-best" title="ベストタイム（TOTAL BEST）">{{ '%.3f'|format(_bt) }}</span>
+              {% else %}
+              <span class="entry-best none" title="ベストタイム（これから記録）">--.---</span>
+              {% endif %}
+            {% endif %}
+          </div>
           {% if e.yomi %}<span class="entry-yomi">{{ e.yomi }}</span>{% endif %}
         </div>
         {% endfor %}
