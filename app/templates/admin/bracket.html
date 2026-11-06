@@ -1126,16 +1126,15 @@ function drawBracketConnectors(bracketHtml) {
         midYs.push({y: cy, grp: cg});
 
         var curWinnerName = cg.dataset.winnerName || '';
-        var isOnWinPath = curWinnerName !== '' && nextWinnerName !== '' && curWinnerName === nextWinnerName;
-        var hColor = isOnWinPath ? '#27ae60' : '#adb5bd';
+        // 勝ち上がり（この組の勝者が確定）＝赤。次ラウンド確定を待たずに赤くする。
+        var curAdvanced = curWinnerName !== '';
+        var hColor = curAdvanced ? '#e74c3c' : '#adb5bd';
         line(svg, cx, cy, cx + 20, cy, hColor);
       }
 
       var vX = rightX + 20;
-      var anyOnPath = midYs.some(function(m){
-        return m.grp.dataset.winnerName && m.grp.dataset.winnerName === nextWinnerName;
-      });
-      var vc = anyOnPath ? '#27ae60' : '#adb5bd';
+      var anyAdvanced = midYs.some(function(m){ return m.grp.dataset.winnerName; });
+      var vc = anyAdvanced ? '#e74c3c' : '#adb5bd';
 
       var allY = midYs.map(function(m){ return m.y; });
       if (allY.length > 1) {
@@ -1154,7 +1153,7 @@ function drawBracketConnectors(bracketHtml) {
         line(svg, vX, nextMidY, nextX, nextMidY, vc);
       }
 
-      var nc = nextGroups[ni].dataset.winnerName ? '#1e8449' : '#adb5bd';
+      var nc = (nextGroups[ni].dataset.winnerName || anyAdvanced) ? '#e74c3c' : '#adb5bd';
       line(svg, nextX - 20, nextMidY, nextX, nextMidY, nc);
     }
   }
