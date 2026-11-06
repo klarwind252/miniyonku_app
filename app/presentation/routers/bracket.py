@@ -5179,7 +5179,11 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:none; }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
     /* スロット共通 */
-    .br-slot { display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
+    .br-slot { position:relative; display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
+    /* レーン番号(1/2/3)は左の余白に絶対配置。名前・タイムの幅を奪わない（タイム表示を保つ）。 */
+    .br-lane-no { position:absolute; left:3px; top:50%; transform:translateY(-50%); font-size:11px; font-weight:bold; color:#b0b7bf; pointer-events:none; }
+    .br-slot.winner .br-lane-no { color:rgba(255,255,255,0.8); }
+    .br-slot.empty .br-lane-no { color:#ced4da; }
     .br-slot-no { display:none; }
     .br-slot-name { flex:1; white-space:nowrap; min-width:max-content; font-size:18px; color:#212529 !important; font-weight:500; }
     .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
@@ -5282,6 +5286,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             '<div class="' + cls + '"' + onclick_attr + is_seed_attr + _eid_attr + _sid_attr + '>'
             + _handle
             + '<span class="br-slot-no">' + str(s.get("slot_no","")) + '</span>'
+            + ('<span class="br-lane-no">' + str(s.get("slot_no","")) + '</span>' if s.get("slot_no") else '')
             + '<span class="br-slot-name">' + name + '</span>'
             + time_html
             + mark + '</div>'
