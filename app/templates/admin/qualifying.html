@@ -1490,7 +1490,12 @@ document.addEventListener('DOMContentLoaded', function(){
                 {% if lane.yomi %}<span class="rc-yomi" style="font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lane.yomi }}</span>{% endif %}
               </div>
               <span class="rc-gap" style="flex:1 1 auto"></span>
-              {% if _finish_rr is not none %}
+              {% if _ir_rr.get('is_co') %}
+              {# CO（クラッシュアウト）：タイムの代わりに赤字で CO を表示（スマホ観覧と統一） #}
+              <span class="rc-finish" title="CO（クラッシュアウト）"
+                    style="font-size:16px;font-weight:bold;color:#e74c3c;
+                           letter-spacing:-.3px;white-space:nowrap;padding-right:6px">CO</span>
+              {% elif _finish_rr is not none %}
               {% set _frank_rr = _ir_rr.get('finish_rank') %}
               <span class="rc-finish{% if _frank_rr %} fin-r{{ _frank_rr }}{% endif %}"
                     title="FINISHタイム（ラップタイマー反映）{% if _frank_rr %}・予選{{ _frank_rr }}位{% endif %}"
