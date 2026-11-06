@@ -92,8 +92,8 @@
 /* 結果入力カードの順位バッジ（1/2/3/CO）。
    名前の頭を揃えるため、順位が無い行にも非表示の同サイズ枠を置く。 */
 .rank-badge{ display:inline-flex; align-items:center; justify-content:center;
-  min-width:26px; height:26px; padding:0 6px; border-radius:13px; line-height:1;
-  font-size:14px; font-weight:bold; flex-shrink:0; border:2px solid transparent; }
+  width:30px; min-width:30px; max-width:30px; height:26px; padding:0; box-sizing:border-box;
+  border-radius:13px; line-height:1; font-size:14px; font-weight:bold; flex-shrink:0; border:2px solid transparent; }
 .rank-badge.r1{ background:#fcf3cf; color:#7d6608; border-color:#d4a017; }
 .rank-badge.r2{ background:#eef1f4; color:#4a5057; border-color:#a4b0be; }
 .rank-badge.r3{ background:#f6e3d0; color:#6e4b1f; border-color:#c68642; }
@@ -104,7 +104,7 @@
 /* レーン番号（1/2/3）を名前の前にグレーで表示。どのコースかを示す。 */
 .slot-no { display:none; }
 /* 結果入力カードのレーン番号（1/2/3）を名前の前にグレーで。決勝・3位決定戦の .slot-no とは別クラス。 */
-.lane-no-card { flex-shrink:0; font-size:13px; font-weight:bold; color:#b0b7bf; margin:0 3px 0 0; padding:0; }
+.lane-no-card { flex-shrink:0; font-size:13px; font-weight:bold; color:#b0b7bf; margin:0 1px 0 0; padding:0; }
 /* 空きレーン（2名の組で未使用のコース）。ここへドラッグで 1・3 / 2・3 を選べる。 */
 .slot-row.slot-empty{ background:#fafbfc; border:1px dashed #e1e6ea; border-radius:6px; }
 .slot-row.slot-empty .slot-name{ color:#c4cace; font-style:italic; font-weight:normal; font-size:13px; }
