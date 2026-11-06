@@ -632,8 +632,17 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     deciding_groups_nr = []   # [{start_pos, tied_players, decide_positions, decided}]
     if nr:
         is_confirmed_nr = dict(t).get("status") == "complete"
+        # 未完了レース数：status だけに依存せず「全レーンに結果（win か CO）が入っていない」
+        # レースを未完了とみなす。CO（クラッシュアウト）も結果＝完了として扱う。
         async with db.execute(
-            "SELECT COUNT(*) as cnt FROM heats WHERE tournament_id=? AND COALESCE(deciding_position,0)=0 AND status!='done'",
+            """SELECT COUNT(*) as cnt FROM heats h
+                WHERE h.tournament_id=? AND COALESCE(h.deciding_position,0)=0
+                  AND EXISTS (
+                    SELECT 1 FROM heat_lanes hl
+                    LEFT JOIN heat_results hr ON hr.heat_lane_id = hl.id
+                    WHERE hl.heat_id = h.id
+                      AND (hr.id IS NULL OR (hr.win IS NULL AND COALESCE(hr.is_co,0)=0))
+                  )""",
             (tid,),
         ) as cur:
             nr_pending = (await cur.fetchone())["cnt"]

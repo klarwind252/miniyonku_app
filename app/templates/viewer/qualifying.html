@@ -249,10 +249,10 @@
 
 {# ⚡ M4LAPS RECORD HOLDERS ＋ 🎯 POINT LEADER（決勝進出レーサー枠の下・同じ幅）。
    同率は値の右にチップで羅列（左端に落とさない）。POINT LEADER は常に1名（絞り込みはルート側／admin同様）。 #}
-{% macro record_holders_block() %}
+{% macro record_holders_block(final=false) %}
 {% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader %}
 <div class="v-m4rec">
-  <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS（暫定）</div>
+  <div class="v-m4rec-title">⚡ M4LAPS RECORD HOLDERS{% if not final %}（暫定）{% endif %}</div>
   {% if record_holders and record_holders.overall %}
   <div class="v-m4rec-row">
     <span class="v-m4rec-label"><span class="v-m4rec-ic">🏁</span><span class="v-m4rec-tx">{{ ach_labels.overall }}</span></span>
@@ -459,12 +459,14 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {# 順位確定＝管理者が「結果を確定」済み、または 全レース完了＋同率がすべて決定済み。
    どちらでも表彰台を最上部に出す（確定済みなら all_heats_complete 等に関わらず出す）。 #}
 {% set nr_ranks_final = is_none_roundrobin and (is_confirmed_nr or (all_heats_complete and (nr_unresolved | length == 0))) %}
+{# 順位確定時は、決勝ブラケットと同じく表彰台の直下に M4LAPS 各受賞者を並べる（その場合 右カラムには出さない）。 #}
+{% set rh_below_podium = nr_ranks_final %}
 
 {# none_roundrobin: 表彰台をページ上部に表示（他の決勝と同様、レース終了後すぐ出す） #}
 {% if nr_ranks_final and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
-<div style="margin:12px 16px 16px;padding:24px 16px;background:linear-gradient(135deg,#0d1e12,#0f2318);border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};border-radius:12px;text-align:center">
-  <div style="font-size:14px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-bottom:16px">
-    {% if is_confirmed_nr %}🏆 最終結果{% else %}🏅 現在の順位{% endif %}
+<div style="margin:12px 16px 16px;padding:24px 16px;background:linear-gradient(135deg,#0d1e12,#0f2318);border:2px solid #f0ad4e;border-radius:12px;text-align:center">
+  <div style="font-size:14px;font-weight:bold;color:#f0ad4e;margin-bottom:16px">
+    🏆 最終結果
   </div>
   <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px">
     <div style="text-align:center">
@@ -473,11 +475,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div style="font-size:16px;font-weight:bold;color:#ecf0f1;margin-top:6px">{{ top3_nr[1].name if top3_nr[1] else '—' }}</div>
       {% if top3_nr[1] %}<div style="font-size:12px;color:#7f8c8d;margin-top:2px">{{ top3_nr[1].wins }}勝{{ top3_nr[1].losses }}負</div>{% endif %}
     </div>
-    <div style="text-align:center;padding:14px 24px;background:#1a3a20;border-radius:12px;border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %}">
+    <div style="text-align:center;padding:14px 24px;background:#1a3a20;border-radius:12px;border:2px solid #f0ad4e">
       <div style="font-size:36px">🏆</div>
-      <div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:4px">1位</div>
-      <div style="font-size:20px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:6px">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
-      {% if top3_nr[0] %}<div style="font-size:12px;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-top:2px">{{ top3_nr[0].wins }}勝{{ top3_nr[0].losses }}負</div>{% endif %}
+      <div style="font-size:12px;color:#f0ad4e;margin-top:4px">1位</div>
+      <div style="font-size:20px;font-weight:bold;color:#f0ad4e;margin-top:6px">{{ top3_nr[0].name if top3_nr[0] else '—' }}</div>
+      {% if top3_nr[0] %}<div style="font-size:12px;color:#f0ad4e;margin-top:2px">{{ top3_nr[0].wins }}勝{{ top3_nr[0].losses }}負</div>{% endif %}
     </div>
     <div style="text-align:center">
       <div style="font-size:26px">🥉</div>
@@ -487,6 +489,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     </div>
   </div>
 </div>
+{# 表彰台の直下に M4LAPS 各受賞者（OVERALL / FASTEST LAP / TOP SPEED / 称号）。
+   M4LAPS使用ONのレースのみ中身が出る（record_holders が空なら何も描画しない）。確定表示なので「暫定」は付けない。 #}
+{% if rh_below_podium %}
+<div style="margin:0 16px 16px">{{ record_holders_block(true) }}</div>
+{% endif %}
 {% endif %}
 
 {# ⚡M4LAPS ベスト表（予選内の記録のみ）。右カラム（各形式）とヒート制総当たり（右カラム無し）で共用するマクロ。 #}
@@ -1242,7 +1249,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
     {# ⚡M4LAPS RECORD HOLDERS を「勝敗表／予選順位」と「エントリー」の間に表示。
        公開HTMLは全形式ここ。View（FHD）は総当たり・即決勝のみここ（他形式は上部）。 #}
-    {% if is_public_html or is_none_roundrobin or qualifying_type == 'roundrobin' %}{{ record_holders_block() }}{% endif %}
+    {% if (is_public_html or is_none_roundrobin or qualifying_type == 'roundrobin') and not rh_below_podium %}{{ record_holders_block() }}{% endif %}
 
     {# ── M4LAPS ベスト（予選順位とエントリーの間）。TOTAL BEST TIME が速い順に 1..N ──
        表示内容は admin（予選管理）の予選順位表と同じ：順位・レーサー名・
