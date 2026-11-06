@@ -1301,6 +1301,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         "standings": standings,
         "ta_grid": ta_grid,
         "ta_runs_count": ta_runs_count,
+        "record_holders": record_holders,
         "point_leader": point_leader,
         "achievements": achievements,
         "ach_labels": _qrec.labels_from_cfg(_ach_cfg),
@@ -1347,9 +1348,10 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             if qt == "order_winner" else
             all(hd["is_complete"] for hd in hr_heats_data)
             if hr_heats_data else
-            # heat_roundrobin以外: 全heatsが完了しているか
+            # heat_roundrobin以外: 全heatsが完了しているか。
+            # CO（クラッシュアウト）は結果が出ている＝完了。win未設定でも is_co なら完了扱い。
             bool(heat_lanes) and all(
-                lane.get("win") is not None
+                (lane.get("win") is not None or lane.get("is_co"))
                 for lanes in heat_lanes.values()
                 for lane in lanes
             )

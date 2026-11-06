@@ -935,34 +935,65 @@ window.addEventListener('load', function(){
     }
     var racerCells = document.querySelectorAll('.racer-cell');
     if(racerCells.length > 0){
-      var myTr = null, myTbody = null;
+      /* セルに結果（○×マーク / CO・順位バッジ）が入っていれば、そのレーサーは走行済み。
+         none_roundrobin は heat.status=done が付かない場合があるため、結果マークでも判定する。 */
+      function cellRun(cell){
+        return !!(cell.querySelector('.rr-mark') || cell.querySelector('.rank-badge'));
+      }
+      /* 行が走行済みか（done クラス or 行内の全レーサーセルに結果）。
+         区切り行など racer-cell を持たない行は対象外（走行済み扱い・カウントしない）。 */
+      function rowRun(tr){
+        if(tr.classList.contains('done')) return true;
+        var cs = tr.querySelectorAll('.racer-cell');
+        if(!cs.length) return true;
+        return Array.prototype.every.call(cs, cellRun);
+      }
+      /* この名前が出走する行を document 順に収集（複数回出走に対応） */
+      var myRows = [], _seen = [];
       racerCells.forEach(function(cell){
-        if(myTr) return;
-        if(rcName(cell) === name){
-          var tr = cell.closest('tr');
-          if(tr && !tr.classList.contains('done')){ myTr = tr; myTbody = tr.closest('tbody'); }
-        }
+        if(rcName(cell) !== name) return;
+        var tr = cell.closest('tr'); if(!tr) return;
+        var idx = _seen.indexOf(tr);
+        if(idx < 0){ _seen.push(tr); myRows.push({ tr: tr, cells: [cell] }); }
+        else { myRows[idx].cells.push(cell); }
       });
-      if(myTr && myTbody){
-        var rows = Array.from(myTbody.querySelectorAll('tr'));
-        var myIdx = rows.indexOf(myTr);
-        var before = 0;
-        for(var ri = 0; ri < myIdx; ri++){
-          if(!rows[ri].classList.contains('done')) before++;
+      if(myRows.length > 0){
+        /* 全出走に控えめハイライト（複数回出走でも全部わかる） */
+        var SUB_BG = 'rgba(230,126,34,0.15)', SUB_BD = 'rgba(230,126,34,0.45)';
+        myRows.forEach(function(r){
+          r.cells.forEach(function(cell){
+            var td = cell.closest('td') || cell;
+            td.style.setProperty('background', SUB_BG, 'important');
+            td.style.setProperty('box-shadow', 'inset 0 0 0 2px ' + SUB_BD, 'important');
+          });
+        });
+        /* 次に走行する行＝未走行の最初の行。ここだけ現行の強いハイライト。 */
+        var nextRow = null;
+        for(var i = 0; i < myRows.length; i++){
+          if(!rowRun(myRows[i].tr)){ nextRow = myRows[i]; break; }
         }
-        myTr.querySelectorAll('.racer-cell').forEach(function(cell){
-          if(rcName(cell) === name){
-            // ハイライトはセル(td)いっぱいに広げる（td padding の内側まで塗る）
+        if(nextRow){
+          nextRow.cells.forEach(function(cell){
             var td = cell.closest('td') || cell;
             td.style.setProperty('background', 'rgb(230,126,34)', 'important');
             td.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
             cell.style.setProperty('color', '#ffffff', 'important');
             cell.style.fontWeight = 'bold';
+          });
+          /* 自分の前に残る未走行レース数（同じ tbody 内・区切り行等は除く） */
+          var myTbody = nextRow.tr.closest('tbody');
+          var rows = Array.from(myTbody.querySelectorAll('tr'));
+          var myIdx = rows.indexOf(nextRow.tr);
+          var before = 0;
+          for(var ri = 0; ri < myIdx; ri++){
+            if(rows[ri].querySelectorAll('.racer-cell').length && !rowRun(rows[ri])) before++;
           }
-        });
-        return before === 0
-          ? { text: 'あなたの番です', urgency: 0 }
-          : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
+          return before === 0
+            ? { text: 'あなたの番です', urgency: 0 }
+            : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
+        }
+        /* 未走行が無い＝全部走行済み → バナー無し（控えめハイライトは残す） */
+        return null;
       }
     }
 
