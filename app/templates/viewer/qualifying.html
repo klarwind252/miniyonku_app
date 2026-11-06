@@ -448,8 +448,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 {% endif %}
 
-{# none_roundrobin: 表彰台をページ上部に表示 #}
-{% if is_none_roundrobin and is_confirmed_nr and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
+{# none_roundrobin: 未決着の同率グループ（決定戦待ち）。これが残る間は順位未確定。 #}
+{% set nr_unresolved = (deciding_groups_nr | rejectattr('all_decided') | list) if is_none_roundrobin else [] %}
+{# 順位確定＝全レース完了＋同率がすべて決定済み。確定ボタン(status=complete)前でも表彰台を出す。 #}
+{% set nr_ranks_final = is_none_roundrobin and all_heats_complete and (nr_unresolved | length == 0) %}
+
+{# none_roundrobin: 表彰台をページ上部に表示（他の決勝と同様、レース終了後すぐ出す） #}
+{% if nr_ranks_final and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
 <div style="margin:12px 16px 16px;padding:24px 16px;background:linear-gradient(135deg,#0d1e12,#0f2318);border:2px solid {% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};border-radius:12px;text-align:center">
   <div style="font-size:14px;font-weight:bold;color:{% if is_confirmed_nr %}#f0ad4e{% else %}#27ae60{% endif %};margin-bottom:16px">
     {% if is_confirmed_nr %}🏆 最終結果{% else %}🏅 現在の順位{% endif %}
@@ -520,10 +525,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       </div>
 
       {% if is_none_roundrobin %}
-      {# 即決勝（総当たり）：予選でも決勝待ちでもない。同率があれば「○位決定戦」の対象者を案内する。 #}
-        {% if deciding_groups_nr and not is_confirmed_nr %}
+      {# 即決勝（総当たり）：予選でも決勝待ちでもない。同率が未決着なら「○位決定戦」の対象者を案内する。 #}
+        {% if nr_unresolved %}
         <div style="margin:6px 0 14px;padding:14px 16px;background:#2a1012;border:2px solid #e74c3c;border-radius:8px">
-          {% for grp in deciding_groups_nr %}
+          {% for grp in nr_unresolved %}
           {% if grp.decide_positions|length == 1 %}{% set dtitle = grp.decide_positions[0]|string + '位決定戦' %}{% else %}{% set dtitle = grp.decide_positions[0]|string + '〜' + grp.decide_positions[-1]|string + '位決定戦' %}{% endif %}
           <div style="{% if not loop.first %}margin-top:10px;{% endif %}text-align:center">
             <div style="color:#ff6b6b;font-weight:bold;font-size:15px">⚔️ {{ dtitle }}があります</div>

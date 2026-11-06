@@ -133,6 +133,12 @@
    ⚠ 幅は詰めない。画面に押し込めると名前が読めなくなるため、
       最低幅(min-width:600px)を保ったまま横スクロールさせる。
       操作列（取消／反映）は左端に置いてあるので、スクロールしなくても押せる。 */
+/* 総当たり（roundrobin / none_roundrobin）：「1巡」（エントリー数//2 レース＝全員が1回ずつ走る）
+   ごとに太い区切り線＋余白を入れて、何巡目かを一目で分かるようにする。 */
+.rr-round-sep td{padding:0 !important;border:none !important;background:transparent !important}
+.rr-round-sep .rr-bar{border-top:4px solid #2c3e50;margin:10px 0 0}
+.rr-round-sep .rr-lbl{display:inline-block;font-size:11px;font-weight:bold;color:#fff;background:#2c3e50;
+  padding:1px 8px 2px;border-radius:0 0 6px 0;line-height:1.4;margin-bottom:4px}
 @media (max-width:640px){
   /* 順位表とエントリー一覧の横並びは、狭い画面では縦に積む。
      ⚠ 1fr/3fr のままだと右側が数十pxまで潰れ、文字が縦に折り返る。 */
@@ -317,10 +323,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </p>
 </div>
 
-{# ── ページ最上部：確定済み表彰台 ── #}
-{% if is_none_roundrobin and is_confirmed_nr and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
+{# ── ページ最上部：表彰台（全レース完了＋同率決定済み＝順位確定で表示。確定ボタン前でも出す） ── #}
+{% if is_none_roundrobin and (is_confirmed_nr or nr_can_confirm) and top3_nr and (top3_nr[0] or top3_nr[1] or top3_nr[2]) %}
 <div style="margin-bottom:10px;padding:24px;background:linear-gradient(135deg,#fff9e6,#fffde7);border:2px solid #f0ad4e;border-radius:12px;text-align:center">
-  <div style="font-size:16px;font-weight:bold;color:#856404;margin-bottom:9px">🏆 最終結果</div>
+  <div style="font-size:16px;font-weight:bold;color:#856404;margin-bottom:9px">{% if is_confirmed_nr %}🏆 最終結果{% else %}🏅 現在の順位{% endif %}</div>
   <div style="display:flex;justify-content:center;align-items:flex-end;gap:16px">
     <div style="text-align:center">
       <div style="font-size:28px">🥈</div>
@@ -1901,8 +1907,14 @@ document.addEventListener('DOMContentLoaded', function(){
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
+      {# 総当たり：エントリー数//2 レースを「1巡」（全員が1回ずつ走る）として、巡の境目に太い区切り行を入れる。
+         人数が奇数のときは1巡に1人休みが出るため目安の区切り。2〜3名（1巡=1レース）では区切らない。 #}
+      {% set rr_per_round = (entries|length // 2) if (is_roundrobin or is_none_roundrobin) else 0 %}
       {% for heat in heats %}
       {{ race_row(heat) }}
+      {% if rr_per_round >= 2 and not loop.last and loop.index % rr_per_round == 0 %}
+      <tr class="rr-round-sep"><td colspan="{{ course_cols|length + 3 }}"><div class="rr-bar"></div><span class="rr-lbl">{{ loop.index // rr_per_round + 1 }}巡目</span></td></tr>
+      {% endif %}
       {% endfor %}
       </tbody>
     </table>
