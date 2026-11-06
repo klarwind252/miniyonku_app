@@ -80,7 +80,7 @@
 .bracket-group.done { border-color:#27ae60; }
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
-.slot-row { display:flex; align-items:center; gap:2px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap;
+.slot-row { display:flex; align-items:center; gap:1px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap;
   user-select:none; -webkit-user-select:none; }
 /* 出走レーン（コース）割り当て：全ラウンドの結果入力カード */
 .lane-handle{ cursor:grab; color:#aab0b7; font-size:20px; line-height:1; padding:0; margin:0; user-select:none; touch-action:none; flex-shrink:0; }
@@ -105,7 +105,7 @@
 /* レーン番号（1/2/3）を名前の前にグレーで表示。どのコースかを示す。 */
 .slot-no { display:none; }
 /* 結果入力カードのレーン番号（1/2/3）を名前の前にグレーで。決勝・3位決定戦の .slot-no とは別クラス。 */
-.lane-no-card { flex-shrink:0; font-size:13px; font-weight:bold; color:#b0b7bf; margin:0 1px 0 0; padding:0; }
+.lane-no-card { flex-shrink:0; font-size:13px; font-weight:bold; color:#b0b7bf; margin:0; padding:0; }
 /* 空きレーン（2名の組で未使用のコース）。ここへドラッグで 1・3 / 2・3 を選べる。 */
 .slot-row.slot-empty{ background:#fafbfc; border:1px dashed #e1e6ea; border-radius:6px; }
 .slot-row.slot-empty .slot-name{ color:#c4cace; font-style:italic; font-weight:normal; font-size:13px; }
@@ -1265,7 +1265,7 @@ window.initBracketConnectors = initBracketConnectors;
     {% if slot %}
     {# 順位バッジ：ranks に入っていれば数字。名前があるのに順位が無い枠は完走できなかった扱い＝CO。 #}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
-    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
+    {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
     <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}" data-lane="{{ _lane_label }}"{% endif %}>
       {% if _lane_sortable %}<span class="lane-handle" title="ドラッグで出走レーン（コース）を変更">⠿</span>{% endif %}
       <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
@@ -1350,7 +1350,7 @@ window.initBracketConnectors = initBracketConnectors;
     </div>
     {% for slot in slots %}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
-    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
+    {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
     <div class="slot-row">
       <div class="slot-no" style="background:#7f8c8d">{{ slot.slot_no }}</div>
       {% if m4_on %}
@@ -1408,7 +1408,7 @@ window.initBracketConnectors = initBracketConnectors;
     </div>
     {% for slot in slots %}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
-    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
+    {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
     <div class="slot-row">
       <div class="slot-no" style="background:#7f8c8d">{{ slot.slot_no }}</div>
       {% if m4_on %}
@@ -1461,7 +1461,7 @@ window.initBracketConnectors = initBracketConnectors;
     </div>
     {% for slot in slots %}
     {% set cur_rank = ranks.get(slot.slot_id) %}
-    {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
+    {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
     <div class="slot-row">
       <div class="slot-no" style="background:#d4a017">{{ slot.slot_no }}</div>
       {% if m4_on %}

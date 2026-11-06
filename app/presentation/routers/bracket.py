@@ -5179,14 +5179,16 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:none; }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
     /* スロット共通 */
-    .br-slot { position:relative; display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
-    /* レーン番号(1/2/3)は左の余白に絶対配置。名前・タイムの幅を奪わない（タイム表示を保つ）。 */
-    .br-lane-no { position:absolute; left:3px; top:50%; transform:translateY(-50%); font-size:11px; font-weight:bold; color:#b0b7bf; pointer-events:none; }
+    .br-slot { position:relative; display:flex; align-items:center; gap:9px; padding:3px 12px 3px 24px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
+    /* レーン番号(1/2/3)は左の余白に絶対配置。名前は padding-left で約8px あけて始まる（タイム幅は奪わない）。 */
+    .br-lane-no { position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:11px; font-weight:bold; color:#b0b7bf; pointer-events:none; }
     .br-slot.winner .br-lane-no { color:rgba(255,255,255,0.8); }
     .br-slot.empty .br-lane-no { color:#ced4da; }
     .br-slot-no { display:none; }
     .br-slot-name { flex:1; white-space:nowrap; min-width:max-content; font-size:18px; color:#212529 !important; font-weight:500; }
     .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
+    .br-slot-co { font-size:13px; font-weight:bold; color:#e74c3c; margin-left:8px; white-space:nowrap; flex-shrink:0; }
+    .br-slot.winner .br-slot-co { color:#ffffff; }
     .br-slot.winner .br-slot-time { color:#ffffff; }
     /* 出走レーン（コース）並び替え：admin図のみ（?lane_drag=1）。公開図には出さない */
     .br-lane-handle { cursor:grab; color:#9aa3ad; font-size:16px; line-height:1; margin-right:2px; user-select:none; touch-action:none; flex-shrink:0; }
@@ -5237,7 +5239,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     </style>
     """
 
-    def render_slot(s, is_final, winner_sid=None, group_id=None, sortable=False):
+    def render_slot(s, is_final, winner_sid=None, group_id=None, sortable=False, grp_has_time=False):
         rank = s.get("rank")
         sid = s.get("slot_id")
         # 勝者判定: rank=1 OR winner_slot_idと一致
@@ -5276,6 +5278,10 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         # タイム（M4LAPS反映時のみ total_time が入る。名前の右に右揃えで表示）
         _tt = s.get("total_time")
         time_html = ('<span class="br-slot-time">' + ('%.3f' % _tt) + '</span>') if _tt is not None else ''
+        # CO（コースアウト・記録なし）：組内の誰かに計測タイムがある（＝計測反映済み）のに、
+        # この枠は名前はあるが順位もタイムも無い＝完走できなかった枠。
+        _is_co = bool(s.get("name")) and (rank is None) and (_tt is None) and bool(grp_has_time) and not is_winner
+        co_html = '<span class="br-slot-co">CO</span>' if _is_co else ''
         # 公開HTMLでレーサー名タップ→成績モーダル用に entry_id を持たせる（view/adminでは未使用）。
         _eid_attr = (' data-entry-id="%d"' % s["entry_id"]) if s.get("entry_id") else ''
         # 出走レーン（コース）並び替え：admin図のみ。data-slot-id と ⠿ ハンドルを付ける。
@@ -5288,7 +5294,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             + '<span class="br-slot-no">' + str(s.get("slot_no","")) + '</span>'
             + ('<span class="br-lane-no">' + str(s.get("slot_no","")) + '</span>' if s.get("slot_no") else '')
             + '<span class="br-slot-name">' + name + '</span>'
-            + time_html
+            + (co_html or time_html)
             + mark + '</div>'
         )
 
@@ -5304,7 +5310,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             has_winner = (winner_sid is not None) or any(s.get("rank") == 1 for s in g["slots"])
             # 出走レーン並び替え可否：admin図で有効化 & 勝者未確定 & 決勝以外の組
             sortable_group = bool(enable_lane_drag) and (group_id is not None) and (not has_winner) and (not is_final)
-            slots_html = "".join(render_slot(s, is_final, winner_sid, group_id, sortable_group) for s in g["slots"])
+            _ght = any(sl.get("total_time") is not None for sl in g["slots"])
+            slots_html = "".join(render_slot(s, is_final, winner_sid, group_id, sortable_group, _ght) for s in g["slots"])
             grp_cls = "br-group"
             if has_winner: grp_cls += " has-winner"
             if is_final: grp_cls += " is-final"
