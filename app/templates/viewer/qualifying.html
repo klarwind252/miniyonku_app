@@ -44,6 +44,11 @@
 .rr-mark.sm{font-size:16px;margin-right:5px}
 .rr-mark.w{color:#3b9eff}
 .rr-mark.l{color:#ff4d4d}
+/* 総当たり系：1巡（エントリー数//2 レース）ごとに太い区切り線＋「n巡目」ラベル（adminと同じ可視化）。 */
+.schedule-table tr.rr-round-sep td{padding:0;border:none;background:transparent}
+.rr-round-sep .rr-bar{border-top:3px solid #4a6b8a;margin:8px 0 0}
+.rr-round-sep .rr-lbl{display:inline-block;font-size:11px;font-weight:bold;color:#fff;background:#4a6b8a;
+  padding:1px 8px 2px;border-radius:0 0 6px 0;line-height:1.4;margin-bottom:3px}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
 .status-pending{color:#7f8c8d;font-size:12px}
 
@@ -1055,6 +1060,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             </tr>
           </thead>
           <tbody>
+          {# 1巡 = エントリー数//2 レース（全員が1回ずつ走る）。巡の境目に太い区切り行を入れる（adminと同じ）。 #}
+          {% set rr_per_round = entries|length // 2 %}
           {% for heat in heats %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
           <tr id="heat-{{ heat.heat_no }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
@@ -1062,7 +1069,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% for col in course_cols %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
             {% if ld %}{% set lane = ld[0] %}
-            <td>
+            {# 予選全体の最速3タイムを 1位=紫 / 2位=青 / 3位=緑 に着色（他形式と共通の finish_rank_map）。 #}
+            {% set _frank = finish_rank_map.get(heat.id ~ ':' ~ col) if m4laps_active else none %}
+            <td{% if _frank %} class="rc-fin{{ _frank }}"{% endif %}>
               <div class="racer-cell">
                 {# 総当たり系の○×は名前の左に配置。viewのみ18px bold、htmlは従来サイズ #}
                 {% if lane.win == 1 and is_rr_type %}
@@ -1070,7 +1079,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% elif lane.win == 0 and is_rr_type %}
                 <span class="rr-mark l{% if is_public_html %} sm{% endif %}">×</span>
                 {% endif %}
-                {% if is_public_html %}<span class="rr-name">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
+                {# 名前＋その下にタイム（他形式と同じレイアウト）。 #}
+                <div style="display:flex;flex-direction:column;min-width:0;flex:1{% if not is_public_html %};align-items:flex-start{% endif %}">
+                  <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name"{% if _frank %} style="color:#fff"{% endif %}>{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle{% if _frank %};color:#fff{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
+                  {% if m4laps_active and lane.total_time %}<span style="font-size:{% if is_public_html %}13px{% else %}19px{% endif %};font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px;font-weight:{% if _frank %}bold{% else %}normal{% endif %};color:{% if _frank %}#fff{% else %}#8aa0b6{% endif %}">{{ '%.3f'|format(lane.total_time) }}</span>{% endif %}
+                </div>
                 {% if lane.is_co %}
                 <span class="rank-badge" style="background:#e67e22;color:#fff">CO</span>
                 {% elif lane.rank %}
@@ -1083,6 +1096,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% else %}<td style="color:#3d5166">—</td>{% endif %}
             {% endfor %}
           </tr>
+          {% if rr_per_round >= 2 and not loop.last and loop.index % rr_per_round == 0 %}
+          <tr class="rr-round-sep"><td colspan="{{ course_cols|length + 1 }}"><div class="rr-bar"></div><span class="rr-lbl">{{ loop.index // rr_per_round + 1 }}巡目</span></td></tr>
+          {% endif %}
           {% endfor %}
           </tbody>
         </table>
