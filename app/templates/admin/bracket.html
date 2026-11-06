@@ -88,6 +88,7 @@
 .bracket-group.lane-sortable .slot-row{ background:#fff; border-radius:6px; }
 .slot-row.lane-dragging{ opacity:.55; background:#eef5ff; box-shadow:0 2px 8px rgba(10,132,255,.25); }
 .bracket-group.lane-sortable.lane-drop-active{ outline:2px dashed #0a84ff; outline-offset:2px; }
+.slot-row.lane-drop-hover{ outline:2px dashed #0a84ff; outline-offset:-2px; background:#eef5ff; }
 .lane-sort-hint{ font-size:11px; color:#8e44ad; background:#f5eeff; border:1px solid #e0d0f5; border-radius:8px; padding:0 6px; }
 /* 結果入力カードの順位バッジ（1/2/3/CO）。
    名前の頭を揃えるため、順位が無い行にも非表示の同サイズ枠を置く。 */
@@ -1265,7 +1266,7 @@ window.initBracketConnectors = initBracketConnectors;
     {# 順位バッジ：ranks に入っていれば数字。名前があるのに順位が無い枠は完走できなかった扱い＝CO。 #}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
     {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
-    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
+    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}" data-lane="{{ _lane_label }}"{% endif %}>
       {% if _lane_sortable %}<span class="lane-handle" title="ドラッグで出走レーン（コース）を変更">⠿</span>{% endif %}
       <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
       {% if m4_on %}
@@ -1300,7 +1301,7 @@ window.initBracketConnectors = initBracketConnectors;
     </div>
     {% else %}
     {# 空きレーン（この組で未使用のコース）。ここへドラッグするとレーン 1・3 / 2・3 を選べる。 #}
-    <div class="slot-row slot-empty" data-empty="1">
+    <div class="slot-row slot-empty" data-empty="1" data-lane="{{ _lane_label }}">
       <span class="lane-handle" style="visibility:hidden">⠿</span>
       <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
       {% if m4_on %}<span class="rank-badge ph">-</span>{% endif %}
@@ -1790,34 +1791,22 @@ function refreshInputCards(tid) {
 // slot_no（＝レーン番号）として保存する。反映は slot_no ↔ レーンで照合されるため、
 // ここで並びを変えるとそのまま出走レーンの割り当てが変わる。
 (function(){
+  // レーンは固定位置（1/2/3）。ドラッグしたレーサーを落とした先のレーンへ移すだけ。
+  // 落とした先にレーサーが居れば、その人だけが元のレーンへ入れ替わる（他のレーンは一切動かさない）。
   function rowsOf(card){
     return Array.prototype.slice.call(card.querySelectorAll('.slot-row'));
   }
-  function afterElement(card, y){
-    var rows = rowsOf(card).filter(function(r){ return !r.classList.contains('lane-dragging'); });
-    var closest = { off: -Infinity, el: null };
-    rows.forEach(function(r){
-      var box = r.getBoundingClientRect();
-      var off = y - box.top - box.height/2;
-      if(off < 0 && off > closest.off){ closest = { off: off, el: r }; }
+  function laneMap(card){   // レーン番号 -> slot_id（空きは null）
+    var m = {};
+    rowsOf(card).forEach(function(r){
+      var L = parseInt(r.dataset.lane, 10);
+      if(L){ m[L] = r.dataset.slotId || null; }
     });
-    return closest.el;
+    return m;
   }
-  function renumber(card){
-    rowsOf(card).forEach(function(r,i){
-      var n = r.querySelector('.lane-no-card');
-      if(n) n.textContent = (i+1);
-    });
-  }
-  function saveOrder(card){
-    // 空きレーン行も含めた上→下の位置を 1..N のレーン番号とし、
-    // レーサー行だけ「slot_id:レーン」を送る（空きレーンを挟んで 1・3 / 2・3 を保存できる）。
-    renumber(card);
+  function save(card, assign){   // assign: レーン番号 -> slot_id
     var pairs = [];
-    rowsOf(card).forEach(function(r, i){
-      var sid = r.dataset.slotId;
-      if(sid){ pairs.push(sid + ':' + (i + 1)); }
-    });
+    Object.keys(assign).forEach(function(L){ var sid = assign[L]; if(sid){ pairs.push(sid + ':' + L); } });
     if(!pairs.length) return;
     var tid = card.dataset.tid, gid = card.dataset.groupId;
     var fd = new FormData();
@@ -1826,48 +1815,66 @@ function refreshInputCards(tid) {
       .then(function(r){ return r.json(); })
       .then(function(d){
         if(!d || !d.ok){
-          alert('出走レーンの並びを保存できませんでした。' + (d && d.error ? '\n'+d.error : ''));
-          if (window.refreshInputCards) refreshInputCards(tid);   // サーバーの正しい並びに戻す
+          alert('出走レーンを保存できませんでした。' + (d && d.error ? '\n'+d.error : ''));
+          if (window.refreshInputCards) refreshInputCards(tid);
           return;
         }
-        // トーナメント図側にも新しいレーン順を反映
+        if (window.refreshInputCards) refreshInputCards(tid);   // サーバーの最新で描き直す
         if (window.reloadSvg) reloadSvg(tid);
       })
       .catch(function(){
-        alert('出走レーンの並びを保存できませんでした（通信エラー）。');
+        alert('出走レーンを保存できませんでした（通信エラー）。');
         if (window.refreshInputCards) refreshInputCards(tid);
       });
   }
+  function clearHover(card){ rowsOf(card).forEach(function(x){ x.classList.remove('lane-drop-hover'); }); }
   function wireCard(card){
     if(card.dataset.laneSortWired === '1') return;   // 二重登録防止
     card.dataset.laneSortWired = '1';
+    var srcLane = null, srcSid = null;
     rowsOf(card).forEach(function(row){
       var handle = row.querySelector('.lane-handle');
-      if(!handle) return;
-      // ハンドルを押している間だけ行をドラッグ可能にする（名前クリック＝勝者選択と競合させない）
-      handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
-      handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
+      // レーサーが居る行だけハンドルでドラッグ可能にする（名前クリック＝勝者選択とは別）
+      if(handle && row.dataset.slotId){
+        handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
+        handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
+      }
       row.addEventListener('dragstart', function(e){
+        if(!row.dataset.slotId){ e.preventDefault(); return; }   // 空きレーンは掴めない
+        srcLane = parseInt(row.dataset.lane, 10);
+        srcSid  = row.dataset.slotId;
         row.classList.add('lane-dragging');
         card.classList.add('lane-drop-active');
         if(e.dataTransfer){ e.dataTransfer.effectAllowed = 'move';
-          try{ e.dataTransfer.setData('text/plain', row.dataset.slotId||''); }catch(_){} }
+          try{ e.dataTransfer.setData('text/plain', srcSid); }catch(_){} }
       });
       row.addEventListener('dragend', function(){
         row.classList.remove('lane-dragging');
         row.removeAttribute('draggable');
         card.classList.remove('lane-drop-active');
-        saveOrder(card);
+        clearHover(card);
+        srcLane = null; srcSid = null;
       });
-    });
-    card.addEventListener('dragover', function(e){
-      var dragging = card.querySelector('.slot-row.lane-dragging');
-      if(!dragging) return;
-      e.preventDefault();
-      if(e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-      var after = afterElement(card, e.clientY);
-      if(after == null) card.appendChild(dragging);
-      else card.insertBefore(dragging, after);
+      row.addEventListener('dragover', function(e){
+        if(srcSid == null) return;
+        e.preventDefault();
+        if(e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        clearHover(card);
+        row.classList.add('lane-drop-hover');
+      });
+      row.addEventListener('drop', function(e){
+        e.preventDefault();
+        if(srcSid == null) return;
+        var tgtLane = parseInt(row.dataset.lane, 10);
+        if(!tgtLane || tgtLane === srcLane){ clearHover(card); return; }   // 同じレーンは何もしない
+        var m = laneMap(card);
+        var tgtSid = m[tgtLane] || null;
+        // ドラッグした人を対象レーンへ。対象に居た人だけ元レーンへ（他レーンは不変）。
+        m[tgtLane] = srcSid;
+        m[srcLane] = tgtSid;
+        clearHover(card);
+        save(card, m);
+      });
     });
   }
   window.initLaneSort = function(){
