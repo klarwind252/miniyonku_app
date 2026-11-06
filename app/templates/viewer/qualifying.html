@@ -416,7 +416,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 </div>
 {% elif not is_none_roundrobin and qualifying_type != "heat_roundrobin" %}{{ finalist_block() }}{% endif %}
 {# View（FHD）の上部表示。ただし総当たり・即決勝は右カラムの「勝敗表とエントリーの間」に出すため上部では出さない。 #}
-{% if not is_public_html and not (is_none_roundrobin or qualifying_type == 'roundrobin') %}{{ record_holders_block() }}{% endif %}
+{# M4LAPS RECORD HOLDERS はエントリー一覧の真上に統一（下部で描画） #}
 
 {% if qualifying_type == "heat_roundrobin" and all_heats_complete %}
 {% set completed_heats = hr_heats_data | selectattr("is_complete") | list %}
@@ -1261,7 +1261,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
     {# ⚡M4LAPS RECORD HOLDERS を「勝敗表／予選順位」と「エントリー」の間に表示。
        公開HTMLは全形式ここ。View（FHD）は総当たり・即決勝のみここ（他形式は上部）。 #}
-    {% if is_public_html or is_none_roundrobin or qualifying_type == 'roundrobin' %}{{ record_holders_block() }}{% endif %}
+    
 
     {# ── M4LAPS ベスト（予選順位とエントリーの間）。TOTAL BEST TIME が速い順に 1..N ──
        表示内容は admin（予選管理）の予選順位表と同じ：順位・レーサー名・
@@ -1277,6 +1277,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     </div>
     {% endif %}
     {% endif %}
+
+    {# ⚡M4LAPS RECORD HOLDERS：エントリー一覧の真上（全形式・View/スマホ共通） #}
+    {{ record_holders_block() }}
 
     <div class="v-section" style="position:sticky;top:8px">
       <div style="font-size:13px;font-weight:bold;color:#7f8c8d;padding:8px 12px;border-bottom:1px solid #2c3e50">
