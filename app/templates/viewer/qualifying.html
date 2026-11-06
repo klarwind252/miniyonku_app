@@ -455,7 +455,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {% endif %}
 
 {# none_roundrobin: 未決着の同率グループ（決定戦待ち）。これが残る間は順位未確定。 #}
-{% set nr_unresolved = (deciding_groups_nr | rejectattr('all_decided') | list) if is_none_roundrobin else [] %}
+{# 決定戦（同率解消）は全レース完了後のみ意味を持つ。未実施・途中（全員0勝0敗で同率1位など）では出さない。 #}
+{% set nr_unresolved = (deciding_groups_nr | rejectattr('all_decided') | list) if (is_none_roundrobin and all_heats_complete) else [] %}
 {# 順位確定＝管理者が「結果を確定」済み、または 全レース完了＋同率がすべて決定済み。
    どちらでも表彰台を最上部に出す（確定済みなら all_heats_complete 等に関わらず出す）。 #}
 {% set nr_ranks_final = is_none_roundrobin and (is_confirmed_nr or (all_heats_complete and (nr_unresolved | length == 0))) %}
