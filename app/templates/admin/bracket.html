@@ -80,7 +80,8 @@
 .bracket-group.done { border-color:#27ae60; }
 .bracket-group.final-group { border-color:#d4a017; background:#fffde7; }
 .bracket-group.third-group { border-color:#7f8c8d; background:#f8f9fa; }
-.slot-row { display:flex; align-items:center; gap:2px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+.slot-row { display:flex; align-items:center; gap:2px; padding:4px 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap;
+  user-select:none; -webkit-user-select:none; }
 /* 出走レーン（コース）割り当て：全ラウンドの結果入力カード */
 .lane-handle{ cursor:grab; color:#aab0b7; font-size:20px; line-height:1; padding:0; margin:0; user-select:none; touch-action:none; flex-shrink:0; }
 .lane-handle:active{ cursor:grabbing; }
@@ -101,8 +102,9 @@
 .rank-badge.ph{ visibility:hidden; }
 .slot-row:last-child { border-bottom:none; }
 /* レーン番号（1/2/3）を名前の前にグレーで表示。どのコースかを示す。 */
-.slot-no { display:inline-flex; align-items:center; justify-content:center; min-width:15px;
-  font-size:13px; font-weight:bold; color:#b0b7bf; flex-shrink:0; }
+.slot-no { display:none; }
+/* 結果入力カードのレーン番号（1/2/3）を名前の前にグレーで。決勝・3位決定戦の .slot-no とは別クラス。 */
+.lane-no-card { flex-shrink:0; font-size:13px; font-weight:bold; color:#b0b7bf; margin:0 3px 0 0; padding:0; }
 /* 空きレーン（2名の組で未使用のコース）。ここへドラッグで 1・3 / 2・3 を選べる。 */
 .slot-row.slot-empty{ background:#fafbfc; border:1px dashed #e1e6ea; border-radius:6px; }
 .slot-row.slot-empty .slot-name{ color:#c4cace; font-style:italic; font-weight:normal; font-size:13px; }
@@ -1265,7 +1267,7 @@ window.initBracketConnectors = initBracketConnectors;
     {% set is_co = (slot.name and not cur_rank and ranks and ranks|length > 1) %}
     <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
       {% if _lane_sortable %}<span class="lane-handle" title="ドラッグで出走レーン（コース）を変更">⠿</span>{% endif %}
-      <div class="slot-no" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
+      <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
       {% if m4_on %}
       {% if cur_rank %}
       <span class="rank-badge {% if cur_rank == 1 %}r1{% elif cur_rank == 2 %}r2{% elif cur_rank == 3 %}r3{% else %}rn{% endif %}"
@@ -1300,7 +1302,7 @@ window.initBracketConnectors = initBracketConnectors;
     {# 空きレーン（この組で未使用のコース）。ここへドラッグするとレーン 1・3 / 2・3 を選べる。 #}
     <div class="slot-row slot-empty" data-empty="1">
       <span class="lane-handle" style="visibility:hidden">⠿</span>
-      <div class="slot-no" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
+      <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
       {% if m4_on %}<span class="rank-badge ph">-</span>{% endif %}
       <div class="slot-name">（空きレーン）</div>
     </div>
@@ -1803,7 +1805,7 @@ function refreshInputCards(tid) {
   }
   function renumber(card){
     rowsOf(card).forEach(function(r,i){
-      var n = r.querySelector('.slot-no');
+      var n = r.querySelector('.lane-no-card');
       if(n) n.textContent = (i+1);
     });
   }

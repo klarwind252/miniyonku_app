@@ -5181,11 +5181,6 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     /* スロット共通 */
     .br-slot { display:flex; align-items:center; gap:9px; padding:3px 12px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
     .br-slot-no { display:none; }
-    /* 出走レーン番号（1/2/3）を名前の前にグレーで表示 */
-    .br-lane-no { display:inline-flex; align-items:center; justify-content:center; min-width:15px; flex-shrink:0;
-      font-size:14px; font-weight:bold; color:#b0b7bf; margin-right:5px; }
-    .br-slot.winner .br-lane-no { color:rgba(255,255,255,0.8) !important; }
-    .br-slot.empty .br-lane-no { color:#ced4da !important; }
     .br-slot-name { flex:1; white-space:nowrap; min-width:max-content; font-size:18px; color:#212529 !important; font-weight:500; }
     .br-slot-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:bold; color:#2c3e50; margin-left:8px; white-space:nowrap; flex-shrink:0; }
     .br-slot.winner .br-slot-time { color:#ffffff; }
@@ -5287,7 +5282,6 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             '<div class="' + cls + '"' + onclick_attr + is_seed_attr + _eid_attr + _sid_attr + '>'
             + _handle
             + '<span class="br-slot-no">' + str(s.get("slot_no","")) + '</span>'
-            + ('<span class="br-lane-no">' + str(s.get("slot_no","")) + '</span>' if s.get("slot_no") else '')
             + '<span class="br-slot-name">' + name + '</span>'
             + time_html
             + mark + '</div>'
