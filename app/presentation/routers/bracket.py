@@ -5722,14 +5722,16 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 rightX = Math.max(rightX, cr.right);
                 midYs.push(cy);
               }
-              // 勝ち上がり＝その feeder 組の勝者が確定した時点で赤（次ラウンド確定は待たない）。
-              // この大会は「各組の勝者が次グループへ合流」する方式のため、勝者が決まった
-              // feeder 全てを赤で結線する。未確定の feeder だけ灰のまま。
+              // 勝ち上がり＝その feeder 組の勝者が確定した時点で、合流点までの横線を赤にする
+              // （＝「そこまで到達した」ことを示す“途中まで”の赤）。合流点から次の組の箱へ
+              // 入る線は、次の組の勝者（＝この先の優勝者）が決まったとき、その勝者の経路だけを
+              // 最後まで赤にする。優勝していない勝ち上がり者は途中（合流点）までで止める。
               var nextWinnerName = nextGroup.dataset.winnerName || '';
-              var advFlags = [], anyAdv = false;
+              var advFlags = [], wf = -1;
               for (var wi = 0; wi < feeders.length; wi++) {
-                var fa = (feeders[wi].dataset.winnerName || '') !== '';
-                advFlags.push(fa); if (fa) anyAdv = true;
+                var wn = feeders[wi].dataset.winnerName || '';
+                advFlags.push(wn !== '');
+                if (wn && wn === nextWinnerName) wf = wi;   // 次の組の勝者＝この経路が優勝（最後まで赤）
               }
               var RED = '#e2001a', GRAY = '#adb5bd';
               var gapX = nextX - rightX;            // feeder右端〜次グループ左端のすき間
@@ -5739,7 +5741,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
               } else {
                 vX = rightX + Math.max(gapX / 2, 8);
               }
-              // feeder 各組の右端から縦線Xまで横線（勝ち上がった feeder のみ赤）
+              // feeder 各組の右端から縦線Xまで横線（勝ち上がった feeder は赤＝途中まで）
               for (var hi = 0; hi < feeders.length; hi++) {
                 var hg = feeders[hi];
                 var hr = getGroupRect(hg, container);
@@ -5747,21 +5749,19 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 dline(svg, hr.right, hy, vX, hy, advFlags[hi] ? RED : GRAY);
               }
               if (midYs.length > 1) {
-                // 縦バスは全体を灰で引き、勝ち上がった各 feeder から合流点までを赤で上書き
+                // 縦バスは灰。優勝者(wf)の経路だけ合流点までを赤で上書き
                 dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), GRAY);
-                for (var vi = 0; vi < feeders.length; vi++) {
-                  if (advFlags[vi]) dline(svg, vX, Math.min(midYs[vi], nextMidY), vX, Math.max(midYs[vi], nextMidY), RED);
-                }
-                dline(svg, vX, nextMidY, nextX, nextMidY, anyAdv ? RED : GRAY);
+                if (wf >= 0) dline(svg, vX, Math.min(midYs[wf], nextMidY), vX, Math.max(midYs[wf], nextMidY), RED);
+                dline(svg, vX, nextMidY, nextX, nextMidY, wf >= 0 ? RED : GRAY);
               } else {
                 if (Math.abs(midYs[0] - nextMidY) >= 2) {
-                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), advFlags[0] ? RED : GRAY);
+                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), wf >= 0 ? RED : GRAY);
                 }
-                dline(svg, vX, nextMidY, nextX, nextMidY, advFlags[0] ? RED : GRAY);
+                dline(svg, vX, nextMidY, nextX, nextMidY, wf >= 0 ? RED : GRAY);
               }
-              // 次グループへ入る到達線（勝ち上がりが1組でもあれば赤）
+              // 次グループの箱へ入る到達線（優勝者が決まったときだけ最後まで赤）
               var inX = Math.max(vX, nextX - 24);
-              dline(svg, inX, nextMidY, nextX, nextMidY, anyAdv ? RED : GRAY);
+              dline(svg, inX, nextMidY, nextX, nextMidY, wf >= 0 ? RED : GRAY);
             } else {
               var nextRight = nRect.right;
               var midYs = [], leftX = Infinity;
@@ -5772,10 +5772,11 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 midYs.push(cy);
               }
               var nextWinnerName = nextGroup.dataset.winnerName || '';
-              var advFlags = [], anyAdv = false;
+              var advFlags = [], wf = -1;
               for (var wi = 0; wi < feeders.length; wi++) {
-                var fa = (feeders[wi].dataset.winnerName || '') !== '';
-                advFlags.push(fa); if (fa) anyAdv = true;
+                var wn = feeders[wi].dataset.winnerName || '';
+                advFlags.push(wn !== '');
+                if (wn && wn === nextWinnerName) wf = wi;
               }
               var RED = '#e2001a', GRAY = '#adb5bd';
               var gapXr = leftX - nextRight;        // 次グループ右端〜feeder左端のすき間
@@ -5785,6 +5786,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
               } else {
                 vX = leftX - Math.max(gapXr / 2, 8);
               }
+              // feeder 各組の左端から縦線Xまで横線（勝ち上がった feeder は赤＝途中まで）
               for (var hi = 0; hi < feeders.length; hi++) {
                 var hg = feeders[hi];
                 var hr = getGroupRect(hg, container);
@@ -5793,18 +5795,17 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
               }
               if (midYs.length > 1) {
                 dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), GRAY);
-                for (var vi = 0; vi < feeders.length; vi++) {
-                  if (advFlags[vi]) dline(svg, vX, Math.min(midYs[vi], nextMidY), vX, Math.max(midYs[vi], nextMidY), RED);
-                }
-                dline(svg, vX, nextMidY, nextRight, nextMidY, anyAdv ? RED : GRAY);
+                if (wf >= 0) dline(svg, vX, Math.min(midYs[wf], nextMidY), vX, Math.max(midYs[wf], nextMidY), RED);
+                dline(svg, vX, nextMidY, nextRight, nextMidY, wf >= 0 ? RED : GRAY);
               } else {
                 if (Math.abs(midYs[0] - nextMidY) >= 2) {
-                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), advFlags[0] ? RED : GRAY);
+                  dline(svg, vX, Math.min(midYs[0], nextMidY), vX, Math.max(midYs[0], nextMidY), wf >= 0 ? RED : GRAY);
                 }
-                dline(svg, vX, nextMidY, nextRight, nextMidY, advFlags[0] ? RED : GRAY);
+                dline(svg, vX, nextMidY, nextRight, nextMidY, wf >= 0 ? RED : GRAY);
               }
+              // 次グループの箱へ入る到達線（優勝者が決まったときだけ最後まで赤）
               var inXr = Math.min(vX, nextRight + 24);
-              dline(svg, nextRight, nextMidY, inXr, nextMidY, anyAdv ? RED : GRAY);
+              dline(svg, nextRight, nextMidY, inXr, nextMidY, wf >= 0 ? RED : GRAY);
             }
           }
         }
@@ -5817,48 +5818,47 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         var finalWinnerName = finalGroup.dataset.winnerName || '';
         var RED = '#e2001a', GRAY = '#adb5bd';
         if (!fromRight) {
-          var rightX = 0, advFlags = [], anyAdv = false;
+          var rightX = 0, advFlags = [], wf = -1;
           semiGroups.forEach(function(g, gi) {
             var r = getGroupRect(g, container);
             var cy = r.top + r.height / 2;
             rightX = Math.max(rightX, r.right);
             midYs.push(cy);
-            // 準決勝の各組は勝者が決まれば決勝へ勝ち上がり＝赤（決勝の確定は待たない）
-            var adv = (g.dataset.winnerName || '') !== '';
-            advFlags.push(adv); if (adv) anyAdv = true;
-            dline(svg, r.right, cy, r.right + 24, cy, adv ? RED : GRAY);
+            // 準決勝で勝てば決勝へ到達＝合流点まで赤（途中まで）。決勝の勝者（優勝者）の
+            // 経路だけ、合流点から決勝の箱へ入る線まで赤にする（最後まで）。
+            var wn = g.dataset.winnerName || '';
+            advFlags.push(wn !== '');
+            if (wn && wn === finalWinnerName) wf = gi;
+            dline(svg, r.right, cy, r.right + 24, cy, (wn !== '') ? RED : GRAY);
           });
           var vX = rightX + 24;
           var centerY = midYs.reduce(function(a,b){return a+b;},0) / midYs.length;
           if (midYs.length > 1) {
             dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), GRAY);
-            for (var si = 0; si < midYs.length; si++) {
-              if (advFlags[si]) dline(svg, vX, Math.min(midYs[si],centerY), vX, Math.max(midYs[si],centerY), RED);
-            }
+            if (wf >= 0) dline(svg, vX, Math.min(midYs[wf],centerY), vX, Math.max(midYs[wf],centerY), RED);
           }
-          dline(svg, vX, centerY, fRect.left, centerY, anyAdv ? RED : GRAY);
-          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.left, Math.min(centerY,fMidY), fRect.left, Math.max(centerY,fMidY), anyAdv ? RED : GRAY);
+          dline(svg, vX, centerY, fRect.left, centerY, wf >= 0 ? RED : GRAY);
+          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.left, Math.min(centerY,fMidY), fRect.left, Math.max(centerY,fMidY), wf >= 0 ? RED : GRAY);
         } else {
-          var leftX = Infinity, advFlags = [], anyAdv = false;
+          var leftX = Infinity, advFlags = [], wf = -1;
           semiGroups.forEach(function(g, gi) {
             var r = getGroupRect(g, container);
             var cy = r.top + r.height / 2;
             leftX = Math.min(leftX, r.left);
             midYs.push(cy);
-            var adv = (g.dataset.winnerName || '') !== '';
-            advFlags.push(adv); if (adv) anyAdv = true;
-            dline(svg, r.left - 24, cy, r.left, cy, adv ? RED : GRAY);
+            var wn = g.dataset.winnerName || '';
+            advFlags.push(wn !== '');
+            if (wn && wn === finalWinnerName) wf = gi;
+            dline(svg, r.left - 24, cy, r.left, cy, (wn !== '') ? RED : GRAY);
           });
           var vX = leftX - 24;
           var centerY = midYs.reduce(function(a,b){return a+b;},0) / midYs.length;
           if (midYs.length > 1) {
             dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), GRAY);
-            for (var si = 0; si < midYs.length; si++) {
-              if (advFlags[si]) dline(svg, vX, Math.min(midYs[si],centerY), vX, Math.max(midYs[si],centerY), RED);
-            }
+            if (wf >= 0) dline(svg, vX, Math.min(midYs[wf],centerY), vX, Math.max(midYs[wf],centerY), RED);
           }
-          dline(svg, fRect.right, centerY, vX, centerY, anyAdv ? RED : GRAY);
-          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.right, Math.min(centerY,fMidY), fRect.right, Math.max(centerY,fMidY), anyAdv ? RED : GRAY);
+          dline(svg, fRect.right, centerY, vX, centerY, wf >= 0 ? RED : GRAY);
+          if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.right, Math.min(centerY,fMidY), fRect.right, Math.max(centerY,fMidY), wf >= 0 ? RED : GRAY);
         }
       }
 
