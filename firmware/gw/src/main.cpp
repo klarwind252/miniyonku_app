@@ -218,13 +218,16 @@ static constexpr uint32_t DEBOUNCE_MS   = 20;
 //   旧 RESET_HOLD_MS(600ms長押し)・OVERRIDE_HOLD_MS(灰3秒で封じ強制解除) は未使用の死に定義
 //   だったため削除。関連する「長押し」前提のコメントも本改修で撤去した。
 
-// ---- ブザー（GPIO12・他励式SPT15＋12V昇圧・ledc駆動）★20261012焼き直し------
+// ---- ブザー（GPIO12・他励式SPT15＋外部基盤12V直・ledc駆動）★20261107 12V外部モジュール対応------
 //  旧：自励式109800/UGCM1205を5VでdigitalWrite HIGH/LOW（音程固定・5Vブザー）。
-//  新：他励式SPT15を12V昇圧で鳴らす。音程は与えないと鳴らない＝ledc(PWM)で周波数駆動。
+//  新：他励式SPT15を外部基盤(docs/40)で鳴らす。音程は与えないと鳴らない＝ledc(PWM)で周波数駆動。
 //    ・通過/切断の「ピッ」＝共振付近の高め（最大音量）。
-//    ・スタートの「ブー」＝低め（12V昇圧の主目的・150〜250Hz）。緑点灯と同時に0.5秒。
+//    ・スタートの「ブー」＝低め（可聴の低音を鳴らす目的・150〜250Hz）。緑点灯と同時に0.5秒。
 //    ・エラーの「ピー」＝高め2秒・1回。いずれも非ブロッキング（millis管理でloopを止めない）。
-//  ⚠ 12Vが行くのはブザー＋のみ。GPIO12はSS8050ドライバ経由でSPT15(−)を叩く（配線は従来どおり）。
+//  ⚠ 配線（20261107実装確定・docs/40 §3）：IO12（紫リード）→外部基盤 1kΩ→SS8050ベース、
+//    SS8050コレクタ→SPT15(−)、SPT15(+)＝12V直（470µF＋）。放電抵抗1kΩ(R_BZ)は外部基盤側。
+//    GPIOから見た駆動はledcトーンのまま不変（昇圧回路・イネーブルGPIOは無し。12Vは外部DC）。
+//  ⚠ Y2本体の既存5Vブザー(Q2/BZ1)は未使用（IO12を外部基盤へ引き出し。本体側は要切離し確認）。
 static constexpr int      PIN_BUZZER       = 12;    // ストラップだが実機で書込み/起動OK確認済(20260811)
 static constexpr uint8_t  BUZZER_LEDC_CH   = 2;     // ★ledcチャンネル。ch2=timer1（38kHz IRのch0=timer0とタイマー非共有）。ch1はtimer0共有でNG（20261012修正）
 static constexpr uint8_t  BUZZER_LEDC_BITS = 10;    // 分解能（ledcWriteToneがduty50%を自動設定）
@@ -272,13 +275,17 @@ static inline void buzzer_error_edge(bool err_now) {
   prev = err_now;
 }
 
-// ---- 信号灯（GW一体・GPIO13赤/GPIO14緑→IRLU3410→5V LED）★20261012追加------
+// ---- 信号灯（GW一体・GPIO13赤/GPIO14緑→外部基盤IRLU3410→12VテープLED）★20261107 12V外部モジュール対応------
 //  旧：別筐体SG機へ ESP-NOW(CMD_RED/GREEN/RESET) で指示（signal_cmd・DC70で撤去）。
-//  新：GW自身の GPIO13/14 で IRLU3410(ローサイド)を直接駆動し、抵抗内蔵5V -VV LEDを点灯。
+//  旧2：GW GPIO13/14→IRLU3410→抵抗内蔵5V -VV砲弾LED（オンボード）。
+//  新：GPIO13/14（黄/青リード）で外部基盤のIRLU3410(ローサイド)を駆動し、
+//    12V RGBテープLED（アノードコモン・104293/104292）の R/G カソードを叩く（docs/40・20261107通電確認§2.4）。
 //    赤ボタン→赤点灯→2〜5秒→緑点灯＋ブザー0.5秒→0.05秒後に赤消灯→2秒後に緑消灯。
-//  ⚠ G–GND間に外付け4.7kΩプルダウン（起動時の薄点灯防止・DC74）。13/14は非ストラップ。
-static constexpr int      PIN_SIG_RED   = 13;   // →100Ω→IRLU3410(赤)ゲート
-static constexpr int      PIN_SIG_GREEN = 14;   // →100Ω→IRLU3410(緑)ゲート
+//    ★テープはR/G 2色のみ使用。青(B)はIO16未配線＝DNP将来枠（現ファームは赤緑のみで完結）。
+//  ⚠ 低サイドHIGH=ONはオンボード5V版と同一＝ファーム極性は不変。テープ共通＋=12V直（FET右足がGND役）。
+//  ⚠ G–GND間4.7kΩプルダウン（起動時の薄点灯防止・DC74/DC104）は外部基盤側。13/14は非ストラップ。
+static constexpr int      PIN_SIG_RED   = 13;   // 黄リード→外部基盤100Ω→IRLU3410(赤)ゲート→テープ赤カソード
+static constexpr int      PIN_SIG_GREEN = 14;   // 青リード→外部基盤100Ω→IRLU3410(緑)ゲート→テープ緑カソード
 static constexpr uint32_t GREEN_HOLD_MS = 2000; // 緑点灯の保持（最終確定2秒・DC30）
 static constexpr uint32_t GREEN_LEAD_MS = 50;   // 緑先行→0.05秒後に赤を消す重なり（暗転の隙間なし・DC32）
 static uint32_t s_green_off_ms = 0;   // 0=予約なし／非0=この millis で緑を自動消灯
@@ -848,7 +855,7 @@ static void tick_sequence() {
     s_green_t_us = tsync::now_gw_us();          // 緑を出した瞬間＝green_t_us（F1式起点）
     s_state = ST_GREEN;
     sig_on_green();                             // ★GW自機の緑灯ON＋50ms後に赤消灯＋2秒で緑自動消灯（DC30/DC32）
-    buzzer_start(BUZZER_START_MS, BUZZER_F_START);  // ★スタート音「ブー」0.5秒（12V昇圧SPT15・DC27/DC30）
+    buzzer_start(BUZZER_START_MS, BUZZER_F_START);  // ★スタート音「ブー」0.5秒（外部基盤12V・他励SPT15・DC27/DC30）
     Serial.printf("[SEQ] GREEN t=%llu (rid=%u)\n",
                   (unsigned long long)s_green_t_us, s_internal_rid);
     s_state = ST_RACE;
@@ -1446,7 +1453,7 @@ void setup() {
   pinMode(PIN_BTN_GRAY, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(PIN_BTN_RED),  isr_btn_red,  FALLING);  // 押下取りこぼし防止（2026-08-24e）
   attachInterrupt(digitalPinToInterrupt(PIN_BTN_GRAY), isr_btn_gray, FALLING);
-  // ブザー（他励式SPT15＋12V昇圧・ledc駆動）。周波数を与えて鳴らす（自励式のdigitalWriteから変更・20261012）。
+  // ブザー（他励式SPT15＋外部基盤12V直・ledc駆動）。周波数を与えて鳴らす（自励式のdigitalWriteから変更・20261012）。
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcAttach(PIN_BUZZER, BUZZER_F_BEEP, BUZZER_LEDC_BITS);  // pin指定（beam.hと同方式）
   ledcWriteTone(PIN_BUZZER, 0);                             // 起動直後は無音
@@ -1455,7 +1462,7 @@ void setup() {
   ledcAttachPin(PIN_BUZZER, BUZZER_LEDC_CH);                // ch指定（38kHz IRはbeam.hのch0・こちらはch1）
   ledcWriteTone(BUZZER_LEDC_CH, 0);                         // 起動直後は無音
 #endif
-  // 信号灯（GW一体・GPIO13赤/GPIO14緑→IRLU3410・DC70/DC90）。起動直後は必ず消灯（20261012追加）。
+  // 信号灯（外部基盤IRLU3410→12VテープLED・GPIO13赤/GPIO14緑・docs/40）。起動直後は必ず消灯（テープ薄点灯防止）。
   pinMode(PIN_SIG_RED,   OUTPUT);
   pinMode(PIN_SIG_GREEN, OUTPUT);
   sig_all_off();

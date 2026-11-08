@@ -23,7 +23,8 @@
 
 namespace buzzer {
 
-// ⚠ 12Vが行くのはブザー＋のみ。GPIO12はSS8050ドライバ経由でSPT15(−)を叩く（配線は従来どおり）。
+// ⚠ 配線（20261107・docs/40 §3）：IO12（紫リード）→外部基盤 1kΩ→SS8050→SPT15(−)、SPT15(+)=12V直。
+//   放電抵抗1kΩ(R_BZ)は外部基盤側。GPIOから見た駆動はledcトーンのまま不変（昇圧・イネーブルGPIO無し）。
 static constexpr int      PIN_BUZZER       = 12;    // ストラップだが実機で書込み/起動OK確認済(20260811)
 static constexpr uint8_t  BUZZER_LEDC_CH   = 2;     // ★ledcチャンネル。ch2=timer1（38kHz IRのch0=timer0とタイマー非共有）。ch1はtimer0共有でNG（20261012修正）
 static constexpr uint8_t  BUZZER_LEDC_BITS = 10;    // 分解能（ledcWriteToneがduty50%を自動設定）

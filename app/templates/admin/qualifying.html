@@ -1434,7 +1434,12 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     {% endif %}
   </div>
-  <div class="card-body" style="padding:0;overflow-x:auto">
+  <div class="card-body" style="padding:0">
+    {# ★20261107 レーススケジュールの右に予選順位表（項目のみ）を追加。
+       カードの閉じ構造は壊れている（注記）ため触れず、card-body内に自己完結したflexを作る。
+       右サイド幅は内容ぶんの可変（狭め）。サイズ/位置の微調整は後日指示を受けて実施。 #}
+    <div class="qp-sched-flex" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div class="qp-sched-left" style="flex:1 1 420px;min-width:0;overflow-x:auto">
     {% if heats %}
 
 
@@ -1996,6 +2001,42 @@ document.addEventListener('DOMContentLoaded', function(){
       <span style="font-size:12px">（エントリー{{ entries|length }}名{% if is_roundrobin %} / 総レース数 {{ (entries|length * (entries|length - 1) // 2) }}{% endif %}）</span>
     </div>
     {% endif %}
+    </div>{# /qp-sched-left #}
+    {# ★予選順位表（右サイド・項目のみ）。ポイント制のみ。幅は内容ぶんの可変で狭め。サイズ等は後で調整 #}
+    <aside class="qp-sched-rank" style="flex:0 0 auto;width:max-content;max-width:300px">
+      <div style="font-weight:bold;font-size:13px;padding:6px 2px">予選順位表</div>
+      {% if standings and not is_roundrobin and not is_none_roundrobin %}
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
+        <thead>
+          <tr style="border-bottom:2px solid #dee2e6">
+            <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
+            <th style="padding:3px 4px">順位</th>
+            <th style="padding:3px 6px;text-align:left">レーサー</th>
+            <th style="padding:3px 4px">ポイント</th>
+            <th style="padding:3px 4px">出走</th>
+            <th style="padding:3px 4px">完走</th>
+            <th style="padding:3px 4px">完走率</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in standings %}
+          <tr style="border-bottom:1px solid #f0f0f0;{% if s.rank==1 %}background:#fffde7{% endif %}">
+            <td style="padding:3px 4px;text-align:right;color:#aaa">{{ loop.index }}</td>
+            <td style="padding:3px 4px;text-align:center;font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
+            <td style="padding:3px 6px"><strong>{{ s.name }}</strong></td>
+            <td style="padding:3px 4px;text-align:center"><strong>{{ s.total_points }}</strong></td>
+            <td style="padding:3px 4px;text-align:center">{{ s.race_count or 0 }}</td>
+            <td style="padding:3px 4px;text-align:center">{{ s.finish_count or 0 }}</td>
+            <td style="padding:3px 4px;text-align:center">{% if s.race_count %}{{ ((s.finish_count / s.race_count) * 100) | int }}%{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:10px;color:#95a5a6;font-size:12px">結果が入力されると表示されます</div>
+      {% endif %}
+    </aside>
+    </div>{# /qp-sched-flex #}
 {% if not is_heat_roundrobin and not is_order_winner %}
       {# ⚡ M4LAPS RECORD HOLDERS：総合最速・最速ラップ・最高速。同率は値の右にチップで羅列（左端に落とさない） #}
 {# none_roundrobin: 順位表 + 勝敗表を横並び。それ以外は順位表を全幅にする #}
