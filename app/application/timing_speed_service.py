@@ -19,18 +19,29 @@ from __future__ import annotations
 from app.domain.rotation import LANES, build_course, identify_start_lane
 
 # 現実的にありえない値を弾くための範囲（m/s）
-# ミニ四駆の実速度域はおよそ 3〜15 m/s（11〜54 km/h）。
-# ビームのチャタリングやノイズで極端な値が出た場合に採用しないための保険。
+# ミニ四駆の物理上限は無負荷理論で 15.6 m/s（40000rpm / ギヤ比3.5 / タイヤ径26mm）。
+# 実走はさらに落ちるため、実用上限は 40 km/h = 11.1 m/s を既定とする。
+# ビームのチャタリング／反射ノイズで極端な値が出た場合に採用しないための保険。
 MIN_SPEED_MS = 0.5
-MAX_SPEED_MS = 30.0
+MAX_SPEED_MS = 30.0                 # 後方互換（max_speed_ms 未指定時のフォールバック）
+MAX_PASS_SPEED_MS_DEFAULT = 11.1    # 実用上限の既定 = 40 km/h（timing_layouts.max_speed_ms で上書き）
+
+
+def _cap(max_speed_ms: float | None) -> float:
+    """有効な上限[m/s]を返す。レイアウト設定が無ければ既定(40km/h)。"""
+    if max_speed_ms and max_speed_ms > 0:
+        return max_speed_ms
+    return MAX_PASS_SPEED_MS_DEFAULT
 
 
 def pass_speed_ms(t_us: int | None, t_us_b: int | None,
-                  beam_gap_mm: float | None) -> float | None:
+                  beam_gap_mm: float | None,
+                  max_speed_ms: float | None = None) -> float | None:
     """ゲート通過速度[m/s]を算出する（純粋関数）。
 
     2本のビームを通過する時間差と、その間隔から求める。
     設定や打刻が欠けていれば None（＝画面では「—」表示）。
+    max_speed_ms: このコース/レギュの実用上限[m/s]（既定 40km/h）。超過は採用しない。
     """
     if t_us is None or t_us_b is None or not beam_gap_mm:
         return None
@@ -38,13 +49,14 @@ def pass_speed_ms(t_us: int | None, t_us_b: int | None,
     if dt_us <= 0:
         return None                      # 逆順・同時刻は不正
     v = (beam_gap_mm / 1000.0) / (dt_us / 1e6)
-    if not (MIN_SPEED_MS <= v <= MAX_SPEED_MS):
-        return None                      # 明らかな異常値は採用しない
+    if not (MIN_SPEED_MS <= v <= _cap(max_speed_ms)):
+        return None                      # 実用上限超＝計測ミス。速度は採らない
     return round(v, 2)
 
 
 def lap_avg_speed_ms(lap_time_us: int | None,
-                     lap_length_m: float | None) -> float | None:
+                     lap_length_m: float | None,
+                     max_speed_ms: float | None = None) -> float | None:
     """1周の平均速度[m/s]を算出する（純粋関数）。
 
     コース全長が未設定なら None。
@@ -52,14 +64,15 @@ def lap_avg_speed_ms(lap_time_us: int | None,
     if not lap_time_us or not lap_length_m:
         return None
     v = lap_length_m / (lap_time_us / 1e6)
-    if not (MIN_SPEED_MS <= v <= MAX_SPEED_MS):
+    if not (MIN_SPEED_MS <= v <= _cap(max_speed_ms)):
         return None
     return round(v, 2)
 
 
 def total_avg_speed_ms(total_time_us: int | None,
                        lap_length_m: float | None,
-                       laps: int | None) -> float | None:
+                       laps: int | None,
+                       max_speed_ms: float | None = None) -> float | None:
     """レース全体の平均速度[m/s]を算出する（純粋関数）。
 
     式: (1周の距離 × 周回数) ÷ TOTALタイム
@@ -69,7 +82,7 @@ def total_avg_speed_ms(total_time_us: int | None,
     if not total_time_us or not lap_length_m or not laps:
         return None
     v = (lap_length_m * laps) / (total_time_us / 1e6)
-    if not (MIN_SPEED_MS <= v <= MAX_SPEED_MS):
+    if not (MIN_SPEED_MS <= v <= _cap(max_speed_ms)):
         return None
     return round(v, 2)
 
@@ -142,17 +155,20 @@ async def load_speed_config(db, layout_id: int | None) -> dict:
              "beam_gap_by_pos": {position: mm}}
     ゲートは node_id で引けるが、レイアウト上の位置でも引けるようにしておく。
     """
-    out = {"lap_length_m": None, "beam_gap_by_node": {}, "beam_gap_by_pos": {}}
+    out = {"lap_length_m": None, "max_speed_ms": None,
+           "beam_gap_by_node": {}, "beam_gap_by_pos": {}}
     if layout_id is None:
         return out
 
     async with db.execute(
-        "SELECT lap_length_m FROM timing_layouts WHERE id = ?", (layout_id,)
+        "SELECT * FROM timing_layouts WHERE id = ?", (layout_id,)
     ) as cur:
         row = await cur.fetchone()
     if row is not None:
         keys = row.keys() if hasattr(row, "keys") else []
         out["lap_length_m"] = row["lap_length_m"] if "lap_length_m" in keys else None
+        # コース/レギュ別の実用上限[m/s]（無ければ None → 既定40km/hが効く）
+        out["max_speed_ms"] = row["max_speed_ms"] if "max_speed_ms" in keys else None
 
     async with db.execute(
         "SELECT node_id FROM timing_layout_elements "

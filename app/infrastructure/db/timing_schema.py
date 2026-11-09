@@ -49,6 +49,7 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
             name        TEXT NOT NULL,
             target_laps INTEGER NOT NULL DEFAULT 3,  -- 3の倍数・最大9
             lap_length_m REAL,                       -- 1周の距離(m)。ラップ平均速度の算出に使う
+            max_speed_ms REAL,                       -- 通過速度の実用上限(m/s)。NULLなら既定40km/h(=11.1)
             created_at  TEXT DEFAULT (datetime('now','localtime')),
             updated_at  TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -154,6 +155,10 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         _cols = {r[1] for r in await cur.fetchall()}
     if "lap_length_m" not in _cols:
         await db.execute("ALTER TABLE timing_layouts ADD COLUMN lap_length_m REAL")
+        await db.commit()
+    # 通過速度の実用上限(m/s)。コース/レギュ別に設定。NULL なら既定40km/h が効く。
+    if "max_speed_ms" not in _cols:
+        await db.execute("ALTER TABLE timing_layouts ADD COLUMN max_speed_ms REAL")
         await db.commit()
 
     async with db.execute("PRAGMA table_info(timing_layout_elements)") as cur:

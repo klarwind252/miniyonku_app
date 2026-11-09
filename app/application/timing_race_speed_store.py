@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import statistics
+
 from app.application import timing_speed_service as spd
 from app.application.timing_race_service import build_race_result
 from app.domain.rotation import LayoutElement
@@ -26,6 +28,12 @@ from app.infrastructure.db.repositories.timing_repository import (
 )
 
 NO = -1  # lap / sector_no の「該当なし」を表す番兵
+
+# 相対フィルタ: 同レースの他の通過計測（中央値）から「早い方向」に
+# これ以上ずれた瞬間速度は、反射ノイズ由来の逸脱とみなして採用しない。
+# 絶対上限（timing_layouts.max_speed_ms・既定40km/h）をくぐり抜けた
+# 残りノイズを、各レースの実力値を基準に相対で落とすための保険。
+REL_K = 2.5
 
 
 async def has_stored_speeds(db, race_id: int) -> bool:
@@ -64,6 +72,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
     cfg = await spd.load_speed_config(db, layout_id)
     total_len_m = cfg.get("lap_length_m")     # ← 意味は「合計距離(m)」
     gap_by_node = cfg.get("beam_gap_by_node") or {}
+    max_speed_ms = cfg.get("max_speed_ms")    # コース別の実用上限（None→既定40km/h）
 
     # 1周の距離 = 合計距離 ÷ 周回数（周回数はレースの target_laps）
     laps_n = race["target_laps"] or 0
@@ -94,34 +103,59 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
         rec = pass_index.get((lane, lap, idx))
         if not rec:
             return None
-        return spd.pass_speed_ms(rec[0], rec[1], gap_by_node.get(rec[2]))
+        # 絶対上限（コース別 max_speed_ms・既定40km/h）をここで適用
+        return spd.pass_speed_ms(rec[0], rec[1], gap_by_node.get(rec[2]), max_speed_ms)
+
+    # --- 1st pass: レース全体のビーム通過速度を集める（絶対上限は適用済み）---
+    #     相対フィルタの基準（中央値）を作るため、先に全レーン分を集計する。
+    beam_samples: dict = {}          # (lane, lap, idx) -> speed[m/s]
+    for m in result.ranking():
+        lane = m.start_lane
+        for lap in m.laps:
+            if lap.lap >= 2:
+                sg = _pass_speed(lane, lap.lap, 0)
+                if sg is not None:
+                    beam_samples[(lane, lap.lap, 0)] = sg
+            for idx in range(len(lap.sectors)):
+                sno = idx + 1
+                sp = _pass_speed(lane, lap.lap, sno)
+                if sp is not None:
+                    beam_samples[(lane, lap.lap, sno)] = sp
+
+    # 相対の足切り値 = 同レース中央値 × REL_K（早い方向の逸脱を排除）
+    _vals = list(beam_samples.values())
+    rel_cap = (statistics.median(_vals) * REL_K) if _vals else None
+
+    def _accept(v: float) -> bool:
+        return rel_cap is None or v <= rel_cap
 
     rows: list[tuple] = []   # (start_lane, metric, lap, sector_no, value)
 
+    # --- 2nd pass: 相対フィルタを通した値だけで行を作る ---
     for m in result.ranking():
         lane = m.start_lane
         lap_avgs: list[float] = []
         speeds_all: list[float] = []
 
         for lap in m.laps:
-            # LAP Av. = 1周の距離 ÷ ラップタイム
-            la = spd.lap_avg_speed_ms(lap.lap_time_us, per_lap_len_m)
+            # LAP Av. = 1周の距離 ÷ ラップタイム（上限も適用）
+            la = spd.lap_avg_speed_ms(lap.lap_time_us, per_lap_len_m, max_speed_ms)
             if la is not None:
                 lap_avgs.append(la)
                 rows.append((lane, "lap_avg", lap.lap, NO, la))
 
             # S/G通過(0) の速度（2周目以降のみ意味を持つ）
             if lap.lap >= 2:
-                sg = _pass_speed(lane, lap.lap, 0)
-                if sg is not None:
+                sg = beam_samples.get((lane, lap.lap, 0))
+                if sg is not None and _accept(sg):
                     speeds_all.append(sg)
                     rows.append((lane, "sector_ms", lap.lap, 0, sg))
 
             # 各区間(1..7)の通過速度
             for idx in range(len(lap.sectors)):
                 sno = idx + 1
-                sp = _pass_speed(lane, lap.lap, sno)
-                if sp is not None:
+                sp = beam_samples.get((lane, lap.lap, sno))
+                if sp is not None and _accept(sp):
                     speeds_all.append(sp)
                     rows.append((lane, "sector_ms", lap.lap, sno, sp))
 
@@ -130,7 +164,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             avg = round(sum(lap_avgs) / len(lap_avgs), 2)
             rows.append((lane, "total_avg", NO, NO, avg))
 
-        # TOTAL MAX = 区間通過速度の最大
+        # TOTAL MAX = 区間通過速度の最大（絶対+相対フィルタ後）
         if speeds_all:
             rows.append((lane, "max_ms", NO, NO, round(max(speeds_all), 2)))
 
