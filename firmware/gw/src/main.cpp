@@ -241,6 +241,26 @@ static constexpr uint32_t GOAL_FREQ        = 800;   // ★ゴール(完走)音�
 static constexpr uint32_t GOAL_MS          = 500;   // ★ゴール(完走)音の長さ
 static uint32_t s_buzz_off_ms = 0;           // 0=消音中／非0=この millis で消音予定
 static bool     s_sg_beeped   = false;       // ST_IDLE中に既にS/G通過ピッを鳴らしたか（TAの毎回鳴り防止・灰リセットで復活）
+
+// ── 起動ジングル（パチンコ風・非ブロッキング／20261109）──────────────────────────
+//  圧電SPT15は単音のみ＝旋律は時分割で1音ずつ鳴らす。loopのbuzzer_jingle_tick()が進行役。
+//  明るい上昇ラン＋高音アクセントの約0.85秒（≤2秒厳守）。周波数は可聴域(1.3〜2.6kHz)に限定
+//  （圧電は低音ほぼ無音・データシート最大音量点付近を使う）。a/b両ロゴ共通で鳴らす。
+struct BuzNote { uint16_t freq; uint16_t ms; };     // freq=0 は無音（音符間の切れ目＝粒立ち）
+static const BuzNote BOOT_JINGLE[] = {
+  {1319, 60}, {0, 20}, {1568, 60}, {0, 20}, {1976, 60}, {0, 20},   // ミ↑ソ↑シ：弾む立ち上がり
+  {1319, 55}, {1568, 55}, {1976, 55}, {2349, 55}, {0, 25},         // ピロリロ↑：速い上昇ラン
+  {1976, 60}, {2349, 60}, {2637, 240},                            // 締めの高音アクセント「キラッ」
+};  // 合計 ≒ 845ms
+static constexpr size_t BOOT_JINGLE_N = sizeof(BOOT_JINGLE) / sizeof(BOOT_JINGLE[0]);
+static int      s_jingle_idx     = -1;       // -1=停止中／0..N-1=再生中の音符インデックス
+static uint32_t s_jingle_next_ms = 0;        // この millis で次の音符へ進む
+
+static inline void buzzer_tone(uint32_t freq);   // 前方宣言（jingle_tickが使用）
+static inline void buzzer_jingle_start() {       // 起動時に1回だけ呼ぶ（以後loopで進行）
+  s_jingle_idx = 0;
+  s_jingle_next_ms = millis();               // 先頭音へ即時
+}
 // ledc(PWM)で周波数を出す/止める（コア2.x=ch指定 / 3.x=pin指定・beam.hと同方式）。freq=0で停止。
 static inline void buzzer_tone(uint32_t freq) {
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -250,6 +270,7 @@ static inline void buzzer_tone(uint32_t freq) {
 #endif
 }
 static inline void buzzer_start(uint32_t ms, uint32_t freq = BUZZER_F_BEEP) {   // 非ブロッキング開始
+  s_jingle_idx = -1;   // ★実イベント（スタート/エラー/通過）は起動ジングルより優先＝ジングル中断
   Serial.printf("[BUZ] %luHz %lums%s\n", (unsigned long)freq, (unsigned long)ms, s_buzz_off_ms ? " (上書き)" : "");   // ★20261102
   buzzer_tone(freq);
   s_buzz_off_ms = millis() + ms;
@@ -264,6 +285,22 @@ static inline void buzzer_tick() {           // loop毎に呼ぶ（時間が来�
     s_buzz_off_ms = 0;
     Serial.println("[BUZ] off");   // ★20261102
   }
+}
+
+// 起動ジングルの進行（loop毎・非ブロッキング）。buzzer_tickと独立。freq=0は無音。
+//  実イベントのbuzzer_start()が来たら s_jingle_idx=-1 にされ、この関数は即停止する。
+static inline void buzzer_jingle_tick() {
+  if (s_jingle_idx < 0) return;                            // 停止中
+  if ((int32_t)(millis() - s_jingle_next_ms) < 0) return;  // まだ現在の音符の途中
+  if (s_jingle_idx >= (int)BOOT_JINGLE_N) {                // 末尾まで鳴らし終えた
+    buzzer_tone(0);
+    s_jingle_idx = -1;
+    return;
+  }
+  const BuzNote& n = BOOT_JINGLE[s_jingle_idx];
+  buzzer_tone(n.freq);                                     // freq=0 は無音
+  s_jingle_next_ms = millis() + n.ms;
+  s_jingle_idx++;
 }
 
 // エラー表示の立ち上がり（無→有）でだけ 2秒「ピー」を1回鳴らす。
@@ -456,6 +493,9 @@ static uint32_t s_best_total_ms   = 0;   // 完走total_msの最小（0=未記�
 static uint8_t  s_best_total_lane = 0;   // それを出したマシン(=スタートレーン) 1..3（0=無）
 static uint32_t s_best_lap_ms     = 0;   // 確定ラップの最小（0=未記録）
 static uint8_t  s_best_lap_lane   = 0;
+// ★20261109：レーン別ベストラップ（READYのLap行 L1/L2/L3 用。0=未記録／電源ON毎に揮発）。
+//   既存ベストと同じ「過不足なし完走」のみ採用。
+static uint32_t s_best_lap_lane_ms[3] = {0,0,0};
 // ---- ローテーション追跡（表示・完走判定用／DA7の簡易版・20260830b）---------
 //  物理レーンpのヒットを「どのマシンか」に帰属させる。直前レーンからの遷移を
 //  +1（レーンチェンジ標準）→ 0（LCなし・周回コース）→ +2 の優先順で照合し、
@@ -1317,6 +1357,31 @@ static bool fetch_layout() {
   return ok;
 }
 
+// ---- アクティブレースのレーン別レーサー名取得（ロスターREADY用・20261109）------
+//  GET /api/timing/current_race_for_gw
+//   → {"lanes":[{"lane":1,"kana":"ユウミ"},{"lane":2,"kana":"グレタロウ"},...]}
+//  kana はサーバーで正規化済み（ひらがな→カタカナ／半角英数）。空配列=アクティブ無し。
+//  成功時のみ反映。lanes有り→race_active=true（READYはロスター表示）、空→false（通常READY）。
+static bool fetch_race() {
+  if (!wifi_up()) return false;
+  JsonDocument res; bool ok = false;
+  int code = httpj::request("/api/timing/current_race_for_gw", String(), &res, &ok);
+  if (ok) {
+    for (int i = 0; i < 5; i++) disp::g_status.lane_name[i][0] = '\0';
+    int cnt = 0;
+    for (JsonObject ln : res["lanes"].as<JsonArray>()) {
+      int l = ln["lane"] | 0;
+      const char* nm = ln["kana"] | "";
+      if (l >= 1 && l <= 5) { snprintf(disp::g_status.lane_name[l - 1], sizeof(disp::g_status.lane_name[0]), "%s", nm); cnt++; }
+    }
+    disp::g_status.race_active = (cnt > 0);
+    Serial.printf("[RACE] active=%d lanes=%d\n", disp::g_status.race_active ? 1 : 0, cnt);
+  } else {
+    Serial.printf("[RACE] fetch NG code=%d\n", code);
+  }
+  return ok;
+}
+
 // ---- fetch_layout の契機管理 ------------------------------------------------
 //  ★20261031 P3：netタスクから呼ぶ（loopは止まらない）。周期は変更前と同じ 成功60s/失敗30s を維持し、
 //    さらに灰リセット時は即時再取得（アプリで周回数を変えた直後に反映しやすく）。
@@ -1333,6 +1398,19 @@ static void tick_fetch_layout() {
   if (s_layout_ok) s_layout_req = false;
 }
 
+// ---- アクティブレース取得の契機（READY中のみ約5秒間隔・20261109）-------------
+//  名前はロスターREADY（ST_IDLE）でのみ使うので、計測中(ARMED/GREEN/RACE)は取得しない。
+//  アクティブ化やレーン変更を数秒で反映するため、layoutより短い周期にする。
+static constexpr uint32_t RACE_POLL_MS = 5000;
+static void tick_fetch_race() {
+  if (s_state != ST_IDLE) return;        // READY(待機)でのみ取得
+  if (!wifi_connected()) return;
+  static uint32_t last = 0;
+  if (last != 0 && (millis() - last) < RACE_POLL_MS) return;
+  last = millis();
+  fetch_race();
+}
+
 // ---- netタスク（core0）：HTTPSは全部ここ。loop(core1)は一切止まらない ----------
 //  ★20261031 P2/P3：flush（送信）・layout取得・JOIN転送・WiFi再接続の面倒を見る。
 //   ・s_need_flush / s_layout_req / JOINキュー は loop が立て、ここが消化する。
@@ -1343,6 +1421,7 @@ static void net_task(void*) {
     wifi_up();                                   // 接続維持（未接続なら15秒間隔でbegin）
     tick_flush();                                // 送信要求があれば1グループ送る
     tick_fetch_layout();                         // 60秒周期＋灰リセット即時
+    tick_fetch_race();                           // ★アクティブレース(レーサー名)をREADY中5秒周期で取得（20261109）
     while (s_joinq_tail != s_joinq_head) {       // JOIN転送（レート制限はforward_join_now内）
       proto::JoinBody jb = s_joinq[s_joinq_tail];
       s_joinq_tail = (uint8_t)((s_joinq_tail + 1) % JOINQ_N);
@@ -1478,6 +1557,7 @@ void setup() {
   beam::begin();
   disp::begin();                       // TFT初期化（PSRAMスプライト確保）
   s_state = ST_SPLASH; s_splash_ms = millis(); Serial.println("[SPLASH] start");   // 開始（非ブロッキング・loopで描画）
+  buzzer_jingle_start();   // ★起動音（パチンコ風・約0.85秒）をスプラッシュと同時に開始（20261109・a/b共通）
   disp::g_status.gw_id = NODE_ID;
   disp::g_status.ch    = g_channel;
   // ★20261031 P2：HTTPS・WiFi維持は netタスク(core0)へ。loop(core1)はTLSで止まらない。
@@ -1597,6 +1677,7 @@ static void tick_display() {
   disp::g_status.best_total_lane = s_best_total_lane;
   disp::g_status.best_lap_ms     = s_best_lap_ms;
   disp::g_status.best_lap_lane   = s_best_lap_lane;
+  for (int i = 0; i < 3; i++) disp::g_status.best_lap_lane_ms[i] = s_best_lap_lane_ms[i];  // ★レーン別ベスト（READY Lap行）
   // Node充足：実JOIN中のSQ(0..5)数を数え、必要数はレイアウト由来(s_node_need)。
   //   need>0 のときだけ have/need を突合（need=0＝レイアウト未取得は「Nd-/-」表示）。
   {
@@ -1852,6 +1933,7 @@ void loop() {
   rx_pump();                  // ★P1：ESP-NOW受信（EVENT/COMMAND/JOIN等）をloop文脈で処理
   tick_buttons();
   buzzer_tick();              // ブザー非ブロッキング消音（ledc・20261012）
+  buzzer_jingle_tick();       // ★起動ジングル進行（パチンコ風・非ブロッキング・20261109）
   sig_tick();                 // ★信号灯の非ブロッキング消灯（赤は緑+50ms/緑は緑+2秒・DC30/DC32）
   tick_gw_presence();         // GW自身の在席ビーコン（GW2台検知の相互化）
   tick_roster();              // 接続機材の一覧をシリアルへ（設営確認用・3秒毎）
@@ -2004,6 +2086,9 @@ void loop() {
                 s_best_lap_ms = lap; s_best_lap_lane = (uint8_t)m;
                 Serial.printf("[BEST] lap %.2fs (M%d)\n", lap / 1000.0, m);
               }
+              // ★20261109：レーン別ベストラップ（READYのLap行 L1/L2/L3）。m=1..3。
+              if (lap > 0 && (s_best_lap_lane_ms[m - 1] == 0 || lap < s_best_lap_lane_ms[m - 1]))
+                s_best_lap_lane_ms[m - 1] = lap;
             }
           } else {
             Serial.printf("[BEST] 非採用 M%d (clean=%d cross=%u/%d done=%u/%d)\n",

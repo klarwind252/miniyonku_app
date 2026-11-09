@@ -47,6 +47,7 @@ static inline uint16_t lane_color(int lane1) {
 static constexpr int W = 320, H = 240;
 static constexpr int BAR_H = 22;                 // ステータスバー高（font1化で28→22に縮小・ボディ+6px・2026-08-24）
 static constexpr int BODY_H = H - BAR_H;
+static constexpr int NUM_LANES = 3;              // ★このファームのレーン数（3レーン機=3／将来5レーン機=5）。ロスターREADYの行数に使用（20261109）
 
 // ---- ステータス状態（バーの○×判定に使う）---------------------------------
 struct Status {
@@ -67,6 +68,11 @@ struct Status {
   //  時間系のみGWが自前で持つ。速度(Av./Max)はアプリ側担当のため保持しない。
   uint32_t best_total_ms   = 0; uint8_t best_total_lane = 0;  // 完走合計の最小＋達成レーン(1..3)
   uint32_t best_lap_ms     = 0; uint8_t best_lap_lane   = 0;  // 単周ラップの最小＋達成レーン(1..3)
+  // ★20261109：READYのLap行をレーン別ベストに変更（L1/L2/L3）。0=未記録→「-」
+  uint32_t best_lap_lane_ms[3] = {0,0,0};
+  // ★20261109：アクティブレース＝ロスターREADY用（main側がfetch_raceで更新）
+  bool race_active = false;                 // true=アクティブ有り→ロスター表示／false=通常READY(Total/Lap)
+  char lane_name[5][24] = {{0}};            // L1..L5 レーサー名（サーバー正規化済み：カタカナ/半角英数）。空文字="" →「ー」
 };
 
 // ---- レーン別 走行データ（ON TRACK/FINISHのラップ表示用・main側が更新）------
@@ -126,6 +132,13 @@ static bool s_ok = false;
 static constexpr int TIME_X = 186, TIME_Y = 2, TIME_W = 130, TIME_H = 38;
 static TFT_eSprite s_time_spr = TFT_eSprite(&s_tft);
 static bool s_time_ok = false;
+
+// ★20261109 前方宣言：ロスターREADYのレーサー名描画（日本語1bitフォント）。定義は jp_find 以降。
+static int jp_draw_string(int x, int y, const char* str, uint16_t color);
+static int jp_draw_string_scaled(int x, int y, const char* str, uint16_t color, int sc, int x_max);
+// ★20261109：ON TRACKが1〜3周モード（右上タイムをsize2で特大描画）か。trueの間は
+//   draw_time_field()の小サイズ部分更新を止め、ベース(4fps)の特大タイムを活かす（競合回避）。
+static bool s_ontrack_big = false;
 
 static void begin() {
   s_tft.init();
@@ -402,70 +415,96 @@ static void draw_status_bar() {
 //  当日ベスト4行：Total/Lap は実値（20260901・案A）。Av./Max と未記録は「-」。
 // 接続中の機材ID一覧を上段中央に固定表示（READY/ON TRACK共通・フォント1・白・2026-08-24）。
 //  READYなら「READY」と「TODAY BEST」の間、ON TRACKなら「ON TRACK」とタイムの間。
+// ★20261109：接続機材ID一覧（SQ…）。通常READYの右上の細い帯に右寄せ表示。
+//   ON TRACK/FINISHでは呼ばない（計測中はSQ非表示＝ユーザー確定）。ロスターREADYでも非表示。
+//   READYは経過秒の部分更新スプライトを使わないため、右上(TR)に出しても競合しない。
 static void draw_link_line() {
   s_spr.setTextFont(1);
   s_spr.setTextSize(1);
-  s_spr.setTextColor(C_GREY, C_BLACK);   // 接続一覧はグレー（2026-08-24）
-  s_spr.setTextDatum(MR_DATUM);          // 中央揃え(MC,186)→右揃えに変更（2026-08-28）
-  // ⚠右端はx=182固定。経過秒の部分更新スプライト領域(x=186〜316,y=2〜40)に
-  //  1pxでも入ると30fpsのdraw_time_field()に消され→4fpsで復活のチカチカが出る。
-  s_spr.drawString(g_status.link, 182, 14);
+  s_spr.setTextColor(C_GREY, C_BLACK);   // 接続一覧はグレー
+  s_spr.setTextDatum(TR_DATUM);          // 右上寄せ
+  s_spr.drawString(g_status.link, W - 6, 4);
+}
+
+// ★20261109：READYヘッダ（「READY」特大・右端近くまで・左上起点）。通常/ロスター共通の上段。
+static void draw_ready_header() {
+  s_spr.setTextDatum(TL_DATUM);
+  s_spr.setTextColor(C_READY, C_BLACK);
+  s_spr.setTextFont(4); s_spr.setTextSize(3);     // font4(≈26px)×3≒78px。右端近くまで大きく
+  s_spr.drawString("READY", 6, 14);
+  s_spr.setTextSize(1);
+}
+
+// 通常READY：本日ベスト（Total 1行＋Lapレーン別）。アクティブレース「無し」のとき。
+//  Total/Lap は GW自己完結の実値（電源ON毎に揮発）。未記録は「-」。座標は実機で追い込み前提。
+static void draw_ready_best() {
+  draw_link_line();   // 接続機材ID一覧（右上の細い帯）
+  // ── Total 行（値をfont4 size2で大きく・1行「Total xxx s L2」）──
+  const int ty = 108;
+  s_spr.setTextDatum(TL_DATUM);
+  s_spr.setTextColor(C_WHITE, C_BLACK);
+  s_spr.setTextFont(4);
+  s_spr.drawString("Total", 12, ty + 13);
+  char val[12];
+  if (g_status.best_total_ms == 0)           snprintf(val, sizeof(val), "-");
+  else if (g_status.best_total_ms >= 100000) snprintf(val, sizeof(val), "%.1f", g_status.best_total_ms / 1000.0);
+  else                                       snprintf(val, sizeof(val), "%.2f", g_status.best_total_ms / 1000.0);
+  s_spr.setTextDatum(TR_DATUM);
+  s_spr.setTextFont(4); s_spr.setTextSize(2);
+  s_spr.drawString(val, W - 78, ty);
+  s_spr.setTextSize(1);
+  s_spr.setTextFont(4);
+  s_spr.drawString("s", W - 44, ty + 26);
+  if (g_status.best_total_ms > 0 && g_status.best_total_lane >= 1 && g_status.best_total_lane <= 3) {
+    char ln[4]; snprintf(ln, sizeof(ln), "L%u", g_status.best_total_lane);
+    s_spr.setTextColor(lane_color(g_status.best_total_lane), C_BLACK);
+    s_spr.drawString(ln, W - 8, ty + 14);
+  }
+  // ── Lap 行：レーン別ベスト「Lap L1 xxx L2 xxx L3 xxx」──
+  const int ly = 176;
+  s_spr.setTextDatum(TL_DATUM);
+  s_spr.setTextColor(C_WHITE, C_BLACK);
+  s_spr.setTextFont(4);
+  s_spr.drawString("Lap", 12, ly);
+  s_spr.setTextFont(2);
+  const int gx[3] = { 72, 158, 244 };
+  for (int i = 0; i < 3; i++) {
+    char tag[4]; snprintf(tag, sizeof(tag), "L%d", i + 1);
+    s_spr.setTextDatum(TL_DATUM);
+    s_spr.setTextColor(lane_color(i + 1), C_BLACK);
+    s_spr.drawString(tag, gx[i], ly + 6);
+    char lv[12];
+    if (g_status.best_lap_lane_ms[i] == 0) snprintf(lv, sizeof(lv), "-");
+    else                                   snprintf(lv, sizeof(lv), "%.2f", g_status.best_lap_lane_ms[i] / 1000.0);
+    s_spr.setTextColor(C_WHITE, C_BLACK);
+    s_spr.drawString(lv, gx[i] + 20, ly + 6);
+  }
+}
+
+// ロスターREADY：レーン番号＋レーサー名（番号レーン色・名前白・大）。アクティブレース「有り」のとき。
+//  行数＝NUM_LANES。空きレーン＝「ー」。長い名前は右端(W-6)でクリップ（縮小・スクロールなし）。
+static void draw_roster() {
+  const int top = 94, bot = BODY_H;                 // READY下端≈92〜バー(218)の間
+  const int n   = NUM_LANES;
+  const int sc  = (n <= 3) ? 2 : 1;                 // 3レーン=2倍(≒42px)／5レーン=等倍(21px)
+  const int cell_h = jpf::CELL_H * sc;
+  const int pitch  = (bot - top) / n;
+  for (int i = 0; i < n; i++) {
+    int y = top + i * pitch + (pitch - cell_h) / 2;
+    uint16_t col = lane_color(i + 1);
+    char num[4]; snprintf(num, sizeof(num), "%d", i + 1);
+    jp_draw_string_scaled(14, y, num, col, sc, W - 6);                 // 番号＝レーン色
+    const char* nm = g_status.lane_name[i];
+    if (nm[0] == '\0') jp_draw_string_scaled(58, y, "ー", C_GREY,  sc, W - 6);  // 空きレーン＝ー
+    else               jp_draw_string_scaled(58, y, nm, C_WHITE, sc, W - 6);    // 名前＝白・右クリップ
+  }
 }
 
 static void draw_idle() {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
-  s_spr.setTextDatum(TL_DATUM);
-  s_spr.setTextColor(C_READY, C_BLACK);
-  s_spr.setTextFont(4);
-  s_spr.drawString("READY", 8, 8);
-
-  s_spr.setTextColor(C_WHITE, C_BLACK);
-  s_spr.setTextFont(2);
-  s_spr.setTextDatum(TR_DATUM);
-  s_spr.drawString("TODAY BEST", W - 8, 12);
-
-  // 本日のベスト（20260901j：速度2行(Av./Max)は削除。Total/Lap の2行を大きく・空間を使う）。
-  //  Total/Lap は GW自己完結の実値（電源ON毎に揮発／過不足なく完走したF1式・走行式問わず）。
-  //  未記録は「-」。各行：ラベル(左) / 数値(右) / 単位 / レーン色L番号(右端)。実機で座標追い込み前提。
-  struct BRow { const char* label; uint32_t ms; uint8_t lane; };
-  const BRow rows[2] = {
-    { "Total", g_status.best_total_ms, g_status.best_total_lane },
-    { "Lap",   g_status.best_lap_ms,   g_status.best_lap_lane   },
-  };
-  const int COL_VAL_R  = W - 78;   // 数値の右端
-  const int COL_UNIT_R = W - 44;   // 単位の右端
-  const int COL_LANE_R = W - 8;    // レーン番号の右端（レーン色）
-  int y = 66;
-  for (int i = 0; i < 2; i++) {
-    const BRow& rw = rows[i];
-    // ラベル（左・大きく font4）
-    s_spr.setTextDatum(TL_DATUM);
-    s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.setTextFont(4);
-    s_spr.drawString(rw.label, 16, y + 6);
-    // 数値（右揃え・font4 を size2 で拡大＝空いた縦空間を使って大きく）
-    char val[12];
-    if (rw.ms == 0)            snprintf(val, sizeof(val), "-");
-    else if (rw.ms >= 100000)  snprintf(val, sizeof(val), "%.1f", rw.ms / 1000.0);
-    else                       snprintf(val, sizeof(val), "%.2f", rw.ms / 1000.0);
-    s_spr.setTextDatum(TR_DATUM);
-    s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.setTextFont(4); s_spr.setTextSize(2);
-    s_spr.drawString(val, COL_VAL_R, y);
-    s_spr.setTextSize(1);
-    // 単位
-    s_spr.setTextFont(4);
-    s_spr.drawString("s", COL_UNIT_R, y + 20);
-    // レーン番号（右端・レーン色）。実値がある行のみ。
-    if (rw.ms > 0 && rw.lane >= 1 && rw.lane <= 3) {
-      char ln[4]; snprintf(ln, sizeof(ln), "L%u", rw.lane);
-      s_spr.setTextFont(4);
-      s_spr.setTextColor(lane_color(rw.lane), C_BLACK);
-      s_spr.drawString(ln, COL_LANE_R, y + 14);
-    }
-    y += 78;   // 2行ぶんで空間を広く使う
-  }
-  draw_link_line();   // 上段中央に接続機材ID一覧
+  draw_ready_header();
+  if (g_status.race_active) draw_roster();      // アクティブ有り＝ロスター（レーサー名）
+  else                      draw_ready_best();  // 無し＝通常READY（本日ベスト）
 }
 
 // ===== 受付(SET)画面（赤押下→ARMED・docs/20.6）=============================
@@ -487,109 +526,120 @@ static void draw_set(bool /*blink 未使用*/) {
 
 // ===== 計測中(ON TRACK)画面（docs/20.3）====================================
 //  ●点滅・経過秒・3レーン枠。ラップテーブルは骨組みのみ（実データ後続）。
+// ★20261109：完走タイム（走行中は累計＝暫定／完走でtotal_ms確定）
+static uint32_t lane_running_total(const LaneRun& r) {
+  if (r.fin) return r.total_ms;
+  uint32_t s = 0;
+  for (int k = 0; k < r.done && k < MAX_LAPS; k++) s += r.lap_ms[k];
+  return s;
+}
+
+// ラップ縦テーブル（ns個の均等スロット・最大cap行・font2）。レーン間で行が揃う。
+static void draw_lap_table(int x, int lane_w, const LaneRun& r, int top, int bot, int ns, int cap) {
+  s_spr.setTextFont(2);
+  int rows = r.done; if (rows > cap) rows = cap; if (rows > MAX_LAPS) rows = MAX_LAPS;
+  const int row_h = 16;
+  int g = ((bot - top) - ns * row_h) / (ns + 1); if (g < 0) g = 0;
+  for (int k = 0; k < rows; k++) {
+    int yy = top + g * (k + 1) + row_h * k;
+    s_spr.setTextDatum(TL_DATUM); s_spr.setTextColor(C_GREY, C_BLACK);
+    char num[4]; snprintf(num, sizeof(num), "%d", k + 1); s_spr.drawString(num, x + 6, yy);
+    s_spr.setTextDatum(TR_DATUM); s_spr.setTextColor(C_WHITE, C_BLACK);
+    char lt[12]; snprintf(lt, sizeof(lt), "%.2f", r.lap_ms[k] / 1000.0); s_spr.drawString(lt, x + lane_w - 8, yy);
+  }
+}
+
+// レーン枠1つ（ヘッダL#＋周回/FIN/DNF、完走タイムheadline、区切り線、ラップ表）。
+//  ON TRACK と FINISH で共通。finish_mode=true＝未完走はDNF/「--.-」グレー、false＝x/y。
+//  ★レーサー名は枠内に出さない（名前はロスターREADYのみ・ユーザー確定20261109）。
+static void draw_lane_box(int x, int lane_w, int i, const LaneRun& r, int fy, int fbot,
+                          int laps, int ns, int cap, bool finish_mode) {
+  uint16_t col = lane_color(i + 1);
+  s_spr.drawRect(x, fy, lane_w - 4, fbot - fy, col);
+  // ヘッダ（L# ＋ 周回/FIN/DNF）
+  s_spr.setTextFont(2);
+  s_spr.setTextDatum(TL_DATUM); s_spr.setTextColor(C_WHITE, C_BLACK);
+  char h[8]; snprintf(h, sizeof(h), "L%d", i + 1); s_spr.drawString(h, x + 4, fy + 3);
+  s_spr.setTextDatum(TR_DATUM);
+  char p[12];
+  if (finish_mode) snprintf(p, sizeof(p), r.fin ? "FIN" : "DNF");
+  else if (r.fin)  snprintf(p, sizeof(p), "FIN");
+  else             snprintf(p, sizeof(p), "%u/%d", (unsigned)r.done, laps);
+  s_spr.setTextColor((finish_mode && !r.fin) ? C_GREY : col, C_BLACK);
+  s_spr.drawString(p, x + lane_w - 8, fy + 3);
+  // 完走タイム headline（中央・font4）
+  bool have   = finish_mode ? r.fin : (r.done > 0 || r.fin);
+  uint32_t rt = finish_mode ? r.total_ms : lane_running_total(r);
+  char tot[12];
+  if (!have)             snprintf(tot, sizeof(tot), finish_mode ? "--.-" : "-");
+  else if (rt >= 100000) snprintf(tot, sizeof(tot), "%.1f", rt / 1000.0);
+  else                   snprintf(tot, sizeof(tot), "%.2f", rt / 1000.0);
+  s_spr.setTextDatum(MC_DATUM); s_spr.setTextFont(4);
+  s_spr.setTextColor(have ? C_WHITE : C_GREY, C_BLACK);
+  s_spr.drawString(tot, x + (lane_w - 4) / 2, fy + (ns <= 3 ? 36 : 30));
+  // 区切り線＋ラップ表
+  int dvy = fy + (ns <= 3 ? 54 : 46);
+  s_spr.drawFastHLine(x + 6, dvy, lane_w - 16, C_GREY);
+  draw_lap_table(x, lane_w, r, dvy + 6, fbot - 5, ns, cap);
+}
+
+// ===== 計測中(ON TRACK)画面（20261109刷新：周回数で1〜3/4周以上を分岐）============
+//  ●点滅＋ON TRACK（左上）／右上に経過秒（1〜3周=特大／4周以上=通常）。計測中SQ非表示。
+//  各枠：L番号＋周回＋完走タイム(累計)＋ラップ。1〜3周=枠拡大・3スロット均等、
+//  4周以上=最大6行で打切り。laps==0は4周以上側に倒す。
 static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
-  // ● ON TRACK（●点滅）
   if (blink_on) s_spr.fillCircle(14, 16, 6, C_ONTRK);
-  s_spr.setTextDatum(ML_DATUM);
-  s_spr.setTextColor(C_ONTRK, C_BLACK);
-  s_spr.setTextFont(4);
+  s_spr.setTextDatum(ML_DATUM); s_spr.setTextColor(C_ONTRK, C_BLACK); s_spr.setTextFont(4);
   s_spr.drawString("ON TRACK", 28, 16);
-  // 経過秒（右上・大きく）。1/100秒表示（案B：フィールド側と解像度を一致）。
-  //  この描画はフルフレーム(約4fps)の下地。実際に機敏に動くのは下の
-  //  draw_time_field()による約30fpsの部分更新（同じ位置・同じ書式に重なる）。
-  s_spr.setTextDatum(TR_DATUM);
-  s_spr.setTextColor(C_WHITE, C_BLACK);
-  char t[16]; snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
-  s_spr.drawString(t, W - 8, 8);
-  draw_link_line();   // 上段中央に接続機材ID一覧（ON TRACKとタイムの間）
 
-  // 3レーン枠（枠線＝レーン色）。周回カウンタとラップは g_run の実データを描く。
-  int lane_w = (W - 16) / 3;
-  int row_h  = (laps <= 3) ? 24 : (laps <= 6) ? 20 : 16;   // docs/20.3：周回数で段階縮小
-  for (int i = 0; i < 3; i++) {
-    int x = 8 + i * lane_w;
-    const LaneRun& r = g_run[i];
-    s_spr.drawRect(x, 40, lane_w - 4, BODY_H - 48, lane_color(i + 1));
-    s_spr.setTextDatum(TL_DATUM);
-    s_spr.setTextFont(2);
-    char h[12]; snprintf(h, sizeof(h), "L%d", i + 1);
-    s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.drawString(h, x + 4, 44);
-    // 周回カウンタ x/y（完走したら FIN 表示・レーン色）
-    s_spr.setTextDatum(TR_DATUM);
-    char p[12];
-    if (r.fin) snprintf(p, sizeof(p), "FIN");
-    else       snprintf(p, sizeof(p), "%u/%d", (unsigned)r.done, laps);
-    s_spr.setTextColor(lane_color(i + 1), C_BLACK);
-    s_spr.drawString(p, x + lane_w - 8, 44);
-    // ラップ縦テーブル（周番号=灰・小 / タイム=白・右揃え）
-    int y = 44 + row_h;
-    for (int k = 0; k < r.done && k < MAX_LAPS; k++) {
-      if (y + row_h > 40 + (BODY_H - 48)) break;           // 枠からはみ出さない
-      char num[4]; snprintf(num, sizeof(num), "%d", k + 1);
-      s_spr.setTextDatum(TL_DATUM);
-      s_spr.setTextColor(C_GREY, C_BLACK);
-      s_spr.drawString(num, x + 6, y);
-      char lt[12]; snprintf(lt, sizeof(lt), "%.2f", r.lap_ms[k] / 1000.0);
-      s_spr.setTextDatum(TR_DATUM);
-      s_spr.setTextColor(C_WHITE, C_BLACK);
-      s_spr.drawString(lt, x + lane_w - 8, y);
-      y += row_h;
-    }
-  }
+  const bool few = (laps >= 1 && laps <= 3);     // 1〜3周＝大画面／それ以外(0含む)＝4周以上
+  s_ontrack_big = few;                           // 1〜3周は部分更新を止める（下記draw_time_field）
+  // 右上タイム（1〜3周=size2特大／4周以上=size1）。4周以上は draw_time_field が30fpsで重ねる。
+  s_spr.setTextDatum(TR_DATUM); s_spr.setTextColor(C_WHITE, C_BLACK); s_spr.setTextFont(4);
+  if (few) s_spr.setTextSize(2);
+  char t[16]; snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
+  s_spr.drawString(t, W - 8, few ? 6 : 8);
+  s_spr.setTextSize(1);
+
+  const int lane_w = (W - 16) / 3;
+  const int fy = few ? 56 : 38, fbot = 212;
+  const int ns = few ? 3 : 6, cap = few ? 3 : 6;
+  for (int i = 0; i < 3; i++)
+    draw_lane_box(8 + i * lane_w, lane_w, i, g_run[i], fy, fbot, laps, ns, cap, /*finish_mode=*/false);
 }
 
 // ===== 計測終了(FINISH)画面（docs/20.4）====================================
 //  各枠：L番号 → 合計タイム（中央・大きく）→ 各周ラップ縦テーブル。
 //  完走レーンは合計を表示、未完走（DNF等）は「--.-」のまま。
+// ===== 計測終了(FINISH)画面（20261109：ON TRACKとレイアウト統一）==============
+//  ヘッダ「FINISH」（黄・●なし・左端・font4）／右上＝最後に通過したマシンのタイム
+//  （完走レーンの合計の最大）。周回数で1〜3/4周以上を分岐（ON TRACKと同じ枠）。
+//  各枠：L番号＋FIN/DNF＋合計（完走=白／未完走=グレー「--.-」）＋ラップ。名前は出さない。
 static void draw_finish(int laps) {
   s_spr.fillRect(0, 0, W, BODY_H, C_BLACK);
-  s_spr.setTextDatum(ML_DATUM);
-  s_spr.fillCircle(12, 12, 5, C_FINISH);
-  s_spr.setTextColor(C_FINISH, C_BLACK);
-  s_spr.setTextFont(2);
-  s_spr.drawString("FINISH", 24, 12);
+  s_spr.setTextDatum(ML_DATUM); s_spr.setTextColor(C_FINISH, C_BLACK); s_spr.setTextFont(4);
+  s_spr.drawString("FINISH", 8, 16);
 
-  int lane_w = (W - 16) / 3;
-  int row_h  = (laps <= 3) ? 20 : (laps <= 6) ? 18 : 16;   // docs/20.4：段階縮小
-  for (int i = 0; i < 3; i++) {
-    int x = 8 + i * lane_w;
-    const LaneRun& r = g_run[i];
-    s_spr.drawRect(x, 30, lane_w - 4, BODY_H - 38, lane_color(i + 1));
-    s_spr.setTextDatum(TL_DATUM);
-    s_spr.setTextFont(2);
-    char h[12]; snprintf(h, sizeof(h), "L%d", i + 1);
-    s_spr.setTextColor(C_WHITE, C_BLACK);
-    s_spr.drawString(h, x + 4, 34);
-    // 合計タイム（中央・大きく）。完走のみ実値、未完走は "--.-"
-    s_spr.setTextDatum(MC_DATUM);
-    s_spr.setTextFont(4);
-    char tot[12];
-    if (r.fin) {
-      if (r.total_ms >= 100000) snprintf(tot, sizeof(tot), "%.1f", r.total_ms / 1000.0);
-      else                      snprintf(tot, sizeof(tot), "%.2f", r.total_ms / 1000.0);
-    } else {
-      snprintf(tot, sizeof(tot), "--.-");
-    }
-    s_spr.setTextColor(r.fin ? C_WHITE : C_GREY, C_BLACK);
-    s_spr.drawString(tot, x + (lane_w - 4) / 2, 62);
-    // 各周ラップ縦テーブル
-    s_spr.setTextFont(2);
-    int y = 82;
-    for (int k = 0; k < r.done && k < MAX_LAPS; k++) {
-      if (y + row_h > 30 + (BODY_H - 38)) break;
-      char num[4]; snprintf(num, sizeof(num), "%d", k + 1);
-      s_spr.setTextDatum(TL_DATUM);
-      s_spr.setTextColor(C_GREY, C_BLACK);
-      s_spr.drawString(num, x + 6, y);
-      char lt[12]; snprintf(lt, sizeof(lt), "%.2f", r.lap_ms[k] / 1000.0);
-      s_spr.setTextDatum(TR_DATUM);
-      s_spr.setTextColor(C_WHITE, C_BLACK);
-      s_spr.drawString(lt, x + lane_w - 8, y);
-      y += row_h;
-    }
-  }
+  const bool few = (laps >= 1 && laps <= 3);
+  // 右上タイム＝最後に通過したマシン（完走レーンの合計の最大）
+  uint32_t last_ms = 0;
+  for (int i = 0; i < 3; i++)
+    if (g_run[i].fin && g_run[i].total_ms > last_ms) last_ms = g_run[i].total_ms;
+  s_spr.setTextDatum(TR_DATUM); s_spr.setTextColor(C_WHITE, C_BLACK); s_spr.setTextFont(4);
+  if (few) s_spr.setTextSize(2);
+  char t[16];
+  if (last_ms == 0)           snprintf(t, sizeof(t), "--.-");
+  else if (last_ms >= 100000) snprintf(t, sizeof(t), "%.1f", last_ms / 1000.0);
+  else                        snprintf(t, sizeof(t), "%.2f", last_ms / 1000.0);
+  s_spr.drawString(t, W - 8, few ? 6 : 8);
+  s_spr.setTextSize(1);
+
+  const int lane_w = (W - 16) / 3;
+  const int fy = few ? 56 : 38, fbot = 212;
+  const int ns = few ? 3 : 6, cap = few ? 3 : 6;
+  for (int i = 0; i < 3; i++)
+    draw_lane_box(8 + i * lane_w, lane_w, i, g_run[i], fy, fbot, laps, ns, cap, /*finish_mode=*/true);
 }
 
 // ===== エラー画面（docs/20.5・20章追記＝文言確定）==========================
@@ -634,6 +684,33 @@ static int jp_draw_string(int x, int y, const char* str, uint16_t color) {
         if (bm[r * bpr + (c >> 3)] & (0x80 >> (c & 7)))
           s_spr.drawPixel(penx + c, y + r, color);
     penx += g.adv;
+  }
+  return penx;
+}
+
+// ★20261109：拡大版（sc倍のブロックで描く）。ロスターREADYの大きなレーサー名用。
+//  x_max を超える字は描かない（右クリップ＝はみ出し無視・ユーザー確定）。sc=1なら等倍。
+static int jp_draw_string_scaled(int x, int y, const char* str, uint16_t color, int sc, int x_max) {
+  if (sc < 1) sc = 1;
+  int penx = x;
+  const uint8_t* pp = (const uint8_t*)str;
+  while (*pp) {
+    uint32_t cp; uint8_t b = *pp;
+    if (b < 0x80) { cp = b; pp += 1; }
+    else if ((b >> 5) == 0x6) { cp = ((uint32_t)(b & 0x1F) << 6) | (pp[1] & 0x3F); pp += 2; }
+    else if ((b >> 4) == 0xE) { cp = ((uint32_t)(b & 0x0F) << 12) | ((uint32_t)(pp[1] & 0x3F) << 6) | (pp[2] & 0x3F); pp += 3; }
+    else { pp += 1; continue; }
+    int gi = jp_find(cp);
+    if (gi < 0) { penx += (jpf::CELL_H / 2) * sc; continue; }
+    const jpf::Glyph& g = jpf::GLYPHS[gi];
+    if (penx + g.adv * sc > x_max) break;   // 右クリップ：入りきらない字で停止
+    int bpr = (g.w + 7) >> 3;
+    const uint8_t* bm = &jpf::BITS[g.off];
+    for (int r = 0; r < jpf::CELL_H; r++)
+      for (int c = 0; c < g.w; c++)
+        if (bm[r * bpr + (c >> 3)] & (0x80 >> (c & 7)))
+          s_spr.fillRect(penx + c * sc, y + r * sc, sc, sc, color);
+    penx += g.adv * sc;
   }
   return penx;
 }
@@ -735,6 +812,7 @@ static void draw_error(const ErrItem* errs, int cnt) {
 //  hundredths=true で 1/100秒（ストップウォッチ的）、false で 1/10秒。
 static void draw_time_field(uint32_t elapsed_ms, bool hundredths) {
   if (!s_time_ok) return;
+  if (s_ontrack_big) return;   // ★1〜3周モードは特大タイム(size2)をベースで描く＝小サイズ上書きしない
   s_time_spr.fillSprite(C_BLACK);
   s_time_spr.setTextDatum(TR_DATUM);
   s_time_spr.setTextColor(C_WHITE, C_BLACK);
