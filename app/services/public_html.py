@@ -195,6 +195,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
     _manifest_url = f"{_pfx_e}/enter?api=manifest"
     _content_url = f"{_pfx_e}/enter?api=content"
     _events_url = f"{_pfx_e}/enter?api=events"   # SSE（即時push）。失敗時はポーリングにフォールバック
+    _raceorder_url = f"{_pfx_e}/enter?api=raceorder"   # アクティブ起点の「次のレースまで」巡回順
     _history_url = (f"/{slug}/api/history" if slug else "/api/history")
     patched = patched.replace("__HISTORYURL__", _history_url)
     _races_url = (f"/{slug}/api/races" if slug else "/api/races")
@@ -608,6 +609,44 @@ window.addEventListener('load', function(){
   var SLUG_KEY = '__SLUGKEY__';
   var LS_KEY = 'm4_my_racers_' + SLUG_KEY;
 
+  /* ---------- 「次のレースまで」＝adminアクティブ起点の巡回順（サーバ算出） ----------
+     サーバ(/enter?api=raceorder)が、アクティブレースを起点にGW自動遷移と同じ順で
+     未確定レースを並べた配列を返す。order[i] に出るレーサーは「次のレースまで i レース」
+     （i=0=あなたの番／スキップされた組は末尾に回る）。
+     アクティブ未設定(active:false)や名前が見つからない時は null を返し、
+     呼び出し側は従来のDOM文書順の数値へフォールバックする。 */
+  var RACEORDER = '__RACEORDERURL__';
+  window.__M4_RACE_ORDER__ = window.__M4_RACE_ORDER__ || null;
+  var _roRaw = null;
+  function serverRaceCount(name){
+    var ro = window.__M4_RACE_ORDER__;
+    if(!ro || !ro.active || !ro.order) return null;
+    for(var i = 0; i < ro.order.length; i++){
+      var ns = ro.order[i].names || [];
+      for(var j = 0; j < ns.length; j++){ if(ns[j] === name) return i; }
+    }
+    return null;   /* アクティブ中だが未確定レースに居ない＝走行済み/敗退等→DOM値へ */
+  }
+  function mkCountResult(name, domBefore){
+    var sc = serverRaceCount(name);
+    var n = (sc != null) ? sc : domBefore;   /* アクティブ有→巡回順 / 無→DOM文書順 */
+    return n === 0 ? { text: 'あなたの番です', urgency: 0 }
+                   : { text: '次のレースまで' + n + 'レース', urgency: (n === 1 ? 1 : 2) };
+  }
+  function pollRaceOrder(){
+    try{
+      fetch(RACEORDER, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(j){
+          if(!j) return;
+          var raw = JSON.stringify(j);
+          if(raw === _roRaw) return;          /* 変化なし→再描画しない */
+          _roRaw = raw;
+          window.__M4_RACE_ORDER__ = j;
+          try{ if(window._m4Reapply) window._m4Reapply(); }catch(e){}
+        }).catch(function(){});
+    }catch(e){}
+  }
+
   /* ---------- 五十音（あいうえお）比較 ---------- */
   var _collator = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator('ja') : null;
   function kanaCompare(a, b){
@@ -889,9 +928,7 @@ window.addEventListener('load', function(){
             }
           });
         });
-        found = before === 0
-          ? { text: 'あなたの番です', urgency: 0 }
-          : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
+        found = mkCountResult(name, before);   /* 数字はアクティブ起点の巡回順で上書き（無→DOM順） */
       });
       if(found) return found;
     }
@@ -947,9 +984,7 @@ window.addEventListener('load', function(){
                 }
               });
             });
-            return before === 0
-              ? { text: 'あなたの番です', urgency: 0 }
-              : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
+            return mkCountResult(name, before);   /* 数字はアクティブ起点の巡回順で上書き（無→DOM順） */
           }
         }
       }
@@ -1017,9 +1052,7 @@ window.addEventListener('load', function(){
           for(var ri = 0; ri < myIdx; ri++){
             if(rows[ri].querySelectorAll('.racer-cell').length && !rowRun(rows[ri])) before++;
           }
-          return before === 0
-            ? { text: 'あなたの番です', urgency: 0 }
-            : { text: '次のレースまで' + before + 'レース', urgency: (before === 1 ? 1 : 2) };
+          return mkCountResult(name, before);   /* 数字はアクティブ起点の巡回順で上書き（無→DOM順） */
         }
         /* 未走行が無い＝全部走行済み → バナー無し（控えめハイライトは残す） */
         return null;
@@ -1214,10 +1247,13 @@ window.addEventListener('load', function(){
   window._m4Reapply = function(){ try { _m4Init(); } catch(e){} };
   window.addEventListener('load', function(){
     setTimeout(_m4Init, 600);
+    pollRaceOrder();                      /* アクティブ起点の巡回順を取得 */
+    setInterval(pollRaceOrder, 10000);    /* 既存の更新サイクルと同じ10秒間隔 */
   });
 })();
 </script>"""
     my_racer_script = my_racer_script.replace('__SLUGKEY__', _slug_key)
+    my_racer_script = my_racer_script.replace('__RACEORDERURL__', _raceorder_url)
 
     # ▼ 追加：強制リロードボタン（参加者向けHTML用・body直下に生成＝再描画で消えない）
     reload_btn_script = """<script>

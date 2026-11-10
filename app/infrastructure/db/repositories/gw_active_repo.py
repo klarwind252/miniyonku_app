@@ -224,6 +224,78 @@ async def advance_after_confirm(db, kind: str, ref_id: int) -> None:
         pass
 
 
+async def upcoming_order(db) -> dict:
+    """アクティブレースを起点に、未確定レースを「実際に走る順（＝GW自動遷移と同一の
+       巡回順）」で並べた配列を返す。スマホ観覧の「次のレースまでNレース」用。
+       {"active": bool, "kind":.., "ref_id":.., "order":[{"names":[...]}, ...]}
+       order[i] の i ＝「そのレースに出るレーサーの 次のレースまで = i レース」。
+       i=0 がアクティブ（＝あなたの番）。アクティブより前にスキップされた未確定レースは
+       巡回で末尾に回る（ids[idx:]+ids[:idx]）。アクティブ未設定→active:False, order:[]。
+       例外時も active:False を返し、観覧側は従来のDOM文書順にフォールバックする。"""
+    try:
+        await ensure(db)
+        cur = await get(db)
+        if not cur:
+            return {"active": False, "kind": None, "ref_id": None, "order": []}
+        kind, ref_id = cur["kind"], cur["ref_id"]
+
+        if kind == KIND_HEAT:
+            async with db.execute(
+                "SELECT tournament_id FROM heats WHERE id = ?", (ref_id,)) as c:
+                h0 = await c.fetchone()
+            if not h0:
+                return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
+            async with db.execute(
+                "SELECT id, round_no, heat_no, status FROM heats WHERE tournament_id = ?",
+                (h0["tournament_id"],)) as c:
+                rows = await c.fetchall()
+            items = [r for r in rows if (r["status"] or "") != "done"]
+            items.sort(key=lambda r: (r["round_no"] or 0, r["heat_no"] or 0, r["id"]))
+            ids = [r["id"] for r in items]
+        elif kind in (KIND_HT_GROUP, KIND_BRACKET_GROUP):
+            if kind == KIND_HT_GROUP:
+                groups_tbl, rounds_tbl, ranks_tbl = "ht_groups", "ht_rounds", "ht_slot_ranks"
+            else:
+                groups_tbl, rounds_tbl, ranks_tbl = "bracket_groups", "bracket_rounds", "bracket_slot_ranks"
+            async with db.execute(
+                f"SELECT rd.tournament_id AS tid FROM {groups_tbl} g "
+                f"JOIN {rounds_tbl} rd ON rd.id = g.round_id WHERE g.id = ?", (ref_id,)) as c:
+                g0 = await c.fetchone()
+            if not g0:
+                return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
+            async with db.execute(
+                f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
+                f"       rd.round_type AS round_type, "
+                f"       (SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) AS ranked "
+                f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
+                f"WHERE rd.tournament_id = ?", (g0["tid"],)) as c:
+                rows = await c.fetchall()
+            items = [r for r in rows if not r["ranked"]]
+            items.sort(key=lambda r: (_rtype_pri(r["round_type"]), r["round_no"] or 0,
+                                      r["group_no"] or 0, r["id"]))
+            ids = [r["id"] for r in items]
+        else:
+            return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
+
+        # アクティブが未確定集合に無い（既に確定済み等）→ 起点にできない＝フォールバック
+        if ref_id not in ids:
+            return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
+        idx = ids.index(ref_id)
+        rot = ids[idx:] + ids[:idx]   # アクティブ先頭、スキップ済み（前方の未確定）は末尾へ巡回
+        order = []
+        for rid in rot:
+            lane_rows = await _lane_rows(db, kind, rid)
+            names = [str(r["name"]).strip() for r in lane_rows if r["name"]]
+            # レーサー未割当（空き）の未確定グループは「まだ走るレースではない」ので数に含めない。
+            # ただしアクティブ自身は常に先頭(=あなたの番)として維持する。
+            if not names and rid != ref_id:
+                continue
+            order.append({"names": names})
+        return {"active": True, "kind": kind, "ref_id": ref_id, "order": order}
+    except Exception:
+        return {"active": False, "kind": None, "ref_id": None, "order": []}
+
+
 async def resolve_lanes(db) -> dict:
     """現在アクティブなレースのレーン別名前を返す（GW／PIP共通）。
        {"active": bool, "kind":.., "ref_id":.., "race_label":.., "lanes":[{"lane","kana"}]}

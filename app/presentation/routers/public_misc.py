@@ -317,7 +317,35 @@ async def _dispatch_enter_api(request: Request):
                             headers={"Cache-Control": "public, max-age=86400"})
     if api == "entrypath":
         return _entrypath_json(request)
+    if api == "raceorder":
+        return await _public_raceorder(request)
     return None
+
+
+async def _public_raceorder(request: Request):
+    """観覧ページ向け：アクティブレース起点の「次のレースまで」巡回順（公開・トークン不要）。
+       中身はレーサー名のみ（active-race と同等）。アクティブ未設定や例外は active:False。
+       観覧側はこれを基に数字を上書きし、active:False のときは従来のDOM文書順にフォールバック。"""
+    import aiosqlite
+    from fastapi.responses import JSONResponse
+    from app.services import pub_gate
+    from app.infrastructure.db.repositories import gw_active_repo
+
+    store = getattr(request.state, "store", None)
+    dbp = pub_gate.db_path_for(store)
+    empty = {"active": False, "kind": None, "ref_id": None, "order": []}
+    if not dbp:
+        return JSONResponse(empty, headers={"Cache-Control": "no-store"})
+    try:
+        db = await aiosqlite.connect(dbp)
+        db.row_factory = aiosqlite.Row
+        try:
+            data = await gw_active_repo.upcoming_order(db)
+        finally:
+            await db.close()
+    except Exception:
+        data = empty
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
 def _daily_target(request: Request, secret: str, epoch: int) -> str:
