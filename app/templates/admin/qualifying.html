@@ -1439,7 +1439,7 @@ document.addEventListener('DOMContentLoaded', function(){
        カードの閉じ構造は壊れている（注記）ため触れず、card-body内に自己完結したflexを作る。
        右サイド幅は内容ぶんの可変（狭め）。サイズ/位置の微調整は後日指示を受けて実施。 #}
     <div class="qp-sched-flex" style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap">
-    <div class="qp-sched-left" style="flex:1 1 420px;min-width:0;overflow-x:auto;padding-right:10px;box-sizing:border-box">
+    <div class="qp-sched-left" style="flex:3 1 420px;min-width:0;overflow-x:auto;padding-right:10px;box-sizing:border-box">
     {% if heats %}
 
 
@@ -2003,11 +2003,11 @@ document.addEventListener('DOMContentLoaded', function(){
     {% endif %}
     </div>{# /qp-sched-left #}
     {# ★予選順位表（右サイド・項目のみ）。ポイント制のみ。幅は内容ぶんの可変で狭め。サイズ等は後で調整 #}
-    <aside class="qp-sched-rank" style="flex:0 0 auto;width:max-content;max-width:300px;border-left:2px solid #eef1f4;padding-left:16px;box-sizing:border-box">
+    <aside class="qp-sched-rank" style="flex:1 1 260px;min-width:260px;border-left:2px solid #eef1f4;padding-left:16px;box-sizing:border-box;overflow-x:auto">
       <div style="font-weight:bold;font-size:13px;padding:6px 2px">予選順位表</div>
       {% if standings and (is_none_roundrobin or is_roundrobin) %}
       {# ★総当たり（即決勝=none_roundrobin／予選=roundrobin）：勝・負・出走。TIMEは出さない。リアルタイム更新対応（tbody id） #}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
@@ -2032,7 +2032,7 @@ document.addEventListener('DOMContentLoaded', function(){
         </tbody>
       </table>
       {% elif standings and not is_roundrobin and not is_none_roundrobin %}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
@@ -2090,7 +2090,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <table class="std-tbl">
         <thead>
           {% if is_none_roundrobin %}
-          <tr><th>#</th><th>順位</th><th>レーサー</th><th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th><th>TIME</th><th>出走</th></tr>
+          <tr><th>#</th><th>順位</th><th>レーサー</th><th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th><th>出走</th><th>TIME</th></tr>
           {% elif is_roundrobin %}
           <tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th><th>タイム計</th><th style="text-align:center">決勝</th></tr>
           {% else %}
@@ -2127,8 +2127,8 @@ document.addEventListener('DOMContentLoaded', function(){
             {% if is_none_roundrobin %}
             <td style="color:#27ae60"><strong>{{ s.wins }}</strong></td>
             <td style="color:#e74c3c">{{ s.losses }}</td>
-            <td style="font-variant-numeric:tabular-nums">{% if s.best_time %}{{ '%.3f'|format(s.best_time) }}{% else %}—{% endif %}</td>
             <td>{{ s.races }} 戦</td>
+            <td style="font-variant-numeric:tabular-nums">{% if s.best_time %}{{ '%.3f'|format(s.best_time) }}{% else %}—{% endif %}</td>
             {% elif is_roundrobin %}
             <td><strong>{{ s.wins }}</strong> 勝</td>
             <td>{{ s.races }} 戦</td>
@@ -2256,9 +2256,11 @@ document.addEventListener('DOMContentLoaded', function(){
 </div>
 {% endif %}
 
-{# none_roundrobin: 決定戦（同率解消）を予選順位表の直下に #}
+{# none_roundrobin: 決定戦（同率解消）を予選順位表の直下に。
+   ★全レーススケジュール消化後のみ表示（未消化のうちは同率が暫定で意味を持たないため出さない）。 #}
 {% if is_none_roundrobin %}
-  {% if deciding_groups_nr %}
+  {% set nr_all_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
+  {% if nr_all_done and deciding_groups_nr %}
   <div class="card" style="margin-top:16px;border:2px solid #e74c3c">
     <div class="card-header" style="background:#e74c3c;color:white">⚔️ 決定戦（同率解消）</div>
     <div class="card-body">
@@ -2323,7 +2325,7 @@ document.addEventListener('DOMContentLoaded', function(){
       {% endfor %}
     </div>
   </div>
-  {% elif standings %}
+  {% elif nr_all_done and standings %}
   <div style="margin-top:16px;padding:12px 16px;background:#d4edda;border-radius:8px;color:#155724">
     ✅ 1〜3位に同率なし。決定戦は不要です。
   </div>
@@ -2415,8 +2417,8 @@ async function updateStandings() {
         const bt = (s.best_time != null) ? s.best_time.toFixed(3) : '—';
         cells += `<td style="color:#27ae60"><strong>${s.wins||0}</strong></td>
           <td style="color:#e74c3c">${s.losses||0}</td>
-          <td style="font-variant-numeric:tabular-nums">${bt}</td>
-          <td>${s.races||0} 戦</td>`;
+          <td>${s.races||0} 戦</td>
+          <td style="font-variant-numeric:tabular-nums">${bt}</td>`;
       } else if (IS_ROUNDROBIN_TYPE) {
         const t = s.time_sum ? s.time_sum.toFixed(3)+'s' : '-';
         cells += `<td><strong>${s.wins||0}</strong> 勝</td>
