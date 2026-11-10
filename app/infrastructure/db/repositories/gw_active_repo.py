@@ -145,36 +145,60 @@ async def _heat_next_active(db, heat_id: int):
     return (KIND_HEAT, nxt["id"]) if nxt else None
 
 
+# ラウンド種別の優先度（小さいほど先に走る）。
+#  アクティブ移動の優先度：ラウンドが低い通常ラウンド(グループ番号順) ＞ 敗者復活戦 ＞ ３位決定戦 ＞ 決勝。
+#  round_type の表記ゆれを吸収（normal/敗者復活=losers,revival/3位=third/決勝=final）。
+_RTYPE_PRI = {
+    "normal": 0, "": 0, None: 0,
+    "losers": 1, "revival": 1, "敗者復活": 1, "敗者復活戦": 1, "裏": 1,
+    "third": 2, "3位": 2, "３位": 2, "3位決定": 2, "3位決定戦": 2,
+    "final": 3, "決勝": 3,
+}
+
+
+def _rtype_pri(rt) -> int:
+    return _RTYPE_PRI.get(rt, 0)
+
+
 async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_tbl, ranks_tbl):
-    """ht_group / bracket_group 共通：グループ単位の巡回＋次ラウンド先頭。
+    """ht_group / bracket_group 共通：トーナメント全体を優先度順に並べて巡回。
+       優先度＝(ラウンド種別, round_no, group_no)。種別は通常→敗者復活→3位決定→決勝。
+       確定したグループの次の未確定へ、末尾なら先頭の未確定へ巡回。全確定→None（待機）。
        確定判定＝そのグループに結果（ranks_tbl）が1件でもあるか。"""
+    # 確定グループの所属トーナメント
     async with db.execute(
-        f"SELECT g.round_id, g.group_no, rd.tournament_id, rd.round_no "
-        f"FROM {groups_tbl} g JOIN {rounds_tbl} rd ON rd.id = g.round_id "
+        f"SELECT rd.tournament_id FROM {groups_tbl} g JOIN {rounds_tbl} rd ON rd.id = g.round_id "
         f"WHERE g.id = ?", (int(group_id),)) as c:
-        g = await c.fetchone()
-    if not g:
+        g0 = await c.fetchone()
+    if not g0:
         return None
-    rid, gno, tid, rno = g["round_id"], g["group_no"], g["tournament_id"], g["round_no"]
-    # 同ラウンドのグループ一覧＋確定状況
+    tid = g0["tournament_id"]
+    # 同トーナメントの全グループ＋種別/ラウンド/確定状況
     async with db.execute(
-        f"SELECT gg.id, gg.group_no, "
+        f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
+        f"       rd.round_type AS round_type, "
         f"       (SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) AS ranked "
-        f"FROM {groups_tbl} gg WHERE gg.round_id = ? ORDER BY gg.group_no, gg.id", (rid,)) as c:
+        f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
+        f"WHERE rd.tournament_id = ?", (tid,)) as c:
         rows = await c.fetchall()
-    unconf = [r for r in rows if not r["ranked"]]
-    after = [r for r in unconf if r["group_no"] is not None and gno is not None and r["group_no"] > gno]
-    if after:
-        return (kind, after[0]["id"])
-    if unconf:
-        return (kind, unconf[0]["id"])
-    # ラウンド全確定→次ラウンド先頭グループ
-    async with db.execute(
-        f"SELECT gg.id FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
-        f"WHERE rd.tournament_id = ? AND rd.round_no > ? "
-        f"ORDER BY rd.round_no, gg.group_no, gg.id LIMIT 1", (tid, rno)) as c:
-        nxt = await c.fetchone()
-    return (kind, nxt["id"]) if nxt else None
+    if not rows:
+        return None
+
+    def _key(r):
+        return (_rtype_pri(r["round_type"]), r["round_no"] or 0, r["group_no"] or 0, r["id"])
+
+    ordered = sorted(rows, key=_key)
+    unconf = [r for r in ordered if not r["ranked"]]
+    if not unconf:
+        return None
+    gid = int(group_id)
+    idx = next((i for i, r in enumerate(ordered) if r["id"] == gid), None)
+    if idx is not None:
+        after = [r for r in ordered[idx + 1:] if not r["ranked"]]
+        if after:
+            return (kind, after[0]["id"])
+    # 末尾（または確定グループが見つからない）→先頭の未確定へ巡回
+    return (kind, unconf[0]["id"])
 
 
 async def advance_after_confirm(db, kind: str, ref_id: int) -> None:

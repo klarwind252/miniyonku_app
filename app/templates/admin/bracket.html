@@ -1348,9 +1348,10 @@ window.initBracketConnectors = initBracketConnectors;
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   {# 他ラウンドと同じ横並び＋⠿ドラッグで出走レーン変更（結果未確定のあいだのみ）。 #}
   {% set _lane_sortable = not result %}
-  <div class="bracket-group third-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
+  <div class="bracket-group third-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}" data-gw-kind="bracket_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
     <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span>グループ{{ g.group_no }}</span>
+      <span onclick="gwToggleActive('bracket_group', {{ g.id }})" style="cursor:pointer;font-weight:bold"
+            title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
       {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if m4_on %}
       <span style="flex:1"></span>
@@ -1433,9 +1434,10 @@ window.initBracketConnectors = initBracketConnectors;
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   {# 他ラウンドと同じ横並び＋⠿ドラッグで出走レーン変更（結果未確定のあいだのみ）。 #}
   {% set _lane_sortable = not result %}
-  <div class="bracket-group third-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
+  <div class="bracket-group third-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}" data-gw-kind="bracket_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
     <div style="font-size:12px;color:#7f8c8d;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span>グループ{{ g.group_no }}</span>
+      <span onclick="gwToggleActive('bracket_group', {{ g.id }})" style="cursor:pointer;font-weight:bold"
+            title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
       {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if m4_on %}
       <span style="flex:1"></span>
@@ -1512,9 +1514,10 @@ window.initBracketConnectors = initBracketConnectors;
   {# 決勝も他ラウンドと同じ横長レイアウト：⠿ でドラッグして出走レーン（1・2・3コース）を
      入れ替え可能。結果（順位）確定済みは安全のため不可（先に「取消」で戻してから並び替える）。 #}
   {% set _lane_sortable = (not result) and (not ranks) %}
-  <div class="bracket-group final-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
+  <div class="bracket-group final-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}" data-gw-kind="bracket_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
     <div style="font-size:14px;color:#d4a017;margin-bottom:4px;font-weight:bold;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span>決勝</span>{% if ranks %}<span style="color:#27ae60">✓完了</span>{% endif %}
+      <span onclick="gwToggleActive('bracket_group', {{ g.id }})" style="cursor:pointer"
+            title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">決勝</span>{% if ranks %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if m4_on %}
       <span style="flex:1"></span>
       {# 他ラウンドと同じ：結果ありなら「反映」を隠して「取消」だけ（誤って上書きしないため）。 #}
