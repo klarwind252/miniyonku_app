@@ -1626,6 +1626,32 @@ async def layout_for_gw(
     })
 
 
+# ── GW向け：現在アクティブなレースのレーン別レーサー名（ロスターREADY用・20261109）──
+#  admin が予選/決勝管理で #（レース番号）やグループをクリックして設定したアクティブレースを返す。
+#  kana はサーバーで正規化済み（ひらがな→カタカナ／半角英数）。アクティブ無し→ lanes:[]。
+@router.get("/api/timing/current_race_for_gw")
+async def current_race_for_gw(
+    db: aiosqlite.Connection = Depends(get_db),
+    x_timing_token: str | None = Header(default=None),
+    _guard: bool = Depends(require_m4laps),
+):
+    _check_token(x_timing_token)
+    from app.infrastructure.db.repositories import gw_active_repo
+    data = await gw_active_repo.resolve_lanes(db)
+    return JSONResponse({"active": data["active"], "lanes": data["lanes"]})
+
+
+# ── admin PIP用：現在アクティブなレースの完全情報（ラベル＋レーン別名）。20261109 ──
+#  pip_latest と同じく require_m4laps のみ（トークン不要＝admin画面のJSから読める）。
+@router.get("/api/timing/active-race")
+async def active_race_read(
+    db: aiosqlite.Connection = Depends(get_db),
+    _guard: bool = Depends(require_m4laps),
+):
+    from app.infrastructure.db.repositories import gw_active_repo
+    return JSONResponse(await gw_active_repo.resolve_lanes(db))
+
+
 def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> list[dict]:
     """1レース分の明細行（1行=1レーンの1周）。★20261031 C3：results_page と TA view の唯一の実装。
 

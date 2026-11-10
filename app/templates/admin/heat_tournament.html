@@ -393,9 +393,10 @@
     {% set g=gd.group %}{% set slots=gd.slots %}{% set result=gd.result %}{% set ranks=gd.ranks %}
     {% set n_slots=slots|length %}
     <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
-         id="group-{{ g.id }}">
+         id="group-{{ g.id }}" data-gw-kind="ht_group" data-gw-ref="{{ g.id }}">
       <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:{% if is_third_rnd %}#cd7f32{% elif is_final_rnd %}#d4a017{% else %}#636e72{% endif %}">
-        グループ{{ g.group_no }}
+        <span onclick="gwToggleActive('ht_group', {{ g.id }})" style="cursor:pointer;font-size:18px"
+              title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
         {% if result %}<span style="margin-left:6px;font-size:11px;color:#27ae60">✓完了</span>{% endif %}
       </div>
       {% if m4_on %}

@@ -14,11 +14,37 @@ import json
 
 from app.infrastructure.db.connection import get_db
 from app.infrastructure.db.tx import transaction
+from app.infrastructure.db.repositories import gw_active_repo  # ★20261109 GWアクティブレース
 from app.routers.tournaments import QUALIFYING_LABELS, calc_finalists
 
 router = APIRouter()
 from app.presentation.templates import templates
 from app.core.config import HEAT_TOURNAMENT_TYPES, IS_CLOUD
+
+
+# ── GWアクティブレース：#/グループのクリックで設定・解除（トグル）・20261109 ──────
+#  /admin/tournaments/{tid}/gw-active 配下はクッキー認証が自動で効く（admin専用）。
+#  body: {"kind":"heat"|"ht_group"|"bracket_group", "ref_id": <id>}
+#  返り値＝解決後のアクティブ情報（PIP/ハイライト即時更新用）。
+@router.post("/{tid}/gw-active")
+async def gw_set_active(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    kind = None
+    ref_id = None
+    try:
+        body = await request.json()
+        kind = body.get("kind")
+        ref_id = body.get("ref_id")
+    except Exception:
+        try:
+            form = await request.form()
+            kind = form.get("kind")
+            ref_id = form.get("ref_id")
+        except Exception:
+            pass
+    if kind not in gw_active_repo.VALID_KINDS or ref_id is None:
+        return JSONResponse({"detail": "bad kind/ref_id"}, status_code=400)
+    await gw_active_repo.toggle(db, kind, int(ref_id))
+    return JSONResponse(await gw_active_repo.resolve_lanes(db))
 
 
 # ======================================================================
@@ -2141,6 +2167,9 @@ async def heat_result_save_rank(tid: int, heat_id: int, request: Request, db: ai
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
     await db.commit()
 
+    # ★20261109：結果確定でGWアクティブを次レースへ自動移動
+    await gw_active_repo.advance_after_confirm(db, gw_active_repo.KIND_HEAT, heat_id)
+
     # 参加者向けHTML配信（自動更新）
     try:
         from app.services.publish_scheduler import schedule_publish
@@ -2314,6 +2343,10 @@ async def heat_result_save(tid: int, heat_id: int, request: Request, db: aiosqli
                 await _restore_total_time(db, r["lane_id"], _tt)
 
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
+
+    # ★20261109：結果確定でGWアクティブを次レースへ自動移動
+    await gw_active_repo.advance_after_confirm(db, gw_active_repo.KIND_HEAT, heat_id)
+
     # 参加者向けHTML配信（自動更新）
     try:
         from app.services.publish_scheduler import schedule_publish
@@ -2392,6 +2425,9 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
             await _restore_total_time(db, r["lane_id"], _tt)
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
         await db.commit()
+
+    # ★20261109：結果確定でGWアクティブを次レースへ自動移動
+    await gw_active_repo.advance_after_confirm(db, gw_active_repo.KIND_HEAT, heat_id)
 
     # 参加者向けHTML配信（自動更新）
     try:
@@ -4962,6 +4998,10 @@ async def ht_save_result(tid: int, heat_no: int, group_id: int, request: Request
     # 保存後の共通処理（進出・次ラウンド生成・ロック判定）は _ht_finalize_group に集約。
     # 手入力保存・PIP反映・取消 のいずれからも同じ経路を通す。
     result = await _ht_finalize_group(tid, heat_no, group_id, dict(rnd), winner_slot_id, db)
+
+    # ★20261109：グループ確定でGWアクティブを次へ（解除＝winner無しのときは動かさない）
+    if winner_slot_id:
+        await gw_active_repo.advance_after_confirm(db, gw_active_repo.KIND_HT_GROUP, group_id)
 
     # 参加者向けHTML配信（自動更新）
     try:

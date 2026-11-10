@@ -1448,7 +1448,8 @@ document.addEventListener('DOMContentLoaded', function(){
     {# 総当たり系＋ポイント制＋並び順（ポイント制）：結果未入力の行だけコース（レーン）をドラッグ入替可能にする。
        並び順(order)は「組が確定した分だけ」= 表示される組は3人揃って確定済み。予選終了(closed)後は不可。 #}
     {% set nr_sortable = (is_roundrobin or is_none_roundrobin or is_heat_roundrobin or is_order or (t.qualifying_type == 'point')) and (not is_confirmed_nr) and (not is_finalized) and (heat.id not in done_heat_ids) and not (is_order and order_status == 'closed') %}
-    <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}" style="border-bottom:1px solid #f0f0f0">
+    <tr class="race-row" id="row-{{ heat.id }}" data-round="{{ heat.round_no or 0 }}"
+        data-gw-kind="heat" data-gw-ref="{{ heat.id }}" style="border-bottom:1px solid #f0f0f0">
       {# 状態（取消／反映）は左端。結果の有無は順位枠とFINISHで分かるので状態バッジは置かない。
          結果ありのときは「反映」を隠して「取消」だけを出す（誤って上書きしないため）。 #}
       <td class="st">
@@ -1468,7 +1469,8 @@ document.addEventListener('DOMContentLoaded', function(){
           {% endif %}
         </div>
       </td>
-      <td style="color:#636e72;font-weight:bold">{{ no if no is not none else heat.heat_no }}</td>
+      <td style="color:#636e72;font-weight:bold;cursor:pointer" onclick="gwToggleActive('heat', {{ heat.id }})"
+          title="クリックでGWにこのレースを送る（アクティブ化／再クリックで解除）">{{ no if no is not none else heat.heat_no }}</td>
       {% for col in course_cols %}
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
         {% if ld %}{% set lane = ld[0] %}{% set lc = ["#2980b9","#e74c3c","#27ae60"] %}

@@ -1244,9 +1244,10 @@ window.initBracketConnectors = initBracketConnectors;
      出走レーン（1・2・3コース）を入れ替え可能にする。結果確定済みの組は安全のため不可
      （先に「取消」で結果を戻してから並び替える）。 #}
   {% set _lane_sortable = not result %}
-  <div class="bracket-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
+  <div class="bracket-group{% if result %} done{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}" id="group-{{ g.id }}" data-gw-kind="bracket_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}"{% endif %}>
     <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span>グループ{{ g.group_no }}</span>
+      <span onclick="gwToggleActive('bracket_group', {{ g.id }})" style="cursor:pointer;font-size:18px;font-weight:bold"
+            title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
       {% if result %}<span style="color:#27ae60">✓完了</span>{% endif %}
       {% if m4_on %}
       <span style="flex:1"></span>

@@ -14,6 +14,7 @@ import math
 from itertools import product
 
 from app.infrastructure.db.connection import get_db
+from app.infrastructure.db.repositories import gw_active_repo  # ★20261109 GWアクティブレース
 from app.infrastructure.db.tx import transaction
 
 router = APIRouter()
@@ -3015,6 +3016,9 @@ async def bracket_save(
     # 裏トーナメント（有効時のみ）：敗者ドロップイン同期＋復活差し込み
     await _sync_losers_bracket(tid, db)
     reviver_inserted = await _try_insert_reviver(tid, db)
+
+    # ★20261109：グループ確定でGWアクティブを次へ自動移動（次ラウンド生成後に評価）
+    await gw_active_repo.advance_after_confirm(db, gw_active_repo.KIND_BRACKET_GROUP, group_id)
 
     # 参加者向けHTML配信（自動更新）
     try:
