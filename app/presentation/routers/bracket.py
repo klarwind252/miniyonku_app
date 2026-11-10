@@ -1934,6 +1934,16 @@ async def bracket_reset_final(
     # 結果・順位を削除
     await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id=?", (group_id,))
     await db.execute("DELETE FROM bracket_results WHERE group_id=?", (group_id,))
+    # ★計測レースの反映先リンクを解除（PIPの「反映済」を消す＋カード描画のタイム補完
+    #   フォールバックが残リンクから時間/COを復元して「取消しても残る」のを防ぐ）。
+    #   ht reset（applied_ht_group_id）と同じ対応。旧DB（列なし）でも取消自体は成立させる。
+    try:
+        await db.execute(
+            "UPDATE timing_races SET applied_group_id = NULL WHERE applied_group_id = ?",
+            (group_id,),
+        )
+    except Exception as e:
+        print(f"[bracket] reset: unlink races failed group={group_id}: {type(e).__name__}: {e}", flush=True)
 
     # 次ラウンドのスロットに流し込まれていた自分の勝者も消す（次ラウンドをリセット）
     if rnd:
@@ -1971,6 +1981,14 @@ async def bracket_reset_final(
                 for ng_id in next_groups:
                     await db.execute("DELETE FROM bracket_results WHERE group_id=?", (ng_id,))
                     await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id=?", (ng_id,))
+                    # 次ラウンド側も計測レースのリンクを解除（残リンクからの復元を防ぐ）
+                    try:
+                        await db.execute(
+                            "UPDATE timing_races SET applied_group_id = NULL WHERE applied_group_id = ?",
+                            (ng_id,),
+                        )
+                    except Exception:
+                        pass
 
     await db.commit()
 

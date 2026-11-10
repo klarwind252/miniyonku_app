@@ -1775,6 +1775,9 @@ function _showPubToast(msg) {
   /* 空きレーンも通常レーン行と同じ見た目に統一（破線/別背景をやめる。番号チップの色はそのまま）。 */
   .slot-row.slot-empty{ background:#fff !important; border:none !important;
     border-bottom:1px solid #f0f0f0 !important; border-radius:0 !important; }
+  /* ★勝者（反映済みカードで勝った人＝○選択 or 1位）の行をハイライト。bracket/heat_tournament 共通。20261110 */
+  .slot-row.is-winner{ background:#fff8e1 !important; box-shadow:inset 4px 0 0 #d4a017 !important; }
+  .slot-row.is-winner .slot-name{ font-weight:700; }
 </style>
 <div id="gwpip"><div class="gwpip-head"><span class="gwpip-dot"></span>GW アクティブ</div>
   <div class="gwpip-body" id="gwpipBody"></div></div>
@@ -1858,6 +1861,18 @@ function _showPubToast(msg) {
   body.innerHTML='<div class="gwpip-none">読込中…</div>';
   poll(); setInterval(poll, 4000);
   pollPending(); setInterval(pollPending, 4000);   // 自動反映の上書き確認ダイアログ
+  // ★勝者（勝った人）の行をハイライト。○が選択された行、または1位バッジの行。
+  //   bracket/heat_tournament の結果入力カード（.slot-row）共通。カード再描画にも追従（定期再適用）。
+  function m4HiliteWinners(){
+    try{
+      document.querySelectorAll('.slot-row.is-winner').forEach(function(r){ r.classList.remove('is-winner'); });
+      document.querySelectorAll('.slot-row .win-btn.sel, .slot-row .rank-badge.r1').forEach(function(el){
+        var row = el.closest('.slot-row');
+        if(row) row.classList.add('is-winner');
+      });
+    }catch(e){}
+  }
+  m4HiliteWinners(); setInterval(m4HiliteWinners, 1500);
 })();
 </script>
 
