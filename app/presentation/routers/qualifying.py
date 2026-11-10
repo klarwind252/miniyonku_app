@@ -2416,6 +2416,14 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
         status = "done" if win0 is not None else "pending"
         await db.execute("UPDATE heats SET status=? WHERE id=?", (status, heat_id))
         await db.commit()
+        # ★手動○×でも結果確定(done)時に GWアクティブを次レースへ自動移動（従来は早期returnで未実行だった）
+        if status == "done":
+            await gw_active_repo.advance_after_confirm(db, gw_active_repo.KIND_HEAT, heat_id)
+            try:
+                from app.services.publish_scheduler import schedule_publish
+                schedule_publish()
+            except Exception:
+                pass
         return JSONResponse({"ok": True, "status": status})
     else:
         results = []
@@ -2449,7 +2457,7 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
         schedule_publish()
     except Exception:
         pass
-        return JSONResponse({"ok": True, "status": "done"})
+    return JSONResponse({"ok": True, "status": "done"})
 
 
 @router.post("/{tid}/qualifying/auto-advanced")

@@ -1759,7 +1759,11 @@ function _showPubToast(msg) {
   #gwpip .gwpip-dash{ color:#b0b4ba; }
   #gwpip .gwpip-none{ padding:6px 2px; font-size:11px; color:#8a8f98; line-height:1.4; text-align:center; }
   /* アクティブ対象のハイライト（リスト行=淡い黄 / グループ枠=オレンジ太枠） */
-  tr.race-row.gw-active-on{ background:#fff7cc !important; }
+  /* アクティブ行ハイライト。hover は `tr:hover td{background:#f8f9fa}` が td に塗るため、
+     td 指定で上書きし hover に負けないようにする。色も濃いアンバーで明確化＋左帯。 */
+  tr.race-row.gw-active-on > td{ background:#ffe08a !important; }
+  tr.race-row.gw-active-on:hover > td{ background:#ffd666 !important; }
+  tr.race-row.gw-active-on > td:first-child{ box-shadow:inset 5px 0 0 #e67e22; }
   .bracket-group.gw-active-on{ outline:3px solid #e67e22 !important; outline-offset:-1px;
     box-shadow:0 0 0 3px rgba(230,126,34,.25) !important; }
   /* ★結果入力カードの「左端のレーン番号(1/2/3)チップ」だけレーン色の薄い背景。行全体は色なし。20261110 */
@@ -1842,20 +1846,28 @@ function _showPubToast(msg) {
   }
   // クリックでアクティブ化/解除（トグル）。各テンプレの # / グループが呼ぶ。
   //  ※pathname判定の外で必ず定義する（onclickが undefined にならないように）。失敗は可視化。
+  // ★連打デバウンス：admin が # を何度もクリックしても、最後のクリックだけを ~300ms 後に
+  //   送信する。サーバ更新と観覧側ハイライトのちらつき／過剰更新を間引く。
+  var _gwDebTimer=null, _gwDebPend=null;
   window.gwToggleActive=function(kind, ref){
     var m=location.pathname.match(/\/admin\/tournaments\/(\d+)/);
     if(!m){ alert('この画面ではアクティブ化できません（大会ページで操作してください）'); return; }
-    var url='/admin/tournaments/'+m[1]+'/gw-active';   // ★接頭辞なし（既存の反映ボタン等と同じ方式）
-    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-               body:JSON.stringify({kind:kind, ref_id:ref})})
-      .then(function(r){
-        if(!r.ok){ console.error('[GW] activate HTTP', r.status, url);
-                   alert('アクティブ化に失敗しました: HTTP '+r.status+'\n'+url); return null; }
-        return r.json();
-      })
-      .then(function(d){ if(d) render(d); })
-      .catch(function(e){ console.error('[GW] activate error', e);
-                          alert('アクティブ化に失敗（通信エラー）: '+e); });
+    _gwDebPend={tid:m[1], kind:kind, ref:ref};
+    if(_gwDebTimer) clearTimeout(_gwDebTimer);
+    _gwDebTimer=setTimeout(function(){
+      var p=_gwDebPend; _gwDebPend=null; _gwDebTimer=null;
+      var url='/admin/tournaments/'+p.tid+'/gw-active';   // ★接頭辞なし（既存の反映ボタン等と同じ方式）
+      fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+                 body:JSON.stringify({kind:p.kind, ref_id:p.ref})})
+        .then(function(r){
+          if(!r.ok){ console.error('[GW] activate HTTP', r.status, url);
+                     alert('アクティブ化に失敗しました: HTTP '+r.status+'\n'+url); return null; }
+          return r.json();
+        })
+        .then(function(d){ if(d) render(d); })
+        .catch(function(e){ console.error('[GW] activate error', e);
+                            alert('アクティブ化に失敗（通信エラー）: '+e); });
+    }, 300);
   };
   if(!onTourney) return;   // PIP表示とポーリングは大会ページのみ（gwToggleActiveは上で定義済み）
   pip.style.display='block';   // 大会ページでは即表示（fetch前でも場所が分かる）

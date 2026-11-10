@@ -1438,8 +1438,10 @@ document.addEventListener('DOMContentLoaded', function(){
     {# ★20261107 レーススケジュールの右に予選順位表（項目のみ）を追加。
        カードの閉じ構造は壊れている（注記）ため触れず、card-body内に自己完結したflexを作る。
        右サイド幅は内容ぶんの可変（狭め）。サイズ/位置の微調整は後日指示を受けて実施。 #}
-    <div class="qp-sched-flex" style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap">
-    <div class="qp-sched-left" style="flex:1 1 420px;min-width:0;overflow-x:auto;padding-right:10px;box-sizing:border-box">
+    <div class="qp-sched-flex" style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+    {# ★左スケジュールは最大幅を制限。これ以上は伸ばさず（コース列の間延び防止）、
+       余白は右端にまわして 予選順位表 を隣接させる（無駄な中間スペースを解消）。 #}
+    <div class="qp-sched-left" style="flex:1 1 420px;min-width:0;max-width:860px;overflow-x:auto;padding-right:8px;box-sizing:border-box">
     {% if heats %}
 
 

@@ -17,7 +17,11 @@
 .schedule-table th{background:#1e3a5f;padding:8px 12px;text-align:center;color:#9fb3c8;font-size:12px;font-weight:normal}
 .schedule-table tr.race-row{transition:background .2s}
 .schedule-table tr.done{background:#0d2014}
-.schedule-table td{padding:8px 12px}
+/* ★アクティブレース（admin が # クリックで指定）の行ハイライト。観覧・公開HTML共通。
+   左に太いアンバー帯＋淡い背景。done より優先させるため !important。 */
+.schedule-table tr.race-row.gw-active-live > td{background:#2a2410 !important;box-shadow:inset 0 0 0 9999px rgba(230,126,34,.10)}
+.schedule-table tr.race-row.gw-active-live > td:first-child{box-shadow:inset 4px 0 0 #e67e22, inset 0 0 0 9999px rgba(230,126,34,.10)}
+.schedule-table td{padding:12px 12px}
 /* 薄い枠で全セルを罫線表示（暗背景でも見えるライトグレー） */
 .schedule-table th,.schedule-table td{border:1px solid rgba(255,255,255,.16)}
 .heat-no{color:#7f8c8d;font-weight:bold;font-size:13px}
@@ -122,7 +126,7 @@
 @media(max-width:900px){.hr-grp-cols{grid-template-columns:1fr}.hr-grp-cols>.hr-sched{border-right:none;border-bottom:1px solid #1e3a5f}}
 @media(max-width:600px){
   .schedule-table{font-size:12px}
-  .schedule-table th,.schedule-table td{padding:4px 6px}
+  .schedule-table th,.schedule-table td{padding:10px 6px}
   .group-card{min-width:120px;padding:8px 10px}
   .standings-table{font-size:12px}
 }
@@ -195,7 +199,7 @@
   .v-section-title{font-size:16px;margin-bottom:8px}
   /* レーススケジュール：セルを詰めて1画面に多く表示 */
   .schedule-table{font-size:13px}
-  .schedule-table td,.schedule-table th{padding:5px 4px}
+  .schedule-table td,.schedule-table th{padding:10px 4px}
   /* 予選順位表：フォント・余白を詰める（横スクロールは維持） */
   .standings-table th,.standings-table td{padding:4px 6px}
   .standings-table td{font-size:13px}
@@ -904,7 +908,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
-          <tr id="heat-{{ heat.heat_no }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
+          <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
             {# 「#」は各予選回（round_no）内での連番（123 / 123 / 123）。
                行の id は全体通し番号 heat_no のまま（スクロール・追従用）。 #}
             <td class="heat-no">{{ loop.index }}</td>
@@ -1086,7 +1090,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% set rr_per_round = entries|length // 2 %}
           {% for heat in heats %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
-          <tr id="heat-{{ heat.heat_no }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
+          <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
             <td class="heat-no">{{ heat.heat_no }}</td>
             {% for col in course_cols %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
@@ -1394,6 +1398,33 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   document.addEventListener('keydown',function(e){ if(e.key==='Escape') window.m4CloseRs(); });
 })();</script>
 {% endif %}
+
+{# ★アクティブレース行ハイライト（観覧・公開HTML共通）。
+   admin が # をクリックして設定したアクティブレース（/api/timing/active-race）を
+   観覧側でもスマホで分かるよう該当 heat 行をハイライトする。
+   公開HTMLでは <script> が全除去されるため public_html.py 側で保持→再注入している。
+   fetch は '/api/timing/active-race'（公開HTMLではサーバ側で '/{slug}/api/...' に前置される）。
+   3秒間隔ポーリング＝admin 連打に対する自然なラグ兼更新間引き。 #}
+<script>
+(function(){
+  if(window.__m4ActiveHL) return; window.__m4ActiveHL=1;
+  function apply(d){
+    var active = !!(d && d.active && d.kind==='heat' && d.ref_id!=null);
+    var ref = active ? String(d.ref_id) : '';
+    var rows = document.querySelectorAll('tr.race-row[data-heat-id]');
+    for(var i=0;i<rows.length;i++){
+      rows[i].classList.toggle('gw-active-live', active && rows[i].getAttribute('data-heat-id')===ref);
+    }
+  }
+  function poll(){
+    fetch('/api/timing/active-race',{cache:'no-store'})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if(d) apply(d); })
+      .catch(function(){});
+  }
+  poll(); setInterval(poll, 3000);
+})();
+</script>
 
 {# 全レース終了時：一度だけページ最上部へ自動スクロール（view・公開HTML共通）。
    自動リロード（view=10秒/公開HTML=30秒毎）で毎回上へ飛ばないよう、
