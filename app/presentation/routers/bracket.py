@@ -1762,6 +1762,94 @@ async def bracket_set_rank(
     return JSONResponse({"ok": True, "advanced": False, "finalized": bool(finalized)})
 
 
+# ── 訂正（タイム・順位の修正）モーダル用（20261110）─────────────────────────
+@router.get("/{tid}/bracket/group/{group_id}/detail")
+async def bracket_group_detail(
+    tid: int,
+    group_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """訂正モーダル用：各レーン（スロット）の名前・現在の順位・合計タイムを返す。"""
+    async with db.execute(
+        "SELECT bs.id AS slot_id, bs.slot_no AS slot_no, "
+        "       COALESCE(r.name,'') AS name, "
+        "       sr.rank AS rank, sr.total_time AS total_time "
+        "FROM bracket_slots bs "
+        "LEFT JOIN entries e ON e.id = bs.entry_id "
+        "LEFT JOIN racers r ON r.id = e.racer_id "
+        "LEFT JOIN bracket_slot_ranks sr ON sr.group_id = bs.group_id AND sr.slot_id = bs.id "
+        "WHERE bs.group_id = ? ORDER BY bs.slot_no, bs.id", (group_id,)) as c:
+        rows = await c.fetchall()
+    slots = [{"slot_id": r["slot_id"], "slot_no": r["slot_no"], "name": r["name"],
+              "rank": r["rank"], "total_time": r["total_time"]} for r in rows]
+    return JSONResponse({"ok": True, "slots": slots})
+
+
+@router.post("/{tid}/bracket/group/{group_id}/correct")
+async def bracket_correct(
+    tid: int,
+    group_id: int,
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """訂正：各レーンの順位・タイムを一括で入れ直し、勝者を確定して次ラウンドへ再反映。
+       body: {"slots":[{"slot_id":int,"rank":int|null,"total_time":float|null}, ...]}"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    items = body.get("slots") or []
+
+    await db.execute("DELETE FROM bracket_slot_ranks WHERE group_id=?", (group_id,))
+    winner_slot_id = None
+    for it in items:
+        try:
+            sid = int(it.get("slot_id"))
+        except Exception:
+            continue
+        rk = it.get("rank")
+        tt = it.get("total_time")
+        try:
+            rk = int(rk) if rk not in (None, "", "-") else None
+        except Exception:
+            rk = None
+        try:
+            tt = float(tt) if tt not in (None, "") else None
+        except Exception:
+            tt = None
+        if rk is None and tt is None:
+            continue   # CO/空＝順位なし行は作らない（画面で「CO」表示）
+        await db.execute(
+            "INSERT INTO bracket_slot_ranks (group_id, slot_id, rank, total_time) VALUES (?,?,?,?)",
+            (group_id, sid, rk, tt))
+        if rk == 1:
+            winner_slot_id = sid
+
+    # 勝者を確定（1位のレーン）。既存あれば上書き。
+    async with db.execute("SELECT id FROM bracket_results WHERE group_id=?", (group_id,)) as c:
+        er = await c.fetchone()
+    if winner_slot_id is not None:
+        if er:
+            await db.execute("UPDATE bracket_results SET winner_slot_id=? WHERE group_id=?",
+                             (winner_slot_id, group_id))
+        else:
+            await db.execute("INSERT INTO bracket_results (group_id, winner_slot_id) VALUES (?,?)",
+                             (group_id, winner_slot_id))
+    await db.commit()
+
+    # 次ラウンド処理（set-rank と同じ：勝者を次ラウンドへ流し込み、裏トーナメント同期）
+    async with db.execute("SELECT round_id FROM bracket_groups WHERE id=?", (group_id,)) as c:
+        g = await c.fetchone()
+    if g:
+        async with db.execute("SELECT round_no FROM bracket_rounds WHERE id=?", (g["round_id"],)) as c:
+            rn = await c.fetchone()
+        await _prefill_next_round(tid, g["round_id"], rn["round_no"] if rn else 0, db)
+        await _try_advance_round(tid, g["round_id"], db)
+        await _sync_losers_bracket(tid, db)
+        await _try_insert_reviver(tid, db)
+    return JSONResponse({"ok": True})
+
+
 @router.post("/{tid}/bracket/group/{group_id}/reorder-slots")
 async def bracket_reorder_slots(
     tid: int,
