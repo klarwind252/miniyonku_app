@@ -577,7 +577,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       </style>
       <div class="card-body" style="padding:0;overflow-x:hidden">
         <table id="ow-sched" class="sched-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse">
-          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 192px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:72px"></th></tr></thead>
+          <thead><tr><th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:72px"></th></tr></thead>
           <tbody>
           {% set rc = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
           {% set ow_passed_ids = ow_passed_list | map(attribute='entry_id') | list %}
@@ -1439,7 +1439,7 @@ document.addEventListener('DOMContentLoaded', function(){
        カードの閉じ構造は壊れている（注記）ため触れず、card-body内に自己完結したflexを作る。
        右サイド幅は内容ぶんの可変（狭め）。サイズ/位置の微調整は後日指示を受けて実施。 #}
     <div class="qp-sched-flex" style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap">
-    <div class="qp-sched-left" style="flex:3 1 420px;min-width:0;overflow-x:auto;padding-right:10px;box-sizing:border-box">
+    <div class="qp-sched-left" style="flex:1 1 420px;min-width:0;overflow-x:auto;padding-right:10px;box-sizing:border-box">
     {% if heats %}
 
 
@@ -1659,7 +1659,7 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <table class="sched-tbl" style="min-width:500px;width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1957,7 +1957,7 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
           <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
             <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
             <tbody>
             {% for heat in heats if heat.round_no == rno %}
             {{ race_row(heat, loop.index) }}
@@ -1969,7 +1969,7 @@ document.addEventListener('DOMContentLoaded', function(){
       {% else %}
         <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
           <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
           {% for heat in heats %}{{ race_row(heat, loop.index) }}{% endfor %}
           </tbody>
@@ -1979,7 +1979,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {# 通常ヒート・総当たり #}
     <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs" style="width:calc((100% - 164px) / {{ course_cols|length }})">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
       {# 総当たり：エントリー数//2 レースを「1巡」（全員が1回ずつ走る）として、巡の境目に太い区切り行を入れる。
          人数が奇数のときは1巡に1人休みが出るため目安の区切り。2〜3名（1巡=1レース）では区切らない。 #}
@@ -2003,11 +2003,11 @@ document.addEventListener('DOMContentLoaded', function(){
     {% endif %}
     </div>{# /qp-sched-left #}
     {# ★予選順位表（右サイド・項目のみ）。ポイント制のみ。幅は内容ぶんの可変で狭め。サイズ等は後で調整 #}
-    <aside class="qp-sched-rank" style="flex:1 1 260px;min-width:260px;border-left:2px solid #eef1f4;padding-left:16px;box-sizing:border-box;overflow-x:auto">
+    <aside class="qp-sched-rank" style="flex:0 1 auto;width:max-content;min-width:200px;max-width:300px;border-left:2px solid #eef1f4;padding-left:16px;box-sizing:border-box;overflow-x:auto">
       <div style="font-weight:bold;font-size:13px;padding:6px 2px">予選順位表</div>
       {% if standings and (is_none_roundrobin or is_roundrobin) %}
       {# ★総当たり（即決勝=none_roundrobin／予選=roundrobin）：勝・負・出走。TIMEは出さない。リアルタイム更新対応（tbody id） #}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%">
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%;min-width:max-content">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
@@ -2032,7 +2032,7 @@ document.addEventListener('DOMContentLoaded', function(){
         </tbody>
       </table>
       {% elif standings and not is_roundrobin and not is_none_roundrobin %}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%">
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%;min-width:max-content">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
