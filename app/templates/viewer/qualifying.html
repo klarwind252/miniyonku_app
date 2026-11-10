@@ -1108,7 +1108,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 </div>
                 {% if lane.is_co %}
                 <span class="rank-badge" style="background:#e67e22;color:#fff">CO</span>
-                {% elif lane.rank %}
+                {% elif lane.rank and not is_rr_type %}
+                {# 総当たり系は順位が1位/2位しか無く無意味なので表示しない（○×とCOのみ）。
+                   通常ヒート等（非総当たり）は従来どおり順位を表示する。 #}
                 <span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff">
                   {{ lane.rank }}位
                 </span>

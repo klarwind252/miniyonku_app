@@ -2583,7 +2583,9 @@ async def _calc_standings_rr(tid: int, db: aiosqlite.Connection):
     async with db.execute(
         """SELECT e.id as entry_id, e.advanced, r.name, COALESCE(r.yomi,'') as yomi,
                   COALESCE(SUM(hr.win),0) as wins,
-                  COUNT(CASE WHEN hr.win IS NOT NULL THEN 1 END) as races
+                  COALESCE(SUM(CASE WHEN hr.win=0 THEN 1 ELSE 0 END),0) as losses,
+                  COUNT(CASE WHEN hr.win IS NOT NULL THEN 1 END) as races,
+                  MIN(CASE WHEN hr.total_time>0 THEN hr.total_time END) as best_time
            FROM entries e
            JOIN racers r ON r.id=e.racer_id
            LEFT JOIN heat_lanes hl ON hl.entry_id=e.id
@@ -2617,7 +2619,8 @@ async def _calc_standings_none_rr(tid: int, db: aiosqlite.Connection):
                   COALESCE(SUM(hr.win),0)                              as wins,
                   COALESCE(SUM(CASE WHEN hr.win=0 THEN 1 ELSE 0 END),0) as losses,
                   COALESCE(SUM(COALESCE(hr.is_co,0)),0)                as cos,
-                  COUNT(CASE WHEN hr.win IS NOT NULL THEN 1 END)       as races
+                  COUNT(CASE WHEN hr.win IS NOT NULL THEN 1 END)       as races,
+                  MIN(CASE WHEN hr.total_time>0 THEN hr.total_time END) as best_time
            FROM entries e
            JOIN racers r ON r.id=e.racer_id
            LEFT JOIN heat_lanes hl ON hl.entry_id=e.id
