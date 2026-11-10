@@ -224,10 +224,13 @@ def _rtype_pri(rt) -> int:
 
 
 async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_tbl, ranks_tbl,
-                             results_tbl=None):
+                             results_tbl=None, heat_col=None):
     """ht_group / bracket_group 共通：トーナメント全体を優先度順に並べて巡回。
-       優先度＝(ラウンド種別, round_no, group_no)。種別は通常→敗者復活→3位決定→決勝。
-       確定したグループの次の未確定へ、末尾なら先頭の未確定へ巡回。全確定→None（待機）。
+       絶対ルール：同一ラウンド（＝同一 round_id）内がすべて確定するまで次ラウンドへ進まない。
+       順序キー＝(heat_no, ラウンド種別, round_no, group_no)。
+         - heat_col 指定時（ヒートトーナメント）は heat_no を最優先＝各ヒート内で完結してから次ヒート。
+         - bracket は heat_no 無し（0固定）＝従来どおりラウンド順。
+       種別は通常→敗者復活→3位決定→決勝。全確定→None（待機）。
        確定判定＝そのグループに ranks_tbl もしくは results_tbl の行が1件でもあるか。
        （★通常ラウンドの手動確定は bracket_results＝勝者だけ書き bracket_slot_ranks は書かないため、
          results_tbl も見ないと「確定済みなのに未確定」と誤判定し、確定済み組へ巡回してしまう。）"""
@@ -242,10 +245,12 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     # 確定状況＝ranks_tbl または results_tbl に行があるか
     _res_sql = (f" + (SELECT COUNT(*) FROM {results_tbl} rs WHERE rs.group_id = gg.id)"
                 if results_tbl else "")
-    # 同トーナメントの全グループ＋種別/ラウンド/確定状況
+    _heat_sql = f"rd.{heat_col}" if heat_col else "0"
+    # 同トーナメントの全グループ＋ヒート/種別/ラウンド/確定状況（round_id＝ラウンド単位）
     async with db.execute(
-        f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
-        f"       rd.round_type AS round_type, "
+        f"SELECT gg.id AS id, gg.group_no AS group_no, gg.round_id AS round_id, "
+        f"       rd.round_no AS round_no, rd.round_type AS round_type, "
+        f"       {_heat_sql} AS heat_no, "
         f"       ((SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id){_res_sql}) AS ranked "
         f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
         f"WHERE rd.tournament_id = ?", (tid,)) as c:
@@ -254,7 +259,8 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
         return None
 
     def _key(r):
-        return (_rtype_pri(r["round_type"]), r["round_no"] or 0, r["group_no"] or 0, r["id"])
+        return (r["heat_no"] or 0, _rtype_pri(r["round_type"]), r["round_no"] or 0,
+                r["group_no"] or 0, r["id"])
 
     ordered = sorted(rows, key=_key)
     unconf = [r for r in ordered if not r["ranked"]]
@@ -263,17 +269,15 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     gid = int(group_id)
     cur = next((r for r in ordered if r["id"] == gid), None)
     if cur is not None:
-        # ★絶対ルール：同一ラウンド内がすべて確定するまで次ラウンドへ進まない。
-        #   現ラウンドに未確定が残っていれば、その中だけで巡回する
-        #   （group_no昇順で次へ、末尾なら同ラウンドの先頭の未確定へ戻る）。
-        cur_round = (_rtype_pri(cur["round_type"]), cur["round_no"] or 0)
-        within = [r for r in unconf
-                  if (_rtype_pri(r["round_type"]), r["round_no"] or 0) == cur_round]
+        # ★絶対ルール：同一ラウンド（同一 round_id）内がすべて確定するまで次へ進まない。
+        #   同ラウンド内に未確定が残っていれば、その中だけで巡回（group_no昇順で次、末尾なら先頭へ）。
+        #   htは round_id にヒート/セクションが織り込まれるため、ヒートをまたがない。
+        within = [r for r in unconf if r["round_id"] == cur["round_id"]]
         if within:
             after = [r for r in within if (r["group_no"] or 0) > (cur["group_no"] or 0)]
             return (kind, (after[0] if after else within[0])["id"])
-    # 現ラウンド全確定（または確定グループ不明）→ 優先順で最初の未確定ラウンドの先頭へ。
-    #   種別優先度（通常→敗者復活→3位決定→決勝）＋round_no＋group_no の昇順。
+    # 現ラウンド全確定（または確定グループ不明）→ 順序キーで最初の未確定へ。
+    #   ht：同ヒートの次ラウンド→無ければ次ヒート。bracket：種別優先＋round_no順で次ラウンド。
     return (kind, unconf[0]["id"])
 
 
@@ -287,7 +291,7 @@ async def advance_after_confirm(db, kind: str, ref_id: int) -> None:
         elif kind == KIND_HT_GROUP:
             nxt = await _group_next_active(db, KIND_HT_GROUP, ref_id,
                                            "ht_groups", "ht_rounds", "ht_slots", "ht_slot_ranks",
-                                           results_tbl="ht_results")
+                                           results_tbl="ht_results", heat_col="heat_no")
         elif kind == KIND_BRACKET_GROUP:
             nxt = await _group_next_active(db, KIND_BRACKET_GROUP, ref_id,
                                            "bracket_groups", "bracket_rounds", "bracket_slots", "bracket_slot_ranks",
@@ -334,9 +338,11 @@ async def upcoming_order(db) -> dict:
             if kind == KIND_HT_GROUP:
                 groups_tbl, rounds_tbl, ranks_tbl = "ht_groups", "ht_rounds", "ht_slot_ranks"
                 results_tbl = "ht_results"
+                heat_sql = "rd.heat_no"   # ヒートトーナメントはヒート単位で完結
             else:
                 groups_tbl, rounds_tbl, ranks_tbl = "bracket_groups", "bracket_rounds", "bracket_slot_ranks"
                 results_tbl = "bracket_results"
+                heat_sql = "0"            # bracket は heat_no 無し
             async with db.execute(
                 f"SELECT rd.tournament_id AS tid FROM {groups_tbl} g "
                 f"JOIN {rounds_tbl} rd ON rd.id = g.round_id WHERE g.id = ?", (ref_id,)) as c:
@@ -346,15 +352,15 @@ async def upcoming_order(db) -> dict:
             # 確定判定＝ranks または results に行があるか（手動確定の通常ラウンドは results のみ）
             async with db.execute(
                 f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
-                f"       rd.round_type AS round_type, "
+                f"       rd.round_type AS round_type, {heat_sql} AS heat_no, "
                 f"       ((SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) "
                 f"        + (SELECT COUNT(*) FROM {results_tbl} rs WHERE rs.group_id = gg.id)) AS ranked "
                 f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
                 f"WHERE rd.tournament_id = ?", (g0["tid"],)) as c:
                 rows = await c.fetchall()
             items = [r for r in rows if not r["ranked"]]
-            items.sort(key=lambda r: (_rtype_pri(r["round_type"]), r["round_no"] or 0,
-                                      r["group_no"] or 0, r["id"]))
+            items.sort(key=lambda r: (r["heat_no"] or 0, _rtype_pri(r["round_type"]),
+                                      r["round_no"] or 0, r["group_no"] or 0, r["id"]))
             ids = [r["id"] for r in items]
         else:
             return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}

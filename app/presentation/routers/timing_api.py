@@ -242,6 +242,18 @@ async def _maybe_auto_apply(store, db, race_id, result, layout_elems, event_rows
         handler = None
         has_result = False
 
+        # ★自動反映の除外（20261110）：敗者復活戦・3位決定戦・裏トーナメントは自動反映しない。
+        #   「1回でも負けたら記録の対象外」。これらのラウンド種別（優先度1=敗者復活/裏, 2=3位決定）は
+        #   対象外とし、手動反映ボタンだけ従来どおり使えるようにする。通常ラウンド・決勝は対象。
+        if kind in (_gwa.KIND_BRACKET_GROUP, _gwa.KIND_HT_GROUP):
+            _pfx = "bracket" if kind == _gwa.KIND_BRACKET_GROUP else "ht"
+            async with db.execute(
+                f"SELECT rd.round_type AS rt FROM {_pfx}_groups g "
+                f"JOIN {_pfx}_rounds rd ON rd.id = g.round_id WHERE g.id = ?", (ref,)) as c:
+                _rtrow = await c.fetchone()
+            if _rtrow and _gwa._rtype_pri(_rtrow["rt"]) in (1, 2):
+                return   # 敗者復活/3位決定/裏 → 自動反映しない（手動反映は可）
+
         if kind == _gwa.KIND_BRACKET_GROUP:
             apply_path = f"/api/timing/apply/bracket/{ref}"
             handler = (apply_latest_to_bracket, {"group_id": ref})
