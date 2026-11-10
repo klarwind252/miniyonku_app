@@ -261,12 +261,19 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     if not unconf:
         return None
     gid = int(group_id)
-    idx = next((i for i, r in enumerate(ordered) if r["id"] == gid), None)
-    if idx is not None:
-        after = [r for r in ordered[idx + 1:] if not r["ranked"]]
-        if after:
-            return (kind, after[0]["id"])
-    # 末尾（または確定グループが見つからない）→先頭の未確定へ巡回
+    cur = next((r for r in ordered if r["id"] == gid), None)
+    if cur is not None:
+        # ★絶対ルール：同一ラウンド内がすべて確定するまで次ラウンドへ進まない。
+        #   現ラウンドに未確定が残っていれば、その中だけで巡回する
+        #   （group_no昇順で次へ、末尾なら同ラウンドの先頭の未確定へ戻る）。
+        cur_round = (_rtype_pri(cur["round_type"]), cur["round_no"] or 0)
+        within = [r for r in unconf
+                  if (_rtype_pri(r["round_type"]), r["round_no"] or 0) == cur_round]
+        if within:
+            after = [r for r in within if (r["group_no"] or 0) > (cur["group_no"] or 0)]
+            return (kind, (after[0] if after else within[0])["id"])
+    # 現ラウンド全確定（または確定グループ不明）→ 優先順で最初の未確定ラウンドの先頭へ。
+    #   種別優先度（通常→敗者復活→3位決定→決勝）＋round_no＋group_no の昇順。
     return (kind, unconf[0]["id"])
 
 
