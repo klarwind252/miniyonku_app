@@ -1809,6 +1809,20 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
                     await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, entry_id))
 
 
+    await db.commit()
+    # ★20261110：即決勝総当たり/総当たりは、組み合わせ生成時に最初のレース(#1)を自動アクティブ化。
+    #   以降は _heat_next_active が #1→#2→…（スキップは未消化の#へ戻る）→全完了で待機、を担う。
+    if qual_type in ("none_roundrobin", "roundrobin"):
+        try:
+            async with db.execute(
+                "SELECT id FROM heats WHERE tournament_id=? ORDER BY round_no, heat_no, id LIMIT 1",
+                (tid,)) as cur:
+                _h0 = await cur.fetchone()
+            if _h0:
+                await gw_active_repo.set_active(db, gw_active_repo.KIND_HEAT, _h0["id"])
+        except Exception as e:
+            print(f"[qual] auto-activate first heat failed tid={tid}: {type(e).__name__}: {e}", flush=True)
+
     # 参加者向けHTML配信（自動更新）
     try:
         from app.services.publish_scheduler import schedule_publish
@@ -5084,58 +5098,118 @@ async def ht_group_correct(tid: int, group_id: int, request: Request,
 
 @router.get("/{tid}/heat/{heat_id}/detail")
 async def heat_detail(tid: int, heat_id: int, db: aiosqlite.Connection = Depends(get_db)):
-    """訂正モーダル用：予選ヒート各レーンの 名前/順位/タイム を返す（slot_id=heat_lane_id）。"""
+    """訂正モーダル用：予選ヒートの全コース(1..lane_count)の 割当レーサー/順位/タイム と、
+       割当候補レーサー一覧を返す（コース割り当ても同じモーダルで編集するため assignable=True）。"""
+    async with db.execute("SELECT lane_count FROM tournaments WHERE id=?", (tid,)) as c:
+        tr = await c.fetchone()
+    lane_count = int((tr["lane_count"] if tr and tr["lane_count"] else 3))
     async with db.execute(
-        "SELECT hl.id AS slot_id, hl.lane_no AS slot_no, COALESCE(r.name,'') AS name, "
+        "SELECT hl.lane_no AS lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') AS name, "
         "       hr.rank AS rank, hr.total_time AS total_time "
         "FROM heat_lanes hl "
         "LEFT JOIN entries e ON e.id=hl.entry_id "
         "LEFT JOIN racers r ON r.id=e.racer_id "
         "LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id "
-        "WHERE hl.heat_id=? ORDER BY hl.lane_no, hl.id", (heat_id,)) as c:
-        rows = await c.fetchall()
-    slots = [{"slot_id": r["slot_id"], "slot_no": r["slot_no"], "name": r["name"],
-              "rank": r["rank"], "total_time": r["total_time"]} for r in rows]
-    return JSONResponse({"ok": True, "slots": slots})
+        "WHERE hl.heat_id=? ORDER BY hl.lane_no", (heat_id,)) as c:
+        cur_rows = {r["lane_no"]: dict(r) for r in await c.fetchall()}
+    max_lane = max([lane_count] + list(cur_rows.keys())) if cur_rows else lane_count
+    slots = []
+    for ln in range(1, max_lane + 1):
+        r = cur_rows.get(ln)
+        slots.append({"slot_no": ln, "lane_no": ln,
+                      "entry_id": (r["entry_id"] if r else None),
+                      "name": (r["name"] if r else ""),
+                      "rank": (r["rank"] if r else None),
+                      "total_time": (r["total_time"] if r else None)})
+    async with db.execute(
+        "SELECT e.id AS id, r.name AS name FROM entries e JOIN racers r ON r.id=e.racer_id "
+        "WHERE e.tournament_id=? AND e.status='active' ORDER BY r.yomi, r.name", (tid,)) as c:
+        entries = [{"id": r["id"], "name": r["name"]} for r in await c.fetchall()]
+    return JSONResponse({"ok": True, "assignable": True, "lane_count": lane_count,
+                         "entries": entries, "slots": slots})
 
 
 @router.post("/{tid}/heat/{heat_id}/correct")
 async def heat_correct(tid: int, heat_id: int, request: Request,
                        db: aiosqlite.Connection = Depends(get_db)):
-    """予選ヒート訂正：各レーンの順位・タイムを入れ直す（CO＝順位なし・タイムなし）。"""
+    """予選ヒート訂正：コース割り当て（heat_lanes）＋順位・タイムを一括更新。
+       body: {"slots":[{"lane_no":int,"entry_id":int|null,"total_time":float|null,"rank":int|null}]}
+       - 同じレーサーを複数コースへ割り当て不可。
+       - entry_id=null のコースは空き（heat_lane を削除）。"""
     try:
         body = await request.json()
     except Exception:
         body = {}
     items = body.get("slots") or []
-    async with db.execute("SELECT id FROM heat_lanes WHERE heat_id=?", (heat_id,)) as c:
-        lane_ids = [r["id"] for r in await c.fetchall()]
-    if lane_ids:
-        ph = ",".join("?" * len(lane_ids))
-        await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN ({ph})", lane_ids)
+
+    # レーン番号→希望エントリ、順位・タイム を収集。重複レーサーは拒否。
+    desired = {}   # lane_no -> entry_id|None
+    res = {}       # lane_no -> (rank, total_time)
+    seen_e = set()
     for it in items:
         try:
-            lid = int(it.get("slot_id"))   # heat_lane_id
+            ln = int(it.get("lane_no"))
         except Exception:
             continue
-        if lid not in lane_ids:
-            continue
+        eid = it.get("entry_id")
+        try:
+            eid = int(eid) if eid not in (None, "", 0, "0") else None
+        except Exception:
+            eid = None
+        if eid is not None:
+            if eid in seen_e:
+                return JSONResponse(
+                    {"ok": False, "error": "同じレーサーを複数のコースに割り当てることはできません。"},
+                    status_code=400)
+            seen_e.add(eid)
         rk = it.get("rank"); tt = it.get("total_time")
         try: rk = int(rk) if rk not in (None, "", "-") else None
         except Exception: rk = None
         try: tt = float(tt) if tt not in (None, "") else None
         except Exception: tt = None
+        desired[ln] = eid
+        res[ln] = (rk, tt)
+
+    # 現在の heat_lanes（lane_no -> id）
+    async with db.execute("SELECT id, lane_no FROM heat_lanes WHERE heat_id=?", (heat_id,)) as c:
+        cur_lanes = {r["lane_no"]: r["id"] for r in await c.fetchall()}
+    # コース割り当ての反映（追加/更新/削除）
+    for ln, eid in desired.items():
+        if eid is None:
+            if ln in cur_lanes:
+                await db.execute("DELETE FROM heat_results WHERE heat_lane_id=?", (cur_lanes[ln],))
+                await db.execute("DELETE FROM heat_lanes WHERE id=?", (cur_lanes[ln],))
+        else:
+            if ln in cur_lanes:
+                await db.execute("UPDATE heat_lanes SET entry_id=? WHERE id=?", (eid, cur_lanes[ln]))
+            else:
+                await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
+                                 (heat_id, ln, eid))
+    await db.commit()
+
+    # lane_no -> heat_lane_id を取り直して結果を書き直す
+    async with db.execute("SELECT id, lane_no FROM heat_lanes WHERE heat_id=?", (heat_id,)) as c:
+        lane_map = {r["lane_no"]: r["id"] for r in await c.fetchall()}
+    lane_ids = list(lane_map.values())
+    if lane_ids:
+        ph = ",".join("?" * len(lane_ids))
+        await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN ({ph})", lane_ids)
+    any_rank = False
+    for ln, (rk, tt) in res.items():
+        hlid = lane_map.get(ln)
+        if not hlid:
+            continue
+        if rk is not None:
+            any_rank = True
         if rk is None and tt is None:
-            continue   # CO＝結果行を作らない（画面でCO表示）
-        # win: 1位=勝(1) / 2位以下=負(0) / 順位なし(CO)=null。総当たりの○×・順位制どちらも対応。
+            continue   # CO/空＝結果行なし
         win = 1 if rk == 1 else (0 if rk is not None else None)
         await db.execute(
             "INSERT INTO heat_results (heat_lane_id, rank, total_time, win) VALUES (?,?,?,?)",
-            (lid, rk, tt, win))
-    try:
+            (hlid, rk, tt, win))
+    # 順位が入っていれば確定(done)。コース割り当てのみの変更では status は変えない。
+    if any_rank:
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
-    except Exception:
-        pass
     await db.commit()
     try:
         from app.services.publish_scheduler import schedule_publish

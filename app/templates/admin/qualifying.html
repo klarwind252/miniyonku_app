@@ -1458,9 +1458,6 @@ document.addEventListener('DOMContentLoaded', function(){
             {% if is_finalized %}
             <span style="font-size:11px;color:#95a5a6">確定済</span>
             {% else %}
-            <button type="button" class="m4-correct-btn sm"
-                    onclick="openCorrectModal('heat',{{ t.id }},{{ heat.id }})"
-                    title="各レーンのタイム・順位を訂正します">訂正</button>
             <button type="button" id="status-{{ heat.id }}"
                     class="m4-undo-btn"
                     onclick="resetRace({{ heat.id }}, {{ t.id }})"
@@ -1581,13 +1578,11 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endif %}
         {% endif %}
       {% endfor %}
-      {# 編集はめったに使わないので右端。結果が入っている行では出さない #}
+      {# 右端：訂正ボタン（コース割り当て・タイム・順位をモーダルで編集）。 #}
       <td class="ed" style="text-align:center">
-        {% if heat.id not in done_heat_ids %}
-        <a href="/admin/tournaments/{{ t.id }}/qualifying/heat/{{ heat.id }}/edit"
-           title="このレースの内容を編集します"
-           style="font-size:11px;padding:2px 6px;border:1px solid #dee2e6;border-radius:4px;color:#636e72;text-decoration:none;white-space:nowrap">✏️</a>
-        {% endif %}
+        <button type="button" class="m4-correct-btn sm"
+                onclick="openCorrectModal('heat',{{ t.id }},{{ heat.id }})"
+                title="コース割り当て・タイム・順位を訂正します">訂正</button>
       </td>
     </tr>
     {% endmacro %}

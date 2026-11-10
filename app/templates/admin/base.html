@@ -2086,27 +2086,41 @@ function _showPubToast(msg) {
       .then(function(d){
         if(!d||!d.ok){ alert('情報の取得に失敗しました'); return; }
         var slots=d.slots||[], n=slots.length;
+        var assignable=!!d.assignable;              // 予選ヒート：コース割り当ても編集可
+        var entries=d.entries||[];
         var body=document.getElementById('ctBody'); body.innerHTML='';
         var initial=[];
         slots.forEach(function(s){
           var laneBg=LANE_BG[s.slot_no]||'#8a939b';
           var timeVal=(s.total_time!=null)?Number(s.total_time).toFixed(3):'';
-          var initRank=(s.rank!=null)?String(s.rank):(s.name?'CO':'');
+          var hasRacer=assignable?(s.entry_id!=null):!!s.name;
+          var initRank=(s.rank!=null)?String(s.rank):(hasRacer?'CO':'');
           var opts='';
           for(var i=1;i<=n;i++){ opts+='<option value="'+i+'"'+(initRank===String(i)?' selected':'')+'>'+i+'</option>'; }
           opts+='<option value="CO"'+(initRank==='CO'?' selected':'')+'>CO</option>';
           opts+='<option value=""'+(initRank===''?' selected':'')+'>-</option>';
           var isCO=(initRank==='CO');
+          var racerCell, keyAttr, initEntry='';
+          if(assignable){
+            initEntry=(s.entry_id!=null)?String(s.entry_id):'';
+            var eo='<option value=""'+(initEntry===''?' selected':'')+'>（空き）</option>';
+            entries.forEach(function(en){ eo+='<option value="'+en.id+'"'+(initEntry===String(en.id)?' selected':'')+'>'+en.name+'</option>'; });
+            racerCell='<select class="ct-racer" data-lane="'+s.lane_no+'" onchange="ctRacerChange(this)">'+eo+'</select>';
+            keyAttr='data-lane="'+s.lane_no+'"';
+          } else {
+            racerCell=(s.name?s.name:'<span style="color:#aab">（空き）</span>');
+            keyAttr='data-sid="'+s.slot_id+'"';
+          }
           var tr=document.createElement('tr');
           tr.innerHTML=
             '<td><span class="ct-lane" style="background:'+laneBg+'">'+s.slot_no+'</span></td>'+
-            '<td>'+(s.name?s.name:'<span style="color:#aab">（空き）</span>')+'</td>'+
-            '<td><input type="number" step="0.001" min="0" class="ct-time" value="'+(isCO?'':timeVal)+'"'+(isCO?' disabled':'')+' data-sid="'+s.slot_id+'"></td>'+
-            '<td><select class="ct-rank" data-sid="'+s.slot_id+'" onchange="ctRankChange(this)">'+opts+'</select></td>';
+            '<td>'+racerCell+'</td>'+
+            '<td><input type="number" step="0.001" min="0" class="ct-time" value="'+(isCO?'':timeVal)+'"'+(isCO?' disabled':'')+' '+keyAttr+'></td>'+
+            '<td><select class="ct-rank" '+keyAttr+' onchange="ctRankChange(this)">'+opts+'</select></td>';
           body.appendChild(tr);
-          initial.push({slot_id:s.slot_id, time:(isCO?'':timeVal), rank:initRank});
+          initial.push({lane:s.lane_no, slot_id:s.slot_id, entry:initEntry, time:(isCO?'':timeVal), rank:initRank});
         });
-        ctState={kind:kind, tid:tid, id:id, initial:initial};
+        ctState={kind:kind, tid:tid, id:id, assignable:assignable, initial:initial};
         document.getElementById('correctOverlay').style.display='flex';
       }).catch(function(){ alert('情報の取得に失敗しました'); });
   };
@@ -2115,11 +2129,21 @@ function _showPubToast(msg) {
     var ti=tr.querySelector('.ct-time'); if(!ti) return;
     if(sel.value==='CO'){ ti.value=''; ti.disabled=true; } else { ti.disabled=false; }
   };
+  // レーサー選択の重複を即時解消：同じレーサーが他コースで選ばれていたら、そちらを（空き）に戻す。
+  window.ctRacerChange = function(sel){
+    var v=sel.value; if(!v) return;
+    document.querySelectorAll('#ctBody .ct-racer').forEach(function(o){
+      if(o!==sel && o.value===v){ o.value=''; }
+    });
+  };
   function collect(){
     var out=[];
     document.querySelectorAll('#ctBody tr').forEach(function(tr){
-      var ti=tr.querySelector('.ct-time'), rk=tr.querySelector('.ct-rank');
-      out.push({slot_id:parseInt(ti.getAttribute('data-sid'),10), time:ti.value.trim(), rank:rk.value});
+      var ti=tr.querySelector('.ct-time'), rk=tr.querySelector('.ct-rank'), rc=tr.querySelector('.ct-racer');
+      var row={time:ti.value.trim(), rank:rk.value};
+      if(rc){ row.lane=parseInt(rc.getAttribute('data-lane'),10); row.entry=rc.value; }
+      else { row.slot_id=parseInt(ti.getAttribute('data-sid'),10); }
+      out.push(row);
     });
     return out;
   }
@@ -2127,7 +2151,10 @@ function _showPubToast(msg) {
     if(!ctState) return false;
     var cur=collect();
     for(var i=0;i<cur.length;i++){ var b=ctState.initial[i];
-      if(!b||cur[i].time!==b.time||cur[i].rank!==b.rank) return true; }
+      if(!b) return true;
+      if(cur[i].time!==b.time||cur[i].rank!==b.rank) return true;
+      if(ctState.assignable && (cur[i].entry||'')!==(b.entry||'')) return true;
+    }
     return false;
   }
   window.closeCorrectModal = function(){
@@ -2136,18 +2163,33 @@ function _showPubToast(msg) {
   };
   window.submitCorrect = function(){
     if(!ctState) return;
-    var cur=collect(), seen={}, ones=0;
+    var cur=collect(), seen={}, ones=0, anyRank=false;
+    if(ctState.assignable){   // 同じレーサーを複数コースに割り当て禁止
+      var se={};
+      for(var k=0;k<cur.length;k++){ var ev=cur[k].entry;
+        if(ev){ if(se[ev]){ alert('同じレーサーを複数のコースに割り当てることはできません'); return; } se[ev]=true; } }
+    }
     for(var i=0;i<cur.length;i++){ var rv=cur[i].rank;
       if(rv===''||rv==='CO') continue;
+      anyRank=true;
       if(seen[rv]){ alert('順位 '+rv+' が重複しています'); return; }
       seen[rv]=true; if(rv==='1') ones++;
     }
-    if(ones!==1){ alert('1位のレーンを1つ選んでください'); return; }
-    var slots=cur.map(function(x){
-      if(x.rank==='CO') return {slot_id:x.slot_id, total_time:null, rank:null};
-      return {slot_id:x.slot_id, total_time:(x.time===''?null:parseFloat(x.time)),
-              rank:(x.rank===''?null:parseInt(x.rank,10))};
-    });
+    if(anyRank && ones!==1){ alert('1位のレーンを1つ選んでください'); return; }
+    var slots;
+    if(ctState.assignable){
+      slots=cur.map(function(x){
+        var rk=(x.rank==='CO'||x.rank==='')?null:parseInt(x.rank,10);
+        var tt=(x.rank==='CO'||x.time==='')?null:parseFloat(x.time);
+        return {lane_no:x.lane, entry_id:(x.entry===''?null:parseInt(x.entry,10)), total_time:tt, rank:rk};
+      });
+    } else {
+      slots=cur.map(function(x){
+        if(x.rank==='CO') return {slot_id:x.slot_id, total_time:null, rank:null};
+        return {slot_id:x.slot_id, total_time:(x.time===''?null:parseFloat(x.time)),
+                rank:(x.rank===''?null:parseInt(x.rank,10))};
+      });
+    }
     var st=ctState;
     fetch(ctUrl(st.kind,st.tid,st.id,'correct'),
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slots:slots})})
