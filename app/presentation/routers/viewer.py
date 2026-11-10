@@ -441,6 +441,18 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         else:
             rows = await _calc_standings_rr(tid, db)
         standings = rows
+        # 予選全体での自己ベスト合計タイム（観覧の順位表 TIME 列用）＝各レーサーの最小 total_time。
+        _bt = {}
+        async with db.execute(
+            "SELECT hl.entry_id AS eid, MIN(hr.total_time) AS bt "
+            "FROM heat_lanes hl JOIN heat_results hr ON hr.heat_lane_id=hl.id "
+            "WHERE hl.heat_id IN (SELECT id FROM heats WHERE tournament_id=?) "
+            "  AND hr.total_time IS NOT NULL GROUP BY hl.entry_id", (tid,)) as cur:
+            for _r in await cur.fetchall():
+                _bt[_r["eid"]] = _r["bt"]
+        for _s in standings:
+            if isinstance(_s, dict):
+                _s["best_total"] = _bt.get(_s.get("entry_id"))
     elif qt == "order":
         # 並び順（ポイント制）は admin（予選管理）と同一の順位ロジック(_calc_standings)で
         # 算出し、同率順位・同率内の並び順を予選管理画面と完全一致させる
