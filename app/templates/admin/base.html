@@ -1771,12 +1771,13 @@ function _showPubToast(msg) {
   /* 縦に大きく＝掴みやすく。番号チップを行の全高に広げる（掴み口を大きく）。 */
   .slot-row[data-lane]{ min-height:46px; padding-top:9px !important; padding-bottom:9px !important; }
   .slot-row[data-lane] .lane-no-card{ align-self:stretch; display:flex; align-items:center;
-    justify-content:center; min-width:2.2em; font-size:16px; }
+    justify-content:center; min-width:2.2em; font-size:16px; border-radius:6px !important;
+    padding:2px 5px !important; }
   /* 空きレーンも通常レーン行と同じ見た目に統一（破線/別背景をやめる。番号チップの色はそのまま）。 */
   .slot-row.slot-empty{ background:#fff !important; border:none !important;
     border-bottom:1px solid #f0f0f0 !important; border-radius:0 !important; }
   /* ★勝者（反映済みカードで勝った人＝○選択 or 1位）の行をハイライト。bracket/heat_tournament 共通。20261110 */
-  .slot-row.is-winner{ background:#fff8e1 !important; box-shadow:inset 4px 0 0 #d4a017 !important; }
+  .slot-row.is-winner{ background:#fff59d !important; }
   .slot-row.is-winner .slot-name{ font-weight:700; }
 </style>
 <div id="gwpip"><div class="gwpip-head"><span class="gwpip-dot"></span>GW アクティブ</div>
