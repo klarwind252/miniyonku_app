@@ -180,6 +180,9 @@ async def _post_ingest_work(store, db_path: str, race_id: int) -> None:
                         target_laps=race2["target_laps"], n_lanes=LANES,
                     )
                     await repo.update_status(race_id, status)
+                    # ★20261110：M4LAPS ON＋アクティブ選択中なら、クリーンな計測を自動反映。
+                    await _maybe_auto_apply(store, db, race_id, result2,
+                                            layout_elems, ev_rows, race2, repo)
             except Exception as e:
                 print(f"[timing] status judge failed race={race_id}: {type(e).__name__}: {e}", flush=True)
         finally:
@@ -194,6 +197,107 @@ async def _post_ingest_work(store, db_path: str, race_id: int) -> None:
         live_events.publish(store.id if store is not None else 0, "ta")
     except Exception:
         pass
+
+
+async def _maybe_auto_apply(store, db, race_id, result, layout_elems, event_rows, race_row, repo):
+    """M4LAPS ON＋アクティブレース選択中なら、クリーンな計測を自動でアクティブへ反映する（20261110）。
+
+    - 発火条件：M4LAPSライセンス有効／GWアクティブ設定あり／auto_clean（乱入なし・CO許容）。
+    - 冪等：この計測レースが既にどこか（heat_id/applied_group_id/applied_ht_group_id）へ
+      反映済みなら何もしない。
+    - 反映先に既に結果がある場合は上書きせず、保留（gw_auto_pending）に積んで
+      admin画面のダイアログに委ねる。
+    - 反映は手動と同じエンドポイント関数を force=True で呼ぶ（後処理・アクティブ移動も共通）。
+    - 全形式対応：予選リスト(heat)／勝ち抜け(ow-heat)／ヒートトーナメント(ht-group)／決勝(bracket)。
+    - 例外は握りつぶす（後処理本体を妨げない）。手動反映ボタンとPIP選択は従来どおり残る。
+    """
+    try:
+        from app.domain import m4laps_license
+        from app.infrastructure.db.repositories import gw_active_repo as _gwa
+
+        if not await m4laps_license.is_licensed(db):
+            return
+        act = await _gwa.get(db)
+        if not act:
+            return
+        # 乱入なし・クリーン判定（CO許容）。needs_review相当は手動に残す。
+        target_laps = race_row["target_laps"] if "target_laps" in race_row.keys() else None
+        if target_laps is None:
+            return
+        if not status_svc.auto_clean(result, layout_elems, event_rows, target_laps, LANES):
+            return
+        # この計測レースが既に反映済みなら何もしない（冪等）。
+        try:
+            async with db.execute(
+                "SELECT heat_id, applied_group_id, applied_ht_group_id FROM timing_races WHERE id = ?",
+                (race_id,)) as c:
+                tr = await c.fetchone()
+            if tr and (tr["heat_id"] or tr["applied_group_id"] or tr["applied_ht_group_id"]):
+                return
+        except Exception:
+            pass
+
+        kind, ref = act["kind"], act["ref_id"]
+        apply_path = None
+        handler = None
+        has_result = False
+
+        if kind == _gwa.KIND_BRACKET_GROUP:
+            apply_path = f"/api/timing/apply/bracket/{ref}"
+            handler = (apply_latest_to_bracket, {"group_id": ref})
+            async with db.execute(
+                "SELECT 1 FROM bracket_results WHERE group_id = ? LIMIT 1", (ref,)) as c:
+                has_result = bool(await c.fetchone())
+        elif kind == _gwa.KIND_HT_GROUP:
+            apply_path = f"/api/timing/apply/ht-group/{ref}"
+            handler = (apply_latest_to_ht_group, {"group_id": ref})
+            async with db.execute(
+                "SELECT 1 FROM ht_results WHERE group_id = ? LIMIT 1", (ref,)) as c:
+                has_result = bool(await c.fetchone())
+        elif kind == _gwa.KIND_HEAT:
+            # qualifying_type で heat / ow-heat を分岐。未知（タイムアタック等）は自動対象外。
+            async with db.execute(
+                "SELECT t.qualifying_type AS qt FROM heats h "
+                "JOIN tournaments t ON t.id = h.tournament_id WHERE h.id = ?", (ref,)) as c:
+                hrow = await c.fetchone()
+            qt = hrow["qt"] if hrow else None
+            if qt == "order_winner":
+                apply_path = f"/api/timing/apply/ow-heat/{ref}"
+                handler = (apply_latest_to_ow_heat, {"heat_id": ref})
+            elif qt in ("none", "none_roundrobin", "roundrobin"):
+                apply_path = f"/api/timing/apply/heat/{ref}"
+                handler = (apply_latest_to_heat, {"heat_id": ref})
+            else:
+                return   # タイムアタック等は自動対象外（手動反映に任せる）
+            # 結果有無：status='done' または heat_results あり
+            async with db.execute("SELECT status FROM heats WHERE id = ?", (ref,)) as c:
+                st = await c.fetchone()
+            done = bool(st and (st["status"] or "") == "done")
+            async with db.execute(
+                "SELECT 1 FROM heat_results hr JOIN heat_lanes hl ON hl.id = hr.heat_lane_id "
+                "WHERE hl.heat_id = ? LIMIT 1", (ref,)) as c:
+                hasr = bool(await c.fetchone())
+            has_result = done or hasr
+        else:
+            return
+
+        label = await _gwa._race_label(db, kind, ref)
+
+        if has_result:
+            # 上書きはせず、admin画面の確認ダイアログに委ねる（Q2）。
+            await _gwa.set_auto_pending(db, kind, ref, race_id, apply_path, label)
+            return
+
+        # 反映実行（結果無し＝警告なし。force=True。ハンドラ内で後処理＋アクティブ移動も走る）。
+        fn, kw = handler
+        try:
+            await fn(race_id=race_id, force=True, db=db, _guard=True, **kw)
+            print(f"[timing] auto-apply ok race={race_id} kind={kind} ref={ref}", flush=True)
+        except Exception as e:
+            print(f"[timing] auto-apply exec failed race={race_id} kind={kind} ref={ref}: "
+                  f"{type(e).__name__}: {e}", flush=True)
+    except Exception as e:
+        print(f"[timing] auto-apply error race={race_id}: {type(e).__name__}: {e}", flush=True)
 
 
 @router.post("/api/timing/races/{race_id}/events")
@@ -815,6 +919,9 @@ async def apply_latest_to_heat(
     if res.get("error"):
         raise HTTPException(status_code=400,
                             detail="このヒートのレーン割当が見つかりません")
+    # 反映＝確定。アクティブを次のレースへ自動移動（手動／自動反映で統一）。失敗は無視。
+    from app.infrastructure.db.repositories import gw_active_repo as _gwa
+    await _gwa.advance_after_confirm(db, _gwa.KIND_HEAT, heat_id)
     return JSONResponse({"ok": True, "race_id": race["id"], **res})
 
 
@@ -876,6 +983,10 @@ async def apply_latest_to_bracket(
     if res.get("error"):
         raise HTTPException(status_code=400,
                             detail="このグループの出走枠が見つかりません")
+
+    # 反映＝確定。アクティブを次のレースへ自動移動（手動／自動反映で統一）。失敗は無視。
+    from app.infrastructure.db.repositories import gw_active_repo as _gwa
+    await _gwa.advance_after_confirm(db, _gwa.KIND_BRACKET_GROUP, group_id)
 
     # --- 手動で勝者を決めたときと同じ後処理を行う ---
     # ⚠ これを呼ばないと勝者が次ラウンドへ進まず、トーナメントが停止する。
@@ -1016,6 +1127,10 @@ async def apply_latest_to_ht_group(
     except Exception as e:
         return JSONResponse({"ok": True, "race_id": race["id"],
                              "saved": res.get("saved", 0), "advance_error": str(e)})
+
+    # 反映＝確定。アクティブを次のレースへ自動移動（手動／自動反映で統一）。失敗は無視。
+    from app.infrastructure.db.repositories import gw_active_repo as _gwa
+    await _gwa.advance_after_confirm(db, _gwa.KIND_HT_GROUP, group_id)
 
     # 参加者向けHTMLの再配信（bracket 反映と同じ）
     try:
@@ -1168,6 +1283,10 @@ async def apply_latest_to_ow_heat(
         await db.commit()
     except Exception:
         pass
+
+    # 反映＝確定。アクティブを次のレースへ自動移動（手動／自動反映で統一）。失敗は無視。
+    from app.infrastructure.db.repositories import gw_active_repo as _gwa
+    await _gwa.advance_after_confirm(db, _gwa.KIND_HEAT, heat_id)
 
     res["race_id"] = race["id"]
     res["unmatched_lanes"] = m.get("unmatched_lanes", [])
@@ -1650,6 +1769,30 @@ async def active_race_read(
     # ★require_m4laps は外す（オンプレ/クラウド両対応。中身はレーサー名のみで公開viewと同等）。
     from app.infrastructure.db.repositories import gw_active_repo
     return JSONResponse(await gw_active_repo.resolve_lanes(db))
+
+
+# ── 自動反映の「上書き確認」保留（admin PIPのダイアログ用）。20261110 ──
+@router.get("/api/timing/auto-apply/pending")
+async def auto_apply_pending(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """自動反映が『反映先に既に結果あり』で保留になっている場合、その内容を返す。
+       admin画面のPIPがポーリングし、上書き確認ダイアログを出す。無ければ pending:false。"""
+    from app.infrastructure.db.repositories import gw_active_repo
+    p = await gw_active_repo.get_auto_pending(db)
+    if not p:
+        return JSONResponse({"pending": False})
+    return JSONResponse({"pending": True, **p})
+
+
+@router.post("/api/timing/auto-apply/dismiss")
+async def auto_apply_dismiss(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """保留中の自動反映ダイアログを閉じる（キャンセル／上書き実行後）。同じ計測は再通知しない。"""
+    from app.infrastructure.db.repositories import gw_active_repo
+    await gw_active_repo.dismiss_auto_pending(db)
+    return JSONResponse({"ok": True})
 
 
 def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> list[dict]:

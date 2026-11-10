@@ -1811,6 +1811,31 @@ function _showPubToast(msg) {
   }
   function poll(){ fetch(GWPFX+'/'+'api/timing/active-race',{cache:'no-store'})
     .then(function(r){return r.ok?r.json():null;}).then(render).catch(function(){}); }
+  // ★自動反映が「反映先に既に結果あり」で保留になっていたら、上書き確認ダイアログを出す。
+  //   GET読取は active-race と同じ GWPFX 接頭辞、反映/解除POSTは手動反映ボタンと同じ接頭辞なし。
+  var _pendShownRace=null;
+  function pollPending(){
+    fetch(GWPFX+'/'+'api/timing/auto-apply/pending',{cache:'no-store'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(p){
+        if(!p||!p.pending){ _pendShownRace=null; return; }
+        if(_pendShownRace===p.race_id) return;     // 同じ計測は一度だけ確認する
+        _pendShownRace=p.race_id;
+        var msg='アクティブレース「'+(p.label||'')+'」には既に結果が入っています。\n'
+               +'ラップタイマーの最新の計測結果で上書きしますか？';
+        if(window.confirm(msg)){
+          fetch(p.apply_path+'?race_id='+p.race_id+'&force=true',{method:'POST'})
+            .then(function(r){ return r.ok?r.json():null; })
+            .then(function(){
+              fetch('/api/timing/auto-apply/dismiss',{method:'POST'}).catch(function(){});
+              location.reload();
+            })
+            .catch(function(e){ alert('上書き反映に失敗しました: '+e); });
+        } else {
+          fetch('/api/timing/auto-apply/dismiss',{method:'POST'}).catch(function(){});
+        }
+      }).catch(function(){});
+  }
   // クリックでアクティブ化/解除（トグル）。各テンプレの # / グループが呼ぶ。
   //  ※pathname判定の外で必ず定義する（onclickが undefined にならないように）。失敗は可視化。
   window.gwToggleActive=function(kind, ref){
@@ -1832,6 +1857,7 @@ function _showPubToast(msg) {
   pip.style.display='block';   // 大会ページでは即表示（fetch前でも場所が分かる）
   body.innerHTML='<div class="gwpip-none">読込中…</div>';
   poll(); setInterval(poll, 4000);
+  pollPending(); setInterval(pollPending, 4000);   // 自動反映の上書き確認ダイアログ
 })();
 </script>
 

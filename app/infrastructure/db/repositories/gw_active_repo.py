@@ -54,6 +54,60 @@ async def clear(db) -> None:
     await db.commit()
 
 
+# ── 自動反映の「上書き確認」保留（20261110）─────────────────────────────────
+#  自動反映先に既に結果がある場合、上書きせずこのテーブルへ保留し、admin画面の
+#  PIPがポーリングしてダイアログを出す（上書き→force反映／キャンセル→dismiss）。
+#  dismissed=1 は「同じ計測レースは再通知しない」フラグ（キャンセル後の再ナグ防止）。
+async def ensure_pending(db) -> None:
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS gw_auto_pending ("
+        " id INTEGER PRIMARY KEY CHECK (id = 1),"
+        " kind TEXT, ref_id INTEGER, race_id INTEGER,"
+        " apply_path TEXT, label TEXT,"
+        " dismissed INTEGER DEFAULT 0, updated_at TEXT)"
+    )
+
+
+async def set_auto_pending(db, kind, ref_id, race_id, apply_path, label) -> None:
+    await ensure_pending(db)
+    # 同じ計測レースを一度キャンセル済みなら再通知しない。
+    async with db.execute(
+        "SELECT race_id, dismissed FROM gw_auto_pending WHERE id = 1") as cur:
+        row = await cur.fetchone()
+    if row and row["race_id"] == int(race_id) and (row["dismissed"] or 0) == 1:
+        return
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    await db.execute(
+        "INSERT INTO gw_auto_pending (id, kind, ref_id, race_id, apply_path, label, dismissed, updated_at) "
+        "VALUES (1, ?, ?, ?, ?, ?, 0, ?) "
+        "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, ref_id=excluded.ref_id, "
+        "race_id=excluded.race_id, apply_path=excluded.apply_path, label=excluded.label, "
+        "dismissed=0, updated_at=excluded.updated_at",
+        (kind, int(ref_id), int(race_id), apply_path, label or "", now),
+    )
+    await db.commit()
+
+
+async def get_auto_pending(db) -> dict | None:
+    """未応答の保留（dismissed=0）を返す。無ければ None。"""
+    await ensure_pending(db)
+    async with db.execute(
+        "SELECT kind, ref_id, race_id, apply_path, label FROM gw_auto_pending "
+        "WHERE id = 1 AND dismissed = 0") as cur:
+        row = await cur.fetchone()
+    if not row or not row["kind"]:
+        return None
+    return {"kind": row["kind"], "ref_id": row["ref_id"], "race_id": row["race_id"],
+            "apply_path": row["apply_path"], "label": row["label"] or ""}
+
+
+async def dismiss_auto_pending(db) -> None:
+    """ダイアログをキャンセル／処理済み＝通知を閉じる（race_idは残し再ナグ防止）。"""
+    await ensure_pending(db)
+    await db.execute("UPDATE gw_auto_pending SET dismissed = 1 WHERE id = 1")
+    await db.commit()
+
+
 async def toggle(db, kind: str, ref_id: int) -> bool:
     """同じ対象を再クリック→解除（False）、別対象/未設定→その対象をアクティブ化（True）。"""
     cur = await get(db)
@@ -128,11 +182,20 @@ async def _heat_next_active(db, heat_id: int):
     if not h:
         return None
     tid, rno, hno = h["tournament_id"], h["round_no"], h["heat_no"]
+    # 確定＝status='done' または heat_results が入っている（＝反映ボタン/手入力で結果あり）。
+    #  ユーザー定義「結果が入力された or 反映ボタンを押した＝確定」に合わせる。
+    #  ラップタイマーの反映(apply_race_to_heat)は status を done にせず結果だけ入れるため、
+    #  heat_results の有無も確定条件に含める。
     async with db.execute(
-        "SELECT id, heat_no, status FROM heats WHERE tournament_id = ? AND round_no = ? "
-        "ORDER BY heat_no, id", (tid, rno)) as c:
+        "SELECT h.id AS id, h.heat_no AS heat_no, h.status AS status, "
+        "  (SELECT COUNT(*) FROM heat_results hr JOIN heat_lanes hl ON hl.id = hr.heat_lane_id "
+        "   WHERE hl.heat_id = h.id) AS nres "
+        "FROM heats h WHERE h.tournament_id = ? AND h.round_no = ? "
+        "ORDER BY h.heat_no, h.id", (tid, rno)) as c:
         rows = await c.fetchall()
-    unconf = [r for r in rows if (r["status"] or "") != "done"]
+    def _done(r):
+        return (r["status"] or "") == "done" or (r["nres"] or 0) > 0
+    unconf = [r for r in rows if not _done(r)]
     after = [r for r in unconf if r["heat_no"] is not None and hno is not None and r["heat_no"] > hno]
     if after:
         return (KIND_HEAT, after[0]["id"])

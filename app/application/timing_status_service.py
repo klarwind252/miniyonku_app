@@ -102,3 +102,41 @@ def judge_status(result, layout_elems: list, event_rows,
 
     # それ以外はすべて要確認
     return STATUS_NEEDS_REVIEW, detail
+
+
+def auto_clean(result, layout_elems: list, event_rows,
+               target_laps: int, n_lanes: int) -> bool:
+    """自動反映の対象にしてよい「乱入なし・クリーン」判定（20261110）。
+
+    judge_status の confirmed（全車完走クリーン／全車CO）より広く、
+    「途中COがあっても乱入が無く、完走車のデータがクリーン」なら True を返す。
+    この関数は status（表示用）は変えず、自動反映の発火可否だけに使う。
+
+    クリーンの定義:
+      - どのゲートも実通過が期待を超えない（＝余計な打刻／phantom／乱入が無い。
+        COは通過が減るだけなので許容）
+      - 完走した車（total_time_us あり）は欠測フラグ無し、かつ規定周回を完了
+      - COした車（total_time_us 無し）は許容（周回不足なだけ）
+
+    判定不能・例外時は False（安全側＝自動反映しない）。
+    """
+    try:
+        if result is None:
+            return False
+        exp = expected_counts(layout_elems, target_laps, n_lanes)
+        act = actual_counts(event_rows)
+        # 乱入／phantom：どこかのゲートで実通過が期待を上回る
+        for nid, a in act.items():
+            if a > exp.get(nid, 0):
+                return False
+        # 完走車のクリーンさ（欠測なし・規定周回）
+        for m in result.machines.values():
+            if m.total_time_us is not None:            # 完走車
+                if getattr(m, "missing", False):
+                    return False
+                cl = getattr(m, "completed_laps", None)
+                if cl is not None and cl != target_laps:
+                    return False
+        return True
+    except Exception:
+        return False
