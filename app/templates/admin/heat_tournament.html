@@ -409,7 +409,7 @@
       {% for slot in slots %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
-      <div class="slot-row">
+      <div class="slot-row" data-lane="{{ slot.slot_no }}">
         <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
           {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
         </div>
@@ -533,7 +533,7 @@
       {% for slot in slots %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
-      <div class="slot-row">
+      <div class="slot-row" data-lane="{{ slot.slot_no }}">
         <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
           {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
         </div>
@@ -627,7 +627,7 @@
     {% for slot in slots %}
     {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
     {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
-    <div class="slot-row">
+    <div class="slot-row" data-lane="{{ slot.slot_no }}">
       <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
         {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
       </div>

@@ -1762,13 +1762,31 @@ function _showPubToast(msg) {
   tr.race-row.gw-active-on{ background:#fff7cc !important; }
   .bracket-group.gw-active-on{ outline:3px solid #e67e22 !important; outline-offset:-1px;
     box-shadow:0 0 0 3px rgba(230,126,34,.25) !important; }
+  /* ★結果入力カードのレーン行：レーン色の薄い背景（1青/2緑/3黄）＋操作しやすい高さ。
+     全admin共通（ブラケット/ヒートT/予選RR表）・20261110 */
+  .slot-row[data-lane="1"], td.nr-lane[data-lane-no="1"]{ background:#e8f1ff !important; }
+  .slot-row[data-lane="2"], td.nr-lane[data-lane-no="2"]{ background:#e7f7ec !important; }
+  .slot-row[data-lane="3"], td.nr-lane[data-lane-no="3"]{ background:#fff6d6 !important; }
+  .slot-row[data-lane="4"]{ background:#fdeceb !important; }
+  .slot-row[data-lane="5"]{ background:#f2f3f5 !important; }
+  /* 縦に大きく＝ドラッグ/タップしやすく（レーン変更しやすい） */
+  .slot-row[data-lane]{ min-height:46px; padding-top:9px !important; padding-bottom:9px !important; }
+  /* レーン番号の掴み口を行の全高に広げる（並び替え可能な行だけ） */
+  .slot-row[data-lane] .lane-no-card.lane-handle{ align-self:stretch; display:flex;
+    align-items:center; justify-content:center; min-width:2.2em; font-size:16px; }
+  td.nr-lane{ padding-top:8px !important; padding-bottom:8px !important; }
 </style>
 <div id="gwpip"><div class="gwpip-head"><span class="gwpip-dot"></span>GW アクティブ</div>
   <div class="gwpip-body" id="gwpipBody"></div></div>
 <script>
 (function(){
-  var onTourney = /\/admin\/tournaments\/\d+/.test(location.pathname);
-  var GWPFX = {{ (request.scope.get('root_path', '') if request else '') | tojson }};
+  // ★スラッグ有無・別ドメイン対応：前置き(PFX)とtidは「ブラウザの実URL」から実測する。
+  //   例 /arcadebase/admin/tournaments/16/... → PFX='/arcadebase', TID='16'
+  //      /admin/tournaments/16/...            → PFX='',            TID='16'
+  //   root_path設定に依存せず、相対URLなのでドメインも自動追従。
+  var mm = location.pathname.match(/^(.*?)\/admin\/tournaments\/(\d+)/);
+  var onTourney = !!mm;
+  var PFX = mm ? mm[1] : {{ (request.scope.get('root_path', '') if request else '') | tojson }};
   var pip=document.getElementById('gwpip'), body=document.getElementById('gwpipBody');
   var LC=['#2e6ede','#2e9e46','#c9a400','#e24b4a','#8a8f98'];   // 1青2緑3黄4赤5グレー
   function esc(s){ return (''+s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -1794,14 +1812,14 @@ function _showPubToast(msg) {
           +'<span class="gwpip-name">'+(nm?esc(nm):'<span class="gwpip-dash">ー</span>')+'</span></div>'; }
     body.innerHTML=html; applyHL(d);
   }
-  function poll(){ fetch(GWPFX+'/'+'api/timing/active-race',{cache:'no-store'})
+  function poll(){ fetch(PFX+'/'+'api/timing/active-race',{cache:'no-store'})
     .then(function(r){return r.ok?r.json():null;}).then(render).catch(function(){}); }
   // クリックでアクティブ化/解除（トグル）。各テンプレの # / グループが呼ぶ。
   //  ※pathname判定の外で必ず定義する（onclickが undefined にならないように）。失敗は可視化。
   window.gwToggleActive=function(kind, ref){
-    var m=location.pathname.match(/\/admin\/tournaments\/(\d+)/);
+    var m=location.pathname.match(/^(.*?)\/admin\/tournaments\/(\d+)/);
     if(!m){ alert('この画面ではアクティブ化できません（大会ページで操作してください）'); return; }
-    var url=GWPFX+'/'+'admin/tournaments/'+m[1]+'/gw-active';
+    var url=m[1]+'/admin/tournaments/'+m[2]+'/gw-active';   // 前置きは実URLから実測
     fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
                body:JSON.stringify({kind:kind, ref_id:ref})})
       .then(function(r){

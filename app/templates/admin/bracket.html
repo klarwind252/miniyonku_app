@@ -1282,7 +1282,7 @@ window.initBracketConnectors = initBracketConnectors;
     {# 順位バッジ：ranks に入っていれば数字。名前があるのに順位が無い枠は完走できなかった扱い＝CO。 #}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
     {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
-    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}" data-lane="{{ _lane_label }}"{% endif %}>
+    <div class="slot-row" data-lane="{{ _lane_label }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
       <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ _lane_label }}コース{% endif %}">{{ _lane_label }}</div>
       {% if m4_on %}
       {% if cur_rank %}
@@ -1381,7 +1381,7 @@ window.initBracketConnectors = initBracketConnectors;
     {% if slot %}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
     {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
-    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}" data-lane="{{ _lane_label }}"{% endif %}>
+    <div class="slot-row" data-lane="{{ _lane_label }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
       <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ _lane_label }}コース{% endif %}">{{ _lane_label }}</div>
       {% if m4_on %}
       {% if cur_rank %}
@@ -1465,7 +1465,7 @@ window.initBracketConnectors = initBracketConnectors;
     {% if slot %}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
     {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
-    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}" data-lane="{{ _lane_label }}"{% endif %}>
+    <div class="slot-row" data-lane="{{ _lane_label }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
       <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ _lane_label }}コース{% endif %}">{{ _lane_label }}</div>
       {% if m4_on %}
       {% if cur_rank %}
@@ -1542,7 +1542,7 @@ window.initBracketConnectors = initBracketConnectors;
     {% if slot %}
     {% set cur_rank = ranks.get(slot.slot_id) if ranks else None %}
     {% set is_co = (slot.name and not cur_rank and not slot.total_time and (slots|selectattr('total_time')|list|length) > 0) %}
-    <div class="slot-row"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}" data-lane="{{ _lane_label }}"{% endif %}>
+    <div class="slot-row" data-lane="{{ _lane_label }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
       <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ _lane_label }}コース{% endif %}">{{ _lane_label }}</div>
       {% if m4_on %}
       {% if cur_rank %}
