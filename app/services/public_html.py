@@ -103,6 +103,15 @@ def _patch_html_for_static(html: str, slug: str = "", is_finalized: bool = False
     )
     if _rsm:
         racer_stats_js = _rsm.group(0)
+        # 公開HTMLは日替わり2語URL（/{token}）で配信されるが、openRacerStats は
+        # fetch 先を location.pathname（＝その日替わりトークン）から組み立てており、
+        # /{token}/view/tournament/.../stats を叩いて失敗する（他 fetch は /{slug}/... で動作）。
+        # ここで base をサーバ既知の正しいプレフィックス（slug有→/{slug}／既定店舗→空）へ固定する。
+        _rs_prefix = f"/{slug}" if slug else ""
+        racer_stats_js = racer_stats_js.replace(
+            r"var base=location.pathname.replace(/\/view\/.*$/,'').replace(/\/$/,'');",
+            "var base='%s';" % _rs_prefix,
+        )
 
     # 全<script>タグを除去
     patched = _re.sub(r'<script[^>]*>.*?</script>', '', html, flags=_re.DOTALL)
