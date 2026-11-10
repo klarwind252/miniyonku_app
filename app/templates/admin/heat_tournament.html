@@ -401,7 +401,7 @@
       </div>
       {% if m4_on %}
       <div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
-        {% if result %}<button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
+        {% if result %}<button type="button" class="m4-correct-btn" onclick="openCorrectModal('ht',{{ t.id }},{{ g.id }})" title="各レーンのタイム・順位を訂正します">訂正</button><button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
         {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
       </div>
       {% endif %}
@@ -526,7 +526,7 @@
       </div>
       {% if m4_on %}
       <div style="display:flex;justify-content:flex-end;margin:-2px 0 8px">
-        {% if result %}<button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
+        {% if result %}<button type="button" class="m4-correct-btn" onclick="openCorrectModal('ht',{{ t.id }},{{ g.id }})" title="各レーンのタイム・順位を訂正します">訂正</button><button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>
         {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
       </div>
       {% endif %}

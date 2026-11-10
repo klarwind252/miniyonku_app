@@ -5013,6 +5013,138 @@ async def ht_save_result(tid: int, heat_no: int, group_id: int, request: Request
     return JSONResponse(result)
 
 
+# ── 訂正（タイム・順位）モーダル用：ヒートトーナメント / 予選ヒート（20261110）──
+@router.get("/{tid}/ht/group/{group_id}/detail")
+async def ht_group_detail(tid: int, group_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """訂正モーダル用：ht各スロットの 名前/順位/タイム を返す。"""
+    async with db.execute(
+        "SELECT hs.id AS slot_id, hs.slot_no AS slot_no, COALESCE(r.name,'') AS name, "
+        "       hsr.rank AS rank, hsr.total_time AS total_time "
+        "FROM ht_slots hs "
+        "LEFT JOIN entries e ON e.id=hs.entry_id "
+        "LEFT JOIN racers r ON r.id=e.racer_id "
+        "LEFT JOIN ht_slot_ranks hsr ON hsr.group_id=hs.group_id AND hsr.slot_id=hs.id "
+        "WHERE hs.group_id=? ORDER BY hs.slot_no, hs.id", (group_id,)) as c:
+        rows = await c.fetchall()
+    slots = [{"slot_id": r["slot_id"], "slot_no": r["slot_no"], "name": r["name"],
+              "rank": r["rank"], "total_time": r["total_time"]} for r in rows]
+    return JSONResponse({"ok": True, "slots": slots})
+
+
+@router.post("/{tid}/ht/group/{group_id}/correct")
+async def ht_group_correct(tid: int, group_id: int, request: Request,
+                           db: aiosqlite.Connection = Depends(get_db)):
+    """ht訂正：順位・タイムを一括入れ直し→勝者確定→_ht_finalize_group で後処理。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    items = body.get("slots") or []
+    async with db.execute(
+        "SELECT hr.round_type, hr.round_no, hr.id as round_id, hr.heat_no AS heat_no, "
+        "       COALESCE(hr.section_no,1) as section_no "
+        "FROM ht_groups hg JOIN ht_rounds hr ON hr.id=hg.round_id WHERE hg.id=?", (group_id,)) as c:
+        rnd = await c.fetchone()
+    if not rnd:
+        return JSONResponse({"ok": False})
+    await db.execute("DELETE FROM ht_slot_ranks WHERE group_id=?", (group_id,))
+    winner_slot_id = None
+    for it in items:
+        try:
+            sid = int(it.get("slot_id"))
+        except Exception:
+            continue
+        rk = it.get("rank"); tt = it.get("total_time")
+        try: rk = int(rk) if rk not in (None, "", "-") else None
+        except Exception: rk = None
+        try: tt = float(tt) if tt not in (None, "") else None
+        except Exception: tt = None
+        if rk is None and tt is None:
+            continue
+        await db.execute("INSERT INTO ht_slot_ranks (group_id, slot_id, rank, total_time) VALUES (?,?,?,?)",
+                         (group_id, sid, rk, tt))
+        if rk == 1:
+            winner_slot_id = sid
+    await db.execute("DELETE FROM ht_results WHERE group_id=?", (group_id,))
+    if winner_slot_id is not None:
+        await db.execute("INSERT INTO ht_results (group_id, winner_slot_id) VALUES (?,?)",
+                         (group_id, winner_slot_id))
+    await db.commit()
+    try:
+        await _ht_finalize_group(tid, rnd["heat_no"], group_id, dict(rnd), winner_slot_id, db)
+    except Exception as e:
+        print(f"[ht] correct finalize failed g={group_id}: {type(e).__name__}: {e}", flush=True)
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})
+
+
+@router.get("/{tid}/heat/{heat_id}/detail")
+async def heat_detail(tid: int, heat_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """訂正モーダル用：予選ヒート各レーンの 名前/順位/タイム を返す（slot_id=heat_lane_id）。"""
+    async with db.execute(
+        "SELECT hl.id AS slot_id, hl.lane_no AS slot_no, COALESCE(r.name,'') AS name, "
+        "       hr.rank AS rank, hr.total_time AS total_time "
+        "FROM heat_lanes hl "
+        "LEFT JOIN entries e ON e.id=hl.entry_id "
+        "LEFT JOIN racers r ON r.id=e.racer_id "
+        "LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id "
+        "WHERE hl.heat_id=? ORDER BY hl.lane_no, hl.id", (heat_id,)) as c:
+        rows = await c.fetchall()
+    slots = [{"slot_id": r["slot_id"], "slot_no": r["slot_no"], "name": r["name"],
+              "rank": r["rank"], "total_time": r["total_time"]} for r in rows]
+    return JSONResponse({"ok": True, "slots": slots})
+
+
+@router.post("/{tid}/heat/{heat_id}/correct")
+async def heat_correct(tid: int, heat_id: int, request: Request,
+                       db: aiosqlite.Connection = Depends(get_db)):
+    """予選ヒート訂正：各レーンの順位・タイムを入れ直す（CO＝順位なし・タイムなし）。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    items = body.get("slots") or []
+    async with db.execute("SELECT id FROM heat_lanes WHERE heat_id=?", (heat_id,)) as c:
+        lane_ids = [r["id"] for r in await c.fetchall()]
+    if lane_ids:
+        ph = ",".join("?" * len(lane_ids))
+        await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN ({ph})", lane_ids)
+    for it in items:
+        try:
+            lid = int(it.get("slot_id"))   # heat_lane_id
+        except Exception:
+            continue
+        if lid not in lane_ids:
+            continue
+        rk = it.get("rank"); tt = it.get("total_time")
+        try: rk = int(rk) if rk not in (None, "", "-") else None
+        except Exception: rk = None
+        try: tt = float(tt) if tt not in (None, "") else None
+        except Exception: tt = None
+        if rk is None and tt is None:
+            continue   # CO＝結果行を作らない（画面でCO表示）
+        # win: 1位=勝(1) / 2位以下=負(0) / 順位なし(CO)=null。総当たりの○×・順位制どちらも対応。
+        win = 1 if rk == 1 else (0 if rk is not None else None)
+        await db.execute(
+            "INSERT INTO heat_results (heat_lane_id, rank, total_time, win) VALUES (?,?,?,?)",
+            (lid, rk, tt, win))
+    try:
+        await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
+    except Exception:
+        pass
+    await db.commit()
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})
+
+
 async def _ht_finalize_group(tid: int, heat_no: int, group_id: int,
                              rnd: dict, winner_slot_id, db) -> dict:
     """ヒートトーナメントのグループ結果を保存した後の共通後処理。

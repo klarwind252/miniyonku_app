@@ -1458,6 +1458,9 @@ document.addEventListener('DOMContentLoaded', function(){
             {% if is_finalized %}
             <span style="font-size:11px;color:#95a5a6">確定済</span>
             {% else %}
+            <button type="button" class="m4-correct-btn sm"
+                    onclick="openCorrectModal('heat',{{ t.id }},{{ heat.id }})"
+                    title="各レーンのタイム・順位を訂正します">訂正</button>
             <button type="button" id="status-{{ heat.id }}"
                     class="m4-undo-btn"
                     onclick="resetRace({{ heat.id }}, {{ t.id }})"
