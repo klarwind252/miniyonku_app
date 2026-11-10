@@ -1633,8 +1633,8 @@ async def layout_for_gw(
 async def current_race_for_gw(
     db: aiosqlite.Connection = Depends(get_db),
     x_timing_token: str | None = Header(default=None),
-    _guard: bool = Depends(require_m4laps),
 ):
+    # ★require_m4laps は外す（オンプレ=IS_CLOUD偽でもGWが名前を取れるように）。認証はトークンで担保。
     _check_token(x_timing_token)
     from app.infrastructure.db.repositories import gw_active_repo
     data = await gw_active_repo.resolve_lanes(db)
@@ -1646,8 +1646,8 @@ async def current_race_for_gw(
 @router.get("/api/timing/active-race")
 async def active_race_read(
     db: aiosqlite.Connection = Depends(get_db),
-    _guard: bool = Depends(require_m4laps),
 ):
+    # ★require_m4laps は外す（オンプレ/クラウド両対応。中身はレーサー名のみで公開viewと同等）。
     from app.infrastructure.db.repositories import gw_active_repo
     return JSONResponse(await gw_active_repo.resolve_lanes(db))
 

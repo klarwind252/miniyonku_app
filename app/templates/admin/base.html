@@ -1750,13 +1750,14 @@ function _showPubToast(msg) {
     box-shadow:0 6px 20px rgba(0,0,0,.22); overflow:hidden; color:#2c3e50; }
   #gwpip .gwpip-head{ display:flex; align-items:center; gap:5px; height:17px; line-height:17px;
     padding:0 7px; background:#2e6ede; color:#fff; font-size:10px; font-weight:bold; overflow:hidden; }
-  #gwpip .gwpip-dot{ width:7px; height:7px; border-radius:50%; background:#2ecc71;
-    box-shadow:0 0 6px rgba(46,204,113,.9); flex-shrink:0; }
+  #gwpip .gwpip-dot{ width:7px; height:7px; border-radius:50%; background:#cdd2d8; flex-shrink:0; }
+  #gwpip.on .gwpip-dot{ background:#2ecc71; box-shadow:0 0 6px rgba(46,204,113,.9); }
   #gwpip .gwpip-body{ padding:4px 6px; }
   #gwpip .gwpip-row{ display:flex; align-items:center; gap:7px; height:22px; }
   #gwpip .gwpip-num{ font-weight:bold; font-size:14px; width:12px; text-align:center; }
   #gwpip .gwpip-name{ font-size:15px; white-space:nowrap; overflow:hidden; }
   #gwpip .gwpip-dash{ color:#b0b4ba; }
+  #gwpip .gwpip-none{ padding:6px 2px; font-size:11px; color:#8a8f98; line-height:1.4; text-align:center; }
   /* アクティブ対象のハイライト（リスト行=淡い黄 / グループ枠=オレンジ太枠） */
   tr.race-row.gw-active-on{ background:#fff7cc !important; }
   .bracket-group.gw-active-on{ outline:3px solid #e67e22 !important; outline-offset:-1px;
@@ -1766,7 +1767,7 @@ function _showPubToast(msg) {
   <div class="gwpip-body" id="gwpipBody"></div></div>
 <script>
 (function(){
-  if(!/\/admin\/tournaments\/\d+/.test(location.pathname)) return;   // 大会(予選/決勝)ページのみ
+  var onTourney = /\/admin\/tournaments\/\d+/.test(location.pathname);
   var GWPFX = {{ (request.scope.get('root_path', '') if request else '') | tojson }};
   var pip=document.getElementById('gwpip'), body=document.getElementById('gwpipBody');
   var LC=['#2e6ede','#2e9e46','#c9a400','#e24b4a','#8a8f98'];   // 1青2緑3黄4赤5グレー
@@ -1778,8 +1779,13 @@ function _showPubToast(msg) {
     if(el) el.classList.add('gw-active-on');
   }
   function render(d){
-    if(!d||!d.active){ pip.style.display='none'; applyHL(null); return; }
-    pip.style.display='block';
+    pip.style.display='block';   // 大会ページでは常時表示（場所が分かるように）
+    if(!d||!d.active){
+      pip.classList.remove('on');
+      body.innerHTML='<div class="gwpip-none">アクティブなし<br>#／グループをクリック</div>';
+      applyHL(null); return;
+    }
+    pip.classList.add('on');
     var byLane={}; (d.lanes||[]).forEach(function(l){ byLane[l.lane]=l.kana||''; });
     var n=3; (d.lanes||[]).forEach(function(l){ if(l.lane>n) n=l.lane; }); if(n>5)n=5;
     var html='';
@@ -1791,12 +1797,25 @@ function _showPubToast(msg) {
   function poll(){ fetch(GWPFX+'/'+'api/timing/active-race',{cache:'no-store'})
     .then(function(r){return r.ok?r.json():null;}).then(render).catch(function(){}); }
   // クリックでアクティブ化/解除（トグル）。各テンプレの # / グループが呼ぶ。
+  //  ※pathname判定の外で必ず定義する（onclickが undefined にならないように）。失敗は可視化。
   window.gwToggleActive=function(kind, ref){
-    var m=location.pathname.match(/\/admin\/tournaments\/(\d+)/); if(!m) return;
-    fetch(GWPFX+'/'+'admin/tournaments/'+m[1]+'/gw-active',
-      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,ref_id:ref})})
-      .then(function(r){return r.json();}).then(render).catch(function(){});
+    var m=location.pathname.match(/\/admin\/tournaments\/(\d+)/);
+    if(!m){ alert('この画面ではアクティブ化できません（大会ページで操作してください）'); return; }
+    var url=GWPFX+'/'+'admin/tournaments/'+m[1]+'/gw-active';
+    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+               body:JSON.stringify({kind:kind, ref_id:ref})})
+      .then(function(r){
+        if(!r.ok){ console.error('[GW] activate HTTP', r.status, url);
+                   alert('アクティブ化に失敗しました: HTTP '+r.status+'\n'+url); return null; }
+        return r.json();
+      })
+      .then(function(d){ if(d) render(d); })
+      .catch(function(e){ console.error('[GW] activate error', e);
+                          alert('アクティブ化に失敗（通信エラー）: '+e); });
   };
+  if(!onTourney) return;   // PIP表示とポーリングは大会ページのみ（gwToggleActiveは上で定義済み）
+  pip.style.display='block';   // 大会ページでは即表示（fetch前でも場所が分かる）
+  body.innerHTML='<div class="gwpip-none">読込中…</div>';
   poll(); setInterval(poll, 4000);
 })();
 </script>
