@@ -223,11 +223,14 @@ def _rtype_pri(rt) -> int:
     return _RTYPE_PRI.get(rt, 0)
 
 
-async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_tbl, ranks_tbl):
+async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_tbl, ranks_tbl,
+                             results_tbl=None):
     """ht_group / bracket_group 共通：トーナメント全体を優先度順に並べて巡回。
        優先度＝(ラウンド種別, round_no, group_no)。種別は通常→敗者復活→3位決定→決勝。
        確定したグループの次の未確定へ、末尾なら先頭の未確定へ巡回。全確定→None（待機）。
-       確定判定＝そのグループに結果（ranks_tbl）が1件でもあるか。"""
+       確定判定＝そのグループに ranks_tbl もしくは results_tbl の行が1件でもあるか。
+       （★通常ラウンドの手動確定は bracket_results＝勝者だけ書き bracket_slot_ranks は書かないため、
+         results_tbl も見ないと「確定済みなのに未確定」と誤判定し、確定済み組へ巡回してしまう。）"""
     # 確定グループの所属トーナメント
     async with db.execute(
         f"SELECT rd.tournament_id FROM {groups_tbl} g JOIN {rounds_tbl} rd ON rd.id = g.round_id "
@@ -236,11 +239,14 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     if not g0:
         return None
     tid = g0["tournament_id"]
+    # 確定状況＝ranks_tbl または results_tbl に行があるか
+    _res_sql = (f" + (SELECT COUNT(*) FROM {results_tbl} rs WHERE rs.group_id = gg.id)"
+                if results_tbl else "")
     # 同トーナメントの全グループ＋種別/ラウンド/確定状況
     async with db.execute(
         f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
         f"       rd.round_type AS round_type, "
-        f"       (SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) AS ranked "
+        f"       ((SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id){_res_sql}) AS ranked "
         f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
         f"WHERE rd.tournament_id = ?", (tid,)) as c:
         rows = await c.fetchall()
@@ -273,10 +279,12 @@ async def advance_after_confirm(db, kind: str, ref_id: int) -> None:
             nxt = await _heat_next_active(db, ref_id)
         elif kind == KIND_HT_GROUP:
             nxt = await _group_next_active(db, KIND_HT_GROUP, ref_id,
-                                           "ht_groups", "ht_rounds", "ht_slots", "ht_slot_ranks")
+                                           "ht_groups", "ht_rounds", "ht_slots", "ht_slot_ranks",
+                                           results_tbl="ht_results")
         elif kind == KIND_BRACKET_GROUP:
             nxt = await _group_next_active(db, KIND_BRACKET_GROUP, ref_id,
-                                           "bracket_groups", "bracket_rounds", "bracket_slots", "bracket_slot_ranks")
+                                           "bracket_groups", "bracket_rounds", "bracket_slots", "bracket_slot_ranks",
+                                           results_tbl="bracket_results")
         else:
             return
         if nxt:
@@ -318,18 +326,22 @@ async def upcoming_order(db) -> dict:
         elif kind in (KIND_HT_GROUP, KIND_BRACKET_GROUP):
             if kind == KIND_HT_GROUP:
                 groups_tbl, rounds_tbl, ranks_tbl = "ht_groups", "ht_rounds", "ht_slot_ranks"
+                results_tbl = "ht_results"
             else:
                 groups_tbl, rounds_tbl, ranks_tbl = "bracket_groups", "bracket_rounds", "bracket_slot_ranks"
+                results_tbl = "bracket_results"
             async with db.execute(
                 f"SELECT rd.tournament_id AS tid FROM {groups_tbl} g "
                 f"JOIN {rounds_tbl} rd ON rd.id = g.round_id WHERE g.id = ?", (ref_id,)) as c:
                 g0 = await c.fetchone()
             if not g0:
                 return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
+            # 確定判定＝ranks または results に行があるか（手動確定の通常ラウンドは results のみ）
             async with db.execute(
                 f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
                 f"       rd.round_type AS round_type, "
-                f"       (SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) AS ranked "
+                f"       ((SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) "
+                f"        + (SELECT COUNT(*) FROM {results_tbl} rs WHERE rs.group_id = gg.id)) AS ranked "
                 f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
                 f"WHERE rd.tournament_id = ?", (g0["tid"],)) as c:
                 rows = await c.fetchall()
