@@ -183,8 +183,10 @@ async def apply_race_to_bracket_group(db, *, race_id: int, group_id: int,
     i = 0
     for x in sorted(matched, key=lambda m: int(m["rank"])):
         co = bool(x.get("dnf"))
-        if co and not _rank_needed:
-            continue  # 順位決定不要のラウンド：CO には順位を付けない（画面で「CO」表示）
+        if co:
+            # ★CO（フライング含む）は順位なし＝決勝/3位決定戦でも付けない（20261110 ユーザー確定）。
+            #   画面では「CO」表示になる。
+            continue
         i += 1
         await db.execute(
             "INSERT INTO bracket_slot_ranks "
