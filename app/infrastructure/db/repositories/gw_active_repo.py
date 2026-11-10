@@ -213,6 +213,26 @@ async def _heat_next_active(db, heat_id: int):
         return None
     cur = next((r for r in rows if r["id"] == int(heat_id)), None)
 
+    if qtype in ("none_roundrobin", "roundrobin"):
+        # ★即決勝総当たり/総当たり：巡（画面表示と同一）＝ heat_no 昇順で per(=有効人数//2)件ごとの
+        #   チャンク。巡内を heat_no 順に巡回→全確定で次の巡。スキップは巡内の未消化#へ戻る。
+        #   （データ上 round_no は 0 固定で、巡は位置から算出する）
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM entries WHERE tournament_id = ? AND status='active'",
+            (tid,)) as c:
+            _n = (await c.fetchone())["n"]
+        per = max(1, (_n or 0) // 2)
+        ordered_all = sorted(rows, key=lambda r: (r["heat_no"] or 0, r["id"]))
+        posmap = {r["id"]: i for i, r in enumerate(ordered_all)}
+        ordered = sorted(unconf, key=lambda r: posmap.get(r["id"], 0))
+        if cur is not None and cur["id"] in posmap:
+            cj = posmap[cur["id"]] // per
+            within = [r for r in ordered if posmap[r["id"]] // per == cj]
+            if within:
+                after = [r for r in within if posmap[r["id"]] > posmap[cur["id"]]]
+                return (KIND_HEAT, (after[0] if after else within[0])["id"])
+        return (KIND_HEAT, ordered[0]["id"])
+
     if qtype == "heat_roundrobin":
         # ★ヒートごとに完結：ヒート(heat_no)が「ラウンド」。内側は (round_no=巡, group_no) 順。
         ordered = sorted(unconf, key=lambda r: (r["heat_no"] or 0, r["round_no"] or 0,

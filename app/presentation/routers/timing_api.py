@@ -275,11 +275,13 @@ async def _maybe_auto_apply(store, db, race_id, result, layout_elems, event_rows
             qt = hrow["qt"] if hrow else None
             if qt == "order_winner":
                 return   # ★勝ち抜けは手動のみ＝自動反映しない（段階制のため自動で触らない）
-            elif qt in ("none", "none_roundrobin", "roundrobin"):
+            elif qt == "time_attack":
+                return   # タイムアタックは別機構（個別走行）のため自動反映対象外
+            else:
+                # ★それ以外の予選（none/roundrobin/none_roundrobin/point/order/heat_roundrobin 等）は
+                #   すべて apply/heat で自動反映する（20261110 ユーザー確定「すべて自動」）。
                 apply_path = f"/api/timing/apply/heat/{ref}"
                 handler = (apply_latest_to_heat, {"heat_id": ref})
-            else:
-                return   # point/order/heat_roundrobin/タイムアタック等は現状 自動反映対象外（手動反映に任せる）
             # 結果有無：status='done' または heat_results あり
             async with db.execute("SELECT status FROM heats WHERE id = ?", (ref,)) as c:
                 st = await c.fetchone()
@@ -1329,15 +1331,17 @@ def _ranking_payload(result) -> list[dict]:
     """RaceResult を橋渡しサービスが期待する形（順位つきリスト）に変換する。"""
     rows = []
     for pos, m in enumerate(result.ranking(), start=1):
+        # ★フライング（jump_start）は CO 扱い＝タイムも順位もなし（20261110 ユーザー確定）。
+        co = bool(m.dnf) or bool(m.jump_start)
         rows.append({
             "pos": pos,
             "start_lane": m.start_lane,
-            "total_s": round(m.total_time_us / 1e6, 3) if m.total_time_us else None,
-            "best_s": round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None,
+            "total_s": None if co else (round(m.total_time_us / 1e6, 3) if m.total_time_us else None),
+            "best_s": None if co else (round(m.best_lap_us / 1e6, 3) if m.best_lap_us else None),
             "completed_laps": m.completed_laps,
             "jump_start": m.jump_start,   # G1(24.53)：フライング=JS表示用
             "missing": m.missing,         # E1(24.37)：欠測あり=⚠要確認
-            "dnf": m.dnf,                 # E5(24.39)：CO=DNF表示
+            "dnf": co,                    # フライングもCO(DNF)として反映＝順位なし
         })
     return rows
 
