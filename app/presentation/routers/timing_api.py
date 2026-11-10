@@ -274,13 +274,12 @@ async def _maybe_auto_apply(store, db, race_id, result, layout_elems, event_rows
                 hrow = await c.fetchone()
             qt = hrow["qt"] if hrow else None
             if qt == "order_winner":
-                apply_path = f"/api/timing/apply/ow-heat/{ref}"
-                handler = (apply_latest_to_ow_heat, {"heat_id": ref})
+                return   # ★勝ち抜けは手動のみ＝自動反映しない（段階制のため自動で触らない）
             elif qt in ("none", "none_roundrobin", "roundrobin"):
                 apply_path = f"/api/timing/apply/heat/{ref}"
                 handler = (apply_latest_to_heat, {"heat_id": ref})
             else:
-                return   # タイムアタック等は自動対象外（手動反映に任せる）
+                return   # point/order/heat_roundrobin/タイムアタック等は現状 自動反映対象外（手動反映に任せる）
             # 結果有無：status='done' または heat_results あり
             async with db.execute("SELECT status FROM heats WHERE id = ?", (ref,)) as c:
                 st = await c.fetchone()

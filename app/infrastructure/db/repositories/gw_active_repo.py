@@ -176,36 +176,65 @@ async def _race_label(db, kind: str, ref_id: int) -> str:
 #  確定したレース番号Nを基準に、同ラウンド内でNの次の未確定→無ければ未確定最小へ巡回。
 #  ラウンド全確定→次ラウンド先頭／全て確定→None（待機）。手動クリックはこれとは別に優先。
 async def _heat_next_active(db, heat_id: int):
+    """予選（heatsテーブル）系の自動アクティブ遷移。絶対ルール＝同一ラウンド内が全確定するまで
+       次へ進まない。予選タイプで「ラウンド」の単位が異なるため分岐する（20261110 確定ルール）：
+         - heat_roundrobin（ヒート総当たり）：ヒート(heat_no)単位で完結。
+             ヒート内は (round_no, group_no) 順に巡回→全確定で次ヒート。
+         - order_winner（勝ち抜け）：段階制のため自動アクティブ対象外（手動のみ）→ None扱いだが
+             呼び出し側(advance_after_confirm)で解除せず据え置く。
+         - その他（point/order/roundrobin/none_roundrobin 等）：round_no単位。
+             同じround_no内をheat_no順に巡回→全確定で次のround_no→全確定で待機。
+       確定＝status='done' または heat_results あり（反映/手入力で結果が入った）。"""
     async with db.execute(
-        "SELECT tournament_id, round_no, heat_no FROM heats WHERE id = ?", (int(heat_id),)) as c:
+        "SELECT h.tournament_id AS tid, t.qualifying_type AS qtype "
+        "FROM heats h JOIN tournaments t ON t.id = h.tournament_id WHERE h.id = ?",
+        (int(heat_id),)) as c:
         h = await c.fetchone()
     if not h:
         return None
-    tid, rno, hno = h["tournament_id"], h["round_no"], h["heat_no"]
-    # 確定＝status='done' または heat_results が入っている（＝反映ボタン/手入力で結果あり）。
-    #  ユーザー定義「結果が入力された or 反映ボタンを押した＝確定」に合わせる。
-    #  ラップタイマーの反映(apply_race_to_heat)は status を done にせず結果だけ入れるため、
-    #  heat_results の有無も確定条件に含める。
+    tid = h["tid"]
+    qtype = h["qtype"] or ""
+    if qtype == "order_winner":
+        return None   # 勝ち抜けは手動のみ（据え置きは呼び出し側で担保）
+
     async with db.execute(
-        "SELECT h.id AS id, h.heat_no AS heat_no, h.status AS status, "
+        "SELECT h.id AS id, h.heat_no AS heat_no, h.round_no AS round_no, h.group_no AS group_no, "
+        "       h.status AS status, "
         "  (SELECT COUNT(*) FROM heat_results hr JOIN heat_lanes hl ON hl.id = hr.heat_lane_id "
         "   WHERE hl.heat_id = h.id) AS nres "
-        "FROM heats h WHERE h.tournament_id = ? AND h.round_no = ? "
-        "ORDER BY h.heat_no, h.id", (tid, rno)) as c:
+        "FROM heats h WHERE h.tournament_id = ?", (tid,)) as c:
         rows = await c.fetchall()
+
     def _done(r):
         return (r["status"] or "") == "done" or (r["nres"] or 0) > 0
+
     unconf = [r for r in rows if not _done(r)]
-    after = [r for r in unconf if r["heat_no"] is not None and hno is not None and r["heat_no"] > hno]
-    if after:
-        return (KIND_HEAT, after[0]["id"])
-    if unconf:
-        return (KIND_HEAT, unconf[0]["id"])
-    async with db.execute(
-        "SELECT id FROM heats WHERE tournament_id = ? AND round_no > ? "
-        "ORDER BY round_no, heat_no, id LIMIT 1", (tid, rno)) as c:
-        nxt = await c.fetchone()
-    return (KIND_HEAT, nxt["id"]) if nxt else None
+    if not unconf:
+        return None
+    cur = next((r for r in rows if r["id"] == int(heat_id)), None)
+
+    if qtype == "heat_roundrobin":
+        # ★ヒートごとに完結：ヒート(heat_no)が「ラウンド」。内側は (round_no=巡, group_no) 順。
+        ordered = sorted(unconf, key=lambda r: (r["heat_no"] or 0, r["round_no"] or 0,
+                                                r["group_no"] or 0, r["id"]))
+        if cur is not None:
+            within = [r for r in ordered if (r["heat_no"] or 0) == (cur["heat_no"] or 0)]
+            if within:
+                ck = (cur["round_no"] or 0, cur["group_no"] or 0, cur["id"])
+                after = [r for r in within
+                         if (r["round_no"] or 0, r["group_no"] or 0, r["id"]) > ck]
+                return (KIND_HEAT, (after[0] if after else within[0])["id"])
+        return (KIND_HEAT, ordered[0]["id"])
+
+    # その他：round_no が「ラウンド」。内側は heat_no 順。
+    ordered = sorted(unconf, key=lambda r: (r["round_no"] or 0, r["heat_no"] or 0, r["id"]))
+    if cur is not None:
+        within = [r for r in ordered if (r["round_no"] or 0) == (cur["round_no"] or 0)]
+        if within:
+            ck = (cur["heat_no"] or 0, cur["id"])
+            after = [r for r in within if (r["heat_no"] or 0, r["id"]) > ck]
+            return (KIND_HEAT, (after[0] if after else within[0])["id"])
+    return (KIND_HEAT, ordered[0]["id"])
 
 
 # ラウンド種別の優先度（小さいほど先に走る）。
@@ -287,6 +316,13 @@ async def advance_after_confirm(db, kind: str, ref_id: int) -> None:
     try:
         await ensure(db)
         if kind == KIND_HEAT:
+            # 勝ち抜け(order_winner)は手動のみ＝自動アクティブを動かさない（解除もしない）。
+            async with db.execute(
+                "SELECT t.qualifying_type AS qt FROM heats h "
+                "JOIN tournaments t ON t.id = h.tournament_id WHERE h.id = ?", (int(ref_id),)) as c:
+                _hr = await c.fetchone()
+            if _hr and (_hr["qt"] or "") == "order_winner":
+                return
             nxt = await _heat_next_active(db, ref_id)
         elif kind == KIND_HT_GROUP:
             nxt = await _group_next_active(db, KIND_HT_GROUP, ref_id,
