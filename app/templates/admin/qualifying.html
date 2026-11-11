@@ -1472,7 +1472,9 @@ document.addEventListener('DOMContentLoaded', function(){
           {% endif %}
         </div>
       </td>
-      <td style="color:#636e72;font-weight:bold;cursor:pointer" onclick="gwToggleActive('heat', {{ heat.id }})"
+      {# ★番号セルは td 全域がクリック対象（アクティブ切替）。text選択がクリックを邪魔しないよう
+         user-select:none。デザイン・列幅(36px)・行高は不変、クリック範囲をセル全面に最大化。 #}
+      <td style="color:#636e72;font-weight:bold;cursor:pointer;user-select:none;-webkit-user-select:none" onclick="gwToggleActive('heat', {{ heat.id }})"
           title="クリックでGWにこのレースを送る（アクティブ化／再クリックで解除）">{{ no if no is not none else heat.heat_no }}</td>
       {% for col in course_cols %}
         {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
@@ -1660,7 +1662,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <div style="background:#e8f4fd;padding:6px 16px;font-size:13px;color:#2980b9;border-bottom:1px solid #c8e0f4;font-weight:bold">
       グループ {{ gno }}
     </div>
-    <table class="sched-tbl" style="min-width:500px;width:100%;table-layout:fixed">
+    <table class="sched-tbl" style="width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
@@ -1958,7 +1960,7 @@ document.addEventListener('DOMContentLoaded', function(){
             <span style="font-size:12px;font-weight:normal;opacity:0.8">✓完了</span>
             {% endif %}
           </div>
-          <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+          <table class="sched-tbl" style="width:100%;table-layout:fixed">
             <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
             <tbody>
@@ -1970,7 +1972,7 @@ document.addEventListener('DOMContentLoaded', function(){
         </div>
         {% endfor %}
       {% else %}
-        <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+        <table class="sched-tbl" style="width:100%;table-layout:fixed">
           <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
@@ -1980,7 +1982,7 @@ document.addEventListener('DOMContentLoaded', function(){
       {% endif %}
     {% else %}
     {# 通常ヒート・総当たり #}
-    <table class="sched-tbl" style="min-width:600px;width:100%;table-layout:fixed">
+    <table class="sched-tbl" style="width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
       <tbody>
