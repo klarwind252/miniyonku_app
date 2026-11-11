@@ -217,6 +217,9 @@ async def _maybe_auto_apply(store, db, race_id, result, layout_elems, event_rows
 
         if not await m4laps_license.is_licensed(db):
             return
+        # ★自動反映トグルがOFFなら手動反映のみ（PIPのスライドスイッチ、app_settings永続）。
+        if not await _auto_apply_is_enabled(db):
+            return
         act = await _gwa.get(db)
         if not act:
             return
@@ -1808,6 +1811,51 @@ async def auto_apply_dismiss(
     from app.infrastructure.db.repositories import gw_active_repo
     await gw_active_repo.dismiss_auto_pending(db)
     return JSONResponse({"ok": True})
+
+
+# ── ラップタイマー自動反映 ON/OFF（PIPのスライドスイッチ）。app_settings に永続化。 ──
+#    未設定は従来どおり ON（True）。OFF のときは _maybe_auto_apply が手動のみに切替。
+async def _auto_apply_is_enabled(db) -> bool:
+    try:
+        async with db.execute(
+            "SELECT value FROM app_settings WHERE key='auto_apply_enabled'"
+        ) as cur:
+            row = await cur.fetchone()
+        return (row is None) or (row["value"] != "0")   # 未設定=ON
+    except Exception:
+        return True
+
+
+@router.get("/api/timing/auto-apply/enabled")
+async def auto_apply_enabled_get(db: aiosqlite.Connection = Depends(get_db)):
+    """自動反映トグルの現在値（未設定は ON）。"""
+    return JSONResponse({"enabled": await _auto_apply_is_enabled(db)})
+
+
+@router.post("/api/timing/auto-apply/enabled")
+async def auto_apply_enabled_set(request: Request,
+                                 db: aiosqlite.Connection = Depends(get_db)):
+    """自動反映トグルを保存。body {"enabled": true/false}。"""
+    enabled = True
+    try:
+        body = await request.json()
+        enabled = bool(body.get("enabled"))
+    except Exception:
+        try:
+            form = await request.form()
+            enabled = str(form.get("enabled")).lower() in ("1", "true", "on", "yes")
+        except Exception:
+            pass
+    try:
+        await db.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('auto_apply_enabled', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ("1" if enabled else "0",),
+        )
+        await db.commit()
+    except Exception:
+        pass
+    return JSONResponse({"enabled": enabled})
 
 
 def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> list[dict]:

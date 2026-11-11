@@ -1388,6 +1388,14 @@ function _showPubToast(msg) {
     height:16px; line-height:16px; overflow:hidden;
   }
   #m4pip .pip-title{font-weight:bold; font-size:11px; line-height:16px; white-space:nowrap}
+  /* ★自動反映 ON/OFF スライドスイッチ（PIP右上・小さめ）。ONでアクティブへ自動反映、OFFで手動のみ。 */
+  #m4pip .pip-auto{display:inline-flex; align-items:center; gap:4px; margin-left:auto; margin-right:6px; cursor:pointer; user-select:none}
+  #m4pip .pip-auto-txt{font-size:9px; color:#cfd8dc; line-height:1; white-space:nowrap}
+  #m4pip .pip-auto input{display:none}
+  #m4pip .pip-auto-sw{position:relative; width:26px; height:14px; border-radius:7px; background:#5a6672; transition:background .15s; flex:0 0 auto}
+  #m4pip .pip-auto-sw::after{content:''; position:absolute; top:2px; left:2px; width:10px; height:10px; border-radius:50%; background:#fff; transition:transform .15s}
+  #m4pip .pip-auto input:checked + .pip-auto-sw{background:#27ae60}
+  #m4pip .pip-auto input:checked + .pip-auto-sw::after{transform:translateX(12px)}
   #m4pip .pip-dot{
     width:7px; height:7px; border-radius:50%; background:#7f8c8d; flex-shrink:0;
     transition:background .3s;
@@ -1460,8 +1468,40 @@ function _showPubToast(msg) {
   <div class="pip-head" onclick="m4pipToggle()">
     <span class="pip-dot" id="m4pipDot"></span>
     <span class="pip-title">⏱ ラップタイマー</span>
+    <label class="pip-auto" id="m4pipAutoWrap"
+           title="ON：計測をアクティブレースへ自動反映／OFF：手動「反映」ボタンのみ"
+           onclick="event.stopPropagation()">
+      <span class="pip-auto-txt">自動反映</span>
+      <input type="checkbox" id="m4pipAuto">
+      <span class="pip-auto-sw"></span>
+    </label>
     <button type="button" class="pip-toggle" id="m4pipToggleBtn" onclick="event.stopPropagation();m4pipToggle()">▲</button>
   </div>
+  <script>
+  (function(){
+    var cb=document.getElementById('m4pipAuto');
+    if(!cb) return;
+    var PFX={{ (request.scope.get('root_path', '') if request else '') | tojson }};
+    var LS='m4_auto_apply_enabled';
+    // 即時表示：前回値(localStorage)
+    try{ var v=localStorage.getItem(LS); if(v!=null) cb.checked=(v==='1'); }catch(e){}
+    // サーバ値で同期（権威。app_settings に永続）
+    fetch(PFX+'/'+'api/timing/auto-apply/enabled',{cache:'no-store'})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){ if(d && typeof d.enabled==='boolean'){ cb.checked=d.enabled;
+        try{ localStorage.setItem(LS, d.enabled?'1':'0'); }catch(e){} } })
+      .catch(function(){});
+    // 切替：localStorage＋サーバ保存（adminPOSTは手動反映ボタンと同じ接頭辞なし）
+    cb.addEventListener('change', function(){
+      var on=cb.checked;
+      try{ localStorage.setItem(LS, on?'1':'0'); }catch(e){}
+      fetch('/api/timing/auto-apply/enabled',{method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({enabled:on})})
+        .catch(function(e){ console.error('[auto-apply] save failed', e); });
+    });
+  })();
+  </script>
   <div class="pip-body" id="m4pipBody">
     <div class="pip-empty">受信待ち…</div>
   </div>
