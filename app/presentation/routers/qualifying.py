@@ -5116,7 +5116,8 @@ async def heat_detail(tid: int, heat_id: int, db: aiosqlite.Connection = Depends
     lane_count = int((tr["lane_count"] if tr and tr["lane_count"] else 3))
     async with db.execute(
         "SELECT hl.lane_no AS lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') AS name, "
-        "       hr.rank AS rank, hr.total_time AS total_time "
+        "       hr.rank AS rank, hr.total_time AS total_time, "
+        "       hr.win AS win, COALESCE(hr.is_co,0) AS is_co "
         "FROM heat_lanes hl "
         "LEFT JOIN entries e ON e.id=hl.entry_id "
         "LEFT JOIN racers r ON r.id=e.racer_id "
@@ -5131,7 +5132,9 @@ async def heat_detail(tid: int, heat_id: int, db: aiosqlite.Connection = Depends
                       "entry_id": (r["entry_id"] if r else None),
                       "name": (r["name"] if r else ""),
                       "rank": (r["rank"] if r else None),
-                      "total_time": (r["total_time"] if r else None)})
+                      "total_time": (r["total_time"] if r else None),
+                      "win": (r["win"] if r else None),
+                      "is_co": (int(r["is_co"]) if (r and r["is_co"]) else 0)})
     async with db.execute(
         "SELECT e.id AS id, r.name AS name FROM entries e JOIN racers r ON r.id=e.racer_id "
         "WHERE e.tournament_id=? AND e.status='active' ORDER BY r.yomi, r.name", (tid,)) as c:
@@ -5178,8 +5181,9 @@ async def heat_correct(tid: int, heat_id: int, request: Request,
         except Exception: rk = None
         try: tt = float(tt) if tt not in (None, "") else None
         except Exception: tt = None
+        co = 1 if it.get("is_co") in (1, "1", True) else 0
         desired[ln] = eid
-        res[ln] = (rk, tt)
+        res[ln] = (rk, tt, co)
 
     # 現在の heat_lanes（lane_no -> id）
     async with db.execute("SELECT id, lane_no FROM heat_lanes WHERE heat_id=?", (heat_id,)) as c:
@@ -5205,21 +5209,22 @@ async def heat_correct(tid: int, heat_id: int, request: Request,
     if lane_ids:
         ph = ",".join("?" * len(lane_ids))
         await db.execute(f"DELETE FROM heat_results WHERE heat_lane_id IN ({ph})", lane_ids)
-    any_rank = False
-    for ln, (rk, tt) in res.items():
+    any_decided = False   # 順位(=勝敗) か CO が入ったら確定(done)
+    for ln, (rk, tt, co) in res.items():
         hlid = lane_map.get(ln)
         if not hlid:
             continue
-        if rk is not None:
-            any_rank = True
-        if rk is None and tt is None:
-            continue   # CO/空＝結果行なし
-        win = 1 if rk == 1 else (0 if rk is not None else None)
+        if rk is None and tt is None and not co:
+            continue   # 空＝結果行なし
+        if rk is not None or co:
+            any_decided = True
+        # CO は負け扱い(win=0, is_co=1)。rank=1→win1、それ以外rank→win0、順位なし→win NULL。
+        win = 0 if co else (1 if rk == 1 else (0 if rk is not None else None))
         await db.execute(
-            "INSERT INTO heat_results (heat_lane_id, rank, total_time, win) VALUES (?,?,?,?)",
-            (hlid, rk, tt, win))
-    # 順位が入っていれば確定(done)。コース割り当てのみの変更では status は変えない。
-    if any_rank:
+            "INSERT INTO heat_results (heat_lane_id, rank, total_time, win, is_co) VALUES (?,?,?,?,?)",
+            (hlid, rk, tt, win, co))
+    # 順位/CO が入っていれば確定(done)。コース割り当てのみの変更では status は変えない。
+    if any_decided:
         await db.execute("UPDATE heats SET status='done' WHERE id=?", (heat_id,))
     await db.commit()
     try:

@@ -2105,7 +2105,15 @@ function _showPubToast(msg) {
           var laneBg=LANE_BG[s.slot_no]||'#8a939b';
           var timeVal=(s.total_time!=null)?Number(s.total_time).toFixed(3):'';
           var hasRacer=assignable?(s.entry_id!=null):!!s.name;
-          var initRank=(s.rank!=null)?String(s.rank):(hasRacer?'CO':'');
+          // CO判定は is_co を真の根拠にする。none_rr(即決勝総当たり)は勝敗(win)記録で
+          // rank=NULL のため、win→順位(勝=1/負=2)へ写して表示（従来は rank 無し＝全CO誤判定だった）。
+          // is_co/win を返す新API(heat)では情報ありなら未CO＝'-'、旧API(ht/bracket)は従来フォールバック。
+          var dispRank=(s.rank!=null)?s.rank:((s.win!=null)?(s.win==1?1:2):null);
+          var initRank;
+          if(s.is_co){ initRank='CO'; }
+          else if(dispRank!=null){ initRank=String(dispRank); }
+          else if(('is_co' in s)||('win' in s)){ initRank=''; }
+          else { initRank=(hasRacer?'CO':''); }
           var opts='';
           for(var i=1;i<=n;i++){ opts+='<option value="'+i+'"'+(initRank===String(i)?' selected':'')+'>'+i+'</option>'; }
           opts+='<option value="CO"'+(initRank==='CO'?' selected':'')+'>CO</option>';
@@ -2190,9 +2198,10 @@ function _showPubToast(msg) {
     var slots;
     if(ctState.assignable){
       slots=cur.map(function(x){
-        var rk=(x.rank==='CO'||x.rank==='')?null:parseInt(x.rank,10);
-        var tt=(x.rank==='CO'||x.time==='')?null:parseFloat(x.time);
-        return {lane_no:x.lane, entry_id:(x.entry===''?null:parseInt(x.entry,10)), total_time:tt, rank:rk};
+        var isco=(x.rank==='CO');
+        var rk=(isco||x.rank==='')?null:parseInt(x.rank,10);
+        var tt=(isco||x.time==='')?null:parseFloat(x.time);
+        return {lane_no:x.lane, entry_id:(x.entry===''?null:parseInt(x.entry,10)), total_time:tt, rank:rk, is_co:(isco?1:0)};
       });
     } else {
       slots=cur.map(function(x){
