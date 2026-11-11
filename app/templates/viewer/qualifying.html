@@ -908,7 +908,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
-          <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
+          <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
             {# 「#」は各予選回（round_no）内での連番（123 / 123 / 123）。
                行の id は全体通し番号 heat_no のまま（スクロール・追従用）。 #}
             <td class="heat-no">{{ loop.index }}</td>
@@ -1090,7 +1090,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% set rr_per_round = entries|length // 2 %}
           {% for heat in heats %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
-          <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}">
+          <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
             <td class="heat-no">{{ heat.heat_no }}</td>
             {% for col in course_cols %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}

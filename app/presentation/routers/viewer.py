@@ -1293,9 +1293,23 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         point_leader = None
         achievements = None
 
+    # ★アクティブレース（admin が # で設定）を観覧側でもサーバレンダリングで行ハイライト。
+    #   公開HTMLはスクリプト全除去されるため、クラス付与をサーバ側で行い、観覧の定期
+    #   コンテンツ更新で自然に反映させる（スクリプト再注入に依存しない確実な方式）。
+    from app.infrastructure.db.repositories import gw_active_repo as _gwar
+    try:
+        _gw_active = await _gwar.get(db)
+    except Exception:
+        _gw_active = None
+    active_heat_id = (int(_gw_active["ref_id"])
+                      if (_gw_active and _gw_active.get("kind") == "heat"
+                          and _gw_active.get("ref_id") is not None)
+                      else None)
+
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
         "t": t,
+        "active_heat_id": active_heat_id,
         # ラップタイマー(M4LAPS)由来の表示（タイム・速度）はクラウド版＋ライセンス登録時のみ。
         # オンプレ版・未登録では False → テンプレート側で根本非表示。
         "m4laps_active": (IS_CLOUD and await m4laps_license.is_licensed(db)),

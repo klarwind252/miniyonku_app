@@ -44,6 +44,12 @@ async def gw_set_active(tid: int, request: Request, db: aiosqlite.Connection = D
     if kind not in gw_active_repo.VALID_KINDS or ref_id is None:
         return JSONResponse({"detail": "bad kind/ref_id"}, status_code=400)
     await gw_active_repo.toggle(db, kind, int(ref_id))
+    # ★アクティブ変更を観覧(公開HTML)へ反映するため再配信（行ハイライトはサーバレンダリング）。
+    try:
+        from app.services.publish_scheduler import schedule_publish
+        schedule_publish()
+    except Exception:
+        pass
     return JSONResponse(await gw_active_repo.resolve_lanes(db))
 
 
