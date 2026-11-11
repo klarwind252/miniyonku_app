@@ -42,6 +42,13 @@ static constexpr int PIN_RED  = 3;   // D1(GPIO3) 赤タクト SIGNAL
 static constexpr int PIN_GRAY = 4;   // D2(GPIO4) 灰タクト RESET
 static constexpr uint32_t DEBOUNCE_MS = 20;
 
+// ★20261109：GWのREADY（＝赤を押せばシグナルを切れる状態）を知らせる手元表示LED。
+//   D3(GPIO5)・active-HIGH。XIAO C3のストラップはGPIO2/8/9＝GPIO5は安全。LiPo直結(5Vレール無)でも
+//   3.3Vで点くよう、緑LED+150〜220Ω（青なら68〜100Ω）を GPIO5→R→LED→GND で接続する。
+//   ※常時起動版(USE_DEEP_SLEEP=0)でのみ駆動。ディープスリープ版は寝ているため常時表示できない。
+static constexpr int      PIN_READY_LED  = 5;
+static constexpr uint32_t READY_STALE_MS = 6000;  // この時間GWビーコン未受信ならGW状態不明＝消灯(2秒×3)
+
 // --- 起床セッションのタイミング ---
 static constexpr uint32_t RELEASE_TIMEOUT_MS = 1500;  // ボタン解放待ちの上限
 static constexpr uint32_t ACK_WAIT_MS        = 70;    // COMMAND_ACK待ち（ESP-NOWは数ms）
@@ -51,6 +58,9 @@ static constexpr uint32_t STUCK_COOLDOWN_S   = 300;   // クールダウン（GP
 
 static bool s_assigned = false;
 static volatile bool s_cmd_acked = false;   // COMMAND_ACK受信フラグ（recvコールバックが立てる）
+// ★20261109：GWのREADY表示（手元LED）。GW在席ビーコン(PT_HEARTBEAT)の2バイト目(ready)で更新。
+static volatile bool     s_gw_ready    = false;  // 直近ビーコンでGWがREADYだったか
+static volatile uint32_t s_ready_rx_ms = 0;      // READY付きビーコンを最後に受けた時刻（0=未受信）
 
 // ---- COMMAND 3連射（同一 nonce を全弾に載せる。ACKは上位で待つ）------------
 static void send_command(uint8_t code, uint32_t nonce = 0, int shots = 3) {
@@ -80,6 +90,9 @@ static void on_recv(const proto::PktHeader& h, const uint8_t* body,
   // ★20261031：GWビーコンの計測中フラグを取り込む（SEと同じ）。計測中はch走査に入らない＝押下が消えない。
   if (h.type == proto::PT_HEARTBEAT && proto::kind_of(h.src) == proto::KIND_GW && body_len >= 1) {
     chfollow::note_gw_racing(body[0] != 0);
+    // ★20261109：GWビーコンのREADYフラグ(2バイト目)を取り込む＝手元READY表示LED用。
+    //   旧GW(body_len=1)はready非搭載＝ここを通らず、READY_STALE_MSで自然に消灯側へ寄る。
+    if (body_len >= 2) { s_gw_ready = (body[1] != 0); s_ready_rx_ms = millis(); }
     return;
   }
   if (h.type == proto::PT_JOIN_ACK && body_len >= (int)sizeof(proto::JoinAckBody)) {
@@ -313,6 +326,14 @@ static void service_cmd() {
   s_pend_tries++;
 }
 
+// ★20261109：READY表示LED更新（常時起動版のみ）。GWの在席ビーコンが届いていて(READY_STALE_MS内)、
+//   且つそのreadyが1のときだけ点灯。GW不明(無受信)・計測中(ON TRACK)・ARMED/GREEN/FINISH・
+//   エラー画面・感知不能ラッチ中は消灯＝「いま赤を押してもシグナルは切れない」が一目で分かる。
+static void tick_ready_led() {
+  bool fresh = (s_ready_rx_ms != 0) && (millis() - s_ready_rx_ms < READY_STALE_MS);
+  digitalWrite(PIN_READY_LED, (fresh && s_gw_ready) ? HIGH : LOW);
+}
+
 void setup() {
   Serial.setTxTimeoutMs(0);   // ★ホスト未読でもブロックしない（XIAO CDC：モニタ未接続時に println が数十ms止まる対策）
   Serial.begin(115200);
@@ -320,9 +341,10 @@ void setup() {
   Serial.printf("\n=== M4LAPS Remote RC%d ===\n", NODE_ID);
   pinMode(PIN_RED,  INPUT_PULLUP);
   pinMode(PIN_GRAY, INPUT_PULLUP);
+  pinMode(PIN_READY_LED, OUTPUT); digitalWrite(PIN_READY_LED, LOW);   // ★20261109 READY表示LED（初期は消灯）
   uint8_t ch0 = chfollow::initial_channel(ESPNOW_CHANNEL);
   if (!mesh::begin(NODE_ID, ch0, on_recv)) { Serial.println("ESP-NOW init 失敗"); return; }
-  Serial.printf("稼働開始（ch=%d・GWへ自動追従）。赤=SIGNAL / 灰=RESET。\n", ch0);
+  Serial.printf("稼働開始（ch=%d・GWへ自動追従）。赤=SIGNAL / 灰=RESET。READY LED=GPIO%d。\n", ch0, PIN_READY_LED);
 }
 
 void loop() {
@@ -331,5 +353,6 @@ void loop() {
   if (s_red.pressed())  { fire(proto::CMD_SIGNAL); Serial.println("[BTN] SIGNAL"); }
   if (s_gray.pressed()) { fire(proto::CMD_RESET);  Serial.println("[BTN] RESET");  }
   service_cmd();              // ★ACK待ち＋時間差再送（ノンブロッキング）
+  tick_ready_led();           // ★20261109：GWのREADYを手元LEDへ反映（GW在席ビーコンのreadyバイト）
 }
 #endif

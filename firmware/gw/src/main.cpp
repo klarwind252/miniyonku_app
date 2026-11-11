@@ -571,6 +571,12 @@ static bool     s_nobeam_latched   = false;
 //   画面いっぱいのエラーを出している間は true。赤ボタン（本体/リモコン）を全面禁止する。
 //   tick_display のエラー描画パスで毎フレーム更新（エラーが消えれば false）。灰は常に有効。
 static bool     s_err_screen = false;
+// ★20261109：GWが「赤を受け付ける＝レースのシグナルを切る準備OK(READY)」かを1箇所で定義。
+//   on_signal_pressed の受付ゲート（!err_screen && !nobeam_latched && state==IDLE）と完全一致させ、
+//   在席ビーコン(GwBeatBody.ready)へ載せてリモコンの手元READY表示LEDを駆動する。
+static inline bool gw_is_ready() {
+  return (s_state == ST_IDLE) && !s_err_screen && !s_nobeam_latched;
+}
 // 全画面エラーの「灰による強制解除」フラグ（20260831g）：どのエラー画面でも灰を押したら
 //   true になり、原因（全断/排他/感知不能/A1/A2/Lost）が継続していてもエラー描画をスキップして
 //   通常画面へ抜ける＝強制運用を可能にする。全エラー条件が一度healthyに戻ったフレームで
@@ -1128,6 +1134,7 @@ static void on_recv_main(const proto::PktHeader& h, const uint8_t* body,
         {
           proto::GwBeatBody gb = {};   // 20260831k：即応ビーコンにも計測中フラグを付帯
           gb.racing = (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) ? 1 : 0;
+          gb.ready  = gw_is_ready() ? 1 : 0;   // ★20261109：READYフラグも付帯（リモコンLED用）
           mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, &gb, sizeof(gb));
         }
         forward_join(jb);
@@ -1462,11 +1469,20 @@ static void tick_buttons() {
 //  ここで自分の在席をブロードキャストし、GW6⇔GW7 が相互に重複検知できるようにする。
 static void tick_gw_presence() {
   static uint32_t last = 0;
-  if (millis() - last < GW_BEACON_MS) return;
+  static uint8_t  last_racing = 0xFF, last_ready = 0xFF;   // ★20261109：前回送出値（変化検出用）
+  uint8_t racing = (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) ? 1 : 0;
+  uint8_t ready  = gw_is_ready() ? 1 : 0;
+  // 通常は GW_BEACON_MS(2秒)周期。ただし racing/ready が変わった瞬間は即時ブロードキャストして
+  //   リモコンのREADY表示LEDを素早く追従させる（READY↔ON TRACK遷移の体感ラグを消す）。
+  bool changed = (racing != last_racing) || (ready != last_ready);
+  if (!changed && (millis() - last < GW_BEACON_MS)) return;
   last = millis();
+  last_racing = racing; last_ready = ready;
   // 20260831k：ビーコンに計測中フラグを付帯（SEの「計測中はch走査禁止」用・後方互換）。
+  //   ★20261109：READYフラグ(gb.ready)も付帯＝リモコンの手元READY表示LED用。
   proto::GwBeatBody gb = {};
-  gb.racing = (s_state == ST_ARMED || s_state == ST_GREEN || s_state == ST_RACE) ? 1 : 0;
+  gb.racing = racing;
+  gb.ready  = ready;
   mesh::send(proto::PT_HEARTBEAT, proto::NODE_BROADCAST, &gb, sizeof(gb));
 }
 

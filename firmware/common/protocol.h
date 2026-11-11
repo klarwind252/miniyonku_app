@@ -120,6 +120,9 @@ struct BeamStatBody {
 //  受信側は body_len>=1 のときだけ読む＝後方互換。SEはこれで「計測中はch走査禁止」を実現。
 struct GwBeatBody {
   uint8_t racing;       // 1=計測中(ARMED/GREEN/RACE)：ノードは在圏切れでもch走査を保留
+  uint8_t ready;        // ★20261109：1=GWがREADY(ST_IDLE・赤受付可＝シグナルを切る準備OK)。
+                        //   リモコンの手元READY表示LED用。旧受信側は body_len>=1 で先頭 racing だけ
+                        //   読むため後方互換（本バイトは2つ目）。SEは racing(先頭)のみ参照で不変。
 };
 
 // SYNC：往復で片道遅延とオフセットを推定（中継禁止）。
