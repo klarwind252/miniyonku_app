@@ -1438,11 +1438,11 @@ document.addEventListener('DOMContentLoaded', function(){
     {# ★20261107 レーススケジュールの右に予選順位表（項目のみ）を追加。
        カードの閉じ構造は壊れている（注記）ため触れず、card-body内に自己完結したflexを作る。
        右サイド幅は内容ぶんの可変（狭め）。サイズ/位置の微調整は後日指示を受けて実施。 #}
-    {# ★スケジュールは 960px 固定(grow:0＝伸びも縮みもしない)。コース列は名前＋タイムが
-       切れない幅(HD/FHD実測で非truncation)。余った右側は 予選順位表(aside)が flex:1 で
-       伸びて埋め、レーサー名列(width:100%)が吸収する。右端の無駄余白ゼロ。 #}
+    {# ★A案：ブロック上限なし。スケジュールが幅いっぱいに広がり（コース列が広がる分、
+       名前＋タイムが切れない）、予選順位表(aside)はコンパクトのまま右端に密着する。
+       右端の無駄余白は最小。2レーン時の3コース空き列は広がるが実害なし。 #}
     <div class="qp-sched-flex" style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
-    <div class="qp-sched-left" style="flex:0 1 960px;min-width:0;overflow-x:auto;padding-right:6px;box-sizing:border-box">
+    <div class="qp-sched-left" style="flex:1 1 420px;min-width:0;overflow-x:auto;padding-right:6px;box-sizing:border-box">
     {% if heats %}
 
 
@@ -2006,16 +2006,16 @@ document.addEventListener('DOMContentLoaded', function(){
     {% endif %}
     </div>{# /qp-sched-left #}
     {# ★予選順位表（右サイド・項目のみ）。ポイント制のみ。幅は内容ぶんの可変で狭め。サイズ等は後で調整 #}
-    <aside class="qp-sched-rank" style="flex:1 1 auto;min-width:240px;border-left:1px solid #eef1f4;padding-left:10px;box-sizing:border-box">
+    <aside class="qp-sched-rank" style="flex:0 0 auto;width:max-content;border-left:1px solid #eef1f4;padding-left:10px;box-sizing:border-box">
       <div style="font-weight:bold;font-size:13px;padding:6px 2px">予選順位表</div>
       {% if standings and (is_none_roundrobin or is_roundrobin) %}
       {# ★総当たり（即決勝=none_roundrobin／予選=roundrobin）：勝・負・出走。TIMEは出さない。リアルタイム更新対応（tbody id） #}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%">
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
             <th style="padding:3px 4px">順位</th>
-            <th style="padding:3px 6px;text-align:left;width:100%">レーサー</th>
+            <th style="padding:3px 6px;text-align:left">レーサー</th>
             <th style="padding:3px 4px;color:#27ae60">勝</th>
             <th style="padding:3px 4px;color:#e74c3c">負</th>
             <th style="padding:3px 4px">出走</th>
@@ -2035,12 +2035,12 @@ document.addEventListener('DOMContentLoaded', function(){
         </tbody>
       </table>
       {% elif standings and not is_roundrobin and not is_none_roundrobin %}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%">
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
             <th style="padding:3px 4px">順位</th>
-            <th style="padding:3px 6px;text-align:left;width:100%">レーサー</th>
+            <th style="padding:3px 6px;text-align:left">レーサー</th>
             <th style="padding:3px 4px">ポイント</th>
             <th style="padding:3px 4px">出走</th>
             <th style="padding:3px 4px">完走</th>
