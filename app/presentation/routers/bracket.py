@@ -5164,10 +5164,20 @@ async def bracket_html(tid: int, lane_drag: int = 0, db: aiosqlite.Connection = 
         logging.getLogger(__name__).exception("[bracket] holder_boxes build failed")
         holder_boxes = []
 
-    return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes, enable_lane_drag=bool(lane_drag)))
+    # ★アクティブレース（GW）の bracket_group を取得し、ツリーの該当組を強調（観覧・決勝共通）。
+    from app.infrastructure.db.repositories import gw_active_repo as _gwar
+    try:
+        _ga = await _gwar.get(db)
+    except Exception:
+        _ga = None
+    _active_gid = (int(_ga["ref_id"])
+                   if (_ga and _ga.get("kind") == "bracket_group" and _ga.get("ref_id") is not None)
+                   else None)
+
+    return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes, enable_lane_drag=bool(lane_drag), active_group_id=_active_gid))
 
 
-def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None, lane_drag_green: bool = False) -> str:
+def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None, lane_drag_green: bool = False, active_group_id: int | None = None) -> str:
     """flexboxベースのHTML/CSSトーナメント表（コネクタ線・勝ち上がり強調付き）
 
     compact=True のとき、表彰台（br-podium）を約半分の高さに縮小する（admin画面用）。
@@ -5288,6 +5298,8 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-group { background:#fff; border:1px solid #ced4da; border-radius:9px; padding:3px 3px 3px 13px; display:flex; flex-direction:column; gap:2px; box-shadow:none; position:absolute; left:0; right:0; overflow:visible; }
     .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:none; }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
+    /* ★アクティブレースの組：アンバーで強調（観覧スマホでも分かるように） */
+    .br-group.br-group-active { border-color:#f0ad4e !important; border-width:2px !important; box-shadow:0 0 0 3px rgba(240,173,78,0.55) !important; background:#fff7e6 !important; }
     /* スロット共通 */
     .br-slot { position:relative; display:flex; align-items:center; gap:9px; padding:3px 12px 3px 24px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
     /* レーン番号(1/2/3)は左の余白に絶対配置。名前は padding-left で約8px あけて始まる（タイム幅は奪わない）。 */
@@ -5425,6 +5437,9 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             grp_cls = "br-group"
             if has_winner: grp_cls += " has-winner"
             if is_final: grp_cls += " is-final"
+            # ★アクティブレース（admin が # クリックで指定）の組を強調（観覧・決勝ツリー共通）
+            if active_group_id is not None and group_id is not None and group_id == active_group_id:
+                grp_cls += " br-group-active"
             if sortable_group: grp_cls += " lane-sortable"
             if sortable_group and lane_drag_green: grp_cls += " lane-drop-green"
             # 勝者名をdata属性に付与（コネクタ線の色判定用）

@@ -924,7 +924,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 <span class="rr-mark l{% if is_public_html %} sm{% endif %}">×</span>
                 {% endif %}
                 {% if lane.is_co %}
-                <span class="rank-badge" style="background:#333333;color:#FFFFFF;box-sizing:border-box;font-size:9px;margin-left:0;margin-right:2px">CO</span>
+                {# CO：枠なし・文字のみ（総当たりと統一）。色は従来背景のオレンジ。 #}
+                <span style="font-weight:bold;color:#e67e22">CO</span>
                 {% elif lane.rank %}
                 {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
