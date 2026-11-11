@@ -5429,10 +5429,11 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         co_html = '<span class="br-slot-co">CO</span>' if _is_co else ''
         # 公開HTMLでレーサー名タップ→成績モーダル用に entry_id を持たせる（view/adminでは未使用）。
         _eid_attr = (' data-entry-id="%d"' % s["entry_id"]) if s.get("entry_id") else ''
-        # 出走レーン（コース）並び替え：admin図のみ。data-slot-id と ⠿ ハンドルを付ける。
-        _sid_attr = (' data-slot-id="%d"' % slot_id_val) if (sortable and slot_id_val) else ''
-        _handle = ('<span class="br-lane-handle" title="ドラッグで出走レーン（コース）を入れ替え">\u283f</span>'
-                   if (sortable and s.get("name")) else '')
+        # 出走レーン並び替えの ⠿ ハンドルは全トーナメント表で廃止（20261111）。
+        # ツリー上のドラッグ移動は無効化し、即決勝ツリーと同じ「ハンドル無し」に統一。
+        # レーン入れ替えは結果入力カードのレーン番号DDで行う。
+        _sid_attr = ''
+        _handle = ''
         return (
             '<div class="' + cls + '"' + onclick_attr + is_seed_attr + _eid_attr + _sid_attr + '>'
             + _handle

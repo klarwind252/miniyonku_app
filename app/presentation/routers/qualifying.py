@@ -1816,9 +1816,11 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
 
 
     await db.commit()
-    # ★20261110：即決勝総当たり/総当たりは、組み合わせ生成時に最初のレース(#1)を自動アクティブ化。
-    #   以降は _heat_next_active が #1→#2→…（スキップは未消化の#へ戻る）→全完了で待機、を担う。
-    if qual_type in ("none_roundrobin", "roundrobin"):
+    # ★20261111：生成時に最初のレース(#1)を自動アクティブ化（全予選形式に適用）。
+    #   ヒートトーナメント系(heat_tournament*)は「組分けリスト」であり実レースの組は
+    #   ht_generate 側で作られるため、ここでは除外し ht_generate 側で自動アクティブ化する。
+    #   以降は _heat_next_active が #1→#2→…（スキップは未消化へ戻る）→全完了で待機、を担う。
+    if qual_type not in HEAT_TOURNAMENT_TYPES:
         try:
             async with db.execute(
                 "SELECT id FROM heats WHERE tournament_id=? ORDER BY round_no, heat_no, id LIMIT 1",
@@ -4612,6 +4614,27 @@ async def heat_final_tournament_reset(
     return JSONResponse({"ok": True})
 
 
+async def _activate_first_ht_group(tid: int, heat_no: int, db) -> None:
+    """ヒートトーナメント生成直後、そのヒートの最初（section→round→group 昇順）の
+       組を GW アクティブにする（admin が組番号を押さなくても自動でアクティブ）。"""
+    try:
+        async with db.execute(
+            "SELECT hg.id AS id FROM ht_groups hg "
+            "JOIN ht_rounds hr ON hr.id = hg.round_id "
+            "WHERE hr.tournament_id = ? AND hr.heat_no = ? "
+            "ORDER BY COALESCE(hr.section_no, 1) ASC, hr.round_no ASC, hg.group_no ASC "
+            "LIMIT 1",
+            (tid, heat_no),
+        ) as cur:
+            row = await cur.fetchone()
+        if row and row["id"] is not None:
+            await gw_active_repo.set_active(db, gw_active_repo.KIND_HT_GROUP, int(row["id"]))
+            await db.commit()
+    except Exception as e:
+        print(f"[ht] auto-activate first group failed tid={tid} heat={heat_no}: "
+              f"{type(e).__name__}: {e}", flush=True)
+
+
 @router.post("/{tid}/qualifying/heat-tournament/{heat_no}/generate")
 async def ht_generate(tid: int, heat_no: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """ヒートNのトーナメントを生成"""
@@ -4855,6 +4878,9 @@ async def ht_generate(tid: int, heat_no: int, request: Request, db: aiosqlite.Co
                     await db.execute("INSERT INTO ht_slots (group_id, slot_no, entry_id) VALUES (?,?,?)", (gid, sno, eid))
 
     await db.commit()
+
+    # ★20261111：生成直後、このヒートの最初の組を GW アクティブに自動セット
+    await _activate_first_ht_group(tid, heat_no, db)
 
     # 参加者向けHTML配信（自動更新）
     try:

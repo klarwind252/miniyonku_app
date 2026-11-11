@@ -392,8 +392,9 @@
     {% for gd in sec.groups_data if gd.round.id == rnd.id %}
     {% set g=gd.group %}{% set slots=gd.slots %}{% set result=gd.result %}{% set ranks=gd.ranks %}
     {% set n_slots=slots|length %}
-    <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
-         id="group-{{ g.id }}" data-gw-kind="ht_group" data-gw-ref="{{ g.id }}">
+    {% set _lane_sortable = (not result) and not (is_rank_rnd and ranks and ranks|length > 0) %}
+    <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}"
+         id="group-{{ g.id }}" data-gw-kind="ht_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
       <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:{% if is_third_rnd %}#cd7f32{% elif is_final_rnd %}#d4a017{% else %}#636e72{% endif %}">
         <span onclick="gwToggleActive('ht_group', {{ g.id }})" style="cursor:pointer;font-size:18px"
               title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
@@ -409,8 +410,8 @@
       {% for slot in slots %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
-      <div class="slot-row" data-lane="{{ slot.slot_no }}">
-        <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
+      <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
+        <div class="slot-no{% if _lane_sortable %} lane-handle{% endif %}" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
           {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
         </div>
         <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
@@ -519,8 +520,9 @@
     {% set n_slots = slots | length %}
     {% set use_rank = is_rank_rnd and n_slots >= 3 %}
     {% set rc = {1:'#d4a017',2:'#aaa',3:'#cd7f32'} %}
-    <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
-         id="vg-{{ g.id }}" data-gid="{{ g.id }}">
+    {% set _lane_sortable = (not result) and not (is_rank_rnd and ranks and ranks|length > 0) %}
+    <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}"
+         id="vg-{{ g.id }}" data-gid="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
       <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:#d4a017">
         グループ{{ g.group_no }}{% if result %} <span style="color:#27ae60;font-weight:normal">✓完了</span>{% endif %}
       </div>
@@ -533,8 +535,8 @@
       {% for slot in slots %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
-      <div class="slot-row" data-lane="{{ slot.slot_no }}">
-        <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
+      <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
+        <div class="slot-no{% if _lane_sortable %} lane-handle{% endif %}" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
           {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
         </div>
         <div class="slot-name">{{ slot.name or '—' }}</div>
@@ -611,8 +613,9 @@
   {% for gd in groups_data if gd.round.id == rnd.id %}
   {% set g=gd.group %}{% set slots=gd.slots %}{% set result=gd.result %}{% set ranks=gd.ranks %}
   {% set n_slots=slots|length %}
-  <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}"
-       id="group-{{ g.id }}">
+  {% set _lane_sortable = (not result) and not (is_rank_rnd and ranks and ranks|length > 0) %}
+  <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}"
+       id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
     <div style="font-size:12px;font-weight:bold;margin-bottom:8px;color:{% if is_third_rnd %}#cd7f32{% elif is_final_rnd %}#d4a017{% else %}#636e72{% endif %}">
       グループ{{ g.group_no }}
       {% if result %}<span style="margin-left:6px;font-size:11px;color:#27ae60">✓完了</span>{% endif %}
@@ -627,8 +630,8 @@
     {% for slot in slots %}
     {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
     {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
-    <div class="slot-row" data-lane="{{ slot.slot_no }}">
-      <div class="slot-no" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
+    <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
+      <div class="slot-no{% if _lane_sortable %} lane-handle{% endif %}" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
         {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
       </div>
       <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
@@ -995,6 +998,88 @@ function _htKeepScroll(fn){
 }
 // 入力カードだけをAJAXで差し替え（全画面リロードのチカチカを防ぐ）。
 // インラインの onclick はHTML属性なので差し替え後も有効。
+/* ===== 結果入力カード：出走レーン並び替え（レーン番号 .slot-no をDD）===== */
+(function(){
+  var st = document.createElement('style');
+  st.textContent =
+    '.bracket-group.lane-sortable .slot-no.lane-handle{cursor:grab;}'+
+    '.bracket-group.lane-sortable .slot-no.lane-handle:active{cursor:grabbing;}'+
+    '.slot-row.ht-lane-dragging{opacity:.55;box-shadow:0 2px 10px rgba(10,132,255,.35);}';
+  document.head.appendChild(st);
+})();
+// 即決勝カードと同じ操作感：未確定の組だけ .slot-no を掴んで行を入れ替え→新しい並びを
+// slot_no(=レーン)として保存。確定済み(resultあり)は data-slot-id を出さないので対象外。
+(function(){
+  function rowsOf(grp){ return Array.prototype.slice.call(grp.querySelectorAll('.slot-row[data-slot-id]')); }
+  function afterElement(grp, y){
+    var els = rowsOf(grp).filter(function(r){ return !r.classList.contains('ht-lane-dragging'); });
+    var closest = {offset: -Infinity, el: null};
+    els.forEach(function(r){
+      var box = r.getBoundingClientRect();
+      var off = y - box.top - box.height/2;
+      if(off < 0 && off > closest.offset){ closest = {offset: off, el: r}; }
+    });
+    return closest.el;
+  }
+  function save(grp){
+    var tid = grp.dataset.tid, hno = grp.dataset.hno, gid = grp.dataset.groupId;
+    if(!tid || !hno || !gid) return;
+    var order = rowsOf(grp).map(function(r){ return r.dataset.slotId; }).filter(Boolean);
+    if(!order.length) return;
+    var fd = new FormData(); fd.append('slot_ids', order.join(','));
+    fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/group/'+gid+'/reorder-slots',
+          {method:'POST', body:fd})
+      .then(function(r){ return r.json().catch(function(){ return {ok:false}; }); })
+      .then(function(d){
+        if(!d || !d.ok){ alert('出走レーンを保存できませんでした。'+((d&&d.error)?'\n'+d.error:'')); }
+        if(window.refreshHtCards) refreshHtCards(tid, hno);
+        if(window.reloadBracketForHeat) reloadBracketForHeat(tid, hno);
+      })
+      .catch(function(){
+        alert('出走レーンを保存できませんでした（通信エラー）。');
+        if(window.refreshHtCards) refreshHtCards(tid, hno);
+      });
+  }
+  function wireGroup(grp){
+    if(grp.dataset.htLaneWired === '1') return;
+    grp.dataset.htLaneWired = '1';
+    rowsOf(grp).forEach(function(row){
+      var handle = row.querySelector('.slot-no.lane-handle');
+      if(!handle) return;
+      handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
+      handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
+      row.addEventListener('dragstart', function(e){
+        row.classList.add('ht-lane-dragging');
+        if(e.dataTransfer){ e.dataTransfer.effectAllowed='move';
+          try{ e.dataTransfer.setData('text/plain', row.dataset.slotId||''); }catch(_){} }
+      });
+      row.addEventListener('dragend', function(){
+        row.classList.remove('ht-lane-dragging');
+        row.removeAttribute('draggable');
+        save(grp);
+      });
+    });
+    grp.addEventListener('dragover', function(e){
+      var dragging = grp.querySelector('.slot-row.ht-lane-dragging');
+      if(!dragging) return;
+      e.preventDefault();
+      if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+      var after = afterElement(grp, e.clientY);
+      if(after == null){
+        var rows = rowsOf(grp); var last = rows[rows.length-1];
+        if(last && last !== dragging) grp.insertBefore(dragging, last.nextSibling);
+      } else if(after !== dragging){
+        grp.insertBefore(dragging, after);
+      }
+    });
+  }
+  window.initHtLaneSort = function(){
+    document.querySelectorAll('.bracket-group.lane-sortable').forEach(wireGroup);
+  };
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', window.initHtLaneSort);
+  } else { window.initHtLaneSort(); }
+})();
 async function refreshHtCards(tid, hn){
   try{
     const res = await fetch(location.href, {cache:'no-store', headers:{'X-Requested-With':'fetch'}});
@@ -1012,6 +1097,7 @@ async function refreshHtCards(tid, hn){
     const single = document.getElementById('ht-cards-'+hn);
     if(single) replace(single);
     document.querySelectorAll('[id^="ht-cards-'+hn+'-"]').forEach(replace);
+    try{ if(window.initHtLaneSort) window.initHtLaneSort(); }catch(e){}
     // 差し替えで rank 選択状態はサーバ値で再構築されるためクリア
     try{ for(const k in selectedRanks) delete selectedRanks[k]; }catch(e){}
   }catch(e){ console.error(e); }
