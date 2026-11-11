@@ -2185,6 +2185,25 @@ async def _ensure_advance_links_baked(tid: int, db: aiosqlite.Connection):
     await _bake_bracket_advance_links(tid, db)
 
 
+async def _activate_first_bracket_group(tid: int, db) -> None:
+    """トーナメント生成/確定時、最初のラウンド・最初のグループを GW アクティブにする
+       （admin が # を押さなくても最初の組が自動でアクティブになる）。"""
+    try:
+        async with db.execute(
+            "SELECT bg.id AS id FROM bracket_groups bg "
+            "JOIN bracket_rounds br ON br.id=bg.round_id "
+            "WHERE br.tournament_id=? AND br.round_type!='losers' "
+            "ORDER BY br.round_no ASC, bg.group_no ASC LIMIT 1",
+            (tid,),
+        ) as cur:
+            row = await cur.fetchone()
+        if row and row["id"] is not None:
+            await gw_active_repo.set_active(db, gw_active_repo.KIND_BRACKET_GROUP, int(row["id"]))
+            await db.commit()
+    except Exception:
+        pass
+
+
 @router.post("/{tid}/bracket/generate")
 async def bracket_generate(
     tid: int,
@@ -2799,6 +2818,8 @@ async def bracket_generate(
             )
         await db.commit()
     suffix = "?dup_resolved=1" if dup_resolved else ""
+    # ★生成直後：最初のラウンド・最初のグループを自動アクティブ化
+    await _activate_first_bracket_group(tid, db)
     # 参加者向けHTML配信（自動更新）
     try:
         from app.services.publish_scheduler import schedule_publish
@@ -3035,6 +3056,8 @@ async def bracket_lottery_confirm(tid: int, request: Request, db: aiosqlite.Conn
                     "UPDATE tournaments SET losers_bracket=0, revival_target_round=NULL WHERE id=?", (tid,)
                 )
 
+    # ★くじ引き確定直後：最初のラウンド・最初のグループを自動アクティブ化
+    await _activate_first_bracket_group(tid, db)
     # 参加者向けHTML配信（生成時と同じ）
     try:
         from app.services.publish_scheduler import schedule_publish
