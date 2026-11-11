@@ -2128,6 +2128,25 @@ async def _restore_total_time(db, lane_id, value) -> None:
     )
 
 
+async def _all_heats_done(tid: int, db) -> bool:
+    """この大会の予選スケジュールの全ヒートが結果確定(done)済みか。
+       全完了時に admin 側で自動集計＋画面更新を発火させる判定に使う（全予選形式共通）。"""
+    try:
+        async with db.execute(
+            "SELECT COUNT(*) AS c FROM heats WHERE tournament_id=?", (tid,)
+        ) as cur:
+            total = (await cur.fetchone())["c"]
+        if not total:
+            return False
+        async with db.execute(
+            "SELECT COUNT(*) AS c FROM heats WHERE tournament_id=? AND status='done'", (tid,)
+        ) as cur:
+            done = (await cur.fetchone())["c"]
+        return done >= total
+    except Exception:
+        return False
+
+
 @router.post("/{tid}/qualifying/heat/{heat_id}/save-rank")
 async def heat_result_save_rank(tid: int, heat_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """インライン順位入力の保存（ポイント制）"""
@@ -2197,7 +2216,7 @@ async def heat_result_save_rank(tid: int, heat_id: int, request: Request, db: ai
     except Exception:
         pass
 
-    return JSONResponse({"ok": True, "status": "done"})
+    return JSONResponse({"ok": True, "status": "done", "all_done": await _all_heats_done(tid, db)})
 
 
 @router.post("/{tid}/qualifying/heat/{heat_id}/reset")
@@ -2430,7 +2449,7 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
                 schedule_publish()
             except Exception:
                 pass
-        return JSONResponse({"ok": True, "status": status})
+        return JSONResponse({"ok": True, "status": status, "all_done": await _all_heats_done(tid, db)})
     else:
         results = []
         for lane in lanes:
@@ -2463,7 +2482,7 @@ async def heat_result_save_inline(tid: int, heat_id: int, request: Request, db: 
         schedule_publish()
     except Exception:
         pass
-    return JSONResponse({"ok": True, "status": "done"})
+    return JSONResponse({"ok": True, "status": "done", "all_done": await _all_heats_done(tid, db)})
 
 
 @router.post("/{tid}/qualifying/auto-advanced")

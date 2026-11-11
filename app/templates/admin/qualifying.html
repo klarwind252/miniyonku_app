@@ -1711,7 +1711,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {% set pkey = (rno, gno) %}
     {% set pdata = playoff_data.get(pkey) %}
     {% if pdata %}
-    <div style="background:#fef9f0;border-left:4px solid #e67e22;padding:8px 16px;display:flex;align-items:center;gap:12px;margin-top:2px">
+    <div class="m4-decide-window" style="background:#fef9f0;border-left:4px solid #e67e22;padding:8px 16px;display:flex;align-items:center;gap:12px;margin-top:2px">
       <span style="font-weight:bold;font-size:13px;color:#e67e22">⚔️ 決勝進出決定戦 ヒート{{ rno }} グループ{{ gno }}</span>
       <span style="font-size:12px;color:#95a5a6">同率{{ pdata.tied|length }}名 → {{ pdata.playoff_spots }}名が通過</span>
       {% if pdata.all_done %}
@@ -2084,7 +2084,7 @@ document.addEventListener('DOMContentLoaded', function(){
       {% if not is_finalized and not is_confirmed_nr %}
       {# 全レースの結果入力が完了したら自動集計ボタンを緑グローで強調 #}
       {% set all_races_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
-      <button type="button" class="btn {% if all_races_done %}btn-success btn-autocalc-hl{% else %}btn-secondary{% endif %}" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold"
+      <button type="button" class="btn btn-success {% if all_races_done %}btn-autocalc-hl{% endif %}" style="margin-left:auto;font-size:15px;padding:8px 18px;font-weight:bold"
               onclick="autoAdvanced({{ t.id }})">⚡ 自動集計</button>
       {% endif %}
     </div>
@@ -2264,7 +2264,7 @@ document.addEventListener('DOMContentLoaded', function(){
 {% if is_none_roundrobin %}
   {% set nr_all_done = (heats|length > 0) and (done_heat_ids|length >= heats|length) %}
   {% if nr_all_done and deciding_groups_nr %}
-  <div class="card" style="margin-top:16px;border:2px solid #e74c3c">
+  <div class="card m4-decide-window" style="margin-top:16px;border:2px solid #e74c3c">
     <div class="card-header" style="background:#e74c3c;color:white">⚔️ 決定戦（同率解消）</div>
     <div class="card-body">
       {% for grp in deciding_groups_nr %}
@@ -2610,6 +2610,7 @@ async function saveRanks(heatId, tid, nLanes) {
       // 出し分けを正しく反映させるには行ごと描き直す必要がある。
       markHeatDone(heatId, tid);
       updateStandings();
+      m4MaybeAutoTally(data, tid);   // ★全完了なら自動集計＋画面更新＋同率スクロール
     }
   } catch(e) { console.error(e); }
 }
@@ -2779,6 +2780,7 @@ async function commitRace(heatId) {
         location.reload();   // 結果が消えた場合は「反映」に戻す必要がある
       }
       updateStandings();
+      m4MaybeAutoTally(data, TID);   // ★全完了なら自動集計＋画面更新＋同率スクロール
     }
     // 観覧画面のスクロール位置を同期（グループブロックへ）
     const _grp2 = heatGroupMap[heatId];
@@ -2878,12 +2880,38 @@ async function autoAdvanced(tid) {
                             { method: 'POST' });
     const data = await res.json();
     if (data.ok) {
+      try{ sessionStorage.setItem('m4_scroll_decide','1'); }catch(e){}  // 再読込後に同率へスクロール
       location.reload();
     } else {
       alert('集計エラー: ' + (data.error || '不明'));
     }
   } catch(e) { console.error(e); }
 }
+
+// ★全予選レース完了時：自動で「自動集計」を実行し画面更新（手動クリック/F5不要・全予選形式共通）。
+//   同率が発生していれば、再読込後に決定戦（同率解消）ウィンドウへ自動スクロールする。
+function m4MaybeAutoTally(data, tid){
+  try{
+    if(!data || !data.all_done) return;
+    if(window.__m4AutoTallyFired) return;            // 同一読み込み内の二重発火防止
+    var btn=document.querySelector('button[onclick^="autoAdvanced"]');
+    if(!btn) return;                                 // 確定済み等で集計ボタンが無ければ何もしない
+    window.__m4AutoTallyFired=true;
+    try{ sessionStorage.setItem('m4_scroll_decide','1'); }catch(e){}
+    autoAdvanced(tid);                               // サーバ集計 → location.reload()
+  }catch(e){ console.error('autoTally', e); }
+}
+// 再読込後：同率（決定戦／プレーオフ）が出ていれば自動スクロール。
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    if(sessionStorage.getItem('m4_scroll_decide')!=='1') return;
+    sessionStorage.removeItem('m4_scroll_decide');
+    setTimeout(function(){
+      var el=document.querySelector('.m4-decide-window');
+      if(el){ el.scrollIntoView({behavior:'smooth', block:'center'}); }
+    }, 350);   // スクロール位置復元処理の後に実行
+  }catch(e){}
+});
 
 function updateAdvBtn(entryId, tid, val) {
   const btn = document.getElementById(`adv-${entryId}`);
