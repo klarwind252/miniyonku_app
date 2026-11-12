@@ -2017,7 +2017,7 @@ async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Conne
     # テンプレート一覧を取得（layout_jsonをPythonオブジェクトとしてパース済みで渡す）
     import json as _json
     async with db.execute(
-        "SELECT id, name, paper_size, orientation, apply_ranks, layout_json FROM certificate_templates ORDER BY id"
+        "SELECT id, name, paper_size, orientation, apply_ranks, apply_records, layout_json FROM certificate_templates ORDER BY id"
     ) as cur:
         raw_templates = await cur.fetchall()
 
@@ -2036,6 +2036,78 @@ async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Conne
         d["layout"] = layout
         cert_templates.append(d)
 
+    # ── M4LAPS RECORD HOLDERS の賞状対象（該当者あり＋設定で賞状ON）を抽出 ──
+    #   1〜3位の賞状と一緒に印刷する。テンプレ側(apply_records)で項目に賞状テンプレが
+    #   割り当てられているものだけが certificate.html で実際に描画される。
+    #   項目・表示名・賞状ON は M4LAPS RECORD HOLDERS 設定（get_ach_config）に追従。
+    record_results = []  # [{key, label, name}]
+    if dict(t).get("use_m4laps", 1) != 0:
+        try:
+            from app.application import qualifying_records as _qrh
+            from app.application import timing_racer_best_service as _rbh
+            _cfg = await _qrh.get_ach_config(db)
+            _labels = _qrh.labels_from_cfg(_cfg)
+
+            def _cert_on(k):
+                return bool(_cfg.get(k, {}).get("cert"))
+
+            if any(_cert_on(k) for k in _qrh._ACH_KEYS):
+                _nm = {}
+                async with db.execute(
+                    "SELECT e.id AS eid, r.name FROM entries e "
+                    "JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?", (tid,)) as cur:
+                    for _r in await cur.fetchall():
+                        _nm[_r["eid"]] = _strip_name_parens(_r["name"])
+                _scan_t = await _rbh.scan_tournament_metrics(db, tid, include_finals=True)
+                _rh = _scan_t.get("records")
+                _disp = _qrh.format_records_display(_rh, _nm, {})
+                _best_by = {eid: bm.get("total") for eid, bm in (_scan_t.get("bests") or {}).items()}
+
+                # POINT LEADER / 予選1位（GRAND SLAM 判定にも使用）
+                _pl_name = None
+                _pl_eid = None
+                if qt == "point":
+                    from app.routers.qualifying import _calc_standings as _cs
+                    _lead = [s for s in [dict(x) for x in await _cs(tid, db)] if s.get("rank") == 1]
+                    if _lead and _lead[0].get("total_points"):
+                        _w = await _qrh.resolve_point_leader(db, tid, _lead, _best_by)
+                        _pl_name = _w.get("name"); _pl_eid = _w.get("entry_id")
+                _qlead = _pl_eid
+                if _qlead is None and qt == "order":
+                    from app.routers.qualifying import _calc_standings as _cs2
+                    _r1 = [s for s in [dict(x) for x in await _cs2(tid, db)] if s.get("rank") == 1]
+                    if _r1:
+                        _w2 = await _qrh.resolve_point_leader(db, tid, _r1, _best_by)
+                        _qlead = _w2.get("entry_id") if _w2 else None
+                try:
+                    _sw = await _qrh.sweep_entries_for_tournament(db, tid)
+                except Exception:
+                    _sw = set()
+                _ach = _qrh.compute_achievements(_rh, _qlead, _sw, _nm)
+
+                def _add(key, name):
+                    nm = _strip_name_parens(name or "")
+                    if nm:
+                        record_results.append({"key": key, "label": _labels.get(key, key), "name": nm})
+
+                for _k in ("overall", "fastest_lap", "top_speed"):
+                    if _cert_on(_k):
+                        rec = (_disp or {}).get(_k)
+                        for h in ((rec or {}).get("holders") or []):
+                            _add(_k, h.get("name"))
+                if _cert_on("point_leader") and _pl_name:
+                    _add("point_leader", _pl_name)
+                for _k in ("sweep", "grand_slam", "speed_star"):
+                    if _cert_on(_k):
+                        for n in (_ach.get(_k) or []):
+                            _add(_k, n)
+                if _cert_on("sprinter"):
+                    for s in (_ach.get("sprinter") or []):
+                        for n in (s.get("names") or []):
+                            _add("sprinter", n)
+        except Exception:
+            record_results = []
+
     from datetime import date
     today = date.today()
 
@@ -2045,4 +2117,5 @@ async def tournament_certificate(tid: int, request: Request, db: aiosqlite.Conne
         "results": results,
         "today": today,
         "cert_templates": cert_templates,
+        "record_results": record_results,
     })

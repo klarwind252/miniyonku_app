@@ -272,8 +272,11 @@
 {%- set _paper = (_st.paper_size  if _st else (tpl.paper_size  if tpl else 'A4')) -%}
 {%- set _orient= (_st.orientation if _st else (tpl.orientation if tpl else 'portrait')) -%}
 {%- set _apply = (_st.apply_ranks if _st else (tpl.apply_ranks_list if tpl else [])) -%}
+{%- set _applyrec = (_st.apply_records if _st else (tpl.apply_records_list if tpl else [])) -%}
 {%- set _tid   = (tpl.id if tpl else None) -%}
 {%- set _taken = taken_ranks if taken_ranks is defined else {} -%}
+{%- set _taken_rec = taken_records if taken_records is defined else {} -%}
+{%- set _rec_items = record_items if record_items is defined else [] -%}
 <div class="editor-page">
 
   {% if request.query_params.get('saved') %}
@@ -301,6 +304,7 @@
     <input type="hidden" name="paper_size"  id="f_paper"       value="{{ _paper }}">
     <input type="hidden" name="orientation" id="f_orient"      value="{{ _orient }}">
     <input type="hidden" name="apply_ranks" id="f_applyranks"  value="{{ _apply|join(',') }}">
+    <input type="hidden" name="apply_records" id="f_applyrecords" value="{{ _applyrec|join(',') }}">
     <input type="hidden" name="layout_json" id="f_layout">
   </form>
 
@@ -335,6 +339,27 @@
             {% endfor %}
           </div>
           <div style="font-size:11px;color:#7f8c8d;margin-top:4px">複数選択できます。同じ順位は1つのテンプレートにのみ割り当てできます。</div>
+        </div>
+
+        <!-- 適用範囲（M4LAPS RECORD HOLDERS 項目。1項目につき1テンプレートのみ。項目は設定に追従） -->
+        <div>
+          <div class="left-section-title">適用範囲（M4LAPS RECORD）</div>
+          <div id="applyRecordsBox" style="display:flex;flex-direction:column;gap:7px">
+            {% for it in _rec_items %}
+            {%- set _rtaken = _taken_rec.get(it.key) -%}
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;{% if _rtaken %}opacity:.55{% endif %}">
+              <input type="checkbox" class="apply-record-cb" value="{{ it.key }}"
+                     {% if it.key in _applyrec %}checked{% endif %}
+                     {% if _rtaken %}disabled data-taken-by="{{ _rtaken }}"{% endif %}
+                     onchange="updateApplyRecords()">
+              <span>{{ it.label }}</span>
+              {% if not it.cert_on %}<span style="font-size:11px;color:#95a5a6">（賞状OFF）</span>{% endif %}
+              {% if _rtaken %}<span style="font-size:11px;color:#e67e22">（「{{ _rtaken }}」が使用中）</span>{% endif %}
+            </label>
+            {% endfor %}
+            {% if not _rec_items %}<div style="font-size:11px;color:#95a5a6">M4LAPS が無効です。</div>{% endif %}
+          </div>
+          <div style="font-size:11px;color:#7f8c8d;margin-top:4px">M4LAPS RECORD HOLDERS の各項目に賞状を割り当てます。各項目は1テンプレートのみ。印刷されるのは「設定で賞状ON」かつ「各レースに該当者がいる」項目です。</div>
         </div>
 
         <!-- 用紙設定 -->
@@ -1145,6 +1170,7 @@ function saveAll() {
   document.getElementById('f_paper').value  = document.getElementById('tplPaper').value;
   document.getElementById('f_orient').value = document.getElementById('tplOrient').value;
   document.getElementById('f_applyranks').value = collectApplyRanks();
+  { const _fr = document.getElementById('f_applyrecords'); if (_fr) _fr.value = collectApplyRecords(); }
   document.getElementById('f_layout').value = JSON.stringify(layout);
   isSubmitting = true;   // 送信時は未保存警告を出さない
   document.getElementById('saveForm').submit();
@@ -1158,6 +1184,16 @@ function collectApplyRanks() {
 function updateApplyRanks() {
   const el = document.getElementById('f_applyranks');
   if (el) el.value = collectApplyRanks();
+}
+
+// 適用範囲（M4LAPS RECORD：チェック済みのレコードキーをCSVで返す）
+function collectApplyRecords() {
+  return Array.from(document.querySelectorAll('.apply-record-cb:checked'))
+              .map(cb => cb.value).join(',');
+}
+function updateApplyRecords() {
+  const el = document.getElementById('f_applyrecords');
+  if (el) el.value = collectApplyRecords();
 }
 
 // ============================================================
@@ -1177,6 +1213,7 @@ function currentSnapshot() {
     paper:  document.getElementById('tplPaper').value,
     orient: document.getElementById('tplOrient').value,
     apply:  collectApplyRanks(),
+    recs:   collectApplyRecords(),
     bg:     bgUrl,
     objs:   objs
   });

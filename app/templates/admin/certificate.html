@@ -139,6 +139,14 @@ const RANKS = [
   { rank:3, label:'第三位', titleClass:'bronze', medal:'🥉' },
 ];
 
+// M4LAPS RECORD HOLDERS の賞状対象（該当者あり＋設定で賞状ON）。
+// 実際に描画されるのは「テンプレ(apply_records)が割り当てられている項目」だけ。
+const RECORD_RESULTS = [
+  {% for rr in (record_results if record_results is defined else []) %}
+  { key: {{ rr.key | tojson }}, label: {{ rr.label | tojson }}, name: {{ rr.name | tojson }} },
+  {% endfor %}
+];
+
 // テンプレート一覧（layout はPython側でパース済みオブジェクト）
 const TEMPLATES = [
   {% for tpl in cert_templates %}
@@ -148,6 +156,7 @@ const TEMPLATES = [
     paper_size: {{ tpl.paper_size | tojson }},
     orientation: {{ tpl.orientation | tojson }},
     apply_ranks: {{ (tpl.apply_ranks or '') | tojson }},
+    apply_records: {{ (tpl.apply_records or '') | tojson }},
     layout: (function(){ var l = {{ tpl.layout | tojson }}; return (l && typeof l === 'object') ? l : {}; })()
   },
   {% endfor %}
@@ -190,6 +199,13 @@ function templateForRank(rank) {
   for (const t of TEMPLATES) { if (parseRanks(t.apply_ranks).includes(rank)) return t; }
   return null;
 }
+function parseRecords(raw) {
+  return String(raw || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+function templateForRecord(key) {
+  for (const t of TEMPLATES) { if (parseRecords(t.apply_records).includes(key)) return t; }
+  return null;
+}
 
 function applyTemplate() {
   const val = document.getElementById('tplSelect').value;
@@ -213,6 +229,14 @@ function renderPagesAuto() {
     if (!firstTpl) firstTpl = tpl;
     if (tpl) container.appendChild(renderTemplatePage(r, tpl));
   });
+  // M4LAPS RECORD HOLDERS：該当者あり＋賞状ON＋テンプレ割当 の項目を 1〜3位の後に追加印刷。
+  RECORD_RESULTS.forEach(rr => {
+    const tpl = templateForRecord(rr.key);
+    if (tpl) {
+      if (!firstTpl) firstTpl = tpl;
+      container.appendChild(renderTemplatePage({ name: rr.name, label: rr.label, record: true }, tpl));
+    }
+  });
   setPrintPageSize(firstTpl);
 }
 
@@ -222,6 +246,13 @@ function renderPages(tpl) {
   if (!tpl) return;
   RANKS.forEach(r => {
     container.appendChild(renderTemplatePage(r, tpl));
+  });
+  // 選択中テンプレートに割り当てられたレコード項目の該当者も表示。
+  const keys = parseRecords(tpl.apply_records);
+  RECORD_RESULTS.forEach(rr => {
+    if (keys.includes(rr.key)) {
+      container.appendChild(renderTemplatePage({ name: rr.name, label: rr.label, record: true }, tpl));
+    }
   });
 }
 
@@ -303,13 +334,15 @@ function renderTemplatePage(rankInfo, tpl) {
   return page;
 }
 
-// {racer_name} 等の変数を実値に置換
-function resolveField(field, rankInfo) {
-  const name = RESULTS[rankInfo.rank] || '　—　';
+// {racer_name} 等の変数を実値に置換。
+//   info は 1〜3位（{rank,label}）または RECORD 項目（{name,label,record:true}）。
+function resolveField(field, info) {
+  const name = (info && info.name != null) ? info.name : (RESULTS[info.rank] || '　—　');
+  const label = (info && info.label) || '';
   return (field || '')
     .replace('{racer_name}', name)
     .replace('{race_name}',  RACE.name)
-    .replace('{rank}',       rankInfo.label)
+    .replace('{rank}',       label)
     .replace('{date}',       RACE.date || TODAY);
 }
 

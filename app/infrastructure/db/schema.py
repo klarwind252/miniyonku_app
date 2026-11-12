@@ -461,6 +461,7 @@ async def init_db(db_path: str = None):
                         paper_size  TEXT DEFAULT 'A4',
                         orientation TEXT DEFAULT 'portrait',
                         apply_ranks TEXT DEFAULT '',
+                        apply_records TEXT DEFAULT '',
                         layout_json TEXT DEFAULT '{}',
                         created_at  TEXT DEFAULT (datetime('now','localtime')),
                         updated_at  TEXT DEFAULT (datetime('now','localtime'))
@@ -478,6 +479,11 @@ async def init_db(db_path: str = None):
         if "apply_ranks" not in _cert_cols:
             await db.execute("ALTER TABLE certificate_templates ADD COLUMN apply_ranks TEXT DEFAULT ''")
             print("[DB] migration: certificate_templates.apply_ranks added")
+        # certificate_templates.apply_records（適用範囲：この賞状を使う M4LAPS RECORD HOLDERS 項目。
+        #   "overall,fastest_lap" 形式のCSV。1項目につき1テンプレートのみ。将来項目が増えてもキーで管理）。
+        if "apply_records" not in _cert_cols:
+            await db.execute("ALTER TABLE certificate_templates ADD COLUMN apply_records TEXT DEFAULT ''")
+            print("[DB] migration: certificate_templates.apply_records added")
         # 既存データが全て未設定なら、最小IDのテンプレートに 1,2,3 を割り当て（従来動作を維持）
         async with db.execute(
             "SELECT COUNT(*) AS n FROM certificate_templates "

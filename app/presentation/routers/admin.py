@@ -1766,6 +1766,55 @@ def _rank_label(r):
     return {1: "1位", 2: "2位", 3: "3位"}.get(r, str(r))
 
 
+# ------------------------------------------------------------------
+#  賞状テンプレート 適用範囲（apply_records）ユーティリティ
+#    apply_records は "overall,fastest_lap" 形式のCSV（M4LAPS RECORD HOLDERS のキー）。
+#    1項目につき1テンプレートのみ許可。項目は qualifying_records._ACH_KEYS に追従。
+# ------------------------------------------------------------------
+def _parse_records(raw):
+    """CSV文字列 -> 有効な RECORD キーの重複なしリスト（定義順）。"""
+    from app.application import qualifying_records as _qrec_mod
+    valid = list(_qrec_mod._ACH_KEYS)
+    seen = set()
+    out = []
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if part in valid and part not in seen:
+            seen.add(part)
+            out.append(part)
+    # 定義順に正規化
+    return [k for k in valid if k in seen]
+
+
+async def _cert_taken_records(db, exclude_id=None):
+    """他テンプレートが既に確保しているレコード項目 {key: name} を返す。"""
+    if exclude_id is None:
+        sql, params = "SELECT id, name, apply_records FROM certificate_templates", ()
+    else:
+        sql, params = "SELECT id, name, apply_records FROM certificate_templates WHERE id<>?", (exclude_id,)
+    taken = {}
+    async with db.execute(sql, params) as cur:
+        rows = await cur.fetchall()
+    for row in rows:
+        d = dict(row)
+        for k in _parse_records(d.get("apply_records")):
+            taken.setdefault(k, d.get("name") or "")
+    return taken
+
+
+async def _cert_record_items(db):
+    """編集画面の適用範囲に出すレコード項目一覧 [{key,label,cert_on}]。
+       項目・表示名・賞状ON は M4LAPS RECORD HOLDERS 設定（get_ach_config）に追従し、
+       将来項目が増えても自動的に選択肢へ現れる。"""
+    from app.application import qualifying_records as _qrec_mod
+    cfg = await _qrec_mod.get_ach_config(db)
+    items = []
+    for k in _qrec_mod._ACH_KEYS:
+        c = cfg.get(k, {}) or {}
+        items.append({"key": k, "label": c.get("label") or k, "cert_on": bool(c.get("cert"))})
+    return items
+
+
 @router.post("/settings/certificate-templates/delete/{tid}", response_class=HTMLResponse)
 async def delete_cert_template(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """賞状テンプレート削除"""
@@ -1779,10 +1828,14 @@ async def delete_cert_template(tid: int, request: Request, db: aiosqlite.Connect
 async def new_cert_template(request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """賞状テンプレート新規作成画面"""
     taken = await _cert_taken_ranks(db, exclude_id=None)
+    taken_rec = await _cert_taken_records(db, exclude_id=None)
+    record_items = await _cert_record_items(db)
     return templates.TemplateResponse("admin/certificate_template_edit.html", {
         "request": request,
         "tpl": None,
         "taken_ranks": taken,
+        "taken_records": taken_rec,
+        "record_items": record_items,
     })
 
 
@@ -1795,16 +1848,21 @@ async def create_cert_template(request: Request, db: aiosqlite.Connection = Depe
     paper_size = form.get("paper_size", "A4")
     orientation = form.get("orientation", "portrait")
     ranks = _parse_ranks(form.get("apply_ranks", ""))
+    records = _parse_records(form.get("apply_records", ""))
     # 新規作成画面のエディタで配置したレイアウトも保存する。
     # （これを受け取らないと「配置して保存」した内容が破棄されていた）
     layout_json = form.get("layout_json", "{}")
 
-    # 適用範囲の重複チェック（1順位につき1テンプレートのみ）
+    # 適用範囲の重複チェック（1順位／1レコード項目につき1テンプレートのみ）
     taken = await _cert_taken_ranks(db, exclude_id=None)
-    conflicts = [(r, taken[r]) for r in ranks if r in taken]
+    taken_rec = await _cert_taken_records(db, exclude_id=None)
+    record_items = await _cert_record_items(db)
+    _rec_label = {it["key"]: it["label"] for it in record_items}
+    conflicts = [(_rank_label(r), taken[r]) for r in ranks if r in taken]
+    conflicts += [(_rec_label.get(k, k), taken_rec[k]) for k in records if k in taken_rec]
     if conflicts:
         err_msg = "適用範囲が重複しています： " + "／".join(
-            f"{_rank_label(r)} は「{nm}」が使用中" for r, nm in conflicts)
+            f"{lbl} は「{nm}」が使用中" for lbl, nm in conflicts)
         try:
             _layout = _json.loads(layout_json) if layout_json.strip() not in ("", "{}", "null") else None
         except Exception:
@@ -1813,17 +1871,19 @@ async def create_cert_template(request: Request, db: aiosqlite.Connection = Depe
             "request": request,
             "tpl": None,
             "taken_ranks": taken,
+            "taken_records": taken_rec,
+            "record_items": record_items,
             "err_msg": err_msg,
             "form_state": {
                 "name": name, "paper_size": paper_size, "orientation": orientation,
-                "apply_ranks": ranks, "layout": _layout,
+                "apply_ranks": ranks, "apply_records": records, "layout": _layout,
             },
         })
 
     await db.execute(
-        "INSERT INTO certificate_templates (name, paper_size, orientation, apply_ranks, layout_json) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (name, paper_size, orientation, ",".join(str(r) for r in ranks), layout_json)
+        "INSERT INTO certificate_templates (name, paper_size, orientation, apply_ranks, apply_records, layout_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (name, paper_size, orientation, ",".join(str(r) for r in ranks), ",".join(records), layout_json)
     )
     async with db.execute("SELECT last_insert_rowid() AS id") as cur:
         new_id = (await cur.fetchone())["id"]
@@ -1850,11 +1910,12 @@ async def copy_cert_template(tid: int, request: Request, db: aiosqlite.Connectio
         return RedirectResponse(url="/admin/settings", status_code=303)
     src = dict(src)
     new_name = (src.get("name") or "テンプレート") + " - コピー"
+    # 適用範囲（順位・レコード項目）はどちらも「1つにつき1テンプレート」制約があるため複製時は空にする。
     await db.execute(
-        "INSERT INTO certificate_templates (name, paper_size, orientation, apply_ranks, layout_json) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO certificate_templates (name, paper_size, orientation, apply_ranks, apply_records, layout_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (new_name, src.get("paper_size", "A4"), src.get("orientation", "portrait"),
-         "", src.get("layout_json", "{}"))
+         "", "", src.get("layout_json", "{}"))
     )
     async with db.execute("SELECT last_insert_rowid() AS id") as cur:
         new_id = (await cur.fetchone())["id"]
@@ -1885,11 +1946,16 @@ async def edit_cert_template(tid: int, request: Request, db: aiosqlite.Connectio
             pass
     tpl_dict["layout"] = layout
     tpl_dict["apply_ranks_list"] = _parse_ranks(tpl_dict.get("apply_ranks"))
+    tpl_dict["apply_records_list"] = _parse_records(tpl_dict.get("apply_records"))
     taken = await _cert_taken_ranks(db, exclude_id=tid)
+    taken_rec = await _cert_taken_records(db, exclude_id=tid)
+    record_items = await _cert_record_items(db)
     return templates.TemplateResponse("admin/certificate_template_edit.html", {
         "request": request,
         "tpl": tpl_dict,
         "taken_ranks": taken,
+        "taken_records": taken_rec,
+        "record_items": record_items,
     })
 
 
@@ -1902,14 +1968,19 @@ async def update_cert_template(tid: int, request: Request, db: aiosqlite.Connect
     paper_size = form.get("paper_size", "A4")
     orientation = form.get("orientation", "portrait")
     ranks = _parse_ranks(form.get("apply_ranks", ""))
+    records = _parse_records(form.get("apply_records", ""))
     layout_json = form.get("layout_json", "{}")
 
-    # 適用範囲の重複チェック（自分自身は除外して確認）
+    # 適用範囲の重複チェック（自分自身は除外。順位・レコード項目とも）
     taken = await _cert_taken_ranks(db, exclude_id=tid)
-    conflicts = [(r, taken[r]) for r in ranks if r in taken]
+    taken_rec = await _cert_taken_records(db, exclude_id=tid)
+    record_items = await _cert_record_items(db)
+    _rec_label = {it["key"]: it["label"] for it in record_items}
+    conflicts = [(_rank_label(r), taken[r]) for r in ranks if r in taken]
+    conflicts += [(_rec_label.get(k, k), taken_rec[k]) for k in records if k in taken_rec]
     if conflicts:
         err_msg = "適用範囲が重複しています： " + "／".join(
-            f"{_rank_label(r)} は「{nm}」が使用中" for r, nm in conflicts)
+            f"{lbl} は「{nm}」が使用中" for lbl, nm in conflicts)
         # 未保存の入力を保持したまま編集画面を再表示
         async with db.execute("SELECT * FROM certificate_templates WHERE id=?", (tid,)) as cur:
             row = await cur.fetchone()
@@ -1920,23 +1991,26 @@ async def update_cert_template(tid: int, request: Request, db: aiosqlite.Connect
             _layout = None
         tpl_dict["layout"] = _layout or {}
         tpl_dict["apply_ranks_list"] = ranks
+        tpl_dict["apply_records_list"] = records
         return templates.TemplateResponse("admin/certificate_template_edit.html", {
             "request": request,
             "tpl": tpl_dict,
             "taken_ranks": taken,
+            "taken_records": taken_rec,
+            "record_items": record_items,
             "err_msg": err_msg,
             "form_state": {
                 "name": name, "paper_size": paper_size, "orientation": orientation,
-                "apply_ranks": ranks, "layout": _layout,
+                "apply_ranks": ranks, "apply_records": records, "layout": _layout,
             },
         })
 
     await db.execute(
         """UPDATE certificate_templates
-           SET name=?, paper_size=?, orientation=?, apply_ranks=?, layout_json=?,
+           SET name=?, paper_size=?, orientation=?, apply_ranks=?, apply_records=?, layout_json=?,
                updated_at=datetime('now','localtime')
            WHERE id=?""",
-        (name, paper_size, orientation, ",".join(str(r) for r in ranks), layout_json, tid)
+        (name, paper_size, orientation, ",".join(str(r) for r in ranks), ",".join(records), layout_json, tid)
     )
     await db.commit()
     from fastapi.responses import RedirectResponse
