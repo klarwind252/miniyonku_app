@@ -360,13 +360,10 @@ async def settings(request: Request, db: aiosqlite.Connection = Depends(get_db))
     # ⚡ M4LAPS RECORD HOLDERS 表示設定（app_settings に JSON 保存）。
     #   各項目の panel(予選/決勝) / bracket(トーナメント表) / cert(賞状) のON/OFF。
     import json as _json_ach
-    _ach_keys = ("overall", "fastest_lap", "top_speed", "point_leader",
-                 "sweep", "grand_slam", "speed_star", "sprinter")
-    _ach_default_labels = {
-        "overall": "OVERALL", "fastest_lap": "FASTEST LAP", "top_speed": "TOP SPEED",
-        "point_leader": "POINT LEADER", "sweep": "SWEEP", "grand_slam": "GRAND SLAM",
-        "speed_star": "SPEED STAR", "sprinter": "SPRINTER",
-    }
+    from app.application import qualifying_records as _qrec_mod
+    # 項目・既定名は qualifying_records に追従（zorome など将来項目も自動対応）。
+    _ach_keys = _qrec_mod._ACH_KEYS
+    _ach_default_labels = _qrec_mod._ACH_DEFAULT_LABELS
     m4laps_ach = {k: {"panel": True, "bracket": False, "cert": False,
                       "label": _ach_default_labels[k]} for k in _ach_keys}
     async with db.execute(
@@ -501,14 +498,11 @@ async def m4laps_achievements_save(request: Request, db: aiosqlite.Connection = 
     """⚡ M4LAPS RECORD HOLDERS の表示設定（項目ごとの 予選/決勝・トーナメント表・賞状 ON/OFF）を保存。"""
     from fastapi.responses import RedirectResponse
     import json as _json_ach
+    from app.application import qualifying_records as _qrec_mod
     form = await request.form()
-    _keys = ("overall", "fastest_lap", "top_speed", "point_leader",
-             "sweep", "grand_slam", "speed_star", "sprinter")
-    _default_labels = {
-        "overall": "OVERALL", "fastest_lap": "FASTEST LAP", "top_speed": "TOP SPEED",
-        "point_leader": "POINT LEADER", "sweep": "SWEEP", "grand_slam": "GRAND SLAM",
-        "speed_star": "SPEED STAR", "sprinter": "SPRINTER",
-    }
+    # 項目・既定名は qualifying_records に追従（zorome など将来項目も自動対応）。
+    _keys = _qrec_mod._ACH_KEYS
+    _default_labels = _qrec_mod._ACH_DEFAULT_LABELS
     cfg = {}
     for k in _keys:
         _lb = (form.get(k + "_label") or "").strip()

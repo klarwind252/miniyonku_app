@@ -133,6 +133,26 @@ async def _build_lane_to_entry(db, race_rows: list[dict]) -> dict:
     return lane_to_entry
 
 
+def _is_repdigit(s: str) -> bool:
+    """整形済み数値文字列がゾロ目か（小数点を除いた全桁が同一の非ゼロ数字）。
+    例: '11.11'->True, '33.3'->True, '7.77'->True, '0.00'->False, '10.00'->False。"""
+    d = (s or "").replace(".", "")
+    if len(d) < 2 or not d.isdigit():
+        return False
+    c = d[0]
+    return c != "0" and all(ch == c for ch in d)
+
+
+def _zorome_hit(*, time_val=None, speed_ms=None) -> bool:
+    """タイムは小数第2位、速度は m/s 小数第2位 または km/h 小数第1位 でゾロ目判定。"""
+    if time_val is not None and time_val > 0 and _is_repdigit(f"{time_val:.2f}"):
+        return True
+    if speed_ms is not None and speed_ms > 0:
+        if _is_repdigit(f"{speed_ms:.2f}") or _is_repdigit(f"{speed_ms * 3.6:.1f}"):
+            return True
+    return False
+
+
 async def scan_tournament_metrics(db, tournament_id: int,
                                   include_finals: bool = False) -> dict:
     """全計測レースを1回だけ走査し {"bests": …, "records": …} を返す。
@@ -153,6 +173,8 @@ async def scan_tournament_metrics(db, tournament_id: int,
         # lane(1..) -> {"value": そのレーンの最速1周タイム, "holders": [(entry_id, heat_id), ...]}
         #   最速ラップをレーン（コース）別に出すため（全形式共通）。
         "fastest_lap_lanes": {},
+        # 🎰 ゾロ目：いずれかの計測値がゾロ目だったレーサー。holders=[(entry_id, heat_id), ...]
+        "zorome": {"holders": []},
     }
 
     race_rows = await _collect_race_rows(db, tournament_id, include_finals)
@@ -162,6 +184,8 @@ async def scan_tournament_metrics(db, tournament_id: int,
         return {"bests": bests, "records": records}
 
     lane_to_entry = await _build_lane_to_entry(db, race_rows)
+
+    _zorome_pairs: set = set()  # (entry_id, heat_id) で、いずれかの計測がゾロ目
 
     def _put(entry_id: int, metric: str, value):
         if value is None:
@@ -248,26 +272,40 @@ async def scan_tournament_metrics(db, tournament_id: int,
                 _tv = m.total_time_us / 1e6
                 _put(entry_id, "total", _tv)
                 _consider("overall", _tv, entry_id, _hid, higher_is_better=False)
-            _put(entry_id, "total_avg", lane_sp.get("total_avg"))
+                if _zorome_hit(time_val=_tv):
+                    _zorome_pairs.add((entry_id, _hid))
+            _tavg = lane_sp.get("total_avg")
+            _put(entry_id, "total_avg", _tavg)
+            if _zorome_hit(speed_ms=_tavg):
+                _zorome_pairs.add((entry_id, _hid))
             _mx = lane_sp.get("max_ms")
             _put(entry_id, "max_ms", _mx)
             _consider("top_speed", _mx, entry_id, _hid, higher_is_better=True)
+            if _zorome_hit(speed_ms=_mx):
+                _zorome_pairs.add((entry_id, _hid))
 
             for lap in m.laps:
                 _lv = lap.lap_time_us / 1e6
                 _put(entry_id, "lap", _lv)
                 _consider("fastest_lap", _lv, entry_id, _hid, higher_is_better=False)
                 _consider_lane_lap(lane, _lv, entry_id, _hid)
-                _put(entry_id, "lap_avg", st["lap"].get((lane, lap.lap)))
+                if _zorome_hit(time_val=_lv):
+                    _zorome_pairs.add((entry_id, _hid))
+                _lavg = st["lap"].get((lane, lap.lap))
+                _put(entry_id, "lap_avg", _lavg)
+                if _zorome_hit(speed_ms=_lavg):
+                    _zorome_pairs.add((entry_id, _hid))
                 for idx, sec in enumerate(lap.sectors):
                     sno = idx + 1
                     if sno > best_svc.MAX_SECTORS:
                         break
                     _sv = sec.dt_us / 1e6
                     _put(entry_id, best_svc.sector_metric(sno), _sv)
-                    _put(entry_id, best_svc.sector_speed_metric(sno),
-                         st["sec"].get((lane, lap.lap, sno)))
+                    _ssp = st["sec"].get((lane, lap.lap, sno))
+                    _put(entry_id, best_svc.sector_speed_metric(sno), _ssp)
                     _consider_sec(sno, _sv, entry_id, _hid)
+                    if _zorome_hit(time_val=_sv) or _zorome_hit(speed_ms=_ssp):
+                        _zorome_pairs.add((entry_id, _hid))
 
     # 2位との差（distinct な上位2値の差）。overall/lap は昇順、top_speed は降順。
     # _vals は pop して保持しない（メモリ節約）。
@@ -279,6 +317,9 @@ async def scan_tournament_metrics(db, tournament_id: int,
     for _lane, _rec in records["fastest_lap_lanes"].items():
         _lvals = sorted(_rec.pop("_vals", set()))
         _rec["gap"] = (abs(_lvals[0] - _lvals[1]) if len(_lvals) >= 2 else None)
+
+    # 🎰 ゾロ目の該当者（いずれかの計測がゾロ目だったレーサー）。
+    records["zorome"]["holders"] = sorted(_zorome_pairs, key=lambda p: (p[0], p[1] or 0))
 
     return {"bests": bests, "records": records}
 

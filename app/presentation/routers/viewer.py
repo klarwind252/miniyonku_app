@@ -347,6 +347,13 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
                         holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": False, "lines": _snames})
                     else:
                         holder_boxes.append({"label": "⚡SPRINTER⚡", "empty": True})
+                # 🎰 ゾロ目（いずれかの計測がゾロ目）。一番下。
+                if _on("zorome"):
+                    _zn = _ach.get("zorome") or []
+                    if _zn:
+                        holder_boxes.append({"label": "🎰ゾロ目🎰", "empty": False, "lines": _zn})
+                    else:
+                        holder_boxes.append({"label": "🎰ゾロ目🎰", "empty": True})
         except Exception:
             holder_boxes = []
 

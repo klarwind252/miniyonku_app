@@ -322,6 +322,12 @@
     <span class="v-m4rec-cond">各セクターの1位</span>
     <span class="v-m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="v-m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
   </div>{% endif %}
+  {# 🎰 ゾロ目：いずれかの計測がゾロ目だったレーサー（一番下）。 #}
+  {% if achievements.zorome is not none %}<div class="v-m4rec-row">
+    <span class="v-m4rec-label"><span class="v-m4rec-ic">🎰</span><span class="v-m4rec-tx">{{ ach_labels.zorome }}</span></span>
+    <span class="v-m4rec-cond">いずれかの計測がゾロ目</span>
+    <span class="v-m4rec-who">{% if achievements.zorome %}{% for n in achievements.zorome %}<span class="v-m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="v-m4rec-none">該当なし</span>{% endif %}</span>
+  </div>{% endif %}
   {% endif %}
 </div>
 {% endif %}

@@ -199,17 +199,21 @@ def compute_achievements(rh_raw, point_leader_eid, sweep_eids, name_by_entry) ->
     def _names(eids):
         return sorted(name_by_entry.get(e, "?") for e in eids)
 
+    # 🎰 ゾロ目：いずれかの計測値がゾロ目だったレーサー（scan 側で判定済み）。
+    zorome = _eids(rh_raw.get("zorome"))
+
     return {
         "sweep":      _names(set(sweep_eids or set())),
         "grand_slam": _names(grand),
         "speed_star": _names(speed_star),
         "sprinter":   sprinter_sectors,
+        "zorome":     _names(zorome),
     }
 
 
 # ── ⚡ M4LAPS RECORD HOLDERS 表示設定（設定ページの app_settings 'm4laps_ach_config'）──
 _ACH_KEYS = ("overall", "fastest_lap", "top_speed", "point_leader",
-             "sweep", "grand_slam", "speed_star", "sprinter")
+             "sweep", "grand_slam", "speed_star", "sprinter", "zorome")
 
 # 各項目の既定の表示名（設定で自由に変更可能。未設定時はこれを使う）。
 _ACH_DEFAULT_LABELS = {
@@ -221,6 +225,7 @@ _ACH_DEFAULT_LABELS = {
     "grand_slam":   "GRAND SLAM",
     "speed_star":   "SPEED STAR",
     "sprinter":     "SPRINTER",
+    "zorome":       "ゾロ目",
 }
 
 
@@ -280,7 +285,7 @@ def apply_panel_config(record_holders, point_leader, achievements, cfg):
     if point_leader is not None and not _on("point_leader"):
         point_leader = None
     if achievements:
-        for k in ("sweep", "grand_slam", "speed_star", "sprinter"):
+        for k in ("sweep", "grand_slam", "speed_star", "sprinter", "zorome"):
             if not _on(k):
                 achievements[k] = None
     return record_holders, point_leader, achievements
