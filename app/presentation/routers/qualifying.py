@@ -2145,8 +2145,9 @@ async def _all_heats_done(tid: int, db) -> bool:
     """この大会の予選スケジュールの全ヒートが結果確定(done)済みか。
        全完了時に admin 側で自動集計＋画面更新を発火させる判定に使う（全予選形式共通）。"""
     try:
+        # 決定戦（is_playoff=1）は同率解消用の実レースなので全完了判定からは除外する。
         async with db.execute(
-            "SELECT COUNT(*) AS c FROM heats WHERE tournament_id=?", (tid,)
+            "SELECT COUNT(*) AS c FROM heats WHERE tournament_id=? AND COALESCE(is_playoff,0)=0", (tid,)
         ) as cur:
             total = (await cur.fetchone())["c"]
         if not total:
@@ -2157,7 +2158,7 @@ async def _all_heats_done(tid: int, db) -> bool:
             """SELECT COUNT(DISTINCT h.id) AS c FROM heats h
                JOIN heat_lanes hl ON hl.heat_id=h.id
                JOIN heat_results hr ON hr.heat_lane_id=hl.id
-               WHERE h.tournament_id=?""", (tid,)
+               WHERE h.tournament_id=? AND COALESCE(h.is_playoff,0)=0""", (tid,)
         ) as cur:
             done = (await cur.fetchone())["c"]
         return done >= total
@@ -2701,6 +2702,41 @@ async def _calc_standings_none_rr(tid: int, db: aiosqlite.Connection):
     return standings
 
 
+async def _ensure_playoff_heat(db, tid: int, round_no: int, group_no: int, tied: list):
+    """決定戦を GW/TFT 表示＋ラップタイマー計測対象にするための実ヒートを作り直す。
+    group_no=0・is_playoff=1・playoff_group=対象グループ で生成するため、既存の
+    group_no>0 集計（順位/完了/星取/記録）には混ざらない。勝者は従来の○（heat_finals）で決定。
+    既存の同グループ決定戦ヒート（lanes/results 含む）を削除してから再生成。戻り値=heat_id or None。"""
+    async with db.execute(
+        "SELECT id FROM heats WHERE tournament_id=? AND COALESCE(is_playoff,0)=1 "
+        "AND round_no=? AND COALESCE(playoff_group,0)=?",
+        (tid, round_no, group_no)) as cur:
+        old = [r["id"] for r in await cur.fetchall()]
+    if old:
+        ph = ",".join("?" * len(old))
+        await db.execute(
+            f"DELETE FROM heat_results WHERE heat_lane_id IN "
+            f"(SELECT id FROM heat_lanes WHERE heat_id IN ({ph}))", old)
+        await db.execute(f"DELETE FROM heat_lanes WHERE heat_id IN ({ph})", old)
+        await db.execute(f"DELETE FROM heats WHERE id IN ({ph})", old)
+    if not tied or len(tied) < 2:
+        return None
+    async with db.execute(
+        "SELECT COALESCE(MAX(heat_no),0) as mx FROM heats WHERE tournament_id=?", (tid,)) as cur:
+        mx = (await cur.fetchone())["mx"]
+    await db.execute(
+        "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status, is_playoff, playoff_group) "
+        "VALUES (?,?,0,?,?,1,?)",
+        (tid, mx + 1, round_no, "pending", group_no))
+    async with db.execute("SELECT last_insert_rowid() AS id") as cur:
+        heat_id = (await cur.fetchone())["id"]
+    for ln, s in enumerate(tied, 1):
+        await db.execute(
+            "INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)",
+            (heat_id, ln, s["entry_id"]))
+    return heat_id
+
+
 @router.post("/{tid}/qualifying/playoff/generate")
 async def playoff_generate(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """決勝進出決定戦（プレーオフ）のスロットを生成"""
@@ -2737,7 +2773,14 @@ async def playoff_generate(tid: int, request: Request, db: aiosqlite.Connection 
             (tid, round_no, group_no, slot_no, s["entry_id"], "playoff"),
         )
 
+    # 決定戦を GW/TFT 表示＋計測対象にする実ヒートを作成し、GWアクティブに設定。
+    _pheat = await _ensure_playoff_heat(db, tid, round_no, group_no, tied)
     await db.commit()
+    if _pheat:
+        try:
+            await gw_active_repo.set_active(db, gw_active_repo.KIND_HEAT, int(_pheat))
+        except Exception:
+            pass
 
     # 参加者向けHTML配信（自動更新）
     try:
@@ -2745,7 +2788,7 @@ async def playoff_generate(tid: int, request: Request, db: aiosqlite.Connection 
         schedule_publish()
     except Exception:
         pass
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "playoff_heat_id": _pheat})
 
 
 @router.post("/{tid}/qualifying/playoff/save")
@@ -3192,6 +3235,12 @@ async def _get_playoff_data(tid: int, db: aiosqlite.Connection) -> dict:
             ) as cur2:
                 done = (await cur2.fetchone())["done"]
 
+            # 決定戦を GW/計測対象にする実ヒート（is_playoff=1）の id（あれば）。
+            async with db.execute(
+                "SELECT id FROM heats WHERE tournament_id=? AND COALESCE(is_playoff,0)=1 "
+                "AND round_no=? AND COALESCE(playoff_group,0)=? ORDER BY id DESC LIMIT 1",
+                (tid, rno, gno)) as cur:
+                _phrow = await cur.fetchone()
             result[(rno, gno)] = {
                 "round_no": rno,
                 "group_no": gno,
@@ -3200,6 +3249,7 @@ async def _get_playoff_data(tid: int, db: aiosqlite.Connection) -> dict:
                 "playoff_spots": playoff_spots,
                 "already_through": already_through,
                 "all_done": total > 0 and total == done,
+                "playoff_heat_id": (_phrow["id"] if _phrow else None),
             }
 
     return result

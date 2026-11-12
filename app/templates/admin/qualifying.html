@@ -1750,6 +1750,11 @@ document.addEventListener('DOMContentLoaded', function(){
       {% else %}
       <span style="font-size:12px;color:#bdc3c7">（ヒート{{ rno }}の全レース完了後に有効）</span>
       {% endif %}
+      {% if pdata.playoff_heat_id %}
+      <button type="button" class="btn btn-secondary" style="font-size:13px;padding:6px 14px;font-weight:bold"
+              onclick="gwActivatePlayoff({{ t.id }}, {{ pdata.playoff_heat_id }})"
+              title="決定戦をGW/TFT表示＆ラップタイマー計測対象にする">⏱ GWアクティブ（計測）</button>
+      {% endif %}
     </div>
     {% if pdata.slots and pdata.all_done %}
     <div style="padding:10px 16px;background:#fffdf8;border-bottom:1px solid #f0e0c0">
@@ -2876,6 +2881,17 @@ async function generatePlayoff(tid, roundNo, groupNo) {
     const res = await fetch(`/admin/tournaments/${tid}/qualifying/playoff/generate`, { method:'POST', body:form });
     const data = await res.json();
     if (data.ok) setTimeout(() => location.reload(), 200);
+  } catch(e) { console.error(e); }
+}
+
+// 決定戦の実ヒートを GW/TFT 表示＆ラップタイマー計測対象（GWアクティブ）にする。
+async function gwActivatePlayoff(tid, heatId) {
+  try {
+    const res = await fetch(`/admin/tournaments/${tid}/gw-active`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kind:'heat', ref_id: heatId})
+    });
+    if (res.ok && window.gwRefreshActive) window.gwRefreshActive();
   } catch(e) { console.error(e); }
 }
 

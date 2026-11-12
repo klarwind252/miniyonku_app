@@ -212,6 +212,17 @@ async def init_db(db_path: str = None):
         if "planned_mode" not in heats_cols:
             await db.execute("ALTER TABLE heats ADD COLUMN planned_mode TEXT")
             print("[DB] migration: heats.planned_mode added")
+        # heats.is_playoff / playoff_group（決勝進出決定戦の実レース化・20261112）。
+        #   決定戦を GW/TFT 表示＋ラップタイマー計測対象にするための実ヒート。
+        #   group_no=0 で生成するため既存の group_no>0 集計（順位/完了/星取）には混ざらない。
+        #   is_playoff=1 は記録スキャン・全完了判定から除外するための印。
+        #   playoff_group は対象グループ番号（元の group_no）を保持し、再生成/削除の識別に使う。
+        if "is_playoff" not in heats_cols:
+            await db.execute("ALTER TABLE heats ADD COLUMN is_playoff INTEGER DEFAULT 0")
+            print("[DB] migration: heats.is_playoff added")
+        if "playoff_group" not in heats_cols:
+            await db.execute("ALTER TABLE heats ADD COLUMN playoff_group INTEGER")
+            print("[DB] migration: heats.playoff_group added")
 
         # tournaments 追加カラム
         async with db.execute("PRAGMA table_info(tournaments)") as cur:

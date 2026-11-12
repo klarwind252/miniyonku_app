@@ -28,10 +28,11 @@ _TOL = 1e-6
 
 async def _collect_race_rows(db, tournament_id: int, include_finals: bool) -> list[dict]:
     """反映済み計測レースの一覧（予選H＋予選HT、include_finals なら決勝Gも）。"""
+    # 決定戦（is_playoff=1）は同率解消用なので記録ホルダー集計には含めない。
     if include_finals:
         sql = ("SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id"
                "  FROM timing_races tr JOIN heats h ON h.id = tr.heat_id"
-               " WHERE h.tournament_id = ?"
+               " WHERE h.tournament_id = ? AND COALESCE(h.is_playoff,0)=0"
                " UNION ALL "
                "SELECT tr.id AS race_id, NULL AS heat_id, tr.applied_group_id AS group_id"
                "  FROM timing_races tr"
@@ -42,7 +43,7 @@ async def _collect_race_rows(db, tournament_id: int, include_finals: bool) -> li
     else:
         sql = ("SELECT tr.id AS race_id, tr.heat_id, NULL AS group_id"
                "  FROM timing_races tr JOIN heats h ON h.id = tr.heat_id"
-               " WHERE h.tournament_id = ?")
+               " WHERE h.tournament_id = ? AND COALESCE(h.is_playoff,0)=0")
         params = (tournament_id,)
     async with db.execute(sql, params) as cur:
         rows = await cur.fetchall()
