@@ -1827,6 +1827,8 @@ async function setWinner(groupId, slotId, tid) {
     const res = await fetch(`/admin/tournaments/${tid}/bracket/group/${groupId}/save`, { method:'POST', body:form });
     const data = await res.json();
     if (data.ok) {
+      // ★確定直後に次アクティブを即時反映（4秒ポーリングを待たない＝ラグ解消）。
+      if (window.gwRefreshActive) window.gwRefreshActive();
       // 決勝の結果確定＝レース終了。上部ツールバーを反映するため全体更新（F5不要化）。
       if (data.finalized) { m4ForceReload(); return; }
       // 結果入力カードに完了マーク
@@ -1851,6 +1853,7 @@ async function setWinner(groupId, slotId, tid) {
 }
 
 function reloadBracketHtml(tid) {
+  if(window.gwRefreshActive) window.gwRefreshActive();   // 反映/取消経由でもアクティブを即時更新
   const curY = window.scrollY;  // 更新前のスクロール位置を保存
   fetch(`/admin/tournaments/${tid}/bracket/html?lane_drag=0&t=` + Date.now())
     .then(r => r.text())

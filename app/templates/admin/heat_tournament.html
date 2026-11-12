@@ -1190,6 +1190,8 @@ async function saveHtRanks(gid,tid,hn,ns){
     if(res.status===409){const d=await res.json().catch(()=>({}));alert(d.error||'このヒートはロックされています。');return;}
     const data=await res.json();
     if(!data.ok) return;
+    // ★確定直後に次アクティブを即時反映（4秒ポーリングを待たない＝ラグ解消）。
+    if(window.gwRefreshActive) window.gwRefreshActive();
     _htKeepScroll(function(){
       if(data.is_final_done){
         // 決勝/3位決定戦が確定：上部の決勝進出者表示を更新するため1回だけリロード
@@ -1213,6 +1215,8 @@ async function setHtWinner(gid,sid,tid,hn){
     if(res.status===409){const d=await res.json().catch(()=>({}));alert(d.error||'このヒートはロックされています。');return;}
     const data=await res.json();
     if(!data.ok) return;
+    // ★確定直後に次アクティブを即時反映（4秒ポーリングを待たない＝ラグ解消）。
+    if(window.gwRefreshActive) window.gwRefreshActive();
     _htKeepScroll(function(){
       // クリックした勝者をその場でハイライト（即時フィードバック・再取得しないので消えない）
       document.getElementById(`group-${gid}`)?.classList.add('done');
@@ -1239,6 +1243,7 @@ async function setHtWinner(gid,sid,tid,hn){
   }catch(e){console.error(e);}
 }
 function reloadBracketForHeat(tid,hn){
+  if(window.gwRefreshActive) window.gwRefreshActive();   // 反映/取消経由でもアクティブを即時更新
   var secEls=document.querySelectorAll('[id^="ht-bracket-'+hn+'-"]');
   if(secEls.length>0){
     secEls.forEach(function(el){

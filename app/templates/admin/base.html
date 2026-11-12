@@ -1860,6 +1860,10 @@ function _showPubToast(msg) {
   }
   function poll(){ fetch(GWPFX+'/'+'api/timing/active-race',{cache:'no-store'})
     .then(function(r){return r.ok?r.json():null;}).then(render).catch(function(){}); }
+  // ★結果確定直後などに「4秒ポーリングを待たず」アクティブ強調を即更新するための外部公開。
+  //   単発だと稀にサーバ確定直後の読取が1テンポ遅れるため、即時＋0.5秒の短いバーストで確実化する。
+  //   （pathname判定の外＝常に定義。結果入力カードのハンドラが確定後に呼ぶ。）
+  window.gwRefreshActive = function(){ try{ poll(); setTimeout(poll, 500); }catch(e){} };
   // ★自動反映が「反映先に既に結果あり」で保留になっていたら、上書き確認ダイアログを出す。
   //   GET読取は active-race と同じ GWPFX 接頭辞、反映/解除POSTは手動反映ボタンと同じ接頭辞なし。
   var _pendShownRace=null;
