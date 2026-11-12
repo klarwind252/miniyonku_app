@@ -104,9 +104,9 @@
 .wl-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 .wl-table th{background:#1e3a5f;padding:4px 2px;text-align:center;color:#7f8c8d;font-weight:normal;font-size:12px}
 .wl-table th.wl-th-vert{writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;height:72px;vertical-align:bottom;padding-bottom:6px;width:28px}
-.wl-table td{padding:5px 4px;text-align:center;border:1px solid #000000;font-weight:bold;font-size:14px}
+.wl-table td{padding:5px 4px;text-align:center;border:1px solid #191919;font-weight:bold;font-size:14px}
 .wl-table td.wl-name{text-align:left;font-size:12px;color:#ecf0f1;background:#191919;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wl-td-self{background:#000000;color:#3d5166}
+.wl-td-self{background:#191919;color:#3d5166}
 .wl-td-w{background:#0d2a14;color:#27ae60}
 .wl-td-l{background:#2a0d0d;color:#e74c3c}
 .wl-td-none{background:#191919;color:#3d5166}
@@ -372,7 +372,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
    管理側でレーンを3コースへドラッグ入替できるため、2列固定だと3コースの選手が観覧で消える。 #}
 {% set course_cols = [1, 2, 3] %}
 {% if t %}
-<div style="background:#000000;border-bottom:1px solid #2c3e50;padding:12px 20px;font-size:18px;font-weight:bold;color:#ecf0f1">
+<div style="background:#191919;border-bottom:1px solid #2c3e50;padding:12px 20px;font-size:18px;font-weight:bold;color:#ecf0f1">
   {{ t.name }}
   <span style="color:#7f8c8d;font-weight:normal;margin-left:8px;font-size:14px">{% if is_none_roundrobin %}決勝{% else %}予選{% endif %}</span>
 </div>
@@ -461,7 +461,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <div style="font-size:11px;color:#7f8c8d;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #1e3a5f">グループ{{ gno }}</div>
           {% endif %}
           {% for slot in group_slots %}
-          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #000000">
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #191919">
             <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %};min-width:28px">{{ slot.rank }}位</span>
             <span style="font-size:14px;font-weight:bold;color:#ecf0f1">{{ slot.name }}</span>
           </div>
@@ -1052,7 +1052,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                   </thead>
                   <tbody>
                   {% for st in grp.standings %}
-                  <tr style="border-top:1px solid #000000">
+                  <tr style="border-top:1px solid #191919">
                     <td style="padding:6px 8px;color:{% if st.rank==1 %}#d4a017{% elif st.rank==2 %}#888{% elif st.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %};font-weight:bold;font-size:15px">{{ st.rank }}</td>
                     <td style="padding:6px 8px;color:#ecf0f1;font-weight:bold;font-size:15px;white-space:nowrap">{{ st.name }}</td>
                     {% for e in entries_h %}
@@ -1060,7 +1060,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                     <td style="text-align:center;padding:5px 4px;
                       {% if cell == 'W' %}background:#0d2a14;color:#27ae60;font-weight:bold
                       {% elif cell == 'L' %}background:#2a0d0d;color:#e74c3c
-                      {% elif cell == '—' and st.name == e.name %}background:#000000;color:#3d5166
+                      {% elif cell == '—' and st.name == e.name %}background:#191919;color:#3d5166
                       {% else %}color:#555{% endif %}">
                       {% if cell == 'W' %}○{% elif cell == 'L' %}×{% elif st.name == e.name %}—{% else %}{% endif %}
                     </td>
