@@ -22,6 +22,15 @@
 .slot-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #f0f0f0}
 .slot-row:last-child{border-bottom:none}
 .slot-no{width:26px;height:26px;border-radius:50%;background:#2980b9;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0}
+/* 即決勝カードと同じレーン番号（レーン色の四角）＋順位/COバッジ。レーン色は base.html の .slot-row[data-lane] ルールが付与。 */
+.lane-no-card{flex-shrink:0;font-size:13px;font-weight:bold;color:#b0b7bf;margin:0;padding:0}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;width:30px;min-width:30px;max-width:30px;height:26px;padding:0;box-sizing:border-box;border-radius:13px;line-height:1;font-size:14px;font-weight:bold;flex-shrink:0;border:2px solid transparent}
+.rank-badge.r1{background:#fcf3cf;color:#7d6608;border-color:#d4a017}
+.rank-badge.r2{background:#eef1f4;color:#4a5057;border-color:#a4b0be}
+.rank-badge.r3{background:#f6e3d0;color:#6e4b1f;border-color:#c68642}
+.rank-badge.rn{background:#f4f6f7;color:#7f8c8d;border-color:#dfe4ea}
+.rank-badge.co{background:#fdecea;color:#c0392b;border-color:#e74c3c;font-size:11px}
+.rank-badge.ph{visibility:hidden}
 .slot-name{font-weight:bold;font-size:14px;flex:1;cursor:pointer;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slot-name:hover{color:#2980b9;text-decoration:underline}
 .slot-time{font-size:14px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0}
@@ -411,9 +420,8 @@
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
-        <div class="slot-no{% if _lane_sortable %} lane-handle{% endif %}" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
-          {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
-        </div>
+        <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ slot.slot_no }}コース{% endif %}">{{ slot.slot_no }}</div>
+        {% if m4_on %}{% if cr %}<span class="rank-badge {% if cr == 1 %}r1{% elif cr == 2 %}r2{% elif cr == 3 %}r3{% else %}rn{% endif %}" title="{{ cr }}位">{{ cr }}</span>{% elif _co %}<span class="rank-badge co" title="コースアウト・記録なし">CO</span>{% else %}<span class="rank-badge ph">-</span>{% endif %}{% endif %}
         <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
           {{ slot.name or '—' }}
         </div>
@@ -536,9 +544,8 @@
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
-        <div class="slot-no{% if _lane_sortable %} lane-handle{% endif %}" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
-          {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
-        </div>
+        <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ slot.slot_no }}コース{% endif %}">{{ slot.slot_no }}</div>
+        {% if m4_on %}{% if cr %}<span class="rank-badge {% if cr == 1 %}r1{% elif cr == 2 %}r2{% elif cr == 3 %}r3{% else %}rn{% endif %}" title="{{ cr }}位">{{ cr }}</span>{% elif _co %}<span class="rank-badge co" title="コースアウト・記録なし">CO</span>{% else %}<span class="rank-badge ph">-</span>{% endif %}{% endif %}
         <div class="slot-name">{{ slot.name or '—' }}</div>
         {% if m4_on and slot.total_time is not none %}
         <span class="slot-time{% if slot.time_rank == 1 %} t1{% elif slot.time_rank == 2 %} t2{% elif slot.time_rank == 3 %} t3{% endif %}" title="ラップタイマーの合計タイム">{{ '%.3f'|format(slot.total_time) }}</span>
@@ -631,9 +638,8 @@
     {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
     {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
     <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
-      <div class="slot-no{% if _lane_sortable %} lane-handle{% endif %}" style="background:{% if _co %}#fdecea{% elif cr %}{{ rc.get(cr,'#636e72') }}{% elif is_winner %}#27ae60{% else %}#2980b9{% endif %}{% if _co %};color:#c0392b;border:2px solid #e74c3c{% endif %}">
-        {% if _co %}<span style="font-size:9px;font-weight:bold">CO</span>{% elif cr %}{{ cr }}{% else %}{{ slot.slot_no }}{% endif %}
-      </div>
+      <div class="lane-no-card{% if _lane_sortable %} lane-handle{% endif %}" title="{% if _lane_sortable %}ドラッグで出走レーン（コース）を変更{% else %}{{ slot.slot_no }}コース{% endif %}">{{ slot.slot_no }}</div>
+      {% if m4_on %}{% if cr %}<span class="rank-badge {% if cr == 1 %}r1{% elif cr == 2 %}r2{% elif cr == 3 %}r3{% else %}rn{% endif %}" title="{{ cr }}位">{{ cr }}</span>{% elif _co %}<span class="rank-badge co" title="コースアウト・記録なし">CO</span>{% else %}<span class="rank-badge ph">-</span>{% endif %}{% endif %}
       <div class="slot-name" onclick="{% if use_rank %}{% else %}setHtWinner({{ g.id }},{{ slot.slot_id }},{{ t.id }},{{ hno }}){% endif %}">
         {{ slot.name or '—' }}
       </div>
@@ -1002,8 +1008,8 @@ function _htKeepScroll(fn){
 (function(){
   var st = document.createElement('style');
   st.textContent =
-    '.bracket-group.lane-sortable .slot-no.lane-handle{cursor:grab;}'+
-    '.bracket-group.lane-sortable .slot-no.lane-handle:active{cursor:grabbing;}'+
+    '.bracket-group.lane-sortable .lane-no-card.lane-handle{cursor:grab;}'+
+    '.bracket-group.lane-sortable .lane-no-card.lane-handle:active{cursor:grabbing;}'+
     '.slot-row.ht-lane-dragging{opacity:.55;box-shadow:0 2px 10px rgba(10,132,255,.35);}';
   document.head.appendChild(st);
 })();
@@ -1044,7 +1050,7 @@ function _htKeepScroll(fn){
     if(grp.dataset.htLaneWired === '1') return;
     grp.dataset.htLaneWired = '1';
     rowsOf(grp).forEach(function(row){
-      var handle = row.querySelector('.slot-no.lane-handle');
+      var handle = row.querySelector('.lane-no-card.lane-handle');
       if(!handle) return;
       handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
       handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
