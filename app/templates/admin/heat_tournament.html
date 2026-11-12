@@ -416,7 +416,20 @@
       </div>
       {% endif %}
       {% set use_rank = is_rank_rnd and n_slots >= 3 %}
-      {% for slot in slots %}
+      {% set _lane_count = (t.lane_count or 3) %}
+      {% set _rows = [] %}
+      {% if _lane_sortable %}
+        {% for _lane in range(1, _lane_count + 1) %}
+          {% set _ns = namespace(found=none) %}
+          {% for s0 in slots %}{% if s0.slot_no == _lane %}{% set _ns.found = s0 %}{% endif %}{% endfor %}
+          {% set _ = _rows.append(_ns.found) %}
+        {% endfor %}
+      {% else %}
+        {% for s0 in slots %}{% set _ = _rows.append(s0) %}{% endfor %}
+      {% endif %}
+      {% for slot in _rows %}
+      {% set _lane_label = loop.index %}
+      {% if slot %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
@@ -442,6 +455,13 @@
         {% endif %}
         {% endif %}
       </div>
+      {% else %}
+      <div class="slot-row slot-empty" data-empty="1" data-lane="{{ _lane_label }}">
+        <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
+        {% if m4_on %}<span class="rank-badge ph">-</span>{% endif %}
+        <div class="slot-name" style="color:#bdc3c7;font-style:italic;font-weight:normal">（空きレーン）</div>
+      </div>
+      {% endif %}
       {% endfor %}
       {% if use_rank and not result %}
       <button id="save-btn-{{ g.id }}" disabled
@@ -540,7 +560,20 @@
         {% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}
       </div>
       {% endif %}
-      {% for slot in slots %}
+      {% set _lane_count = (t.lane_count or 3) %}
+      {% set _rows = [] %}
+      {% if _lane_sortable %}
+        {% for _lane in range(1, _lane_count + 1) %}
+          {% set _ns = namespace(found=none) %}
+          {% for s0 in slots %}{% if s0.slot_no == _lane %}{% set _ns.found = s0 %}{% endif %}{% endfor %}
+          {% set _ = _rows.append(_ns.found) %}
+        {% endfor %}
+      {% else %}
+        {% for s0 in slots %}{% set _ = _rows.append(s0) %}{% endfor %}
+      {% endif %}
+      {% for slot in _rows %}
+      {% set _lane_label = loop.index %}
+      {% if slot %}
       {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
       {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
       <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
@@ -566,6 +599,13 @@
         {% endif %}
         {% endif %}
       </div>
+      {% else %}
+      <div class="slot-row slot-empty" data-empty="1" data-lane="{{ _lane_label }}">
+        <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
+        {% if m4_on %}<span class="rank-badge ph">-</span>{% endif %}
+        <div class="slot-name" style="color:#bdc3c7;font-style:italic;font-weight:normal">（空きレーン）</div>
+      </div>
+      {% endif %}
       {% endfor %}
       {% if use_rank and not result %}
       <button onclick="saveHtRanks({{ g.id }},{{ t.id }},{{ hno }})" disabled
@@ -634,7 +674,20 @@
     </div>
     {% endif %}
     {% set use_rank = is_rank_rnd and n_slots >= 3 %}
-    {% for slot in slots %}
+    {% set _lane_count = (t.lane_count or 3) %}
+    {% set _rows = [] %}
+    {% if _lane_sortable %}
+      {% for _lane in range(1, _lane_count + 1) %}
+        {% set _ns = namespace(found=none) %}
+        {% for s0 in slots %}{% if s0.slot_no == _lane %}{% set _ns.found = s0 %}{% endif %}{% endfor %}
+        {% set _ = _rows.append(_ns.found) %}
+      {% endfor %}
+    {% else %}
+      {% for s0 in slots %}{% set _ = _rows.append(s0) %}{% endfor %}
+    {% endif %}
+    {% for slot in _rows %}
+    {% set _lane_label = loop.index %}
+    {% if slot %}
     {% set is_winner = result and result.winner_slot_id == slot.slot_id %}
     {% set cr = ranks.get(slot.slot_id) %}{% set _co = (slot.name and not cr and ranks and ranks|length > 1) %}
     <div class="slot-row" data-lane="{{ slot.slot_no }}"{% if _lane_sortable %} data-slot-id="{{ slot.slot_id }}"{% endif %}>
@@ -660,6 +713,13 @@
       {% endif %}
       {% endif %}
     </div>
+    {% else %}
+    <div class="slot-row slot-empty" data-empty="1" data-lane="{{ _lane_label }}">
+      <div class="lane-no-card" title="{{ _lane_label }}コース">{{ _lane_label }}</div>
+      {% if m4_on %}<span class="rank-badge ph">-</span>{% endif %}
+      <div class="slot-name" style="color:#bdc3c7;font-style:italic;font-weight:normal">（空きレーン）</div>
+    </div>
+    {% endif %}
     {% endfor %}
     {% if use_rank and not result %}
     <button id="save-btn-{{ g.id }}" disabled
@@ -1004,35 +1064,39 @@ function _htKeepScroll(fn){
 }
 // 入力カードだけをAJAXで差し替え（全画面リロードのチカチカを防ぐ）。
 // インラインの onclick はHTML属性なので差し替え後も有効。
-/* ===== 結果入力カード：出走レーン並び替え（レーン番号 .slot-no をDD）===== */
+/* ===== 結果入力カード：出走レーン並び替え（即決勝カードと同一方式：pairs・空きレーン対応）===== */
 (function(){
   var st = document.createElement('style');
   st.textContent =
-    '.bracket-group.lane-sortable .lane-no-card.lane-handle{cursor:grab;}'+
+    '.bracket-group.lane-sortable .lane-no-card.lane-handle{cursor:grab;touch-action:none;}'+
     '.bracket-group.lane-sortable .lane-no-card.lane-handle:active{cursor:grabbing;}'+
-    '.slot-row.ht-lane-dragging{opacity:.55;box-shadow:0 2px 10px rgba(10,132,255,.35);}';
+    '.bracket-group.lane-sortable .slot-row{border-radius:6px;}'+
+    '.slot-row.lane-dragging{opacity:.55;background:#eef5ff;box-shadow:0 2px 8px rgba(10,132,255,.25);}'+
+    '.bracket-group.lane-sortable.lane-drop-active{outline:2px dashed #0a84ff;outline-offset:2px;}'+
+    '.slot-row.lane-drop-hover{outline:2px dashed #0a84ff;outline-offset:-2px;background:#eef5ff;}'+
+    '.slot-row.slot-empty{background:#fafbfc;border:1px dashed #e1e6ea;border-radius:6px;}'+
+    '.slot-row.slot-empty .slot-name{color:#c4cace;font-style:italic;font-weight:normal;font-size:13px;}';
   document.head.appendChild(st);
 })();
-// 即決勝カードと同じ操作感：未確定の組だけ .slot-no を掴んで行を入れ替え→新しい並びを
-// slot_no(=レーン)として保存。確定済み(resultあり)は data-slot-id を出さないので対象外。
+// レーンは固定位置。掴んだレーサーを落とした先のレーンへ移すだけ（落とし先に居た人だけ元レーンへ、
+// 他レーンは不変）。空きレーンへも落とせる＝2名の組で 1・3 / 2・3 を選べる。保存は pairs=slot_id:lane。
 (function(){
-  function rowsOf(grp){ return Array.prototype.slice.call(grp.querySelectorAll('.slot-row[data-slot-id]')); }
-  function afterElement(grp, y){
-    var els = rowsOf(grp).filter(function(r){ return !r.classList.contains('ht-lane-dragging'); });
-    var closest = {offset: -Infinity, el: null};
-    els.forEach(function(r){
-      var box = r.getBoundingClientRect();
-      var off = y - box.top - box.height/2;
-      if(off < 0 && off > closest.offset){ closest = {offset: off, el: r}; }
+  function rowsOf(card){ return Array.prototype.slice.call(card.querySelectorAll('.slot-row')); }
+  function laneMap(card){
+    var m = {};
+    rowsOf(card).forEach(function(r){
+      var L = parseInt(r.dataset.lane, 10);
+      if(L){ m[L] = r.dataset.slotId || null; }
     });
-    return closest.el;
+    return m;
   }
-  function save(grp){
-    var tid = grp.dataset.tid, hno = grp.dataset.hno, gid = grp.dataset.groupId;
+  function save(card, assign){
+    var pairs = [];
+    Object.keys(assign).forEach(function(L){ var sid = assign[L]; if(sid){ pairs.push(sid + ':' + L); } });
+    if(!pairs.length) return;
+    var tid = card.dataset.tid, hno = card.dataset.hno, gid = card.dataset.groupId;
     if(!tid || !hno || !gid) return;
-    var order = rowsOf(grp).map(function(r){ return r.dataset.slotId; }).filter(Boolean);
-    if(!order.length) return;
-    var fd = new FormData(); fd.append('slot_ids', order.join(','));
+    var fd = new FormData(); fd.append('pairs', pairs.join(','));
     fetch('/admin/tournaments/'+tid+'/qualifying/heat-tournament/'+hno+'/group/'+gid+'/reorder-slots',
           {method:'POST', body:fd})
       .then(function(r){ return r.json().catch(function(){ return {ok:false}; }); })
@@ -1046,41 +1110,56 @@ function _htKeepScroll(fn){
         if(window.refreshHtCards) refreshHtCards(tid, hno);
       });
   }
-  function wireGroup(grp){
-    if(grp.dataset.htLaneWired === '1') return;
-    grp.dataset.htLaneWired = '1';
-    rowsOf(grp).forEach(function(row){
+  function clearHover(card){ rowsOf(card).forEach(function(x){ x.classList.remove('lane-drop-hover'); }); }
+  function wireCard(card){
+    if(card.dataset.htLaneWired === '1') return;
+    card.dataset.htLaneWired = '1';
+    var srcLane = null, srcSid = null;
+    rowsOf(card).forEach(function(row){
       var handle = row.querySelector('.lane-no-card.lane-handle');
-      if(!handle) return;
-      handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
-      handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
+      if(handle && row.dataset.slotId){
+        handle.addEventListener('mousedown', function(){ row.setAttribute('draggable','true'); });
+        handle.addEventListener('touchstart', function(){ row.setAttribute('draggable','true'); }, {passive:true});
+      }
       row.addEventListener('dragstart', function(e){
-        row.classList.add('ht-lane-dragging');
+        if(!row.dataset.slotId){ e.preventDefault(); return; }
+        srcLane = parseInt(row.dataset.lane, 10);
+        srcSid = row.dataset.slotId;
+        row.classList.add('lane-dragging');
+        card.classList.add('lane-drop-active');
         if(e.dataTransfer){ e.dataTransfer.effectAllowed='move';
-          try{ e.dataTransfer.setData('text/plain', row.dataset.slotId||''); }catch(_){} }
+          try{ e.dataTransfer.setData('text/plain', srcSid); }catch(_){} }
       });
       row.addEventListener('dragend', function(){
-        row.classList.remove('ht-lane-dragging');
+        row.classList.remove('lane-dragging');
         row.removeAttribute('draggable');
-        save(grp);
+        card.classList.remove('lane-drop-active');
+        clearHover(card);
+        srcLane = null; srcSid = null;
       });
-    });
-    grp.addEventListener('dragover', function(e){
-      var dragging = grp.querySelector('.slot-row.ht-lane-dragging');
-      if(!dragging) return;
-      e.preventDefault();
-      if(e.dataTransfer) e.dataTransfer.dropEffect='move';
-      var after = afterElement(grp, e.clientY);
-      if(after == null){
-        var rows = rowsOf(grp); var last = rows[rows.length-1];
-        if(last && last !== dragging) grp.insertBefore(dragging, last.nextSibling);
-      } else if(after !== dragging){
-        grp.insertBefore(dragging, after);
-      }
+      row.addEventListener('dragover', function(e){
+        if(srcSid == null) return;
+        e.preventDefault();
+        if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+        clearHover(card);
+        row.classList.add('lane-drop-hover');
+      });
+      row.addEventListener('drop', function(e){
+        e.preventDefault();
+        if(srcSid == null) return;
+        var tgtLane = parseInt(row.dataset.lane, 10);
+        if(!tgtLane || tgtLane === srcLane){ clearHover(card); return; }
+        var m = laneMap(card);
+        var tgtSid = m[tgtLane] || null;
+        m[tgtLane] = srcSid;
+        m[srcLane] = tgtSid;
+        clearHover(card);
+        save(card, m);
+      });
     });
   }
   window.initHtLaneSort = function(){
-    document.querySelectorAll('.bracket-group.lane-sortable').forEach(wireGroup);
+    document.querySelectorAll('.bracket-group.lane-sortable').forEach(wireCard);
   };
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', window.initHtLaneSort);

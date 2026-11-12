@@ -4893,11 +4893,14 @@ async def ht_generate(tid: int, heat_no: int, request: Request, db: aiosqlite.Co
 
 
 @router.post("/{tid}/qualifying/heat-tournament/{heat_no}/group/{group_id}/reorder-slots")
-async def ht_reorder_slots(tid: int, heat_no: int, group_id: int, slot_ids: str = Form(...), db: aiosqlite.Connection = Depends(get_db)):
+async def ht_reorder_slots(tid: int, heat_no: int, group_id: int, slot_ids: str = Form(""), pairs: str = Form(""), db: aiosqlite.Connection = Depends(get_db)):
     """ヒートトーナメント各グループの出走レーン（コース）並び替え。
 
-    受け取った slot_id の並び順（上→下）を、そのまま slot_no（＝レーン番号）1..N に
-    書き換える。反映は slot_no ↔ レーンで照合されるため、この並びが出走レーンになる。
+    2通りの指定を受け付ける（即決勝カードと同じ）:
+      - pairs="slot_id:lane,slot_id:lane,..."（推奨）… 各レーサーを 1/2/3 コースの
+        どこに置くかを明示。2名の組で 1・3 / 2・3 のように空きレーンを作れる。
+      - slot_ids="slot_id,slot_id,..."（従来）… 上→下の並び順を 1..N に詰めて割り当て。
+    反映は slot_no ↔ レーンで照合されるため、この並びが出走レーンになる。
 
     安全のため:
       - ヒートがロック中なら拒否。
@@ -4929,26 +4932,53 @@ async def ht_reorder_slots(tid: int, heat_no: int, group_id: int, slot_ids: str 
                 status_code=409,
             )
 
-    try:
-        want = [int(x) for x in slot_ids.split(",") if x.strip() != ""]
-    except ValueError:
-        return JSONResponse({"ok": False, "error": "並び順の指定が不正です。"}, status_code=400)
-
     async with db.execute(
         "SELECT id FROM ht_slots WHERE group_id = ?", (group_id,)
     ) as cur:
         have = [r["id"] for r in await cur.fetchall()]
 
-    if sorted(want) != sorted(have) or not want:
-        return JSONResponse(
-            {"ok": False, "error": "並び順の対象スロットが一致しません。画面を更新してからやり直してください。"},
-            status_code=400,
-        )
+    # レーン数上限（空きレーン＝1・3 のような割り当てを許すため、上限で検証）
+    async with db.execute("SELECT lane_count FROM tournaments WHERE id = ?", (tid,)) as cur:
+        trow = await cur.fetchone()
+    lane_count = int((trow["lane_count"] if trow else 3) or 3)
 
-    for idx, sid in enumerate(want, start=1):
+    assign: dict[int, int] = {}   # slot_id -> lane_no
+    if pairs.strip():
+        # 明示レーン割り当て（空きレーンを作れる）
+        try:
+            for tok in pairs.split(","):
+                tok = tok.strip()
+                if not tok:
+                    continue
+                sid_s, lane_s = tok.split(":")
+                assign[int(sid_s)] = int(lane_s)
+        except (ValueError, KeyError):
+            return JSONResponse({"ok": False, "error": "レーン割り当ての指定が不正です。"}, status_code=400)
+        lanes = list(assign.values())
+        if (sorted(assign.keys()) != sorted(have) or not have
+                or len(set(lanes)) != len(lanes)
+                or any(l < 1 or l > lane_count for l in lanes)):
+            return JSONResponse(
+                {"ok": False, "error": "レーン割り当てが不正です（重複・範囲外、またはスロット不一致）。画面を更新してやり直してください。"},
+                status_code=400,
+            )
+    else:
+        # 従来：並び順を 1..N に詰める
+        try:
+            want = [int(x) for x in slot_ids.split(",") if x.strip() != ""]
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "並び順の指定が不正です。"}, status_code=400)
+        if sorted(want) != sorted(have) or not want:
+            return JSONResponse(
+                {"ok": False, "error": "並び順の対象スロットが一致しません。画面を更新してからやり直してください。"},
+                status_code=400,
+            )
+        assign = {sid: idx for idx, sid in enumerate(want, start=1)}
+
+    for sid, lane in assign.items():
         await db.execute(
             "UPDATE ht_slots SET slot_no = ? WHERE id = ? AND group_id = ?",
-            (idx, sid, group_id),
+            (lane, sid, group_id),
         )
     await db.commit()
 
@@ -4958,7 +4988,7 @@ async def ht_reorder_slots(tid: int, heat_no: int, group_id: int, slot_ids: str 
     except Exception:
         pass
 
-    return JSONResponse({"ok": True, "order": want})
+    return JSONResponse({"ok": True, "assign": assign})
 
 
 @router.post("/{tid}/qualifying/heat-tournament/{heat_no}/group/{group_id}/save")
