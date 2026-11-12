@@ -308,16 +308,15 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     if not rows:
         return None
 
-    # 並び順：ヒート → セクション(グループA→B→総合決勝) → ラウンド種別 → ラウンド番号 → 組番号。
-    #   section をラウンドより先に置くことで「グループAを決勝まで全部 → グループBを決勝まで全部
-    #   → ヒート総合決勝」の順になる。総合決勝(section_no=0)はヒート内で最後に回す。
-    def _sec_pri(sec):
-        s = sec or 0
-        return (1, 0) if s == 0 else (0, s)   # 総合決勝(section_no=0)は最後
+    # 並び順：ヒート → (総合決勝=section0は最後) → ラウンド番号 → 種別 → セクション(A→B) → 組番号。
+    #   ラウンドを section より先に置くので「各ラウンドを グループA→グループB の順に消化してから
+    #   次のラウンドへ」。ラウンド1(A全組→B全組)→ラウンド2(A→B)→…→決勝(A→B)→ヒート総合決勝。
+    #   総合決勝(section_no=0)だけはヒート内の最後に回す。
     def _key(r):
-        return (r["heat_no"] or 0, _sec_pri(r["section_no"]),
-                _rtype_pri(r["round_type"]), r["round_no"] or 0,
-                r["group_no"] or 0, r["id"])
+        sec = r["section_no"] or 0
+        return (r["heat_no"] or 0, 1 if sec == 0 else 0,
+                r["round_no"] or 0, _rtype_pri(r["round_type"]),
+                sec, r["group_no"] or 0, r["id"])
 
     ordered = sorted(rows, key=_key)
     unconf = [r for r in ordered if not r["ranked"]]
@@ -427,15 +426,15 @@ async def upcoming_order(db) -> dict:
                 rows = await c.fetchall()
             items = [r for r in rows if not r["ranked"]]
             # 並び順は _group_next_active と完全一致：
-            #   ヒート → セクション(グループA→B→総合決勝) → 種別 → ラウンド番号 → 組番号。
-            #   section をラウンドより先に置き、総合決勝(section_no=0)を最後に回す。
+            #   ヒート → (総合決勝=section0は最後) → ラウンド番号 → 種別 → セクション(A→B) → 組番号。
+            #   ラウンドを section より先に置くので「各ラウンドを グループA→B 消化→次ラウンド」。
             #   これで admin のアクティブ自動遷移とスマホの「次のレースまで」が一致する。
-            def _sec_pri(sec):
-                s = sec or 0
-                return (1, 0) if s == 0 else (0, s)   # 総合決勝(section_no=0)は最後
-            items.sort(key=lambda r: (r["heat_no"] or 0, _sec_pri(r["section_no"]),
-                                      _rtype_pri(r["round_type"]), r["round_no"] or 0,
-                                      r["group_no"] or 0, r["id"]))
+            def _ord_key(r):
+                sec = r["section_no"] or 0
+                return (r["heat_no"] or 0, 1 if sec == 0 else 0,
+                        r["round_no"] or 0, _rtype_pri(r["round_type"]),
+                        sec, r["group_no"] or 0, r["id"])
+            items.sort(key=_ord_key)
             ids = [r["id"] for r in items]
         else:
             return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
