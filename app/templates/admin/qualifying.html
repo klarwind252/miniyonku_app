@@ -1923,6 +1923,9 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     {% endif %}
 
+    {# ⚡ M4LAPS RECORD HOLDERS（暫定）：総合成績の直下（ヒート総当たりのみ・即決勝総当たりと同様）。 #}
+    {% if is_heat_roundrobin %}{{ admin_m4rec() }}{% endif %}
+
     {% else %}
     {# ポイント制：ラウンドごとに見出しをつけて表示 #}
     {% if t.qualifying_type == 'point' or is_order %}
@@ -2046,31 +2049,17 @@ document.addEventListener('DOMContentLoaded', function(){
           {% endfor %}
         </tbody>
       </table>
-      {% elif is_heat_roundrobin and overall_standings %}
-      {# ★総当たり（ヒート）：右サイドは総合成績＝順位/レーサー/勝/出走/タイム計。
-         ポイント・完走・完走率は出さない（ユーザー確定 20261112）。リアルタイム更新は data.overall を使う。 #}
-      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
-        <thead>
-          <tr style="border-bottom:2px solid #dee2e6">
-            <th style="padding:3px 4px">順位</th>
-            <th style="padding:3px 6px;text-align:left">レーサー</th>
-            <th style="padding:3px 4px;color:#27ae60">勝</th>
-            <th style="padding:3px 4px">出走</th>
-            <th style="padding:3px 4px">タイム計</th>
-          </tr>
-        </thead>
-        <tbody id="qp-rank-tbody">
-          {% for s in overall_standings %}
-          <tr style="border-bottom:1px solid #f0f0f0;{% if s.rank==1 %}background:#fffde7{% endif %}">
-            <td style="padding:3px 4px;text-align:center;font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
-            <td style="padding:3px 6px"><strong>{{ s.name }}</strong></td>
-            <td style="padding:3px 4px;text-align:center;color:#27ae60"><strong>{{ s.wins or 0 }}</strong></td>
-            <td style="padding:3px 4px;text-align:center">{{ s.races or 0 }}</td>
-            <td style="padding:3px 4px;text-align:center;font-variant-numeric:tabular-nums">{% if s.time_sum %}{{ "%.3f"|format(s.time_sum) }}{% else %}—{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      {% elif is_heat_roundrobin and heat_group_hoshitori %}
+      {# ★総当たり（ヒート）：右サイドは本文と同じ「グループ別 星取表」を縦に並べる（ユーザー確定 20261112）。
+         既存の hoshitori_table マクロ・heat_group_hoshitori をそのまま再利用。更新はリロード時。 #}
+      {% for key, hoshi in heat_group_hoshitori|dictsort %}
+        {% if hoshi and hoshi.entries %}
+        <div style="margin-bottom:10px">
+          <div style="font-weight:bold;font-size:12px;padding:4px 2px;color:#1a5276">{% if generated_round_nos and generated_round_nos|length > 1 %}ヒート{{ key[0] }} {% endif %}グループ{{ key[1] }} 星取表</div>
+          {{ hoshitori_table(hoshi) }}
+        </div>
+        {% endif %}
+      {% endfor %}
       {% elif standings and not is_roundrobin and not is_none_roundrobin %}
       <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
         <thead>

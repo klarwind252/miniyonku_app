@@ -1328,6 +1328,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   {% endif %}{# /heat_roundrobin右カラム #}
 </div>
+
+{# ⚡ M4LAPS RECORD HOLDERS（暫定）：ヒート総当たりは右カラムが無いのでページ最下部に表示（即決勝総当たりと同様）。 #}
+{% if qualifying_type == 'heat_roundrobin' %}
+<div style="margin:12px 8px 0">{{ record_holders_block() }}</div>
+{% endif %}
 {# 決勝進出レーサーはページ上部にのみ表示する（重複していた最下部表示は削除）。 #}
 
 {# 名前タップ→予選タイム詳細モーダル。JSは公開HTMLでは <script> が全除去されるため、
