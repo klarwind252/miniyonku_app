@@ -150,8 +150,8 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 .schedule-table td{vertical-align:middle!important}
 
 /* info-grid: 左=項目名・右=値 の2列行レイアウト */
-.info-grid{display:block!important;border:1px solid #2c3e50;border-radius:6px;overflow:hidden}
-.info-cell{display:flex!important;align-items:baseline;padding:6px 12px;border-bottom:1px solid #2c3e50}
+.info-grid{display:block!important;border:1px solid #393939;border-radius:6px;overflow:hidden}
+.info-cell{display:flex!important;align-items:baseline;padding:6px 12px;border-bottom:1px solid #393939}
 .info-cell:last-child{border-bottom:none}
 .info-label{color:#7f8c8d;font-size:12px;flex:0 0 7em;white-space:nowrap;font-weight:normal}
 .info-value{font-size:12px;font-weight:normal;color:#ecf0f1;flex:1}
@@ -161,9 +161,9 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 .entry-grid{grid-template-columns:1fr!important}
 /* bracket: 横スクロールをスマホでも確実に・スムーズに */
 .bracket-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
-/* entry-card: 横並び・幅いっぱい。背景をページ背景(#0f1923)と差別化してカードとして見せる
+/* entry-card: 横並び・幅いっぱい。背景をページ背景(#191919)と差別化してカードとして見せる
    （!important を付けない＝bracketの進出ハイライト等のインライン背景は上書きしない） */
-.entry-card{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;width:100%;padding:8px 12px;box-sizing:border-box;background:#152232;border:1px solid #2c3e50;border-radius:8px}
+.entry-card{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;width:100%;padding:8px 12px;box-sizing:border-box;background:#292929;border:1px solid #393939;border-radius:8px}
 /* レーサー名: 14px bold・左揃え・省略なし */
 .entry-name{font-size:14px!important;font-weight:bold!important;white-space:nowrap;overflow:visible!important;text-overflow:clip!important;flex:1;text-align:left}
 /* よみがな: 10px normal */
@@ -301,7 +301,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
       : '';
     ov.innerHTML=head
       +'<div style="font-size:15px;line-height:1.7;margin-bottom:22px;opacity:.9">会場のQRコードを<br>もう一度スキャンしてください。</div>'
-      +'<div style="display:inline-block;background:#2c3e50;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>当日分（翌8:59まで）の観覧を再開できます</div>'
+      +'<div style="display:inline-block;background:#393939;color:#cfd8e3;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:bold;line-height:1.6">受付時間内にQRコードを再スキャンすると<br>当日分（翌8:59まで）の観覧を再開できます</div>'
       +pwaNote;
     document.body.appendChild(ov);
   }

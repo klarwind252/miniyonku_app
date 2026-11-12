@@ -63,13 +63,13 @@
 .standings-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap}
 .standings-table thead th:nth-child(n+4){text-align:center}
 .standings-table th{background:#1e3a5f;padding:5px 8px;text-align:left;font-size:12px;color:#7f8c8d;font-weight:normal;white-space:nowrap;line-height:1.2;vertical-align:bottom}
-.standings-table td{padding:5px 8px;border-bottom:1px solid #2c3e50;font-size:15px}
+.standings-table td{padding:5px 8px;border-bottom:1px solid #393939;font-size:15px}
 .standings-table tr:first-child td{background:#1a2a10}
 /* M4LAPS ベスト表（予選順位とエントリーの間）。TOTAL/LAP のベストを列表示。
    上位3人の配色は観覧の他ベスト表示と同じ 紫1位/青2位/緑3位。 */
 .m4l-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap;font-size:13px}
 .m4l-table th{background:#1e3a5f;color:#7f8c8d;font-weight:normal;font-size:11px;padding:4px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
-.m4l-table td{padding:10px 8px;border-bottom:1px solid #2c3e50;text-align:center}
+.m4l-table td{padding:10px 8px;border-bottom:1px solid #393939;text-align:center}
 .m4l-table tr.m4l-grp th{background:#16324f;color:#9fb3c8;font-size:11px;letter-spacing:1px}
 .m4l-sep{border-left:2px solid #33475f}
 .m4l-rank{font-weight:bold;font-size:15px}
@@ -91,7 +91,7 @@
 .rs-name{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
 .rs-sec-h{font-size:13px;font-weight:bold;color:#7f8c8d;margin:0 0 6px;letter-spacing:1px}
 .rs-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
-.rs-table th,.rs-table td{border:1px solid #2c3e50;padding:4px 8px;text-align:center}
+.rs-table th,.rs-table td{border:1px solid #393939;padding:4px 8px;text-align:center}
 .rs-table th{background:#1e3a5f;color:#cdd6df;font-weight:normal}
 .rs-table .rs-race{text-align:left;color:#cdd6df}
 .rs-num{font-variant-numeric:tabular-nums;color:#ecf0f1}
@@ -134,20 +134,20 @@
 /* エントリー縮小：横並び＋右端折り返しの羅列（1件1行にしない） */
 .entry-sm{display:inline-flex;align-items:center;font-size:12px;white-space:nowrap;color:#cdd6df}
 /* グループカード大きく */
-.group-card{background:#191919;border:1px solid #2c3e50;border-radius:8px;padding:12px 16px;min-width:160px;flex:1}
+.group-card{background:#191919;border:1px solid #393939;border-radius:8px;padding:12px 16px;min-width:160px;flex:1}
 .group-card-title{font-size:12px;color:#7f8c8d;margin-bottom:8px;font-weight:bold}
 .group-slot{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:16px}
 .group-slot-no{color:#7f8c8d;width:20px;text-align:right;font-size:12px}
 /* スケジュール未生成時のエントリーカード（即決勝トーナメントと同デザイン） */
 .q-entry-grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:auto;gap:8px;width:100%}
-.q-entry-card{background:#191919;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.q-entry-card{background:#191919;border-radius:8px;padding:10px 14px;border:1px solid #393939;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .q-entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
 .q-entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 /* 参加者向けhtml用の標準エントリーカード（bracket.htmlと同じクラス名）。
    実際の名前14px/読み仮名10px・横並びはpublic_html.pyのCSS注入で上書きされる。
    レーサー選択プルダウンのJSが.entry-nameを参照するため、この命名が必須。 */
 .entry-grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:auto;gap:8px;width:100%}
-.entry-card{background:#191919;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.entry-card{background:#191919;border-radius:8px;padding:10px 14px;border:1px solid #393939;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecf0f1}
 .entry-yomi{font-size:12px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 /* ⚡ M4LAPS RECORD HOLDERS（観覧：決勝進出レーサー枠の下・同じ幅） */
@@ -372,12 +372,12 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
    管理側でレーンを3コースへドラッグ入替できるため、2列固定だと3コースの選手が観覧で消える。 #}
 {% set course_cols = [1, 2, 3] %}
 {% if t %}
-<div style="background:#191919;border-bottom:1px solid #2c3e50;padding:12px 20px;font-size:18px;font-weight:bold;color:#ecf0f1">
+<div style="background:#191919;border-bottom:1px solid #393939;padding:12px 20px;font-size:18px;font-weight:bold;color:#ecf0f1">
   {{ t.name }}
   <span style="color:#7f8c8d;font-weight:normal;margin-left:8px;font-size:14px">{% if is_none_roundrobin %}決勝{% else %}予選{% endif %}</span>
 </div>
 {% if qualifying_type in ('heat_roundrobin','heat_tournament','heat_tournament_garappa') %}
-<div style="background:#191919;border-bottom:1px solid #2c3e50;padding:8px 20px;font-size:13px;color:#ecf0f1;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+<div style="background:#191919;border-bottom:1px solid #393939;padding:8px 20px;font-size:13px;color:#ecf0f1;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
   <span style="color:#3498db;font-weight:bold">{% if qualifying_type in ('heat_tournament','heat_tournament_garappa') %}ヒート（トーナメント）{% elif qualifying_type == 'heat_roundrobin' %}ヒート（総当たり）{% endif %}</span>
   {% if qualifying_type == 'heat_roundrobin' %}
   <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
@@ -422,7 +422,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <div style="font-size:14px;font-weight:bold;color:#5aa3d6;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #f0f0f0">ヒート {{ hd.heat_no }}</div>
         {% for a in adv_list %}
         <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;margin-bottom:6px;border-radius:8px;
-                    {% if a.is_advance or not ht_has_heat_final %}background:#13351f;border:2px solid {{ rkc.get(a.rank,'#555') }}{% else %}background:#16202c;border:1px solid #2c3e50{% endif %}">
+                    {% if a.is_advance or not ht_has_heat_final %}background:#13351f;border:2px solid {{ rkc.get(a.rank,'#555') }}{% else %}background:#16202c;border:1px solid #393939{% endif %}">
           <span style="font-size:17px;min-width:1.6em">{{ medal.get(a.rank,'') }}</span>
           <span style="font-weight:bold;font-size:14px;min-width:3.2em;color:{{ rkc.get(a.rank,'#9aa') }}">第{{ a.rank }}位</span>
           <span style="font-weight:bold;font-size:17px;flex:1;color:#ecf0f1">{{ a.name }}</span>
@@ -619,7 +619,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% if ow_stage_status == 'closed' %}
           <span style="font-size:12px;padding:2px 10px;background:#c0392b;color:#fff;border-radius:10px;font-weight:bold">終了</span>
           {% endif %}
-          <span style="margin-left:auto;font-size:14px;font-weight:bold;color:#2c3e50">
+          <span style="margin-left:auto;font-size:14px;font-weight:bold;color:#393939">
             通過 <span style="color:#27ae60">{{ ow_passed }}</span> / {{ ow_advance_count }}名
           </span>
         </div>
@@ -764,7 +764,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <div id="viewer-ht-bracket-{{ hno }}-{{ sec.section_no }}" style="background:#131e2b;overflow-x:auto;width:100%;padding:4px 0;margin-bottom:8px">
             <div style="color:#7f8c8d;font-size:12px;padding:8px">読み込み中...</div>
           </div>
-          {% if not loop.last %}<hr style="border:none;border-top:1px solid #2c3e50;margin:12px 0">{% endif %}
+          {% if not loop.last %}<hr style="border:none;border-top:1px solid #393939;margin:12px 0">{% endif %}
           {% endfor %}
 
           {# ── ヒート決勝進出者（各グループ上位n名）一覧 ── #}
@@ -1092,7 +1092,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               {% set rcolors = {1:'#d4a017',2:'#888',3:'#cd7f32'} %}
               {% for slot in ranked_slots %}
               <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;
-                          border:1px solid {% if slot.deciding_rank <= hf_adv %}#27ae60{% else %}#2c3e50{% endif %};
+                          border:1px solid {% if slot.deciding_rank <= hf_adv %}#27ae60{% else %}#393939{% endif %};
                           border-radius:6px;background:{% if slot.deciding_rank <= hf_adv %}#0f2a1e{% else %}#1a2d3e{% endif %}">
                 <span style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;
                              background:{{ rcolors.get(slot.deciding_rank, '#636e72') }};color:#fff">{{ slot.deciding_rank }}</span>
@@ -1179,7 +1179,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div class="v-section-title" style="font-size:15px">⏳ 出走待ち（先着順）</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         {% for p in order_pending %}
-        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#12283d;border:1px solid #2c3e50;border-radius:16px;font-size:13px;color:#ecf0f1;font-weight:bold">
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#12283d;border:1px solid #393939;border-radius:16px;font-size:13px;color:#ecf0f1;font-weight:bold">
           <span style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;background:#f0f0f0;color:#fff;border-radius:50%;font-size:11px;font-weight:bold">{{ loop.index }}</span>
           {{ p.name }}
         </span>
@@ -1330,7 +1330,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {{ record_holders_block() }}
 
     <div class="v-section" style="position:sticky;top:8px">
-      <div style="font-size:13px;font-weight:bold;color:#7f8c8d;padding:8px 12px;border-bottom:1px solid #2c3e50">
+      <div style="font-size:13px;font-weight:bold;color:#7f8c8d;padding:8px 12px;border-bottom:1px solid #393939">
         👥 エントリー {{ entries|length }}名
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:80vh;overflow-y:auto;padding:8px 12px">
@@ -1355,8 +1355,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
    public_html.py 側で window.openRacerStats を持つこのスクリプトを保持→再注入している。 #}
 {% if m4laps_active %}
 <div id="rs-overlay" onclick="if(event.target===this&&window.m4CloseRs)window.m4CloseRs()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:16px">
-  <div style="background:#191919;border:1px solid #2c3e50;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #2c3e50">
+  <div style="background:#191919;border:1px solid #393939;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #393939">
       <div id="rs-title" style="font-weight:bold;font-size:15px;color:#ecf0f1">レーサー詳細</div>
       <button id="rs-close" type="button" onclick="if(window.m4CloseRs)window.m4CloseRs()" style="background:none;border:none;color:#7f8c8d;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
     </div>
@@ -1495,7 +1495,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px">
     {% for e in entries %}
-    <div style="background:#191919;border:1px solid #2c3e50;border-radius:6px;padding:6px 14px;font-size:14px;font-weight:bold;color:#ecf0f1">
+    <div style="background:#191919;border:1px solid #393939;border-radius:6px;padding:6px 14px;font-size:14px;font-weight:bold;color:#ecf0f1">
       {{ e.name }}
     </div>
     {% endfor %}
