@@ -31,6 +31,10 @@
 .rank-badge.rn{background:#f4f6f7;color:#7f8c8d;border-color:#dfe4ea}
 .rank-badge.co{background:#fdecea;color:#c0392b;border-color:#e74c3c;font-size:11px}
 .rank-badge.ph{visibility:hidden}
+/* 「組み合わせを選んで作成してください」案内を目立たせる緩やかなパルス */
+@keyframes htGenHintPulse{0%,100%{box-shadow:0 2px 10px rgba(245,179,1,0.3)}50%{box-shadow:0 2px 16px rgba(245,179,1,0.65)}}
+.ht-gen-hint{animation:htGenHintPulse 1.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.ht-gen-hint{animation:none}}
 .slot-name{font-weight:bold;font-size:14px;flex:1;cursor:pointer;min-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slot-name:hover{color:#2980b9;text-decoration:underline}
 .slot-time{font-size:14px;font-weight:bold;color:#2c3e50;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0}
@@ -304,8 +308,8 @@
       </div>
       {% endfor %}
       <button type="submit" class="gen-submit-btn" data-hno="{{ hno }}" disabled
-              style="margin-top:8px;padding:8px 24px;font-size:15px;font-weight:bold;border-radius:6px;background:#ccc;color:#fff;border:none;cursor:not-allowed">
-        ⚡ 生成
+              style="margin-top:8px;padding:14px 32px;font-size:20px;font-weight:bold;border-radius:8px;background:#ccc;color:#fff;border:none;cursor:not-allowed">
+        ⚡ 予選トーナメント表を作成
       </button>
     </form>
     {% else %}
@@ -345,8 +349,8 @@
       </form>
     </div>
     {% endif %}
-    <div style="margin-top:10px;padding:10px 14px;background:#eaf4fb;border:1px solid #aed6f1;border-radius:8px;color:#1c6ea4;font-size:13px;font-weight:bold">
-      👆 組み合わせを選んでトーナメントを作成してください
+    <div class="ht-gen-hint" style="margin-top:12px;padding:16px 20px;background:#fff8e1;border:2px solid #f5b301;border-radius:10px;color:#8a6d00;font-size:18px;font-weight:bold;text-align:center;box-shadow:0 2px 10px rgba(245,179,1,0.3)">
+      👆 組み合わせを選んで予選トーナメント表を作成してください
     </div>
     {% endif %}
   </div>
