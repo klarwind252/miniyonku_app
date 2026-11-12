@@ -401,7 +401,7 @@
       {% set rbg='rh-normal' %}
     {% endif %}
     {% set _hide_card = m4_off and not is_rank_rnd and rnd.round_type != 'revival' %}
-    <span class="round-header {{ rbg }}"{% if _hide_card %} style="display:none"{% endif %}>{{ rlabel }}</span>
+    <span class="round-header {{ rbg }}"{% if _hide_card %} style="display:none"{% endif %}>グループ{{ "ABCDEFG"[sec.section_no - 1] }} {{ rlabel }}</span>
     <div class="grp-grid"{% if _hide_card %} style="display:none"{% endif %}>
     {% for gd in sec.groups_data if gd.round.id == rnd.id %}
     {% set g=gd.group %}{% set slots=gd.slots %}{% set result=gd.result %}{% set ranks=gd.ranks %}

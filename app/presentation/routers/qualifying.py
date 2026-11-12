@@ -4464,6 +4464,15 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
 
     svg_data = {"rounds": ordered_rounds, "third_rounds": []}  # 3位決定戦はグループカードで表示
     _lane_drag = int(request.query_params.get("lane_drag", 0))
+    # ★GWアクティブの ht_group を取得し、ツリーの該当組を初期表示から強調（即決勝と同様）。
+    #   以降のアクティブ変化は data-gw-ref による base.html のライブ強調が追従する。
+    try:
+        _ga = await gw_active_repo.get(db)
+    except Exception:
+        _ga = None
+    _active_gid = (int(_ga["ref_id"])
+                   if (_ga and _ga.get("kind") == gw_active_repo.KIND_HT_GROUP and _ga.get("ref_id") is not None)
+                   else None)
     html = _render_html_bracket(
         svg_data, tid=tid,
         winner_js_func="setHtWinner",
@@ -4471,6 +4480,8 @@ async def ht_bracket_html(tid: int, heat_no: int, request: Request, db: aiosqlit
         enable_lane_drag=bool(_lane_drag),
         lane_reorder_url_tmpl=f"/admin/tournaments/{tid}/qualifying/heat-tournament/{heat_no}/group/{{gid}}/reorder-slots",
         lane_drag_green=True,
+        active_group_id=_active_gid,
+        gw_kind=gw_active_repo.KIND_HT_GROUP,
     )
     return HTMLResponse(html)
 

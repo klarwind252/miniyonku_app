@@ -1837,8 +1837,10 @@ function _showPubToast(msg) {
   function applyHL(d){
     document.querySelectorAll('.gw-active-on').forEach(function(el){ el.classList.remove('gw-active-on'); });
     if(!d||!d.active) return;
-    var el=document.querySelector('[data-gw-kind="'+d.kind+'"][data-gw-ref="'+d.ref_id+'"]');
-    if(el) el.classList.add('gw-active-on');
+    // 同一レースを指す要素は複数ある（結果入力カードとトーナメント図の両方）。
+    // querySelectorAll で全てハイライトし、ツリーとカードのアクティブを常に一致させる。
+    document.querySelectorAll('[data-gw-kind="'+d.kind+'"][data-gw-ref="'+d.ref_id+'"]')
+      .forEach(function(el){ el.classList.add('gw-active-on'); });
   }
   function render(d){
     pip.style.display='block';   // 大会ページでは常時表示（場所が分かるように）

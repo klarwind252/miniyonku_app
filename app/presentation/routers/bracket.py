@@ -5200,7 +5200,7 @@ async def bracket_html(tid: int, lane_drag: int = 0, db: aiosqlite.Connection = 
     return HTMLResponse(_render_html_bracket(svg_data, tid=tid, holder_boxes=holder_boxes, enable_lane_drag=bool(lane_drag), active_group_id=_active_gid))
 
 
-def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None, lane_drag_green: bool = False, active_group_id: int | None = None) -> str:
+def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "setWinner", winner_js_extra_args: str = "", compact: bool = False, holder_boxes: list | None = None, enable_lane_drag: bool = False, lane_reorder_url_tmpl: str | None = None, lane_drag_green: bool = False, active_group_id: int | None = None, gw_kind: str = "bracket_group") -> str:
     """flexboxベースのHTML/CSSトーナメント表（コネクタ線・勝ち上がり強調付き）
 
     compact=True のとき、表彰台（br-podium）を約半分の高さに縮小する（admin画面用）。
@@ -5322,7 +5322,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
     .br-group.has-winner { border-color:#ced4da; border-width:1px; box-shadow:none; }
     .br-group.is-final { border-color:#d4a017; border-width:2px; box-shadow:0 0 0 2px rgba(212,160,23,0.15); }
     /* ★アクティブレースの組：アンバーで強調（観覧スマホでも分かるように） */
-    .br-group.br-group-active { border-color:#f0ad4e !important; border-width:2px !important; box-shadow:0 0 0 3px rgba(240,173,78,0.55) !important; background:#fff7e6 !important; }
+    .br-group.br-group-active, .br-group.gw-active-on { border-color:#f0ad4e !important; border-width:2px !important; box-shadow:0 0 0 3px rgba(240,173,78,0.55) !important; background:#fff7e6 !important; }
     /* スロット共通 */
     .br-slot { position:relative; display:flex; align-items:center; gap:9px; padding:3px 12px 3px 24px; background:#f8f9fa; border-radius:6px; font-size:18px; min-height:32px; border:1px solid #dee2e6; }
     /* レーン番号(1/2/3)は左の余白に絶対配置。名前は padding-left で約8px あけて始まる（タイム幅は奪わない）。 */
@@ -5480,6 +5480,9 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                         break
             data_winner = f' data-winner-name="{winner_name}"' if winner_name else ""
             gid_attr = f' id="vg-{group_id}"' if group_id else ""
+            # ★GWアクティブのライブ強調用：ツリーの各組にも data-gw-kind/ref を付ける。
+            #   base.html のポーリング(applyHL)が結果入力カードと同じ要領でツリーも即時ハイライトする。
+            gw_attr = f' data-gw-kind="{gw_kind}" data-gw-ref="{group_id}"' if group_id else ""
             # 並び替え可能な組には group_id / tid / 保存先URL を持たせる。
             # URLは呼び出し元がテンプレートで差し替え可能（決勝＝bracket、予選＝ht 等）。
             if sortable_group:
@@ -5500,7 +5503,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
             _no_title = ' title="クリックで反映／取消"' if group_id else ''
             grp_no = (f'<span class="br-grp-badge{_no_click}"{_no_title} style="position:absolute;top:-8px;left:-8px;width:22px;height:22px;border-radius:50%;background:#ffffff;color:#333333;font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center;line-height:1;pointer-events:{_no_pe};{_no_cursor}z-index:3;">{gi+1}</span>')
             groups_html.append(
-                f'<div class="{grp_cls}" data-group-idx="{gi}"{data_winner}{gid_attr}{adv_attr}{sort_attr}>{grp_no}{slots_html}</div>'
+                f'<div class="{grp_cls}" data-group-idx="{gi}"{data_winner}{gid_attr}{gw_attr}{adv_attr}{sort_attr}>{grp_no}{slots_html}</div>'
             )
         return (
             f'<div class="br-round{" br-round-final" if is_final else ""}" data-round-label="{esc(rnd.get("label",""))}">'
