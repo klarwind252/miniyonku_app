@@ -150,6 +150,9 @@ async def scan_tournament_metrics(db, tournament_id: int,
         "top_speed":   {"value": None, "holders": []},
         # sno(1..) -> {"value": 区間最速タイム, "holders": [(entry_id, heat_id), ...]}
         "sectors":     {},
+        # lane(1..) -> {"value": そのレーンの最速1周タイム, "holders": [(entry_id, heat_id), ...]}
+        #   最速ラップをレーン（コース）別に出すため（全形式共通）。
+        "fastest_lap_lanes": {},
     }
 
     race_rows = await _collect_race_rows(db, tournament_id, include_finals)
@@ -186,6 +189,20 @@ async def scan_tournament_metrics(db, tournament_id: int,
         if value is None:
             return
         rec = records["sectors"].setdefault(sno, {"value": None, "holders": []})
+        cur_v = rec["value"]
+        if cur_v is None or value < cur_v - _TOL:
+            rec["value"] = value
+            rec["holders"] = [(entry_id, heat_id)]
+        elif abs(value - cur_v) <= _TOL and (entry_id, heat_id) not in rec["holders"]:
+            rec["holders"].append((entry_id, heat_id))
+
+    def _consider_lane_lap(lane_no: int, value, entry_id: int, heat_id):
+        # レーン別最速1周（小さいほど上位）。gap 用に _vals も貯める。
+        if value is None:
+            return
+        rec = records["fastest_lap_lanes"].setdefault(
+            lane_no, {"value": None, "holders": []})
+        rec.setdefault("_vals", set()).add(value)
         cur_v = rec["value"]
         if cur_v is None or value < cur_v - _TOL:
             rec["value"] = value
@@ -240,6 +257,7 @@ async def scan_tournament_metrics(db, tournament_id: int,
                 _lv = lap.lap_time_us / 1e6
                 _put(entry_id, "lap", _lv)
                 _consider("fastest_lap", _lv, entry_id, _hid, higher_is_better=False)
+                _consider_lane_lap(lane, _lv, entry_id, _hid)
                 _put(entry_id, "lap_avg", st["lap"].get((lane, lap.lap)))
                 for idx, sec in enumerate(lap.sectors):
                     sno = idx + 1
@@ -256,6 +274,11 @@ async def scan_tournament_metrics(db, tournament_id: int,
     for _k, _hi in (("overall", False), ("fastest_lap", False), ("top_speed", True)):
         _vals = sorted(records[_k].pop("_vals", set()), reverse=_hi)
         records[_k]["gap"] = (abs(_vals[0] - _vals[1]) if len(_vals) >= 2 else None)
+
+    # レーン別最速ラップの gap（各レーン内の distinct 上位2値の差）。
+    for _lane, _rec in records["fastest_lap_lanes"].items():
+        _lvals = sorted(_rec.pop("_vals", set()))
+        _rec["gap"] = (abs(_lvals[0] - _lvals[1]) if len(_lvals) >= 2 else None)
 
     return {"bests": bests, "records": records}
 

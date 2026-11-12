@@ -5,7 +5,7 @@
 .bracket-wrap{width:100%;overflow-x:auto;padding:8px 0}
 /* エントリー一覧: tournament.htmlと同じgridレイアウト */
 .entry-grid{display:grid;grid-template-columns:repeat(8,1fr);grid-auto-rows:auto;gap:8px;container-type:inline-size;}
-.entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:row;align-items:center;gap:8px;min-width:140px}
+.entry-card{background:#000000;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:row;align-items:center;gap:8px;min-width:140px}
 /* レイアウト統一：レーサー名→よみがな→タイムの順。名前・よみは左寄せ、タイムは右寄せ。 */
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;text-align:left}
 .entry-yomi{font-size:11px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;text-align:left}
@@ -244,7 +244,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px">
         {% for hd in hr_heats_data %}
         <div style="border:1px solid #1e3a5f;border-radius:8px;overflow:hidden">
-          <div style="background:#162840;padding:7px 14px;font-size:13px;font-weight:bold;color:#2980b9;border-bottom:1px solid #1e3a5f">
+          <div style="background:#162840;padding:7px 14px;font-size:13px;font-weight:bold;color:#f0f0f0;border-bottom:1px solid #1e3a5f">
             第{{ hd.heat_no }}ヒート
           </div>
           <div style="display:flex;padding:10px 12px;gap:0;background:#0d1923">
@@ -279,7 +279,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       <div style="display:flex;{% if is_public_html %}flex-direction:column;gap:10px{% else %}flex-wrap:wrap;gap:16px{% endif %}">
         {% for heat in ht_advanced_by_heat %}
         <div style="{% if is_public_html %}width:100%{% else %}flex:1;min-width:160px{% endif %}">
-          <div style="font-size:12px;font-weight:bold;color:#2980b9;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid #2980b9">
+          <div style="font-size:12px;font-weight:bold;color:#f0f0f0;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid #f0f0f0">
             ヒート {{ heat.heat_no }}
           </div>
           {% for a in heat.advanced %}
@@ -334,7 +334,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
    持つこのスクリプトを保持→再注入している。 #}
 {% if m4laps_active %}
 <div id="rs-overlay" onclick="if(event.target===this&&window.m4CloseRs)window.m4CloseRs()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:16px">
-  <div style="background:#0f1923;border:1px solid #2c3e50;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+  <div style="background:#000000;border:1px solid #2c3e50;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #2c3e50">
       <div id="rs-title" style="font-weight:bold;font-size:15px;color:#ecf0f1">レーサー詳細</div>
       <button id="rs-close" type="button" onclick="if(window.m4CloseRs)window.m4CloseRs()" style="background:none;border:none;color:#7f8c8d;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>

@@ -300,6 +300,19 @@ async def viewer_tournament(tid: int, request: Request, db: aiosqlite.Connection
                                      ("top_speed", "🚀", "TOP SPEED")):
                     if not _on(_k):
                         continue
+                    # 最速ラップはレーン（コース）別に全レーン表示（全形式共通）。
+                    if _k == "fastest_lap":
+                        _lanes = (_disp or {}).get("fastest_lap_lanes") or []
+                        if _lanes:
+                            for _fl in _lanes:
+                                _who = _fl.get("holders") or []
+                                holder_boxes.append({
+                                    "label": f"{_ic}{_lb} {_fl.get('lane')}コース{_ic}",
+                                    "empty": False,
+                                    "name": (_who[0].get("name", "") if _who else ""),
+                                    "sub": [_fl.get("value_str", "")]})
+                            continue
+                        # レーン別データが無い場合は従来の単一表示にフォールバック
                     rec = (_disp or {}).get(_k)
                     if rec and rec.get("holders"):
                         holder_boxes.append({"label": f"{_ic}{_lb}{_ic}", "empty": False,

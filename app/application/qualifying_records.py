@@ -51,12 +51,26 @@ def format_records_display(raw, name_by_entry: dict, heat_labels: dict):
         ]
         return {"value_str": vstr, "gap_str": gap_str, "holders": holders}
 
+    # レーン別最速ラップ：{lane: {value, holders, gap}} -> [{lane, value_str, gap_str, holders}]
+    def _fmt_lanes(by_lane):
+        if not by_lane:
+            return []
+        rows = []
+        for _lane in sorted(by_lane.keys()):
+            _r = _fmt(by_lane.get(_lane), speed=False)
+            if _r:
+                _r = dict(_r)
+                _r["lane"] = _lane
+                rows.append(_r)
+        return rows
+
     out = {
         "overall": _fmt(raw.get("overall"), speed=False),
         "fastest_lap": _fmt(raw.get("fastest_lap"), speed=False),
+        "fastest_lap_lanes": _fmt_lanes(raw.get("fastest_lap_lanes")),
         "top_speed": _fmt(raw.get("top_speed"), speed=True),
     }
-    return out if any(out.values()) else None
+    return out if any(v for k, v in out.items() if k != "fastest_lap_lanes") or out["fastest_lap_lanes"] else None
 
 
 async def resolve_point_leader(db, tournament_id: int, leaders: list,
@@ -260,6 +274,7 @@ def apply_panel_config(record_holders, point_leader, achievements, cfg):
             record_holders["overall"] = None
         if not _on("fastest_lap"):
             record_holders["fastest_lap"] = None
+            record_holders["fastest_lap_lanes"] = []
         if not _on("top_speed"):
             record_holders["top_speed"] = None
     if point_leader is not None and not _on("point_leader"):

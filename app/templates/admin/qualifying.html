@@ -217,7 +217,7 @@
 .m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:6px;
   align-items:baseline;font-weight:bold;font-size:14px;color:#4a4a4a;white-space:nowrap}
 .m4rec-ic{text-align:center;min-width:0}
-.m4rec-tx{min-width:0}
+.m4rec-tx{min-width:0;font-size:17px}
 .m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .m4rec-gap{font-size:12px;color:#95a5a6;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -346,7 +346,17 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
         </div>
         {% endif %}
-        {% if record_holders and record_holders.fastest_lap %}
+        {# 最速ラップはレーン（コース）別に全レーン表示（全形式共通）。 #}
+        {% if record_holders and record_holders.fastest_lap_lanes %}
+        {% for fl in record_holders.fastest_lap_lanes %}
+        <div class="m4rec-row">
+          <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">{{ ach_labels.fastest_lap }}<span style="color:#95a5a6;font-size:12px;margin-left:5px">{{ fl.lane }}コース</span></span></span>
+          <span class="m4rec-val">{{ fl.value_str }}</span>
+          <span class="m4rec-gap">{{ fl.gap_str or "" }}</span>
+          <span class="m4rec-who">{% for h in fl.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+        </div>
+        {% endfor %}
+        {% elif record_holders and record_holders.fastest_lap %}
         <div class="m4rec-row">
           <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">{{ ach_labels.fastest_lap }}</span></span>
           <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>

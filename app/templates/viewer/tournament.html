@@ -19,7 +19,7 @@
   container-type:inline-size;
 }
 
-.entry-card{background:#0f1923;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:140px}
+.entry-card{background:#000000;border-radius:8px;padding:10px 14px;border:1px solid #2c3e50;display:flex;flex-direction:column;justify-content:center;min-width:140px}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .entry-yomi{font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 /* スマホ幅（〜600px）で本文を読みやすく詰める。広幅（プロジェクター）は不変。 */
@@ -80,7 +80,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
     {% if t.qualifying_type in ('heat_roundrobin', 'heat_tournament', 'heat_tournament_garappa') %}
     <tr><td colspan="2">
-      <div style="background:#0f1923;border-left:3px solid #2980b9;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
+      <div style="background:#000000;border-left:3px solid #f0f0f0;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
         {% if t.qualifying_type == 'heat_roundrobin' %}
         <div style="display:flex;flex-wrap:wrap;gap:16px">
           <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
@@ -98,12 +98,12 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <span>🎯 勝ち抜け方式 {% if t.qual_heat_exclude %}<strong style="color:#e67e22">ON</strong>{% else %}<strong style="color:#95a5a6">OFF</strong>{% endif %}</span>
         </div>
         {% endif %}
-        {% if finalists %}<div style="margin-top:6px;color:#2980b9;font-weight:bold">→ 決勝進出予定 {{ finalists }} 名</div>{% endif %}
+        {% if finalists %}<div style="margin-top:6px;color:#f0f0f0;font-weight:bold">→ 決勝進出予定 {{ finalists }} 名</div>{% endif %}
       </div>
     </td></tr>
     {% elif t.qualifying_type == 'point' %}
     <tr><td colspan="2">
-      <div style="background:#0f1923;border-left:3px solid #e67e22;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
+      <div style="background:#000000;border-left:3px solid #e67e22;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
         <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:6px">
           <span>🔁 予選 <strong>{{ t.qual_round_count or 1 }}</strong> 回</span>
           <span>⬆️ 決勝進出 <strong>{{ finalists or t.qual_final_advance }}</strong> 名</span>
@@ -118,7 +118,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     </td></tr>
     {% elif t.qualifying_type == 'order' %}
     <tr><td colspan="2">
-      <div style="background:#0f1923;border-left:3px solid #16a085;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
+      <div style="background:#000000;border-left:3px solid #16a085;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;margin:4px 0">
         <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:6px">
           <span>🚦 走行の区切り {% if (t.order_round_mode or 'free') == 'round' %}<strong style="color:#3498db">ラウンド制</strong>{% else %}<strong style="color:#1abc9c">フリー走行制</strong>{% endif %}</span>
           {% if (t.order_round_mode or 'free') == 'round' %}
