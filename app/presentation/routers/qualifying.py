@@ -1276,6 +1276,10 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     entries_by_yomi = sorted(
         entries, key=lambda e: (e["yomi"] or e["name"] or "", e["name"] or ""))
 
+    # 決勝進出決定戦（同率解消）データと、未解決の同率一覧（予選終了ゲート用）
+    _playoff_data = await _get_playoff_data(tid, db) if hr else {}
+    hr_unresolved_ties = _hr_unresolved_ties(_playoff_data) if hr else []
+
     return templates.TemplateResponse("admin/qualifying.html", {
         "request": request,
         "t": t,
@@ -1318,7 +1322,8 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         "complete_round_nos": hr_complete_round_nos,
         "has_any_result": len(done_heat_ids) > 0,
         "heat_final_data": await _get_heat_final_data(tid, db) if hr else {"rounds": [], "advance": 0},
-        "playoff_data": await _get_playoff_data(tid, db) if hr else {},
+        "playoff_data": _playoff_data,
+        "hr_unresolved_ties": hr_unresolved_ties,
         "hoshitori_entries": hoshitori_entries,
         "hoshitori_matrix": hoshitori_matrix,
         "inline_results": inline_results,
@@ -2102,7 +2107,11 @@ async def qualifying_standings_json(tid: int, db: aiosqlite.Connection = Depends
             is_border = count_above < finalist_n < count_above + len(cutoff_group)
             for s in standings:
                 s["is_tied_cutoff"] = is_border and s.get("rank") == cutoff_rank
-    return JSONResponse({"ok": True, "standings": [dict(s) for s in standings]})
+    _resp = {"ok": True, "standings": [dict(s) for s in standings]}
+    # ★ヒート総当たりは右サイド順位表に「総合成績（勝/出走/タイム計）」を使うため同梱（リアルタイム更新用）。
+    if dict(t).get("qualifying_type") == "heat_roundrobin":
+        _resp["overall"] = [dict(s) for s in await _calc_standings_overall(tid, db)]
+    return JSONResponse(_resp)
 
 
 async def _keep_total_time(db, lane_id) -> float | None:
@@ -2140,8 +2149,13 @@ async def _all_heats_done(tid: int, db) -> bool:
             total = (await cur.fetchone())["c"]
         if not total:
             return False
+        # heats.status='done' ではなく heat_results の存在で判定（save-inline・M4LAPS自動反映・
+        # 総当たり○×反映など status を更新しない経路に対応。観覧／完了ゲートと同一基準）。
         async with db.execute(
-            "SELECT COUNT(*) AS c FROM heats WHERE tournament_id=? AND status='done'", (tid,)
+            """SELECT COUNT(DISTINCT h.id) AS c FROM heats h
+               JOIN heat_lanes hl ON hl.heat_id=h.id
+               JOIN heat_results hr ON hr.heat_lane_id=hl.id
+               WHERE h.tournament_id=?""", (tid,)
         ) as cur:
             done = (await cur.fetchone())["c"]
         return done >= total
@@ -3161,12 +3175,18 @@ async def _get_playoff_data(tid: int, db: aiosqlite.Connection) -> dict:
                 slots = [dict(r) for r in await cur.fetchall()]
 
             # このヒートの全レースが完了しているか
+            # heats.status='done' ではなく heat_results の存在で判定（save-inline・M4LAPS自動反映・
+            # 総当たり○×反映など status を更新しない経路に対応。観覧／完了ゲートと同一基準）。
             async with db.execute(
                 "SELECT COUNT(*) as total FROM heats WHERE tournament_id=? AND round_no=? AND group_no>0", (tid, rno)
             ) as cur2:
                 total = (await cur2.fetchone())["total"]
             async with db.execute(
-                "SELECT COUNT(*) as done FROM heats WHERE tournament_id=? AND round_no=? AND group_no>0 AND status='done'", (tid, rno)
+                """SELECT COUNT(DISTINCT h.id) as done
+                   FROM heats h
+                   JOIN heat_lanes hl ON hl.heat_id=h.id
+                   JOIN heat_results hr ON hr.heat_lane_id=hl.id
+                   WHERE h.tournament_id=? AND h.round_no=? AND h.group_no>0""", (tid, rno)
             ) as cur2:
                 done = (await cur2.fetchone())["done"]
 
@@ -3181,6 +3201,27 @@ async def _get_playoff_data(tid: int, db: aiosqlite.Connection) -> dict:
             }
 
     return result
+
+
+def _hr_unresolved_ties(playoff_data: dict) -> list:
+    """heat_roundrobin：同率により決勝進出決定戦が必要なのに、まだ勝者が確定して
+    いない (round_no, group_no) の一覧を返す。_get_playoff_data の結果から算出する。
+    「予選終了」判定（admin／観覧とも）を、全レース完了＋全同率解消まで遅らせるのに使う。"""
+    out = []
+    for key, pd in (playoff_data or {}).items():
+        spots = pd.get("playoff_spots", 1) or 1
+        winners = sum(1 for s in pd.get("slots", []) if s.get("winner_entry_id"))
+        if winners < spots:
+            out.append({
+                "heat_no": pd.get("round_no"),
+                "group_no": pd.get("group_no"),
+                "tied": pd.get("tied", []),
+                "playoff_spots": spots,
+                "winners": winners,
+                "all_done": pd.get("all_done", False),
+            })
+    out.sort(key=lambda x: (x["heat_no"] or 0, x["group_no"] or 0))
+    return out
 
 
 async def _get_heat_final_data(tid: int, db: aiosqlite.Connection) -> dict:
@@ -3247,7 +3288,8 @@ async def _get_heat_final_data(tid: int, db: aiosqlite.Connection) -> dict:
             final_slots = [dict(r) for r in await cur.fetchall()]
 
         # このラウンドの全グループヒート（group_no>0）が完了しているか
-        # heats.status='done' ではなく heat_results の存在で判定（save-inline の非同期保存に対応）
+        # heats.status='done' ではなく heat_results の存在で判定（save-inline・M4LAPS自動反映・
+        # 総当たり○×反映など status を更新しない経路に対応）。
         async with db.execute(
             "SELECT COUNT(*) as total FROM heats WHERE tournament_id=? AND round_no=? AND group_no>0", (tid, rno)
         ) as cur:
@@ -3255,8 +3297,9 @@ async def _get_heat_final_data(tid: int, db: aiosqlite.Connection) -> dict:
         async with db.execute(
             """SELECT COUNT(DISTINCT h.id) as done
                FROM heats h
-               WHERE h.tournament_id=? AND h.round_no=? AND h.group_no>0
-                 AND h.status='done'""", (tid, rno)
+               JOIN heat_lanes hl ON hl.heat_id=h.id
+               JOIN heat_results hr ON hr.heat_lane_id=hl.id
+               WHERE h.tournament_id=? AND h.round_no=? AND h.group_no>0""", (tid, rno)
         ) as cur:
             done = (await cur.fetchone())["done"]
 

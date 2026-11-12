@@ -268,9 +268,15 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 <div class="detail-actionbar">
   {% if is_heat_roundrobin %}
   {# ヒート（総当たり）：ヒート（トーナメント）と同じアクションバー・表示ルール #}
-  {% set hr_all_done = (heat_total_count > 0) and (complete_round_nos|length >= heat_total_count) %}
+  {# 完了判定は観覧（スマホ）と同一基準：計画ヒート数ではなく「生成済みの全ラウンドが完了」。
+     （complete_round_nos ⊆ generated_round_nos。未生成の計画ヒートがあっても生成分が揃えば完了扱い）
+     さらに「同率による決勝進出決定戦（解消戦）」が未解決のうちは予選終了とみなさない。 #}
+  {% set hr_races_done = (generated_round_nos|length > 0) and (complete_round_nos|length >= generated_round_nos|length) %}
+  {% set hr_all_done = hr_races_done and (hr_unresolved_ties|length == 0) %}
   {% if hr_all_done %}
   <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#1e824c">✅ すべての予選が終了しました。結果を確認して「決勝管理」に進んでください。</span>
+  {% elif hr_races_done and hr_unresolved_ties %}
+  <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#c0392b">⚔️ 同率による決勝進出決定戦（解消戦）が{{ hr_unresolved_ties|length }}件あります。解消してから決勝管理へ進んでください。</span>
   {% else %}
   <span style="margin-right:auto;font-size:12px;font-weight:bold;color:#c0392b">⚠️ すべてのヒートの結果を確定してください。</span>
   {% endif %}
@@ -2036,6 +2042,31 @@ document.addEventListener('DOMContentLoaded', function(){
           {% endfor %}
         </tbody>
       </table>
+      {% elif is_heat_roundrobin and overall_standings %}
+      {# ★総当たり（ヒート）：右サイドは総合成績＝順位/レーサー/勝/出走/タイム計。
+         ポイント・完走・完走率は出さない（ユーザー確定 20261112）。リアルタイム更新は data.overall を使う。 #}
+      <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
+        <thead>
+          <tr style="border-bottom:2px solid #dee2e6">
+            <th style="padding:3px 4px">順位</th>
+            <th style="padding:3px 6px;text-align:left">レーサー</th>
+            <th style="padding:3px 4px;color:#27ae60">勝</th>
+            <th style="padding:3px 4px">出走</th>
+            <th style="padding:3px 4px">タイム計</th>
+          </tr>
+        </thead>
+        <tbody id="qp-rank-tbody">
+          {% for s in overall_standings %}
+          <tr style="border-bottom:1px solid #f0f0f0;{% if s.rank==1 %}background:#fffde7{% endif %}">
+            <td style="padding:3px 4px;text-align:center;font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
+            <td style="padding:3px 6px"><strong>{{ s.name }}</strong></td>
+            <td style="padding:3px 4px;text-align:center;color:#27ae60"><strong>{{ s.wins or 0 }}</strong></td>
+            <td style="padding:3px 4px;text-align:center">{{ s.races or 0 }}</td>
+            <td style="padding:3px 4px;text-align:center;font-variant-numeric:tabular-nums">{% if s.time_sum %}{{ "%.3f"|format(s.time_sum) }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
       {% elif standings and not is_roundrobin and not is_none_roundrobin %}
       <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
         <thead>
@@ -2399,6 +2430,7 @@ async function generateNextHeat(tid, roundNo) {
 // ── 順位表リアルタイム更新 ────────────────────────────────
 const IS_ROUNDROBIN_TYPE = {{ 'true' if is_roundrobin else 'false' }};
 const IS_NONE_RR_TYPE    = {{ 'true' if is_none_roundrobin else 'false' }};
+const IS_HEAT_RR_TYPE    = {{ 'true' if is_heat_roundrobin else 'false' }};
 const IS_POINT_TYPE      = {{ 'true' if (not is_roundrobin and not is_none_roundrobin and not is_heat_roundrobin) else 'false' }};
 
 async function updateStandings() {
@@ -2452,7 +2484,21 @@ async function updateStandings() {
 
     // ── 右サイドの予選順位表（qp-sched-rank）も同じデータで更新 ──
     const rankBody = document.getElementById('qp-rank-tbody');
-    if (rankBody) {
+    if (rankBody && IS_HEAT_RR_TYPE && Array.isArray(data.overall)) {
+      // ★ヒート総当たり：右サイドは総合成績（順位/レーサー/勝/出走/タイム計）。ポイント・完走率は出さない。
+      rankBody.innerHTML = data.overall.map((s) => {
+        const rankColor = s.rank===1 ? '#d4a017' : s.rank===2 ? '#aaa' : s.rank===3 ? '#cd7f32' : '#636e72';
+        const rowBg = s.rank===1 ? 'background:#fffde7' : '';
+        const ts = (s.time_sum != null) ? s.time_sum.toFixed(3) : '—';
+        return `<tr style="border-bottom:1px solid #f0f0f0;${rowBg}">
+          <td style="padding:3px 4px;text-align:center;font-weight:bold;color:${rankColor}">${s.rank}</td>
+          <td style="padding:3px 6px"><strong>${s.name}</strong></td>
+          <td style="padding:3px 4px;text-align:center;color:#27ae60"><strong>${s.wins||0}</strong></td>
+          <td style="padding:3px 4px;text-align:center">${s.races||0}</td>
+          <td style="padding:3px 4px;text-align:center;font-variant-numeric:tabular-nums">${ts}</td>
+        </tr>`;
+      }).join('');
+    } else if (rankBody) {
       const rrows = data.standings.map((s, i) => {
         const rankColor = s.rank===1 ? '#d4a017' : s.rank===2 ? '#aaa' : s.rank===3 ? '#cd7f32' : '#636e72';
         const rowBg = s.rank===1 ? 'background:#fffde7' : '';

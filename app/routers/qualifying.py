@@ -20,6 +20,9 @@ from app.presentation.routers.qualifying import (  # noqa: F401
     _ht_get_group_advancers,
     _ht_heat_final_section_no,
     _ht_update_advanced,
+    # 決勝進出決定戦（同率解消）
+    _get_playoff_data,
+    _hr_unresolved_ties,
     # 並び順（ポイント制）関連
     _order_current_round,
     _order_queue_pending,

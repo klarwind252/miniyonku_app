@@ -575,6 +575,19 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           🏁 全レース終了
         </div>
         {% endif %}
+      {% elif hr_unresolved %}
+      {# ヒート制総当たり：全レース完了でも、同率による決勝進出決定戦（解消戦）が残っている間は
+         「予選終了」にせず、対象グループと同率レーサーを案内する。 #}
+      <div style="margin:6px 0 14px;padding:14px 16px;background:#2a1012;border:2px solid #e74c3c;border-radius:8px">
+        {% for g in hr_unresolved %}
+        <div style="{% if not loop.first %}margin-top:10px;{% endif %}text-align:center">
+          <div style="color:#ff6b6b;font-weight:bold;font-size:15px">⚔️ 決勝進出決定戦があります（ヒート{{ g.heat_no }} グループ{{ "ABCDEFG"[g.group_no - 1] if g.group_no and g.group_no <= 7 else g.group_no }}）</div>
+          <div style="color:#f0a0a0;font-size:14px;margin-top:6px">
+            同率 {{ g.tied|length }}名 → {{ g.playoff_spots }}名が通過：{% for p in g.tied %}<span style="font-weight:bold;color:#ecf0f1">{{ p.name }}</span>（{{ p.wins }}勝）{% if not loop.last %}　<span style="color:#ff6b6b">vs</span>　{% endif %}{% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
       {% elif all_heats_complete %}
       <div style="margin:6px 0 14px;padding:14px 16px;background:#0f2a1e;border:2px solid #27ae60;border-radius:8px;text-align:center;color:#27ae60;font-weight:bold;font-size:15px">
         🏁 予選終了　決勝をお待ちください
@@ -964,27 +977,28 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               {# 左：レーススケジュール #}
               <div class="hr-sched" style="padding:10px 12px">
                 <div style="font-size:13px;color:#7f8c8d;margin-bottom:8px;letter-spacing:1px;font-weight:bold">レーススケジュール</div>
-                <table style="width:100%;border-collapse:collapse;font-size:16px">
+                {# 即決勝総当たりと同一デザイン（.schedule-table の罫線グリッド）。タイム枠は残す。 #}
+                <table class="schedule-table">
                   <thead>
-                    <tr style="color:#7f8c8d;font-size:11px">
-                      <th style="text-align:left;padding:3px 4px">#</th>
+                    <tr>
+                      <th>#</th>
                       {% set _hr_lc = {1:'#2980b9', 2:'#e74c3c', 3:'#27ae60'} %}
                       {% for c in course_cols %}
-                      <th style="text-align:left;padding:3px 4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{ _hr_lc[c] }};margin-right:2px"></span>{{ c }}コース</th>
+                      <th><span class="lane-dot" style="background:{{ _hr_lc[c] }};display:inline-block"></span>{{ c }}コース</th>
                       {% endfor %}
                     </tr>
                   </thead>
                   <tbody>
                   {% for heat in grp.heats %}
                   {% set lanes = grp.lanes.get(heat.id, []) %}
-                  <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row{% if heat.status=='done' %} done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}" style="border-top:1px solid #1a2535">
-                    <td style="padding:6px 8px;color:#7f8c8d;font-size:15px;font-weight:bold">{{ heat.heat_no }}</td>
+                  <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row{% if heat.status=='done' %} done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
+                    <td class="heat-no">{{ heat.heat_no }}</td>
                     {% for col in course_cols %}
                     {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
                     {% if ld %}{% set lane = ld[0] %}
                     {# 予選全体の最速3タイムを 1位=紫 / 2位=青 / 3位=緑 に着色（他形式と共通の finish_rank_map）。 #}
                     {% set _frank = finish_rank_map.get(heat.id ~ ':' ~ col) if m4laps_active else none %}
-                    <td{% if _frank %} class="rc-fin{{ _frank }}"{% endif %} style="padding:4px">
+                    <td{% if _frank %} class="rc-fin{{ _frank }}"{% endif %}>
                       <div class="racer-cell">
                         {# 総当たり系の○×は名前の左に配置。 #}
                         {% if lane.win == 1 %}<span class="rr-mark w{% if is_public_html %} sm{% endif %}">○</span>
@@ -995,7 +1009,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                         </div>
                       </div>
                     </td>
-                    {% else %}<td style="padding:4px;color:#3d5166">—</td>{% endif %}
+                    {% else %}<td style="color:#3d5166">—</td>{% endif %}
                     {% endfor %}
                   </tr>
                   {% endfor %}

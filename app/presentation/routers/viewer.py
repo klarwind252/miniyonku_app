@@ -1307,6 +1307,16 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                           and _gw_active.get("ref_id") is not None)
                       else None)
 
+    # heat_roundrobin：同率による決勝進出決定戦（解消戦）が未解決の一覧。
+    # 全レース完了していても、解消戦が残っているうちは「予選終了」にしない（admin と同一基準）。
+    hr_unresolved = []
+    if qt == "heat_roundrobin":
+        try:
+            from app.routers.qualifying import _get_playoff_data, _hr_unresolved_ties
+            hr_unresolved = _hr_unresolved_ties(await _get_playoff_data(tid, db))
+        except Exception:
+            hr_unresolved = []
+
     return templates.TemplateResponse("viewer/qualifying.html", {
         "request": request,
         "t": t,
@@ -1373,7 +1383,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             # 並び順（勝ち抜け）：最終段階が closed（＝決勝進出者確定済み）になるまで未完了扱い
             (ow_ctx.get("ow_is_last_stage") and ow_ctx.get("ow_stage_status") == "closed")
             if qt == "order_winner" else
-            all(hd["is_complete"] for hd in hr_heats_data)
+            (all(hd["is_complete"] for hd in hr_heats_data) and not hr_unresolved)
             if hr_heats_data else
             # heat_roundrobin以外: 全heatsが完了しているか。
             # CO（クラッシュアウト）は結果が出ている＝完了。win未設定でも is_co なら完了扱い。
@@ -1384,6 +1394,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             )
         ),
         "is_order_winner": qt == "order_winner",
+        "hr_unresolved": hr_unresolved,
         **ow_ctx,
     })
 
