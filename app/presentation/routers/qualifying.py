@@ -3209,6 +3209,10 @@ def _hr_unresolved_ties(playoff_data: dict) -> list:
     「予選終了」判定（admin／観覧とも）を、全レース完了＋全同率解消まで遅らせるのに使う。"""
     out = []
     for key, pd in (playoff_data or {}).items():
+        # まだレースが完了していないグループの暫定同率（全員0勝など）は対象外。
+        # レースが全て終わってから発生する確定同率のみを「解消戦あり」とする。
+        if not pd.get("all_done"):
+            continue
         spots = pd.get("playoff_spots", 1) or 1
         winners = sum(1 for s in pd.get("slots", []) if s.get("winner_entry_id"))
         if winners < spots:
