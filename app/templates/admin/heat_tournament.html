@@ -117,6 +117,8 @@
 @keyframes m4DecisionPulse{0%,100%{box-shadow:0 0 0 0 rgba(39,174,96,.6)}50%{box-shadow:0 0 0 7px rgba(39,174,96,0)}}
 .btn-decision-hl{animation:m4DecisionPulse 1.4s ease-out infinite;font-weight:bold!important}
 </style>
+{# 結果入力カードの見た目は即決勝と共通の単一ソースに集約（この include が最後に効く＝権威）。 #}
+{% include "admin/_card_styles.html" %}
 {% endblock %}
 
 {% block content %}

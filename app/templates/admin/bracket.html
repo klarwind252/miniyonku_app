@@ -181,6 +181,8 @@
 .seed-btn.active-super  { border-color:#8e44ad; background:#f5eef8; color:#8e44ad; }
 .seed-btn:not(.active-seed):not(.active-super) { color:#bdc3c7; }
 </style>
+{# 結果入力カードの見た目は予選ヒートと共通の単一ソースに集約（この include が最後に効く＝権威）。 #}
+{% include "admin/_card_styles.html" %}
 {% endblock %}
 {% block content %}
 {% raw %}
