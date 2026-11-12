@@ -20,6 +20,8 @@
 /* ★アクティブレース（admin が # クリックで指定）の行ハイライト。観覧・公開HTML共通。
    左に太いアンバー帯＋淡い背景。done より優先させるため !important。 */
 .schedule-table tr.race-row.gw-active-live > td{background:rgba(255,205,70,.20) !important}
+/* ヒート制総当たり（.hr-sched 内の独自テーブル）も同じアクティブ行ハイライト。 */
+.hr-sched tr.race-row.gw-active-live > td{background:rgba(255,205,70,.20) !important}
 .schedule-table td{padding:8px 12px}
 /* 薄い枠で全セルを罫線表示（暗背景でも見えるライトグレー） */
 .schedule-table th,.schedule-table td{border:1px solid rgba(255,255,255,.16)}
@@ -975,16 +977,23 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                   <tbody>
                   {% for heat in grp.heats %}
                   {% set lanes = grp.lanes.get(heat.id, []) %}
-                  <tr id="heat-{{ heat.heat_no }}" style="border-top:1px solid #1a2535;{% if heat.status=='done' %}opacity:0.8{% endif %}">
+                  <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row{% if heat.status=='done' %} done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}" style="border-top:1px solid #1a2535">
                     <td style="padding:6px 8px;color:#7f8c8d;font-size:15px;font-weight:bold">{{ heat.heat_no }}</td>
                     {% for col in course_cols %}
                     {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
                     {% if ld %}{% set lane = ld[0] %}
-                    <td style="padding:4px">
-                      {# 総当たり系の○×は名前の左に配置。viewは正方形18px＋右10px、htmlは正方形12px＋右5px #}
-                      {% if lane.win == 1 %}<span class="rr-mark w{% if is_public_html %} sm{% endif %}">○</span>
-                      {% elif lane.win == 0 %}<span class="rr-mark l{% if is_public_html %} sm{% endif %}">×</span>{% endif %}
-                      {% if is_public_html %}<span class="rr-name" style="color:#ecf0f1;font-size:18px;font-weight:bold">{{ lane.name }}</span>{% else %}<span style="color:#ecf0f1;font-size:24px;font-weight:bold;vertical-align:middle">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:#7f8c8d;margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}
+                    {# 予選全体の最速3タイムを 1位=紫 / 2位=青 / 3位=緑 に着色（他形式と共通の finish_rank_map）。 #}
+                    {% set _frank = finish_rank_map.get(heat.id ~ ':' ~ col) if m4laps_active else none %}
+                    <td{% if _frank %} class="rc-fin{{ _frank }}"{% endif %} style="padding:4px">
+                      <div class="racer-cell">
+                        {# 総当たり系の○×は名前の左に配置。 #}
+                        {% if lane.win == 1 %}<span class="rr-mark w{% if is_public_html %} sm{% endif %}">○</span>
+                        {% elif lane.win == 0 %}<span class="rr-mark l{% if is_public_html %} sm{% endif %}">×</span>{% endif %}
+                        <div style="display:flex;flex-direction:column;min-width:0;flex:1{% if not is_public_html %};align-items:flex-start{% endif %}">
+                          <div style="display:flex;align-items:baseline;min-width:0">{% if is_public_html %}<span class="rr-name" style="font-size:18px;font-weight:bold;color:{% if _frank %}#fff{% else %}#ecf0f1{% endif %}">{{ lane.name }}</span>{% else %}<span style="font-size:24px;font-weight:bold;vertical-align:middle;color:{% if _frank %}#fff{% else %}#ecf0f1{% endif %}">{{ lane.name }}</span>{% if lane.yomi %}<span style="font-size:10px;color:{% if _frank %}rgba(255,255,255,.78){% else %}#7f8c8d{% endif %};margin-left:6px;vertical-align:middle">{{ lane.yomi }}</span>{% endif %}{% endif %}</div>
+                          {% if m4laps_active and lane.total_time %}<span style="font-size:{% if is_public_html %}13px{% else %}19px{% endif %};font-variant-numeric:tabular-nums;line-height:1.15;margin-top:1px;font-weight:{% if _frank %}bold{% else %}normal{% endif %};color:{% if _frank %}#fff{% else %}#8aa0b6{% endif %}">{{ '%.3f'|format(lane.total_time) }}</span>{% endif %}
+                        </div>
+                      </div>
                     </td>
                     {% else %}<td style="padding:4px;color:#3d5166">—</td>{% endif %}
                     {% endfor %}

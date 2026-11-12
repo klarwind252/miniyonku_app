@@ -690,7 +690,8 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
                     async with db.execute(
                         f"""SELECT hl.heat_id, hl.lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') as name,
                                    COALESCE(r.yomi,'') as yomi,
-                                   hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win
+                                   hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win,
+                                   hr.total_time as total_time
                             FROM heat_lanes hl
                             LEFT JOIN entries e ON e.id=hl.entry_id
                             LEFT JOIN racers r ON r.id=e.racer_id
