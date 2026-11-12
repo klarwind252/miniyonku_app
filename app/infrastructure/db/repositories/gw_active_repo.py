@@ -273,7 +273,7 @@ def _rtype_pri(rt) -> int:
 
 
 async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_tbl, ranks_tbl,
-                             results_tbl=None, heat_col=None):
+                             results_tbl=None, heat_col=None, section_col=None):
     """ht_group / bracket_group 共通：トーナメント全体を優先度順に並べて巡回。
        絶対ルール：同一ラウンド（＝同一 round_id）内がすべて確定するまで次ラウンドへ進まない。
        順序キー＝(heat_no, ラウンド種別, round_no, group_no)。
@@ -295,11 +295,12 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     _res_sql = (f" + (SELECT COUNT(*) FROM {results_tbl} rs WHERE rs.group_id = gg.id)"
                 if results_tbl else "")
     _heat_sql = f"rd.{heat_col}" if heat_col else "0"
-    # 同トーナメントの全グループ＋ヒート/種別/ラウンド/確定状況（round_id＝ラウンド単位）
+    _sec_sql = f"COALESCE(rd.{section_col},0)" if section_col else "0"
+    # 同トーナメントの全グループ＋ヒート/セクション/種別/ラウンド/確定状況（round_id＝ラウンド単位）
     async with db.execute(
         f"SELECT gg.id AS id, gg.group_no AS group_no, gg.round_id AS round_id, "
         f"       rd.round_no AS round_no, rd.round_type AS round_type, "
-        f"       {_heat_sql} AS heat_no, "
+        f"       {_heat_sql} AS heat_no, {_sec_sql} AS section_no, "
         f"       ((SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id){_res_sql}) AS ranked "
         f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
         f"WHERE rd.tournament_id = ?", (tid,)) as c:
@@ -307,8 +308,15 @@ async def _group_next_active(db, kind, group_id, groups_tbl, rounds_tbl, slots_t
     if not rows:
         return None
 
+    # 並び順：ヒート → セクション(グループA→B→総合決勝) → ラウンド種別 → ラウンド番号 → 組番号。
+    #   section をラウンドより先に置くことで「グループAを決勝まで全部 → グループBを決勝まで全部
+    #   → ヒート総合決勝」の順になる。総合決勝(section_no=0)はヒート内で最後に回す。
+    def _sec_pri(sec):
+        s = sec or 0
+        return (1, 0) if s == 0 else (0, s)   # 総合決勝(section_no=0)は最後
     def _key(r):
-        return (r["heat_no"] or 0, _rtype_pri(r["round_type"]), r["round_no"] or 0,
+        return (r["heat_no"] or 0, _sec_pri(r["section_no"]),
+                _rtype_pri(r["round_type"]), r["round_no"] or 0,
                 r["group_no"] or 0, r["id"])
 
     ordered = sorted(rows, key=_key)
@@ -347,7 +355,8 @@ async def advance_after_confirm(db, kind: str, ref_id: int) -> None:
         elif kind == KIND_HT_GROUP:
             nxt = await _group_next_active(db, KIND_HT_GROUP, ref_id,
                                            "ht_groups", "ht_rounds", "ht_slots", "ht_slot_ranks",
-                                           results_tbl="ht_results", heat_col="heat_no")
+                                           results_tbl="ht_results", heat_col="heat_no",
+                                           section_col="section_no")
         elif kind == KIND_BRACKET_GROUP:
             nxt = await _group_next_active(db, KIND_BRACKET_GROUP, ref_id,
                                            "bracket_groups", "bracket_rounds", "bracket_slots", "bracket_slot_ranks",
@@ -395,10 +404,12 @@ async def upcoming_order(db) -> dict:
                 groups_tbl, rounds_tbl, ranks_tbl = "ht_groups", "ht_rounds", "ht_slot_ranks"
                 results_tbl = "ht_results"
                 heat_sql = "rd.heat_no"   # ヒートトーナメントはヒート単位で完結
+                section_sql = "COALESCE(rd.section_no,0)"   # グループA/B単位
             else:
                 groups_tbl, rounds_tbl, ranks_tbl = "bracket_groups", "bracket_rounds", "bracket_slot_ranks"
                 results_tbl = "bracket_results"
                 heat_sql = "0"            # bracket は heat_no 無し
+                section_sql = "0"         # bracket はセクション無し
             async with db.execute(
                 f"SELECT rd.tournament_id AS tid FROM {groups_tbl} g "
                 f"JOIN {rounds_tbl} rd ON rd.id = g.round_id WHERE g.id = ?", (ref_id,)) as c:
@@ -408,15 +419,23 @@ async def upcoming_order(db) -> dict:
             # 確定判定＝ranks または results に行があるか（手動確定の通常ラウンドは results のみ）
             async with db.execute(
                 f"SELECT gg.id AS id, gg.group_no AS group_no, rd.round_no AS round_no, "
-                f"       rd.round_type AS round_type, {heat_sql} AS heat_no, "
+                f"       rd.round_type AS round_type, {heat_sql} AS heat_no, {section_sql} AS section_no, "
                 f"       ((SELECT COUNT(*) FROM {ranks_tbl} rr WHERE rr.group_id = gg.id) "
                 f"        + (SELECT COUNT(*) FROM {results_tbl} rs WHERE rs.group_id = gg.id)) AS ranked "
                 f"FROM {groups_tbl} gg JOIN {rounds_tbl} rd ON rd.id = gg.round_id "
                 f"WHERE rd.tournament_id = ?", (g0["tid"],)) as c:
                 rows = await c.fetchall()
             items = [r for r in rows if not r["ranked"]]
-            items.sort(key=lambda r: (r["heat_no"] or 0, _rtype_pri(r["round_type"]),
-                                      r["round_no"] or 0, r["group_no"] or 0, r["id"]))
+            # 並び順は _group_next_active と完全一致：
+            #   ヒート → セクション(グループA→B→総合決勝) → 種別 → ラウンド番号 → 組番号。
+            #   section をラウンドより先に置き、総合決勝(section_no=0)を最後に回す。
+            #   これで admin のアクティブ自動遷移とスマホの「次のレースまで」が一致する。
+            def _sec_pri(sec):
+                s = sec or 0
+                return (1, 0) if s == 0 else (0, s)   # 総合決勝(section_no=0)は最後
+            items.sort(key=lambda r: (r["heat_no"] or 0, _sec_pri(r["section_no"]),
+                                      _rtype_pri(r["round_type"]), r["round_no"] or 0,
+                                      r["group_no"] or 0, r["id"]))
             ids = [r["id"] for r in items]
         else:
             return {"active": False, "kind": kind, "ref_id": ref_id, "order": []}
