@@ -2108,6 +2108,8 @@ async def qualifying_standings_json(tid: int, db: aiosqlite.Connection = Depends
             for s in standings:
                 s["is_tied_cutoff"] = is_border and s.get("rank") == cutoff_rank
     _resp = {"ok": True, "standings": [dict(s) for s in standings]}
+    # 全予選レース完了（heat_results 基準）フラグ。admin のポーリング自動更新／自動集計に使う。
+    _resp["all_done"] = await _all_heats_done(tid, db)
     # ★ヒート総当たりは右サイド順位表に「総合成績（勝/出走/タイム計）」を使うため同梱（リアルタイム更新用）。
     if dict(t).get("qualifying_type") == "heat_roundrobin":
         _resp["overall"] = [dict(s) for s in await _calc_standings_overall(tid, db)]
@@ -3214,7 +3216,8 @@ def _hr_unresolved_ties(playoff_data: dict) -> list:
         if not pd.get("all_done"):
             continue
         spots = pd.get("playoff_spots", 1) or 1
-        winners = sum(1 for s in pd.get("slots", []) if s.get("winner_entry_id"))
+        slots = pd.get("slots", []) or []
+        winners = sum(1 for s in slots if s.get("winner_entry_id"))
         if winners < spots:
             out.append({
                 "heat_no": pd.get("round_no"),
@@ -3222,6 +3225,7 @@ def _hr_unresolved_ties(playoff_data: dict) -> list:
                 "tied": pd.get("tied", []),
                 "playoff_spots": spots,
                 "winners": winners,
+                "has_slots": len(slots) > 0,
                 "all_done": pd.get("all_done", False),
             })
     out.sort(key=lambda x: (x["heat_no"] or 0, x["group_no"] or 0))

@@ -118,6 +118,10 @@
 /* 全予選終了時：決勝管理ボタンを点滅グローで強調（heat_tournament と同一） */
 @keyframes m4DecisionPulse{0%,100%{box-shadow:0 0 0 0 rgba(39,174,96,.6)}50%{box-shadow:0 0 0 7px rgba(39,174,96,0)}}
 .btn-decision-hl{animation:m4DecisionPulse 1.4s ease-out infinite;font-weight:bold!important}
+/* 決定戦（同率解消）ウィンドウのアクティブ強調：オレンジの点滅グロー＋枠。
+   自動スクロールで寄せた決定戦が「今やること」だと一目で分かるようにする。 */
+@keyframes m4DecideActivePulse{0%,100%{box-shadow:0 0 0 0 rgba(230,126,34,.65)}50%{box-shadow:0 0 0 9px rgba(230,126,34,0)}}
+.m4-decide-active{animation:m4DecideActivePulse 1.3s ease-out infinite;outline:2px solid #e67e22;outline-offset:1px;border-radius:6px}
 /* ヒート完了時：次ヒートのスケジュール生成ボタンを青グローで強調 */
 @keyframes m4NextHeatPulse{0%,100%{box-shadow:0 0 0 0 rgba(41,128,185,.6)}50%{box-shadow:0 0 0 8px rgba(41,128,185,0)}}
 .btn-nextheat-hl{animation:m4NextHeatPulse 1.3s ease-out infinite;font-weight:bold!important}
@@ -2949,17 +2953,75 @@ function m4MaybeAutoTally(data, tid){
     autoAdvanced(tid);                               // サーバ集計 → location.reload()
   }catch(e){ console.error('autoTally', e); }
 }
-// 再読込後：同率（決定戦／プレーオフ）が出ていれば自動スクロール。
+// 再読込後：同率（決定戦／プレーオフ）が出ていれば自動スクロール＋アクティブ強調。
+function m4FocusDecideWindow(){
+  var el=document.querySelector('.m4-decide-window');
+  if(!el) return false;
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  el.classList.add('m4-decide-active');
+  return true;
+}
 document.addEventListener('DOMContentLoaded', function(){
   try{
     if(sessionStorage.getItem('m4_scroll_decide')!=='1') return;
     sessionStorage.removeItem('m4_scroll_decide');
-    setTimeout(function(){
-      var el=document.querySelector('.m4-decide-window');
-      if(el){ el.scrollIntoView({behavior:'smooth', block:'center'}); }
-    }, 350);   // スクロール位置復元処理の後に実行
+    setTimeout(m4FocusDecideWindow, 350);   // スクロール位置復元処理の後に実行
   }catch(e){}
 });
+
+// ── ヒート制総当たり：全予選完了の自動検知 → 集計反映（ページ更新）→ 決定戦の自動生成＋スクロール＋強調 ──
+//   ・4秒ポーリングで all_done（heat_results 基準）を検知し、集計済みページへ自動更新。
+//   ・更新後、未解決の同率（決定戦）があれば未生成分を自動生成し、その位置へスクロール＆アクティブ強調。
+{% if is_heat_roundrobin %}
+window.HR_DECISIONS = [{% for g in hr_unresolved_ties %}{"heat_no":{{ g.heat_no|int }},"group_no":{{ g.group_no|int }},"has_slots":{{ 'true' if g.has_slots else 'false' }}}{% if not loop.last %},{% endif %}{% endfor %}];
+(function(){
+  // リロードのガードは URL クエリで持つ（sessionStorage 不可の環境でも無限リロードしない）。
+  function qget(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
+  function reloadWith(k){
+    try{ var u=new URL(location.href); u.searchParams.set(k,'1'); u.searchParams.set('_', Date.now());
+         try{ sessionStorage.setItem('m4_scroll_decide','1'); }catch(e){}
+         location.replace(u.toString()); }
+    catch(e){ location.reload(); }
+  }
+
+  // (1) 全レース完了を検知して一度だけページ更新（集計反映）。_hrdone=1 で二度としない。
+  async function hrPollAllDone(){
+    try{
+      if(qget('_hrdone')==='1') return;
+      const r = await fetch(`/admin/tournaments/${TID}/qualifying/standings-json`, {cache:'no-store'});
+      const d = await r.json();
+      if(d && d.all_done){ reloadWith('_hrdone'); }
+    }catch(e){}
+  }
+  setInterval(hrPollAllDone, 4000);
+  setTimeout(hrPollAllDone, 800);
+
+  // (2) 未解決の同率があれば、スロット未生成の決定戦を自動生成 → 更新 → スクロール＆強調。
+  //     _hrpo=1 で自動生成は一度だけ（無限生成ループ防止）。
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      var decs = window.HR_DECISIONS || [];
+      if(!decs.length) return;
+      var pending = decs.filter(function(d){ return !d.has_slots; });
+      if(pending.length && qget('_hrpo')!=='1'){
+        (async function(){
+          for(var i=0;i<pending.length;i++){
+            var d=pending[i];
+            try{
+              var fd=new FormData(); fd.append('round_no', d.heat_no); fd.append('group_no', d.group_no);
+              await fetch(`/admin/tournaments/${TID}/qualifying/playoff/generate`, {method:'POST', body:fd});
+            }catch(e){}
+          }
+          reloadWith('_hrpo');
+        })();
+        return;
+      }
+      // 生成済み（または自動生成一巡後）→ スクロール＆アクティブ強調
+      setTimeout(m4FocusDecideWindow, 400);
+    }catch(e){}
+  });
+})();
+{% endif %}
 
 function updateAdvBtn(entryId, tid, val) {
   const btn = document.getElementById(`adv-${entryId}`);
