@@ -716,40 +716,71 @@ function copyPreEntryNames(btn) {
       </div>
     </div>
     {% endif %}
+    {% set _pgc = t.qual_pt_group_count|default(1) %}
+    {% set _pt_grouping = (t.qualifying_type == 'point') and (_pgc > 1 or t.qual_pt_jr_group) %}
+    {% set _pt_groups = [] %}
+    {% if _pt_grouping %}{% for i in range(_pgc) %}{% set _ = _pt_groups.append('ABCDEFG'[i]) %}{% endfor %}{% if t.qual_pt_jr_group %}{% set _ = _pt_groups.append('Jr') %}{% endif %}{% endif %}
     {% if entries %}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
+    <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
       {% for e in entries %}
       <div class="entry-card" data-entry-id="{{ e.id }}" data-name="{{ e.racer_name }}"
+           data-seq="{{ e.pre_seq_no or '' }}" data-yomi="{{ e.yomi or '' }}" data-ischild="{{ 1 if e.is_child else 0 }}"
+           data-group="{{ e.pt_group or '' }}"
            style="display:flex;align-items:center;justify-content:space-between;gap:6px;
                   padding:8px 10px;border-radius:8px;border:1px solid #dee2e6;
                   background:{% if e.status=='active' %}#fff{% else %}#f8f9fa{% endif %}">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:6px;
-                      {% if e.status!='active' %}color:#aaa;text-decoration:line-through;{% endif %}
-                      overflow:hidden">
-            {% if e.pre_seq_no %}<span style="flex-shrink:0;font-size:12px;font-weight:bold;color:#0984e3;
-                       background:#eaf4fb;padding:1px 7px;border-radius:10px">{{ '%03d'|format(e.pre_seq_no) }}</span>{% endif %}
-            <span class="entry-name-text"
-                  {% if t.use_racer_master == 0 and not is_finalized %}onclick="editEntryName(this)" title="クリックで名前を変更"{% endif %}
-                  style="font-weight:bold;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;{% if t.use_racer_master == 0 and not is_finalized %}cursor:text{% endif %}">{{ e.racer_name }}</span>
-          </div>
-          {% if e.yomi %}<div style="font-size:11px;color:#95a5a6">{{ e.yomi }}</div>{% endif %}
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+                    {% if e.status!='active' %}color:#aaa;text-decoration:line-through;{% endif %}">
+          {% if e.pre_seq_no %}<span style="flex-shrink:0;font-size:12px;font-weight:bold;color:#0984e3;
+                     background:#eaf4fb;padding:1px 7px;border-radius:10px">{{ '%03d'|format(e.pre_seq_no) }}</span>{% endif %}
+          {% if _pt_grouping %}<span class="ee-group-badge" style="flex-shrink:0;font-size:11px;font-weight:bold;color:#8e44ad;background:#f3eafc;padding:1px 7px;border-radius:10px">{{ e.pt_group or '—' }}</span>{% endif %}
+          <span class="entry-name-text"
+                style="font-weight:bold;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ e.racer_name }}</span>
         </div>
-        <form method="post" action="/admin/tournaments/{{ t.id }}/remove-entry/{{ e.id }}"
-              onsubmit="return confirmRemoveEntry(this)"
-              style="flex-shrink:0">
-          {% if not is_finalized %}
-          <button type="submit" class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:12px">✕</button>
-          {% else %}
-          <span style="color:#ddd;font-size:12px">🔒</span>
-          {% endif %}
-        </form>
+        {% if e.is_child %}<span style="flex-shrink:0;font-size:10px;font-weight:bold;color:#e74c3c">Jr.</span>{% endif %}
+        {% if not is_finalized %}
+        <button type="button" onclick="openEntryEdit(this)" title="編集"
+                style="flex-shrink:0;padding:3px 9px;font-size:13px;background:#cccccc;color:#fff;border:none;border-radius:6px;cursor:pointer">⚙</button>
+        {% else %}
+        <span style="flex-shrink:0;color:#ddd;font-size:12px">🔒</span>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     {% else %}
     <div style="padding:24px;text-align:center;color:#95a5a6">まだエントリーがありません</div>
     {% endif %}
+    {# ⚙ エントリー編集モーダル（受付番号=編集不可 / 名前=マスタ非使用時のみ編集可 / 削除はここで） #}
+    <div id="entry-edit-overlay" onclick="if(event.target===this)closeEntryEdit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center;padding:16px">
+      <div style="background:#fff;border-radius:12px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid #e6e9ec">
+          <strong style="font-size:16px">⚙ エントリーの編集</strong>
+          <button type="button" onclick="closeEntryEdit()" style="margin-left:auto;border:none;background:none;font-size:20px;cursor:pointer;color:#95a5a6">✕</button>
+        </div>
+        <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <label style="font-size:13px;color:#636e72">受付番号
+            <input id="ee-seq" type="text" readonly style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;background:#f1f3f5;color:#636e72;margin-top:4px;box-sizing:border-box">
+          </label>
+          <label style="font-size:13px;color:#636e72">レーサー名
+            <input id="ee-name" type="text" {% if t.use_racer_master != 0 %}readonly{% endif %} style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box{% if t.use_racer_master != 0 %};background:#f1f3f5;color:#636e72{% endif %}">
+          </label>
+          {% if _pt_grouping %}
+          <label style="font-size:13px;color:#636e72">グループ
+            <select id="ee-group" style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box">
+              <option value="">未割当</option>
+              {% for g in _pt_groups %}<option value="{{ g }}">{{ g }}組{% if g == 'Jr' %}（Jr限定）{% endif %}</option>{% endfor %}
+            </select>
+          </label>
+          {% endif %}
+          <div id="ee-edit-msg" style="font-size:13px;color:#e74c3c;min-height:18px"></div>
+        </div>
+        <div style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid #e6e9ec">
+          <button type="button" onclick="deleteEntryFromModal()" class="btn btn-danger btn-sm" style="margin-right:auto">削除</button>
+          <button type="button" onclick="closeEntryEdit()" class="btn btn-secondary btn-sm">キャンセル</button>
+          {% if t.use_racer_master == 0 or _pt_grouping %}<button type="button" onclick="saveEntryEdit()" class="btn btn-success btn-sm">保存</button>{% endif %}
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -999,6 +1030,52 @@ function confirmRemoveEntry(form){
   const card = form.closest('.entry-card');
   const name = card ? card.dataset.name : '';
   return confirm(`${name} をエントリーから削除しますか？`);
+}
+
+// ===== エントリー編集モーダル（受付番号／名前／削除） =====
+let _eeEntryId = null;
+function openEntryEdit(btn){
+  const card = btn.closest('.entry-card');
+  _eeEntryId = card.dataset.entryId;
+  const seq = (card.dataset.seq || '').trim();
+  document.getElementById('ee-seq').value = seq ? String(seq).padStart(3, '0') : '（受付番号なし）';
+  document.getElementById('ee-name').value = card.dataset.name || '';
+  const grpEl = document.getElementById('ee-group');
+  if (grpEl) grpEl.value = card.dataset.group || '';
+  const msg = document.getElementById('ee-edit-msg'); if (msg) msg.textContent = '';
+  document.getElementById('entry-edit-overlay').style.display = 'flex';
+}
+function closeEntryEdit(){
+  document.getElementById('entry-edit-overlay').style.display = 'none';
+}
+async function saveEntryEdit(){
+  const nameEl = document.getElementById('ee-name');
+  const grpEl = document.getElementById('ee-group');
+  const msg = document.getElementById('ee-edit-msg');
+  if (msg) msg.textContent = '';
+  // 名前（マスタ非使用レースで編集可能な場合のみ）
+  if (nameEl && !nameEl.readOnly){
+    const name = (nameEl.value || '').trim();
+    if (!name){ if (msg) msg.textContent = '名前を入力してください'; return; }
+    const d = await _postForm(`${TOURN_BASE}/entries/${_eeEntryId}/rename-racer`, { name });
+    if (!d.ok){ if (msg) msg.textContent = d.message || '名前の変更に失敗しました'; return; }
+  }
+  // グループ（グループ分けありの場合のみ）
+  if (grpEl){
+    const d2 = await _postForm(`${TOURN_BASE}/entries/${_eeEntryId}/set-group`, { group: grpEl.value });
+    if (!d2.ok){ if (msg) msg.textContent = d2.message || 'グループの変更に失敗しました'; return; }
+  }
+  location.reload();
+}
+function deleteEntryFromModal(){
+  const name = (document.getElementById('ee-name').value || '').trim();
+  if (!confirm(`${name} をエントリーから削除しますか？`)) return;
+  // remove-entry は従来どおり form POST（リダイレクト）で処理する。
+  const f = document.createElement('form');
+  f.method = 'post';
+  f.action = `${TOURN_BASE}/remove-entry/${_eeEntryId}`;
+  document.body.appendChild(f);
+  f.submit();
 }
 </script>
 <script>

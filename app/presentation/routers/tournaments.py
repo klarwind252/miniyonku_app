@@ -577,8 +577,8 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
         return RedirectResponse(url="/admin/tournaments/")
 
     async with db.execute(
-        """SELECT e.id, e.car_class, e.status, e.entry_order, e.pre_seq_no,
-                  r.name as racer_name, r.yomi
+        """SELECT e.id, e.car_class, e.status, e.entry_order, e.pre_seq_no, e.pt_group,
+                  r.name as racer_name, r.yomi, r.is_child
            FROM entries e
            JOIN racers r ON r.id = e.racer_id
            WHERE e.tournament_id = ?
@@ -1582,6 +1582,59 @@ async def entry_cards(
     })
 
 
+_PT_GROUP_LETTERS = "ABCDEFG"
+
+
+def _pt_group_options(t_row) -> list[str]:
+    """このレースで選べるポイント予選グループの一覧（['A','B',...] ＋ 'Jr'）を返す。
+    ポイント予選でグループ分けが無効なら空リスト。"""
+    td = dict(t_row) if not isinstance(t_row, dict) else t_row
+    if td.get("qualifying_type") != "point":
+        return []
+    gc = td.get("qual_pt_group_count")
+    gc = max(1, min(int(gc if gc is not None else 1), len(_PT_GROUP_LETTERS)))
+    jr = bool(td.get("qual_pt_jr_group"))
+    if gc <= 1 and not jr:
+        return []
+    letters = [_PT_GROUP_LETTERS[i] for i in range(gc)]
+    if jr:
+        letters.append("Jr")
+    return letters
+
+
+async def _auto_assign_pt_group(tid: int, is_child: int, db) -> str | None:
+    """ポイント予選のグループ分けが有効なら、本エントリー昇格時に入れる組を返す。
+    - Jr限定組ON かつ is_child → 'Jr'
+    - それ以外 → A/B/… のうち現在人数が最少の組（同数なら先頭文字）
+    グループ分け無効（ポイント以外 / 1組かつJrなし）は None。"""
+    async with db.execute(
+        "SELECT qualifying_type, qual_pt_group_count, qual_pt_jr_group FROM tournaments WHERE id=?",
+        (tid,),
+    ) as cur:
+        tr = await cur.fetchone()
+    if not tr:
+        return None
+    opts = _pt_group_options(tr)
+    if not opts:
+        return None
+    if "Jr" in opts and is_child:
+        return "Jr"
+    letters = [g for g in opts if g != "Jr"]
+    if not letters:
+        return "Jr" if "Jr" in opts else None
+    counts = {g: 0 for g in letters}
+    async with db.execute(
+        "SELECT pt_group, COUNT(*) AS n FROM entries "
+        "WHERE tournament_id=? AND pt_group IS NOT NULL GROUP BY pt_group",
+        (tid,),
+    ) as cur:
+        async for r in cur:
+            if r["pt_group"] in counts:
+                counts[r["pt_group"]] = r["n"]
+    # 最少人数の組（同数は letters 順＝先頭文字優先）
+    return min(letters, key=lambda g: counts[g])
+
+
 async def _promote_pre_entry_to_entry(tid: int, name: str, db, is_child: int = 0, seq_no: int = None) -> int:
     """名前を隠しレーサー（ephemeral）として racers に登録し、entries に紐付けて
     本エントリーへ昇格させる。seq_no を渡すとエントリーカードのバーコード番号として記録する。
@@ -1609,9 +1662,11 @@ async def _promote_pre_entry_to_entry(tid: int, name: str, db, is_child: int = 0
         "SELECT COALESCE(MAX(entry_order),0)+1 FROM entries WHERE tournament_id=?", (tid,)
     ) as c2:
         order = (await c2.fetchone())[0]
+    pt_group = await _auto_assign_pt_group(tid, is_child, db)
     cur = await db.execute(
-        "INSERT INTO entries (tournament_id, racer_id, car_class, entry_order, pre_seq_no) VALUES (?,?,?,?,?)",
-        (tid, new_racer_id, "", order, seq_no),
+        "INSERT INTO entries (tournament_id, racer_id, car_class, entry_order, pre_seq_no, pt_group) "
+        "VALUES (?,?,?,?,?,?)",
+        (tid, new_racer_id, "", order, seq_no, pt_group),
     )
     return cur.lastrowid
 
@@ -1648,7 +1703,7 @@ async def scan_reception(tid: int, request: Request, db: aiosqlite.Connection = 
     seq = parsed["seq_no"]
     # 該当する事前エントリーを検索
     async with db.execute(
-        "SELECT id, name, checked_in FROM pre_entries WHERE tournament_id=? AND seq_no=?",
+        "SELECT id, name, checked_in, is_child FROM pre_entries WHERE tournament_id=? AND seq_no=?",
         (tid, seq),
     ) as cur:
         pe = await cur.fetchone()
@@ -1669,7 +1724,7 @@ async def scan_reception(tid: int, request: Request, db: aiosqlite.Connection = 
         })
 
     # 本エントリーへ昇格
-    await _promote_pre_entry_to_entry(tid, pe["name"], db, seq_no=seq)
+    await _promote_pre_entry_to_entry(tid, pe["name"], db, is_child=pe["is_child"] or 0, seq_no=seq)
     await db.execute("UPDATE pre_entries SET checked_in=1 WHERE id=?", (pe["id"],))
     await db.commit()
     return JSONResponse({
@@ -1783,7 +1838,7 @@ async def checkin_pre_entry(tid: int, pre_id: int, db: aiosqlite.Connection = De
     if await _is_result_finalized(tid, db):
         return JSONResponse({"ok": False, "message": "確定済みのため受付できません"})
     async with db.execute(
-        "SELECT id, seq_no, name, checked_in FROM pre_entries WHERE tournament_id=? AND id=?",
+        "SELECT id, seq_no, name, checked_in, is_child FROM pre_entries WHERE tournament_id=? AND id=?",
         (tid, pre_id),
     ) as cur:
         pe = await cur.fetchone()
@@ -1794,7 +1849,7 @@ async def checkin_pre_entry(tid: int, pre_id: int, db: aiosqlite.Connection = De
             "ok": False, "status": "already",
             "message": f"受付済みです（連番{pe['seq_no']:04d} {pe['name']}）",
         })
-    await _promote_pre_entry_to_entry(tid, pe["name"], db, seq_no=pe["seq_no"])
+    await _promote_pre_entry_to_entry(tid, pe["name"], db, is_child=pe["is_child"] or 0, seq_no=pe["seq_no"])
     await db.execute("UPDATE pre_entries SET checked_in=1 WHERE id=?", (pe["id"],))
     await db.commit()
     return JSONResponse({
@@ -1826,6 +1881,39 @@ async def rename_entry_racer(tid: int, entry_id: int, request: Request, db: aios
     await db.execute("UPDATE racers SET name=? WHERE id=?", (name, row["racer_id"]))
     await db.commit()
     return JSONResponse({"ok": True, "name": name})
+
+
+@router.post("/{tid}/entries/{entry_id}/set-group")
+async def set_entry_group(tid: int, entry_id: int, request: Request,
+                          db: aiosqlite.Connection = Depends(get_db)):
+    """エントリーのポイント予選グループを変更する。
+    group="" は未割当（NULL）。許可グループ（A/B/… ＋ Jr）以外は拒否。"""
+    if await _is_result_finalized(tid, db):
+        return JSONResponse({"ok": False, "message": "確定済みのため変更できません"})
+    form = await request.form()
+    group = (form.get("group", "") or "").strip()
+
+    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
+        t_row = await cur.fetchone()
+    if not t_row:
+        return JSONResponse({"ok": False, "message": "レースが見つかりません"})
+    allowed = _pt_group_options(t_row)
+    if not allowed:
+        return JSONResponse({"ok": False, "message": "このレースはグループ分けがありません"})
+    if group and group not in allowed:
+        return JSONResponse({"ok": False, "message": "不正なグループです"})
+
+    async with db.execute(
+        "SELECT id FROM entries WHERE tournament_id=? AND id=?", (tid, entry_id)
+    ) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "message": "対象が見つかりません"})
+    await db.execute(
+        "UPDATE entries SET pt_group=? WHERE tournament_id=? AND id=?",
+        (group or None, tid, entry_id),
+    )
+    await db.commit()
+    return JSONResponse({"ok": True, "group": group})
 
 
 @router.post("/{tid}/status")

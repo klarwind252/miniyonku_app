@@ -817,6 +817,15 @@ async def init_db(db_path: str = None):
             await db.execute("ALTER TABLE entries ADD COLUMN pre_seq_no INTEGER DEFAULT NULL")
             print("[DB] migration: entries.pre_seq_no added")
 
+        # entries.pt_group（ポイント予選のグループ分け：'A'/'B'/… or 'Jr' / 未割当=NULL）
+        #   事前エントリーあり時は本エントリー昇格時に自動割当（Jrは is_child、残りは均等割り）。
+        #   管理画面のエントリー編集モーダルから手動変更も可能。
+        async with db.execute("PRAGMA table_info(entries)") as cur:
+            e_cols_pg = {r["name"] async for r in cur}
+        if "pt_group" not in e_cols_pg:
+            await db.execute("ALTER TABLE entries ADD COLUMN pt_group TEXT DEFAULT NULL")
+            print("[DB] migration: entries.pt_group added")
+
         # pre_entries.is_walkin（飛び込み参加フラグ）
         async with db.execute("PRAGMA table_info(pre_entries)") as cur:
             pe_cols = {r["name"] async for r in cur}
