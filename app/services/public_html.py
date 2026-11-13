@@ -1335,7 +1335,14 @@ window.addEventListener('load', function(){
     return '';
   }
   var PREFIX = slugPrefix();
-  function assetUrl(u){ return (u.charAt(0) === '/') ? (PREFIX + u) : u; }
+  function assetUrl(u){
+    // サーバ側(_patch_html_for_static)で既に "/{slug}" を前置済みのため、
+    // ここで再度 PREFIX を足すと "/slug/slug/api/..." と二重化して404になる。
+    // 既に PREFIX で始まる場合はそのまま返す（二重前置を防ぐ）。
+    if(u.charAt(0) !== '/') return u;
+    if(PREFIX && (u === PREFIX || u.indexOf(PREFIX + '/') === 0)) return u;
+    return PREFIX + u;
+  }
   window.m4OpenInfo = function(kind){
     if(kind === 'm4laps'){
       // ⚡LAPS：非表示divの M4LAPS ベスト表をそのままモーダルに表示する。
