@@ -913,6 +913,15 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% else %}
           {% set round_nos = round_nos | sort %}
         {% endif %}
+        {# 予選回ジャンプボタン：各予選回の先頭へスクロール（全スケジュールは表示したまま）。
+           アンカーリンクなので公開HTML(スクリプト除去)でも動作する。 #}
+        {% if round_nos | length > 1 %}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+          {% for rno in round_nos %}
+          <a href="#qsched-{{ rno }}" style="display:inline-block;padding:8px 18px;background:#1e3a5f;color:#fff;border:1px solid #2c5a8a;border-radius:999px;font-size:14px;font-weight:bold;text-decoration:none;white-space:nowrap">予選 {{ rno }} 回目</a>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% for rno in round_nos %}
         {% if qualifying_type == 'order' and order_round_mode == 'round' %}
         <div style="background:#16293f;border:1px solid #f0f0f0;border-radius:8px;padding:10px 14px;margin-bottom:8px;{% if not loop.first %}margin-top:12px{% endif %};display:flex;align-items:center;justify-content:space-between">
@@ -928,14 +937,14 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </div>
         </div>
         {% else %}
-        <div style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;{% if not loop.first %}margin-top:12px{% endif %}">
+        <div id="qsched-{{ rno }}" style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;scroll-margin-top:60px;{% if not loop.first %}margin-top:12px{% endif %}">
           予選 {{ rno }} 回目
         </div>
         {% endif %}
         <table class="schedule-table">
           {# コース見出しを各レーン色で着色（1=青 / 2=赤 / 3=緑。総当たり・ヒートのコースドットと同じ配色）。
              白太字で背景色に対して視認性を確保。 #}
-          {% set _sc_lc = {1:'#2e6ede', 2:'#2e9e46', 3:'#c9a400', 4:'#e24b4a', 5:'#8a8f98'} %}
+          {% set _sc_lc = {1:'#15356d', 2:'#175124', 3:'#6f5a00', 4:'#e24b4a', 5:'#8a8f98'} %}
           <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
@@ -958,7 +967,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 {% endif %}
                 {% if lane.is_co %}
                 {# CO：枠なし・文字のみ（総当たりと統一）。色は従来背景のオレンジ。 #}
-                <span style="font-weight:bold;color:#e67e22">CO</span>
+                <span style="font-weight:normal;color:#e67e22;font-size:12px">CO</span>
                 {% elif lane.rank %}
                 {% if qualifying_type == 'point' %}{{ rank_icon(lane.rank, big=(not is_public_html)) }}{% else %}<span class="rank-badge" style="background:{{ rc.get(lane.rank,'#555') }};color:#fff;margin-left:0;margin-right:2px">{{ lane.rank }}</span>{% endif %}
                 {% endif %}
@@ -1000,7 +1009,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                   <thead>
                     <tr>
                       <th>#</th>
-                      {% set _hr_lc = {1:'#2e6ede', 2:'#2e9e46', 3:'#c9a400', 4:'#e24b4a', 5:'#8a8f98'} %}
+                      {% set _hr_lc = {1:'#15356d', 2:'#175124', 3:'#6f5a00', 4:'#e24b4a', 5:'#8a8f98'} %}
                       {% for c in course_cols %}
                       <th style="background:{{ _hr_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>
                       {% endfor %}
@@ -1120,7 +1129,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <thead>
             <tr>
               <th>#</th>
-              {% set _rr_lc = {1:'#2e6ede', 2:'#2e9e46', 3:'#c9a400', 4:'#e24b4a', 5:'#8a8f98'} %}
+              {% set _rr_lc = {1:'#15356d', 2:'#175124', 3:'#6f5a00', 4:'#e24b4a', 5:'#8a8f98'} %}
               {% for c in course_cols %}
               <th style="background:{{ _rr_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>
               {% endfor %}
@@ -1153,7 +1162,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                 </div>
                 {% if lane.is_co %}
                 {# CO：枠（バッジ）なし・文字のみ。文字色は従来の背景色（#e67e22）に揃える。 #}
-                <span style="font-weight:bold;color:#e67e22">CO</span>
+                <span style="font-weight:normal;color:#e67e22;font-size:12px">CO</span>
                 {% elif lane.rank and not is_rr_type %}
                 {# 総当たり系は順位が1位/2位しか無く無意味なので表示しない（○×とCOのみ）。
                    通常ヒート等（非総当たり）は従来どおり順位を表示する。 #}
@@ -1229,13 +1238,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#888888{% endif %}">
             {{ s.rank }}
           </td>
-          <td style="font-weight:bold;font-size:13px">{{ s.name }}</td>
+          <td style="font-weight:bold;font-size:15px">{{ s.name }}</td>
           <td>
             {% if is_none_roundrobin %}
             {{ s.wins }}
             {% elif qualifying_type in ('heat_roundrobin', 'roundrobin') %}<span style="background:#f0f0f0;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:11px">{{ s.wins }}勝</span>
             {% elif qualifying_type == 'time_attack' %}<span style="font-variant-numeric:tabular-nums;font-weight:bold;color:#dddddd;font-size:14px">{{ s.best_str }}</span>
-            {% else %}<span style="background:#f0f0f0;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:11px">{{ s.total_points }}pt</span>{% endif %}
+            {% else %}<span style="color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:13px">{{ s.total_points }}pt</span>{% endif %}
           </td>
           {% if is_none_roundrobin %}
           <td style="color:#e74c3c">{{ s.losses }}</td>
