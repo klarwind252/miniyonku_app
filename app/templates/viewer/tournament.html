@@ -108,6 +108,14 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <span>🔁 予選 <strong>{{ t.qual_round_count or 1 }}</strong> 回</span>
           <span>⬆️ 決勝進出 <strong>{{ finalists or t.qual_final_advance }}</strong> 名</span>
         </div>
+        {% set _pgc = t.qual_pt_group_count|default(1) %}
+        {% if _pgc > 1 or t.qual_pt_jr_group %}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px;color:#f0f0f0">
+          <span>👥 グループ分け <strong>{{ _pgc }}</strong> グループ{% if t.qual_pt_jr_group %} ＋ Jr限定組{% endif %}
+            <span style="color:#888888;font-size:12px;margin-left:4px">（{{ _pgc + (1 if t.qual_pt_jr_group else 0) }}組：{% for i in range(_pgc) %}{{ 'ABCDEFG'[i] }}{% if not loop.last %} / {% endif %}{% endfor %}{% if t.qual_pt_jr_group %} / Jr{% endif %}）</span>
+          </span>
+        </div>
+        {% endif %}
         <div style="display:flex;flex-wrap:wrap;gap:12px;color:#95a5a6">
           <span>🏆 1位 <strong style="color:#d4a017">{{ t.point_1st if t.point_1st is not none else 3 }}pt</strong></span>
           <span>🥈 2位 <strong style="color:#888">{{ t.point_2nd if t.point_2nd is not none else 2 }}pt</strong></span>
