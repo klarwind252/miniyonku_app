@@ -1778,22 +1778,53 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
                             (heat_id, lane_no, eid),
                         )
         elif qual_type == "point":
-            # ポイント制：複数ラウンド
+            # ポイント制：複数ラウンド。グループ分け（通常A/B/C…＋Jr限定組）に対応。
             round_count = int(dict(t).get("qual_round_count") or 1)
             lane_count  = int(t["lane_count"] or 3)
-            all_schedule = generate_point_schedule(entry_ids, round_count, lane_count)
+            pt_group_count = max(1, int(dict(t).get("qual_pt_group_count") or 1))
+            pt_jr_group = bool(int(dict(t).get("qual_pt_jr_group") or 0))
+
+            # グループ分けなし（グループ1・Jr OFF）のときは従来どおり group_no=0 で生成し挙動不変。
+            single_group = (pt_group_count == 1 and not pt_jr_group)
+
+            # Jr限定組ON時：is_child=1 のエントリーを別組（group_no = pt_group_count+1）へ分離。
+            jr_ids = set()
+            if pt_jr_group:
+                async with db.execute(
+                    "SELECT e.id FROM entries e JOIN racers r ON r.id=e.racer_id "
+                    "WHERE e.tournament_id=? AND e.status='active' AND r.is_child=1",
+                    (tid,),
+                ) as cur:
+                    jr_ids = {row["id"] for row in await cur.fetchall()}
+
+            # グループ割り当て：通常者を pt_group_count 組へ均等分配（entry_ids はシャッフル済み）。
+            #   group_no: 0=グループ分けなし / 1..pt_group_count=通常組(A,B,C…) / pt_group_count+1=Jr限定組。
+            normal_ids = [e for e in entry_ids if e not in jr_ids]
+            group_buckets = []  # [(group_no, [entry_ids]), ...]
+            for gi in range(pt_group_count):
+                gno = 0 if single_group else (gi + 1)
+                group_buckets.append((gno, normal_ids[gi::pt_group_count]))
+            if pt_jr_group:
+                jr_list = [e for e in entry_ids if e in jr_ids]
+                group_buckets.append((pt_group_count + 1, jr_list))
+
+            # 各組ごとに独立してポイント予選を生成し、heats.group_no に組番号を付与。
             heat_no = 1
-            for rno, groups in enumerate(all_schedule, 1):
-                for group in groups:
-                    await db.execute(
-                        "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
-                        (tid, heat_no, 0, rno, "pending"),
-                    )
-                    async with db.execute("SELECT last_insert_rowid() as id") as cur:
-                        heat_id = (await cur.fetchone())["id"]
-                    for lane_no, eid in enumerate(group, 1):
-                        await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, eid))
-                    heat_no += 1
+            for gno, gids in group_buckets:
+                if not gids:
+                    continue
+                g_schedule = generate_point_schedule(gids, round_count, lane_count)
+                for rno, groups in enumerate(g_schedule, 1):
+                    for group in groups:
+                        await db.execute(
+                            "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
+                            (tid, heat_no, gno, rno, "pending"),
+                        )
+                        async with db.execute("SELECT last_insert_rowid() as id") as cur:
+                            heat_id = (await cur.fetchone())["id"]
+                        for lane_no, eid in enumerate(group, 1):
+                            await db.execute("INSERT INTO heat_lanes (heat_id, lane_no, entry_id) VALUES (?,?,?)", (heat_id, lane_no, eid))
+                        heat_no += 1
         elif qual_type == "none_roundrobin":
             # 即決勝（総当たり）: roundrobin と同じ 1v1 ペア生成
             schedule = generate_roundrobin_schedule(entry_ids)

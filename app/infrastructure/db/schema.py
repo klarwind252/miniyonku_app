@@ -78,6 +78,8 @@ async def init_db(db_path: str = None):
             qual_heat_final_advance INTEGER DEFAULT 1,
             qual_final_advance      INTEGER DEFAULT 2,
             qual_ta_runs            INTEGER DEFAULT 3,
+            qual_pt_group_count     INTEGER DEFAULT 1,
+            qual_pt_jr_group        INTEGER DEFAULT 0,
             created_at              TEXT DEFAULT (datetime('now','localtime'))
         );
         CREATE TABLE IF NOT EXISTS entries (
@@ -243,6 +245,8 @@ async def init_db(db_path: str = None):
             "point_3rd": "INTEGER DEFAULT 1",
             "point_co": "INTEGER DEFAULT 0",
             "qual_round_count": "INTEGER DEFAULT 1",
+            "qual_pt_group_count": "INTEGER DEFAULT 1",
+            "qual_pt_jr_group": "INTEGER DEFAULT 0",
             "heat_locks": "TEXT",
         }
         for col, typedef in migrations.items():
