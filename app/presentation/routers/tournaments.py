@@ -1232,6 +1232,98 @@ async def copy_entries(tid: int, src_tid: int, db: aiosqlite.Connection = Depend
     })
 
 
+@router.get("/{tid}/copyable-pre-races")
+async def copyable_pre_races(tid: int, db: aiosqlite.Connection = Depends(get_db)):
+    """事前エントリーのコピー元候補（自身を除く・同日含む過去5件で、
+    事前エントリーが1件以上あるレース）をJSONで返す。
+    各レースの開催日・レース名・事前エントリー数を含む。"""
+    async with db.execute("SELECT date FROM tournaments WHERE id=?", (tid,)) as cur:
+        cur_row = await cur.fetchone()
+    if not cur_row:
+        return JSONResponse({"ok": False, "error": "レースが見つかりません。", "races": []})
+    base_date = cur_row["date"]
+    # 自身を除き、開催日が基準日以前（同日含む）かつ事前エントリーを持つレースを
+    # 開催日降順→id降順で5件。事前エントリーは名前ベースのため
+    # レーサーマスタ使用区分（use_racer_master）は問わない。
+    async with db.execute(
+        """SELECT t.id, t.name, t.date,
+                  (SELECT COUNT(*) FROM pre_entries pe WHERE pe.tournament_id = t.id) AS entry_count
+           FROM tournaments t
+           WHERE t.id != ? AND t.date <= ?
+                 AND (SELECT COUNT(*) FROM pre_entries pe2 WHERE pe2.tournament_id = t.id) > 0
+           ORDER BY t.date DESC, t.id DESC
+           LIMIT 5""",
+        (tid, base_date),
+    ) as cur:
+        rows = await cur.fetchall()
+    races = [
+        {"id": r["id"], "name": r["name"], "date": r["date"], "entry_count": r["entry_count"]}
+        for r in rows
+    ]
+    return JSONResponse({"ok": True, "races": races})
+
+
+@router.post("/{tid}/copy-pre-entries/{src_tid}")
+async def copy_pre_entries(tid: int, src_tid: int, db: aiosqlite.Connection = Depends(get_db)):
+    """別レース（src_tid）の事前エントリーを現在レース（tid）へ全項目コピー追加する。
+    - 既存の事前エントリーは残し、コピー元を追加（表示名が重複する人はスキップ）
+    - 連番 seq_no は現在レースの続きから自動採番（登録順を維持）
+    - checked_in（受付済み）は引き継がず 0 にリセットする
+    """
+    if await _is_result_finalized(tid, db):
+        return JSONResponse({"ok": False, "error": "結果確定済みのため変更できません。"})
+
+    # 事前エントリーON（pre_entry=1）のレースのみ対象
+    async with db.execute("SELECT pre_entry FROM tournaments WHERE id=?", (tid,)) as cur:
+        t_row = await cur.fetchone()
+    if not t_row:
+        return JSONResponse({"ok": False, "error": "コピー先レースが見つかりません。"})
+    if not (t_row["pre_entry"] if t_row["pre_entry"] is not None else 0):
+        return JSONResponse({"ok": False, "error": "このレースは事前エントリーがOFFです。"})
+
+    # コピー元の事前エントリー（連番順・全項目）
+    async with db.execute(
+        """SELECT name, yomi, is_child, prefecture, contact_type, contact,
+                  is_representative, is_walkin
+           FROM pre_entries WHERE tournament_id=? ORDER BY seq_no, id""",
+        (src_tid,),
+    ) as cur:
+        src_rows = await cur.fetchall()
+
+    # 現在レースに既にある事前エントリー名（表示名で重複スキップ）
+    async with db.execute(
+        "SELECT name FROM pre_entries WHERE tournament_id=?", (tid,)
+    ) as cur:
+        existing = {r["name"] for r in await cur.fetchall()}
+
+    # 連番の現在最大値（続きから採番）
+    async with db.execute(
+        "SELECT COALESCE(MAX(seq_no),0) AS mx FROM pre_entries WHERE tournament_id=?", (tid,)
+    ) as cur:
+        seq = (await cur.fetchone())["mx"]
+
+    added = 0
+    skipped_dup = 0
+    for r in src_rows:
+        nm = r["name"]
+        if nm in existing:
+            skipped_dup += 1
+            continue
+        seq += 1
+        await db.execute(
+            "INSERT INTO pre_entries "
+            "(tournament_id, seq_no, name, yomi, is_child, prefecture, "
+            " contact_type, contact, is_representative, is_walkin, checked_in) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,0)",
+            (tid, seq, nm, r["yomi"], r["is_child"], r["prefecture"],
+             r["contact_type"], r["contact"], r["is_representative"], r["is_walkin"]),
+        )
+        existing.add(nm)
+        added += 1
+    await db.commit()
+    return JSONResponse({"ok": True, "added": added, "skipped_dup": skipped_dup})
+
+
 @router.post("/{tid}/add-listed-entries")
 async def add_listed_entries(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """レーサーマスタ非使用レース（use_racer_master=0）向け：
