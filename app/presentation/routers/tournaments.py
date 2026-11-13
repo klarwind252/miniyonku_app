@@ -1234,26 +1234,25 @@ async def copy_entries(tid: int, src_tid: int, db: aiosqlite.Connection = Depend
 
 @router.get("/{tid}/copyable-pre-races")
 async def copyable_pre_races(tid: int, db: aiosqlite.Connection = Depends(get_db)):
-    """事前エントリーのコピー元候補（自身を除く・同日含む過去5件で、
-    事前エントリーが1件以上あるレース）をJSONで返す。
-    各レースの開催日・レース名・事前エントリー数を含む。"""
-    async with db.execute("SELECT date FROM tournaments WHERE id=?", (tid,)) as cur:
-        cur_row = await cur.fetchone()
-    if not cur_row:
-        return JSONResponse({"ok": False, "error": "レースが見つかりません。", "races": []})
-    base_date = cur_row["date"]
-    # 自身を除き、開催日が基準日以前（同日含む）かつ事前エントリーを持つレースを
-    # 開催日降順→id降順で5件。事前エントリーは名前ベースのため
-    # レーサーマスタ使用区分（use_racer_master）は問わない。
+    """事前エントリーのコピー元候補（自身を除き、事前エントリーが1件以上ある
+    レースを過去・未来問わず最大5件）をJSONで返す。
+    各レースの開催日・レース名・事前エントリー数を含む。
+    ※通常のエントリーコピー（copyable-races）は過去限定だが、事前エントリーは
+      これから開催するレースへの流用もあるため日付で絞らない。"""
+    async with db.execute("SELECT id FROM tournaments WHERE id=?", (tid,)) as cur:
+        if not await cur.fetchone():
+            return JSONResponse({"ok": False, "error": "レースが見つかりません。", "races": []})
+    # 自身を除き、事前エントリーを持つレースを開催日降順→id降順で5件（過去・未来とも対象）。
+    # 事前エントリーは名前ベースのためレーサーマスタ使用区分（use_racer_master）は問わない。
     async with db.execute(
         """SELECT t.id, t.name, t.date,
                   (SELECT COUNT(*) FROM pre_entries pe WHERE pe.tournament_id = t.id) AS entry_count
            FROM tournaments t
-           WHERE t.id != ? AND t.date <= ?
+           WHERE t.id != ?
                  AND (SELECT COUNT(*) FROM pre_entries pe2 WHERE pe2.tournament_id = t.id) > 0
            ORDER BY t.date DESC, t.id DESC
            LIMIT 5""",
-        (tid, base_date),
+        (tid,),
     ) as cur:
         rows = await cur.fetchall()
     races = [
