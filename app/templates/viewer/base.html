@@ -217,7 +217,7 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 <nav class="v-nav{% if ro %} v-nav-ro{% endif %}"{% if is_public_html %} style="position:fixed;top:0;left:0;width:100vw;box-sizing:border-box;z-index:9000;transform:translateZ(0);-webkit-transform:translateZ(0)"{% endif %}>
   <div class="brand" style="display:flex;align-items:center;gap:12px">
     {% if not is_public_html %}<img src="{{ app_icon_src(request) }}" onerror="this.onerror=null;this.src='/logo'" style="height:36px;width:auto;display:block;">{% endif %}
-    <small style="font-size:12px;color:#7f8c8d">観覧</small>
+    <small style="font-size:12px;color:#888888">観覧</small>
     {% if IS_CLOUD and request.state.store %}
     <small style="font-size:12px;color:#ecf0f1;font-weight:bold">{% if not is_public_html %}🏬 {% endif %}{{ request.state.store.name }}</small>
     {% endif %}

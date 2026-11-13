@@ -7,7 +7,7 @@
 .info-cell{padding:8px 14px;border-bottom:1px solid #393939;border-right:1px solid #393939}
 .info-cell:nth-child(3n){border-right:none}
 .info-cell:nth-last-child(-n+3){border-bottom:none}
-.info-label{color:#7f8c8d;font-size:11px;margin-bottom:2px}
+.info-label{color:#888888;font-size:11px;margin-bottom:2px}
 .info-value{font-size:14px;font-weight:bold;color:#ecf0f1}
 .info-value.large{font-size:18px}
 /* entry-grid: 最大10列、最低幅140px、画面幅に応じて可変 */
@@ -21,7 +21,7 @@
 
 .entry-card{background:#191919;border-radius:8px;padding:10px 14px;border:1px solid #393939;display:flex;flex-direction:column;justify-content:center;min-width:140px}
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.entry-yomi{font-size:10px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.entry-yomi{font-size:10px;color:#888888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 /* スマホ幅（〜600px）で本文を読みやすく詰める。広幅（プロジェクター）は不変。 */
 @media(max-width:600px){
   .info-grid{grid-template-columns:repeat(2,1fr)}
@@ -86,7 +86,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <span>🔁 <strong>{{ t.qual_heat_count }}</strong> ヒート</span>
           <span>👥 <strong>{{ t.qual_group_count }}</strong> グループ</span>
           <span>⬆️ グループ上位 <strong>{{ t.qual_group_advance }}</strong> 名</span>
-          {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_final_advance }}</strong>名）</span>{% else %}<span style="color:#7f8c8d">🏁 ヒート決勝なし</span>{% endif %}
+          {% if t.qual_heat_final %}<span>🏁 ヒート決勝あり（上位<strong>{{ t.qual_heat_final_advance }}</strong>名）</span>{% else %}<span style="color:#888888">🏁 ヒート決勝なし</span>{% endif %}
           <span>🎯 勝ち抜け方式 {% if t.qual_heat_exclude %}<strong style="color:#e67e22">ON</strong>{% else %}<strong style="color:#95a5a6">OFF</strong>{% endif %}</span>
         </div>
         {% elif t.qualifying_type in ('heat_tournament','heat_tournament_garappa') %}
@@ -142,7 +142,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {% if finalists %}<tr><td>決勝進出予定</td><td><strong>{{ finalists }} 名</strong></td></tr>{% endif %}
     {% endif %}
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px;padding:6px 14px;font-size:13px;color:#7f8c8d;max-width:100%">
+  <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:8px;padding:6px 14px;font-size:13px;color:#888888;max-width:100%">
     {% if m4laps_active and t.use_m4laps != 0 %}<span style="white-space:nowrap">⚡ <strong style="color:#ecf0f1">M4LAPS使用</strong></span>{% endif %}
     <span style="white-space:nowrap">🏁 レーン数 <strong style="color:#ecf0f1">{{ t.lane_count }}</strong></span>
     {% if t.note %}<span style="flex:1 1 100%;min-width:0;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">📝 {{ t.note }}</span>{% endif %}
@@ -204,7 +204,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {% endif %}
 
 <div class="v-section">
-  <div class="v-section-title">👥 エントリー <span style="font-size:16px;color:#7f8c8d;font-weight:normal">{{ entries|length }}名</span></div>
+  <div class="v-section-title">👥 エントリー <span style="font-size:16px;color:#888888;font-weight:normal">{{ entries|length }}名</span></div>
   <div class="entry-grid">
     {% for e in entries %}
     <div class="entry-card">

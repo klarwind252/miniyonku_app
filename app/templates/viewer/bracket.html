@@ -8,7 +8,7 @@
 .entry-card{background:#191919;border-radius:8px;padding:10px 14px;border:1px solid #393939;display:flex;flex-direction:row;align-items:center;gap:8px;min-width:140px}
 /* レイアウト統一：レーサー名→よみがな→タイムの順。名前・よみは左寄せ、タイムは右寄せ。 */
 .entry-name{font-size:24px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;text-align:left}
-.entry-yomi{font-size:11px;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;text-align:left}
+.entry-yomi{font-size:11px;color:#888888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;text-align:left}
 /* エントリーのベストタイム：白・ベスト1位紫/2位青/3位緑（予選順位表と同配色）。未計測は非表示。 */
 /* margin-left:auto で常に右端へ寄せる（タイム未計測の行でも名前・よみは左寄せのまま崩れない） */
 .entry-best{font-variant-numeric:tabular-nums;font-weight:bold;font-size:15px;color:#fff;flex-shrink:0;padding:1px 6px;border-radius:4px;margin-left:auto}
@@ -21,7 +21,7 @@
 }
 /* 決勝進出レーサー クリック→タイム詳細モーダル */
 .rs-clickable{cursor:pointer}
-.rs-sec-h{font-size:13px;font-weight:bold;color:#7f8c8d;margin:0 0 6px;letter-spacing:1px}
+.rs-sec-h{font-size:13px;font-weight:bold;color:#888888;margin:0 0 6px;letter-spacing:1px}
 .rs-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
 .rs-table th,.rs-table td{border:1px solid #393939;padding:4px 8px;text-align:center}
 .rs-table th{background:#1e3a5f;color:#cdd6df;font-weight:normal}
@@ -72,7 +72,7 @@
   .v-m4rec{padding:10px 12px}
   /* 項目名は全幅ヘッダー（左端）。2行目以降は左詰めで流し、値・差・名前・注釈すべて左端を揃える。 */
   .v-m4rec-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;padding:0 0 7px}
-  .v-m4rec-label{flex:0 0 100%;font-size:12px;background:#120d06;margin:0 -12px 3px;padding:3px 12px}
+  .v-m4rec-label{flex:0 0 100%;font-size:12px;margin:0 -12px 3px;padding:3px 12px}
   .v-m4rec-val{font-size:16px}
   .v-m4rec-gap{font-size:11px}
   .v-m4rec-val:empty,.v-m4rec-gap:empty{display:none}
@@ -119,7 +119,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   <div class="bracket-wrap">
     <div id="bracket-html-container"></div>
     <div id="no-bracket" style="display:none;padding:24px 16px">
-      <div style="color:#7f8c8d;font-size:13px">トーナメント表はまだ作成されていません</div>
+      <div style="color:#888888;font-size:13px">トーナメント表はまだ作成されていません</div>
     </div>
   </div>
 
@@ -209,7 +209,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <tbody>
         {% for r in m4laps_rows %}
           <tr {% if r.entry_id %}onclick="openRacerStats({{ t.id }},{{ r.entry_id }})" style="cursor:pointer"{% endif %}>
-            <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %}">{{ r.rank }}</td>
+            <td class="m4l-rank" style="color:{% if r.rank==1 %}#d4a017{% elif r.rank==2 %}#aaa{% elif r.rank==3 %}#cd7f32{% else %}#888888{% endif %}">{{ r.rank }}</td>
             <td class="m4l-name">{{ r.name }}</td>
             <td class="m4l-num">{% if r.finish_rate is not none %}{{ r.finish_rate }}%{% else %}—{% endif %}</td>
             <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
@@ -254,11 +254,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             {% set group_slots = hd.advanced | selectattr('group_no','equalto',gno) | list %}
             <div style="flex:1;{% if not loop.last %}border-right:1px solid #1e3a5f;padding-right:12px;margin-right:12px{% endif %}">
               {% if gno > 0 %}
-              <div style="font-size:11px;color:#7f8c8d;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #1e3a5f">グループ{{ gno }}</div>
+              <div style="font-size:11px;color:#888888;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #1e3a5f">グループ{{ gno }}</div>
               {% endif %}
               {% for slot in group_slots %}
               <div style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:#0f2a1e;border:1px solid #27ae60;border-radius:5px;margin-bottom:3px">
-                <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#7f8c8d{% endif %};min-width:28px">{{ slot.rank }}位</span>
+                <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#888888{% endif %};min-width:28px">{{ slot.rank }}位</span>
                 <span style="font-size:13px;font-weight:bold;color:#ecf0f1">{{ slot.name }}</span>
               </div>
               {% endfor %}
@@ -285,10 +285,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% for a in heat.advanced %}
           <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
                       background:#0f2a1e;border:1px solid #27ae60;border-radius:6px;margin-bottom:4px">
-            <span style="font-weight:bold;font-size:{% if is_public_html %}13px{% else %}18px{% endif %};min-width:{% if is_public_html %}28px{% else %}2.6em{% endif %};color:{{ rank_c.get(a.overall_rank,'#7f8c8d') }}">{{ a.overall_rank }}位</span>
+            <span style="font-weight:bold;font-size:{% if is_public_html %}13px{% else %}18px{% endif %};min-width:{% if is_public_html %}28px{% else %}2.6em{% endif %};color:{{ rank_c.get(a.overall_rank,'#888888') }}">{{ a.overall_rank }}位</span>
             <div style="display:flex;flex-direction:column;flex:1;line-height:1.15">
               <span class="entry-name" style="font-weight:bold;font-size:{% if is_public_html %}14px{% else %}24px{% endif %};color:#ecf0f1">{{ a.name }}</span>
-              {% if a.yomi %}<span style="font-size:10px;color:#7f8c8d">{{ a.yomi }}</span>{% endif %}
+              {% if a.yomi %}<span style="font-size:10px;color:#888888">{{ a.yomi }}</span>{% endif %}
             </div>
           </div>
           {% endfor %}
@@ -309,7 +309,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {% endif %}
       {% elif entries %}
       {# 進出者未確定の場合はエントリー一覧 #}
-      <div style="font-size:14px;font-weight:bold;color:#7f8c8d;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:bold;color:#888888;margin-bottom:12px">
         👥 エントリーレーサー {{ entries|length }}名
       </div>
       {# エントリー名→ベストタイム・ベスト順位(1/2/3) のマップ（M4LAPS計測から） #}
@@ -337,7 +337,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   <div style="background:#191919;border:1px solid #393939;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #393939">
       <div id="rs-title" style="font-weight:bold;font-size:15px;color:#ecf0f1">レーサー詳細</div>
-      <button id="rs-close" type="button" onclick="if(window.m4CloseRs)window.m4CloseRs()" style="background:none;border:none;color:#7f8c8d;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
+      <button id="rs-close" type="button" onclick="if(window.m4CloseRs)window.m4CloseRs()" style="background:none;border:none;color:#888888;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
     </div>
     <div id="rs-body" style="overflow:auto;padding:10px 12px"></div>
   </div>
@@ -401,7 +401,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     // これで M4LAPSモーダル(m4-info-overlay z-index:9800)より前面(z-index:100000)に確実に表示される。
     if(ov.parentNode !== document.body){ document.body.appendChild(ov); }
     tt.textContent='読み込み中…';
-    bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">読み込み中…</div>';
+    bd.innerHTML='<div style="padding:20px;text-align:center;color:#888888">読み込み中…</div>';
     ov.style.display='flex';
     var base=location.pathname.replace(/\/view\/.*$/,'').replace(/\/$/,'');
     fetch(base+'\x2Fview/tournament/'+tid+'/racer/'+eid+'/stats',{cache:'no-store'})
@@ -409,7 +409,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       .then(function(d){
         tt.textContent=d.name+' のタイム詳細';
         var q=statTable(d.races,true), f=statTable(d.final_races,false);
-        if(!q && !f){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#7f8c8d">計測データがありません</div>'; return; }
+        if(!q && !f){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#888888">計測データがありません</div>'; return; }
         var html='';
         if(q) html+='<div class="rs-sec-h">予選</div>'+q;
         if(f) html+='<div class="rs-sec-h" style="margin-top:14px">決勝</div>'+f;

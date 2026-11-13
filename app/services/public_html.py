@@ -153,7 +153,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 .info-grid{display:block!important;border:1px solid #393939;border-radius:6px;overflow:hidden}
 .info-cell{display:flex!important;align-items:baseline;padding:6px 12px;border-bottom:1px solid #393939}
 .info-cell:last-child{border-bottom:none}
-.info-label{color:#7f8c8d;font-size:12px;flex:0 0 7em;white-space:nowrap;font-weight:normal}
+.info-label{color:#888888;font-size:12px;flex:0 0 7em;white-space:nowrap;font-weight:normal}
 .info-value{font-size:12px;font-weight:normal;color:#ecf0f1;flex:1}
 .info-value.large{font-size:12px;font-weight:bold}
 
@@ -167,7 +167,7 @@ html{overflow-x:hidden}body{padding-top:48px}.v-container{max-width:480px;margin
 /* レーサー名: 14px bold・左揃え・省略なし */
 .entry-name{font-size:14px!important;font-weight:bold!important;white-space:nowrap;overflow:visible!important;text-overflow:clip!important;flex:1;text-align:left}
 /* よみがな: 10px normal */
-.entry-yomi{font-size:10px!important;font-weight:normal!important;color:#7f8c8d;white-space:nowrap;flex-shrink:0;margin-top:0!important}
+.entry-yomi{font-size:10px!important;font-weight:normal!important;color:#888888;white-space:nowrap;flex-shrink:0;margin-top:0!important}
 /* 順位バッジ（entry-card 内の先頭span）: 改行・縮小させない */
 .entry-card > span:first-child{flex-shrink:0!important;white-space:nowrap!important}
 /* お知らせ帯（テロップ）：参加者htmlはナビが fixed(48px) なので貼り付き位置を合わせる */
@@ -1355,7 +1355,7 @@ window.addEventListener('load', function(){
     for(var i=0;i<items.length;i++){
       html += '<div style="margin:0 0 16px">';
       html += '<div style="overflow:auto;-webkit-overflow-scrolling:touch;border-radius:8px;background:#000"><img src="'+assetUrl(items[i].u)+'" onclick="m4ToggleZoom(this)" style="max-width:100%;border-radius:8px;display:block;cursor:zoom-in;touch-action:pinch-zoom" data-z="0"></div>';
-      html += '<div style="font-size:11px;color:#7f8c8d;margin-top:4px">タップで拡大／スワイプで移動</div>';
+      html += '<div style="font-size:11px;color:#888888;margin-top:4px">タップで拡大／スワイプで移動</div>';
       if(items[i].n){ html += '<div style="color:#bdc3c7;font-size:12px;margin-top:2px">'+esc(items[i].n)+'</div>'; }
       html += '</div>';
     }
@@ -1560,7 +1560,7 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
         m = re.search(r"/view/tournament/(\d+)/qualifying", view_url)
         if m:
             tid = m.group(1)
-            _PH = '<div style="color:#7f8c8d;font-size:12px;padding:8px">読み込み中...</div>'
+            _PH = '<div style="color:#888888;font-size:12px;padding:8px">読み込み中...</div>'
             # HTMLから (hno, section_no) を収集
             ht_pairs = re.findall(r'id="viewer-ht-bracket-(\d+)-(\d+)"', html)
             for hno, sec in ht_pairs:
