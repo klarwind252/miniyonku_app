@@ -1592,7 +1592,7 @@ async def entry_cards(
     })
 
 
-_PT_GROUP_LETTERS = "ABCDEFG"
+_PT_GROUP_LETTERS = "ABCDEFGHI"
 
 
 def _pt_group_options(t_row) -> list[str]:
@@ -1610,6 +1610,29 @@ def _pt_group_options(t_row) -> list[str]:
     if jr:
         letters.append("Jr")
     return letters
+
+
+async def _count_unassigned_pt_group(tid: int, t_row, db) -> int:
+    """事前エントリーあり＆グループ分けありのポイント予選で、グループ未割当の
+    アクティブ・エントリー数を返す。ガード対象外（事前エントリーなし／グループ分け
+    なし／ポイント以外）は 0 を返す（＝進行を妨げない）。"""
+    td = dict(t_row) if not isinstance(t_row, dict) else t_row
+    if not td.get("pre_entry"):
+        return 0
+    allowed = _pt_group_options(td)
+    if not allowed:
+        return 0
+    # 未割当（NULL/空）に加え、設定変更で無効になった組（例：3組→2組にした後の C、
+    # Jr限定組OFF後の Jr）も「未割当」として数える（生成時に取りこぼさないため）。
+    ph = ",".join("?" * len(allowed))
+    async with db.execute(
+        "SELECT COUNT(*) AS n FROM entries "
+        "WHERE tournament_id=? AND status='active' "
+        f"AND (pt_group IS NULL OR pt_group='' OR pt_group NOT IN ({ph}))",
+        (tid, *allowed),
+    ) as cur:
+        row = await cur.fetchone()
+    return (row["n"] if row else 0) or 0
 
 
 async def _auto_assign_pt_group(tid: int, is_child: int, db) -> str | None:

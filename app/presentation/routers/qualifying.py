@@ -424,6 +424,27 @@ def generate_heat_roundrobin_schedule(
     return races
 
 
+def pt_group_no(letter: str, pt_jr_group: bool) -> int:
+    """ポイント予選グループのレター（'A'…'I' / 'Jr'）→ heats.group_no。
+    Jr を先頭にするため、Jr限定組ONのとき Jr=1, A=2, B=3…。OFFのとき A=1, B=2…。
+    （単組＝グループ分けなしは呼び出し側で group_no=0 を使う）"""
+    if letter == "Jr":
+        return 1 if pt_jr_group else 0
+    base = ord(letter) - ord("A")  # A=0, B=1, …
+    return (base + 2) if pt_jr_group else (base + 1)
+
+
+def pt_group_label(group_no: int, pt_jr_group: bool) -> str:
+    """heats.group_no → 表示ラベル（'Jr' / 'A' / 'B' …）。0 は空（グループ分けなし）。"""
+    if not group_no:
+        return ""
+    if pt_jr_group:
+        if group_no == 1:
+            return "Jr"
+        return chr(ord("A") + group_no - 2)  # 2→A, 3→B, …
+    return chr(ord("A") + group_no - 1)       # 1→A, 2→B, …
+
+
 def generate_point_schedule(entry_ids: list, round_count: int, lane_count: int) -> list:
     """
     ポイント制：round_count回分のスケジュール生成。
@@ -588,6 +609,13 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     if not t:
         return RedirectResponse(url="/admin/tournaments/")
 
+    # 事前エントリーあり＆グループ分けありのとき、グループ未割当が1人でもいたら進めない
+    from app.presentation.routers.tournaments import _count_unassigned_pt_group
+    if await _count_unassigned_pt_group(tid, t, db) > 0:
+        return RedirectResponse(
+            url=f"/admin/tournaments/{tid}?error=ptgroup_unassigned", status_code=303
+        )
+
     async with db.execute(
         """SELECT e.id as entry_id, e.entry_order, r.id as racer_id, r.name,
                   COALESCE(r.yomi,'') as yomi
@@ -598,8 +626,11 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     ) as cur:
         entries = await cur.fetchall()
 
+    # ポイント制はラウンド先行（予選1回=全グループの1走目…）で heat_no を採番済みのため
+    # heat_no 順＝実レース順。他種別は従来どおり group_no→heat_no 順。
+    _heats_order = "heat_no" if dict(t).get("qualifying_type") == "point" else "group_no, heat_no"
     async with db.execute(
-        "SELECT * FROM heats WHERE tournament_id=? ORDER BY group_no, heat_no", (tid,),
+        f"SELECT * FROM heats WHERE tournament_id=? ORDER BY {_heats_order}", (tid,),
     ) as cur:
         heats = await cur.fetchall()
 
@@ -1701,6 +1732,13 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
     if not entry_ids:
         return RedirectResponse(url=f"/admin/tournaments/{tid}/qualifying", status_code=303)
 
+    # 事前エントリーあり＆グループ分けあり：未割当（無効な組を含む）が1人でもいたら生成しない
+    from app.presentation.routers.tournaments import _count_unassigned_pt_group
+    if await _count_unassigned_pt_group(tid, t, db) > 0:
+        return RedirectResponse(
+            url=f"/admin/tournaments/{tid}?error=ptgroup_unassigned", status_code=303
+        )
+
     # シャッフルしてランダム順に（毎回異なる組み合わせ）
     random.shuffle(entry_ids)
 
@@ -1778,44 +1816,84 @@ async def qualifying_generate(tid: int, db: aiosqlite.Connection = Depends(get_d
                             (heat_id, lane_no, eid),
                         )
         elif qual_type == "point":
-            # ポイント制：複数ラウンド。グループ分け（通常A/B/C…＋Jr限定組）に対応。
+            # ポイント制：複数ラウンド。グループ分け（Jr先頭＋A/B/C…）に対応。
+            #   回次の数え方＝「全グループのN走目」で予選N回（ラウンド先行）。
+            #   予選1回 = Jr①→A①→B①→C① / 予選2回 = Jr②→A②→B②→C② …
+            #   group_no: 0=グループ分けなし / 1=Jr（Jr限定組ON時）/ それ以外=A,B,C…（pt_group_no参照）。
             round_count = int(dict(t).get("qual_round_count") or 1)
             lane_count  = int(t["lane_count"] or 3)
             pt_group_count = max(1, int(dict(t).get("qual_pt_group_count") or 1))
             pt_jr_group = bool(int(dict(t).get("qual_pt_jr_group") or 0))
-
-            # グループ分けなし（グループ1・Jr OFF）のときは従来どおり group_no=0 で生成し挙動不変。
             single_group = (pt_group_count == 1 and not pt_jr_group)
+            use_pre = bool(dict(t).get("pre_entry"))  # 事前エントリーあり
 
-            # Jr限定組ON時：is_child=1 のエントリーを別組（group_no = pt_group_count+1）へ分離。
-            jr_ids = set()
-            if pt_jr_group:
+            group_buckets = []  # [(group_no, [entry_ids]), ...]  ※group_no昇順＝Jr→A→B→C
+            if single_group:
+                # グループ分けなし：全体を1グループ（group_no=0）。挙動は従来と不変。
+                group_buckets.append((0, list(entry_ids)))
+            elif use_pre:
+                # 事前エントリーあり：受付時に決めた entries.pt_group で構成（未割当はガード済み）。
                 async with db.execute(
-                    "SELECT e.id FROM entries e JOIN racers r ON r.id=e.racer_id "
-                    "WHERE e.tournament_id=? AND e.status='active' AND r.is_child=1",
+                    "SELECT id, pt_group FROM entries WHERE tournament_id=? AND status='active'",
                     (tid,),
                 ) as cur:
-                    jr_ids = {row["id"] for row in await cur.fetchall()}
+                    rows = await cur.fetchall()
+                by_letter = {}
+                for r in rows:
+                    by_letter.setdefault((r["pt_group"] or ""), []).append(r["id"])
+                if pt_jr_group and by_letter.get("Jr"):
+                    group_buckets.append((pt_group_no("Jr", True), list(by_letter["Jr"])))
+                for gi in range(pt_group_count):
+                    letter = chr(ord("A") + gi)
+                    group_buckets.append((pt_group_no(letter, pt_jr_group), list(by_letter.get(letter, []))))
+            else:
+                # 事前エントリーなし：従来どおりランダム均等分配（Jr限定組は is_child で分離）。
+                jr_ids = set()
+                if pt_jr_group:
+                    async with db.execute(
+                        "SELECT e.id FROM entries e JOIN racers r ON r.id=e.racer_id "
+                        "WHERE e.tournament_id=? AND e.status='active' AND r.is_child=1",
+                        (tid,),
+                    ) as cur:
+                        jr_ids = {row["id"] for row in await cur.fetchall()}
+                normal_ids = [e for e in entry_ids if e not in jr_ids]
+                if pt_jr_group:
+                    jr_list = [e for e in entry_ids if e in jr_ids]
+                    group_buckets.append((pt_group_no("Jr", True), jr_list))
+                for gi in range(pt_group_count):
+                    group_buckets.append((pt_group_no(chr(ord("A") + gi), pt_jr_group), normal_ids[gi::pt_group_count]))
 
-            # グループ割り当て：通常者を pt_group_count 組へ均等分配（entry_ids はシャッフル済み）。
-            #   group_no: 0=グループ分けなし / 1..pt_group_count=通常組(A,B,C…) / pt_group_count+1=Jr限定組。
-            normal_ids = [e for e in entry_ids if e not in jr_ids]
-            group_buckets = []  # [(group_no, [entry_ids]), ...]
-            for gi in range(pt_group_count):
-                gno = 0 if single_group else (gi + 1)
-                group_buckets.append((gno, normal_ids[gi::pt_group_count]))
-            if pt_jr_group:
-                jr_list = [e for e in entry_ids if e in jr_ids]
-                group_buckets.append((pt_group_count + 1, jr_list))
+            # 事前エントリーなし（生成時に組分け）の場合も、決まった組を entries.pt_group に
+            # 書き戻す（エントリー一覧・観覧のグループ表示を生成結果と一致させる）。
+            if not single_group and not use_pre:
+                for _gno, _gids in group_buckets:
+                    _letter = pt_group_label(_gno, pt_jr_group)
+                    for _eid in _gids:
+                        await db.execute(
+                            "UPDATE entries SET pt_group=? WHERE id=? AND tournament_id=?",
+                            (_letter, _eid, tid),
+                        )
 
-            # 各組ごとに独立してポイント予選を生成し、heats.group_no に組番号を付与。
-            heat_no = 1
+            # グループ内の各走行はグループ内でランダム順（事前エントリー由来も毎回変わるように）
+            for _gno, gids in group_buckets:
+                random.shuffle(gids)
+
+            # 各グループのポイント予選スケジュールを個別生成（空グループは除外）
+            group_scheds = []  # [(group_no, [round0_races, round1_races, ...]), ...]
             for gno, gids in group_buckets:
                 if not gids:
                     continue
-                g_schedule = generate_point_schedule(gids, round_count, lane_count)
-                for rno, groups in enumerate(g_schedule, 1):
-                    for group in groups:
+                group_scheds.append((gno, generate_point_schedule(gids, round_count, lane_count)))
+            # 発番はグループ番号昇順（Jr→A→B→C）で安定化
+            group_scheds.sort(key=lambda x: x[0])
+
+            # ★ラウンド先行で heat_no を採番：予選1回=全グループの1走目→予選2回=全グループの2走目…
+            heat_no = 1
+            for rno in range(1, round_count + 1):
+                for gno, g_schedule in group_scheds:
+                    if rno - 1 >= len(g_schedule):
+                        continue
+                    for group in g_schedule[rno - 1]:
                         await db.execute(
                             "INSERT INTO heats (tournament_id, heat_no, group_no, round_no, status) VALUES (?,?,?,?,?)",
                             (tid, heat_no, gno, rno, "pending"),

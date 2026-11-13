@@ -27,6 +27,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   ⚠️ 結果が確定済みのため、エントリーの追加・削除はできません
 </div>
 {% endif %}
+{% if request.query_params.get("error") == "ptgroup_unassigned" %}
+<div style="background:#fdf0f0;border:2px solid #e74c3c;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#e74c3c;font-weight:bold">
+  ⚠️ グループ未割当のエントリーがあります。全員のグループを割り当ててから予選・決勝管理に進んでください。
+</div>
+{% endif %}
 <style>
 /* ===== 上部アクションバー（sticky・全admin画面で共通） =====
    PC          : 1行に収める。案内文が左で余白を食って伸び、ボタンは右寄せ
@@ -209,7 +214,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% if _pgc > 1 or t.qual_pt_jr_group %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">グループ分け</td>
             <td><strong>{{ _pgc }}</strong> グループ{% if t.qual_pt_jr_group %} ＋ Jr限定組{% endif %}
-                <span style="color:#636e72;font-size:12px;margin-left:6px">（{{ _pgc + (1 if t.qual_pt_jr_group else 0) }}組：{% for i in range(_pgc) %}{{ 'ABCDEFG'[i] }}{% if not loop.last %} / {% endif %}{% endfor %}{% if t.qual_pt_jr_group %} / Jr{% endif %}）</span>
+                <span style="color:#636e72;font-size:12px;margin-left:6px">（{{ _pgc + (1 if t.qual_pt_jr_group else 0) }}組：{% if t.qual_pt_jr_group %}Jr / {% endif %}{% for i in range(_pgc) %}{{ 'ABCDEFGHI'[i] }}{% if not loop.last %} / {% endif %}{% endfor %}）</span>
             </td></tr>
         {% endif %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">決勝進出人数</td>
@@ -722,21 +727,25 @@ function copyPreEntryNames(btn) {
     {% set _pgc = t.qual_pt_group_count|default(1) %}
     {% set _pt_grouping = (t.qualifying_type == 'point') and (_pgc > 1 or t.qual_pt_jr_group) %}
     {% set _pt_groups = [] %}
-    {% if _pt_grouping %}{% for i in range(_pgc) %}{% set _ = _pt_groups.append('ABCDEFG'[i]) %}{% endfor %}{% if t.qual_pt_jr_group %}{% set _ = _pt_groups.append('Jr') %}{% endif %}{% endif %}
+    {% if _pt_grouping %}{% if t.qual_pt_jr_group %}{% set _ = _pt_groups.append('Jr') %}{% endif %}{% for i in range(_pgc) %}{% set _ = _pt_groups.append('ABCDEFGHI'[i]) %}{% endfor %}{% endif %}
+    {# グループ色相（A〜I＋Jr の10色。隣接グループの色相を108°離して紛れないように） #}
+    {% set _grp_hue = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252} %}
     {% if entries %}
     <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
       {% for e in entries %}
+      {% set _gh = _grp_hue.get(e.pt_group) if (_pt_grouping and e.pt_group) else none %}
       <div class="entry-card" data-entry-id="{{ e.id }}" data-name="{{ e.racer_name }}"
            data-seq="{{ e.pre_seq_no or '' }}" data-yomi="{{ e.yomi or '' }}" data-ischild="{{ 1 if e.is_child else 0 }}"
            data-group="{{ e.pt_group or '' }}"
            style="display:flex;align-items:center;justify-content:space-between;gap:6px;
-                  padding:8px 10px;border-radius:8px;border:1px solid #dee2e6;
-                  background:{% if e.status=='active' %}#fff{% else %}#f8f9fa{% endif %}">
+                  padding:8px 10px;border-radius:8px;
+                  border:1px solid {% if _gh is not none and e.status=='active' %}hsl({{ _gh }},45%,78%){% else %}#dee2e6{% endif %};
+                  background:{% if e.status!='active' %}#f8f9fa{% elif _gh is not none %}hsl({{ _gh }},70%,94%){% else %}#fff{% endif %}">
         <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;
                     {% if e.status!='active' %}color:#aaa;text-decoration:line-through;{% endif %}">
           {% if e.pre_seq_no %}<span style="flex-shrink:0;font-size:12px;font-weight:bold;color:#0984e3;
                      background:#eaf4fb;padding:1px 7px;border-radius:10px">{{ '%03d'|format(e.pre_seq_no) }}</span>{% endif %}
-          {% if _pt_grouping %}<span class="ee-group-badge" style="flex-shrink:0;font-size:11px;font-weight:bold;color:#8e44ad;background:#f3eafc;padding:1px 7px;border-radius:10px">{{ e.pt_group or '—' }}</span>{% endif %}
+          {% if _pt_grouping %}<span class="ee-group-badge" style="flex-shrink:0;font-size:11px;font-weight:bold;padding:1px 7px;border-radius:10px;{% if _gh is not none %}color:hsl({{ _gh }},60%,28%);background:hsl({{ _gh }},65%,83%){% else %}color:#95a5a6;background:#eceff1{% endif %}">{{ e.pt_group or '—' }}</span>{% endif %}
           <span class="entry-name-text"
                 style="font-weight:bold;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ e.racer_name }}</span>
         </div>

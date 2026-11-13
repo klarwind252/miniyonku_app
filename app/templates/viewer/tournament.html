@@ -112,7 +112,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% if _pgc > 1 or t.qual_pt_jr_group %}
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px;color:#f0f0f0">
           <span>👥 グループ分け <strong>{{ _pgc }}</strong> グループ{% if t.qual_pt_jr_group %} ＋ Jr限定組{% endif %}
-            <span style="color:#888888;font-size:12px;margin-left:4px">（{{ _pgc + (1 if t.qual_pt_jr_group else 0) }}組：{% for i in range(_pgc) %}{{ 'ABCDEFG'[i] }}{% if not loop.last %} / {% endif %}{% endfor %}{% if t.qual_pt_jr_group %} / Jr{% endif %}）</span>
+            <span style="color:#888888;font-size:12px;margin-left:4px">（{{ _pgc + (1 if t.qual_pt_jr_group else 0) }}組：{% if t.qual_pt_jr_group %}Jr / {% endif %}{% for i in range(_pgc) %}{{ 'ABCDEFGHI'[i] }}{% if not loop.last %} / {% endif %}{% endfor %}）</span>
           </span>
         </div>
         {% endif %}
@@ -213,10 +213,17 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 
 <div class="v-section">
   <div class="v-section-title">👥 エントリー <span style="font-size:16px;color:#888888;font-weight:normal">{{ entries|length }}名</span></div>
+  {% set _pgc = t.qual_pt_group_count|default(1) %}
+  {% set _pt_grouping = (t.qualifying_type == 'point') and (_pgc > 1 or t.qual_pt_jr_group) %}
+  {% set _grp_hue = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252} %}
   <div class="entry-grid">
     {% for e in entries %}
+    {% set _gh = _grp_hue.get(e.pt_group) if (_pt_grouping and e.pt_group) else none %}
     <div class="entry-card">
-      <div class="entry-name">{{ e.name }}</div>
+      <div class="entry-name" style="display:flex;align-items:center;gap:6px">
+        {% if _pt_grouping and e.pt_group %}<span style="flex-shrink:0;font-size:11px;font-weight:bold;padding:1px 7px;border-radius:10px;{% if _gh is not none %}color:hsl({{ _gh }},70%,80%);background:hsl({{ _gh }},55%,28%){% else %}color:#ecf0f1;background:#555{% endif %}">{{ e.pt_group }}</span>{% endif %}
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis">{{ e.name }}{% if e.is_child %} <span style="color:#e74c3c;font-weight:bold;font-size:12px">Jr.</span>{% endif %}</span>
+      </div>
       {% if e.yomi %}<div class="entry-yomi">{{ e.yomi }}</div>{% endif %}
     </div>
     {% endfor %}
