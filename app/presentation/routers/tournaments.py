@@ -445,6 +445,8 @@ async def tournament_add(
     point_3rd: int = Form(1),
     point_co: int = Form(0),
     qual_round_count: int = Form(1),
+    qual_pt_group_count: int = Form(1),
+    qual_pt_jr_group: int = Form(0),
     qual_heat_exclude: int = Form(0),
     order_round_mode: str = Form("free"),
     order_round_count: int = Form(3),
@@ -480,15 +482,17 @@ async def tournament_add(
             qual_group_count, qual_group_advance,
             qual_heat_final, qual_heat_final_advance, qual_final_advance, qual_ta_runs,
             point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
+            qual_pt_group_count, qual_pt_jr_group,
             order_round_mode, order_round_count, order_free_max_runs,
             use_racer_master, pre_entry, pre_entry_method, pre_entry_deadline, use_m4laps)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, date, time_slot, time_slot_free, regulation,
          qualifying_type, final_type, lane_count, note, time_schedule,
          qual_heat_count, qual_heat_advance,
          qual_group_count, qual_group_advance,
          qual_heat_final, qual_heat_final_advance, qual_final_advance, qual_ta_runs,
          point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
+         qual_pt_group_count, qual_pt_jr_group,
          order_round_mode, order_round_count, order_free_max_runs,
          use_racer_master, pre_entry, method, deadline, use_m4laps),
     )
@@ -1654,6 +1658,34 @@ async def rename_pre_entry(tid: int, pre_id: int, request: Request, db: aiosqlit
     return JSONResponse({"ok": True, "name": name})
 
 
+@router.post("/{tid}/pre-entries/{pre_id}/edit")
+async def edit_pre_entry(tid: int, pre_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """事前エントリーのレーサー名・よみがな・Jr区分を変更する（受付前のみ）。受付番号は変更不可。"""
+    if await _is_result_finalized(tid, db):
+        return JSONResponse({"ok": False, "message": "確定済みのため変更できません"})
+    form = await request.form()
+    name = (form.get("name", "") or "").strip()
+    yomi = (form.get("yomi", "") or "").strip()
+    is_child = 1 if (str(form.get("is_child", "")).strip() in ("1", "on", "true", "True")) else 0
+    if not name:
+        return JSONResponse({"ok": False, "message": "名前が空です"})
+    async with db.execute(
+        "SELECT id, checked_in FROM pre_entries WHERE tournament_id=? AND id=?",
+        (tid, pre_id),
+    ) as cur:
+        pe = await cur.fetchone()
+    if pe is None:
+        return JSONResponse({"ok": False, "message": "対象が見つかりません"})
+    if pe["checked_in"]:
+        return JSONResponse({"ok": False, "message": "受付済みのため変更できません"})
+    await db.execute(
+        "UPDATE pre_entries SET name=?, yomi=?, is_child=? WHERE id=?",
+        (name, yomi, is_child, pre_id),
+    )
+    await db.commit()
+    return JSONResponse({"ok": True, "name": name, "yomi": yomi, "is_child": is_child})
+
+
 @router.post("/{tid}/pre-entries/{pre_id}/check-in")
 async def checkin_pre_entry(tid: int, pre_id: int, db: aiosqlite.Connection = Depends(get_db)):
     """事前エントリーを本エントリーへ昇格＆受付済みにする（コードスキャン受付と同義）。"""
@@ -1855,6 +1887,8 @@ async def tournament_edit_save(
     point_3rd: int = Form(1),
     point_co: int = Form(0),
     qual_round_count: int = Form(1),
+    qual_pt_group_count: int = Form(1),
+    qual_pt_jr_group: int = Form(0),
     qual_heat_exclude: int = Form(0),
     order_round_mode: str = Form("free"),
     order_round_count: int = Form(3),
@@ -1914,6 +1948,7 @@ async def tournament_edit_save(
            qual_heat_final=?, qual_heat_final_advance=?, qual_final_advance=?, qual_ta_runs=?,
            point_1st=?, point_2nd=?, point_3rd=?, point_co=?,
            qual_round_count=?, qual_heat_exclude=?,
+           qual_pt_group_count=?, qual_pt_jr_group=?,
            order_round_mode=?, order_round_count=?, order_free_max_runs=?, use_racer_master=?, use_m4laps=?
            WHERE id=?""",
         (date, name, time_slot, time_slot_free, regulation,
@@ -1922,6 +1957,7 @@ async def tournament_edit_save(
          qual_group_count, qual_group_advance,
          qual_heat_final, qual_heat_final_advance, qual_final_advance, qual_ta_runs,
          point_1st, point_2nd, point_3rd, point_co, qual_round_count, qual_heat_exclude,
+         qual_pt_group_count, qual_pt_jr_group,
          order_round_mode, order_round_count, order_free_max_runs, use_racer_master, use_m4laps, tid),
     )
     # M4LAPS 使用チェックの「前回の選択」を保存（次回の新規作成フォームの初期値＝sticky）

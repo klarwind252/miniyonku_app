@@ -205,6 +205,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% elif t.qualifying_type == 'point' %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">予選回数</td>
             <td><strong>{{ t.qual_round_count or 1 }}</strong> 回</td></tr>
+        {% set _pgc = t.qual_pt_group_count|default(1) %}
+        {% if _pgc > 1 or t.qual_pt_jr_group %}
+        <tr><td style="color:#636e72;font-size:13px;padding:6px 0">グループ分け</td>
+            <td><strong>{{ _pgc }}</strong> グループ{% if t.qual_pt_jr_group %} ＋ Jr限定組{% endif %}
+                <span style="color:#636e72;font-size:12px;margin-left:6px">（{{ _pgc + (1 if t.qual_pt_jr_group else 0) }}組：{% for i in range(_pgc) %}{{ 'ABCDEFG'[i] }}{% if not loop.last %} / {% endif %}{% endfor %}{% if t.qual_pt_jr_group %} / Jr{% endif %}）</span>
+            </td></tr>
+        {% endif %}
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">決勝進出人数</td>
             <td><strong>{{ finalists or t.qual_final_advance }}</strong> 名</td></tr>
         <tr><td style="color:#636e72;font-size:13px;padding:6px 0">ポイント配点</td>
@@ -558,7 +565,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {% if pre_entries %}
     <div id="pre-entry-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
       {% for p in pre_entries %}
-      <div class="pre-entry-card" data-seq="{{ p.seq_no }}" data-name="{{ p.name }}" data-id="{{ p.id }}"
+      <div class="pre-entry-card" data-seq="{{ p.seq_no }}" data-name="{{ p.name }}" data-id="{{ p.id }}" data-yomi="{{ p.yomi or '' }}" data-ischild="{{ 1 if p.is_child else 0 }}"
            style="display:flex;align-items:center;justify-content:space-between;gap:6px;
                   padding:8px 10px;border-radius:8px;border:1px solid #dee2e6;
                   background:#fff">
@@ -573,21 +580,47 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         </div>
         {% if p.is_walkin %}<span style="flex-shrink:0;font-size:10px;font-weight:bold;color:#e67e22;background:#fdf2e9;padding:2px 7px;border-radius:10px">当日</span>{% endif %}
         {% if p.is_child %}<span style="flex-shrink:0;font-size:10px;font-weight:bold;color:#e74c3c">Jr.</span>{% endif %}
-        <form method="post" action="/admin/tournaments/{{ t.id }}/remove-pre-entry/{{ p.id }}"
-              onsubmit="return confirmRemovePreEntry(this)"
-              style="flex-shrink:0">
-          {% if not is_finalized %}
-          <button type="submit" class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:12px">✕</button>
-          {% else %}
-          <span style="color:#ddd;font-size:12px">🔒</span>
-          {% endif %}
-        </form>
+        {% if not is_finalized %}
+        <button type="button" onclick="openPreEntryEdit(this)" title="編集"
+                style="flex-shrink:0;padding:3px 9px;font-size:13px;background:#6c757d;color:#fff;border:none;border-radius:6px;cursor:pointer">⚙</button>
+        {% else %}
+        <span style="flex-shrink:0;color:#ddd;font-size:12px">🔒</span>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     {% else %}
     <div style="padding:24px;text-align:center;color:#95a5a6">まだ事前エントリーがありません</div>
     {% endif %}
+    {# ⚙ 事前エントリー編集モーダル（受付番号=編集不可 / 名前・読みがな・Jr=編集可） #}
+    <div id="pe-edit-overlay" onclick="if(event.target===this)closePreEntryEdit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center;padding:16px">
+      <div style="background:#fff;border-radius:12px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid #e6e9ec">
+          <strong style="font-size:16px">⚙ 事前エントリーの編集</strong>
+          <button type="button" onclick="closePreEntryEdit()" style="margin-left:auto;border:none;background:none;font-size:20px;cursor:pointer;color:#95a5a6">✕</button>
+        </div>
+        <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <label style="font-size:13px;color:#636e72">受付番号
+            <input id="pe-seq" type="text" readonly style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;background:#f1f3f5;color:#636e72;margin-top:4px;box-sizing:border-box">
+          </label>
+          <label style="font-size:13px;color:#636e72">レーサー名
+            <input id="pe-name" type="text" style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box">
+          </label>
+          <label style="font-size:13px;color:#636e72">読みがな
+            <input id="pe-yomi" type="text" style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box">
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+            <input id="pe-ischild" type="checkbox"> Jr区分（ジュニア）
+          </label>
+          <div id="pe-edit-msg" style="font-size:13px;color:#e74c3c;min-height:18px"></div>
+        </div>
+        <div style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid #e6e9ec">
+          <button type="button" onclick="deletePreEntryFromModal()" class="btn btn-danger btn-sm" style="margin-right:auto">削除</button>
+          <button type="button" onclick="closePreEntryEdit()" class="btn btn-secondary btn-sm">キャンセル</button>
+          <button type="button" onclick="savePreEntryEdit()" class="btn btn-success btn-sm">保存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -922,6 +955,42 @@ function confirmRemovePreEntry(form){
   const seq = card ? ('000' + card.dataset.seq).slice(-3) : '';
   const name = card ? card.dataset.name : '';
   return confirm(`連番${seq} ${name} を事前エントリーから削除しますか？`);
+}
+
+// ⚙ 事前エントリー編集モーダル
+var _peEditId = null;
+function openPreEntryEdit(btn){
+  var card = btn.closest('.pre-entry-card');
+  if(!card) return;
+  _peEditId = card.dataset.id;
+  document.getElementById('pe-seq').value = ('000' + card.dataset.seq).slice(-3);
+  document.getElementById('pe-name').value = card.dataset.name || '';
+  document.getElementById('pe-yomi').value = card.dataset.yomi || '';
+  document.getElementById('pe-ischild').checked = (card.dataset.ischild === '1');
+  document.getElementById('pe-edit-msg').textContent = '';
+  document.getElementById('pe-edit-overlay').style.display = 'flex';
+}
+function closePreEntryEdit(){ var o=document.getElementById('pe-edit-overlay'); if(o)o.style.display='none'; _peEditId=null; }
+async function savePreEntryEdit(){
+  if(!_peEditId) return;
+  var name = document.getElementById('pe-name').value.trim();
+  var yomi = document.getElementById('pe-yomi').value.trim();
+  var isc = document.getElementById('pe-ischild').checked ? '1' : '0';
+  var msg = document.getElementById('pe-edit-msg');
+  if(!name){ msg.textContent = '名前を入力してください'; return; }
+  try {
+    var d = await _postForm(`${TOURN_BASE}/pre-entries/${_peEditId}/edit`, {name:name, yomi:yomi, is_child:isc});
+    if(!d.ok){ msg.textContent = d.message || '変更に失敗しました'; return; }
+    location.reload();
+  } catch(e){ msg.textContent = '通信エラー: ' + e; }
+}
+function deletePreEntryFromModal(){
+  if(!_peEditId) return;
+  var name = document.getElementById('pe-name').value.trim();
+  if(!confirm(`${name} を事前エントリーから削除しますか？`)) return;
+  var f = document.createElement('form');
+  f.method = 'post'; f.action = `${TOURN_BASE}/remove-pre-entry/${_peEditId}`;
+  document.body.appendChild(f); f.submit();
 }
 function confirmRemoveEntry(form){
   const card = form.closest('.entry-card');
