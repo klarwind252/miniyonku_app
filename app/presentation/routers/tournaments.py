@@ -1082,13 +1082,23 @@ async def remove_entry(tid: int, entry_id: int, db: aiosqlite.Connection = Depen
     pre_seq_no = ent["pre_seq_no"]
     racer_id = ent["racer_id"]
 
-    # 連番がある（事前エントリー／飛び込み由来）の場合は、対応する事前エントリーを
-    # 受付前（checked_in=0）へ差し戻し、事前エントリー一覧へ戻す。
+    # 連番がある場合、対応する事前エントリーの扱いを分ける：
+    #   事前エントリー由来（is_walkin=0）… 受付前（checked_in=0）へ差し戻して一覧へ戻す
+    #   当日エントリー（is_walkin=1＝飛び込み／直接追加）… 事前エントリーごと完全削除
     if pre_seq_no is not None:
-        await db.execute(
-            "UPDATE pre_entries SET checked_in=0 WHERE tournament_id=? AND seq_no=?",
+        async with db.execute(
+            "SELECT id, COALESCE(is_walkin,0) AS is_walkin FROM pre_entries "
+            "WHERE tournament_id=? AND seq_no=?",
             (tid, pre_seq_no),
-        )
+        ) as cur:
+            pe = await cur.fetchone()
+        if pe is not None:
+            if pe["is_walkin"]:
+                await db.execute("DELETE FROM pre_entries WHERE id=?", (pe["id"],))
+            else:
+                await db.execute(
+                    "UPDATE pre_entries SET checked_in=0 WHERE id=?", (pe["id"],)
+                )
 
     # 本エントリーを削除する前に、entries.id を外部キー参照している行を先に消す。
     # （PRAGMA foreign_keys=ON のため、順序を誤ると FOREIGN KEY constraint failed で落ちる）
@@ -1779,6 +1789,53 @@ async def scan_walkin(tid: int, request: Request, db: aiosqlite.Connection = Dep
         "message": f"飛び込み受付完了（連番{seq:04d} {name}）",
         "code": code, "seq_no": seq, "name": name,
     })
+
+
+@router.post("/{tid}/add-entry-direct")
+async def add_entry_direct(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """エントリー済みレーサーに直接1名追加する（飛び込みスキャンが使えない場合の手動追加）。
+    受付番号（連番）とポイント予選グループは自動割当。既存の飛び込み受付と同じく
+    その場限りの隠しレーサー（ephemeral）として登録し、本エントリーへ昇格する。"""
+    if await _is_result_finalized(tid, db):
+        return JSONResponse({"ok": False, "message": "確定済みのため追加できません"})
+    form = await request.form()
+    name = (form.get("name", "") or "").strip()
+    is_child = 1 if (form.get("is_child") in ("1", "true", "on", "True")) else 0
+    if not name:
+        return JSONResponse({"ok": False, "message": "名前を入力してください"})
+
+    # 同名が既にエントリー済み（隠しレーサー）なら重複登録しない
+    async with db.execute(
+        """SELECT 1 FROM racers r
+           JOIN entries e ON e.racer_id = r.id
+           WHERE e.tournament_id = ? AND COALESCE(r.ephemeral,0) = 1 AND r.name = ?
+           LIMIT 1""",
+        (tid, name),
+    ) as cur:
+        if await cur.fetchone():
+            return JSONResponse({"ok": False, "message": "同名のレーサーが既にエントリー済みです"})
+
+    # 連番は pre_entries.seq_no と entries.pre_seq_no の最大値の続きから採番
+    async with db.execute(
+        """SELECT COALESCE(MAX(s),0) AS mx FROM (
+               SELECT MAX(seq_no) AS s FROM pre_entries WHERE tournament_id=?
+               UNION ALL
+               SELECT MAX(pre_seq_no) AS s FROM entries WHERE tournament_id=?
+           )""",
+        (tid, tid),
+    ) as cur:
+        seq = ((await cur.fetchone())["mx"] or 0) + 1
+
+    # 飛び込みと同様に pre_entries へ受付済み・飛び込みフラグ付きで登録
+    await db.execute(
+        "INSERT INTO pre_entries (tournament_id, seq_no, name, is_child, checked_in, is_walkin) "
+        "VALUES (?,?,?,?,1,1)",
+        (tid, seq, name, is_child),
+    )
+    # 本エントリーへ昇格（グループは is_child を見て自動割当）
+    await _promote_pre_entry_to_entry(tid, name, db, is_child=is_child, seq_no=seq)
+    await db.commit()
+    return JSONResponse({"ok": True, "seq_no": seq, "name": name})
 
 
 @router.post("/{tid}/pre-entries/{pre_id}/rename")
