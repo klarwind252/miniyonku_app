@@ -55,7 +55,7 @@
 .qb-b2{background:#dbeafe;color:#1e40af;font-weight:bold;border-radius:3px;padding:1px 5px}
 .qb-b3{background:#dcfce7;color:#166534;font-weight:bold;border-radius:3px;padding:1px 5px}
 .win-btn.sel{border-color:#27ae60;background:#eafaf1;color:#27ae60}
-.grp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px;margin-bottom:10px}
+.grp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:6px;margin-bottom:10px}
 /* ===== 上部アクションバー（sticky・全admin画面で共通） =====
    PC          : 1行に収める。案内文が左で余白を食って伸び、ボタンは右寄せ
    〜820px     : 案内文だけで1行を占有して左揃え。ボタンは次の行に右揃えで並ぶ
@@ -116,6 +116,26 @@
 /* 全予選終了時：決勝管理ボタンを点滅グローで強調 */
 @keyframes m4DecisionPulse{0%,100%{box-shadow:0 0 0 0 rgba(39,174,96,.6)}50%{box-shadow:0 0 0 7px rgba(39,174,96,0)}}
 .btn-decision-hl{animation:m4DecisionPulse 1.4s ease-out infinite;font-weight:bold!important}
+/* ⚡ M4LAPS RECORD HOLDERS（予選管理・観覧スマホと同じパネル） */
+.m4rec{margin:10px 0;padding:12px 16px;border:1px solid #e5dcc4;border-left:5px solid #f0ad4e;border-radius:10px;background:#fffdf5}
+.m4rec-title{font-weight:bold;font-size:15px;color:#2c3e50;letter-spacing:.3px;margin-bottom:10px}
+.m4rec .zap{color:#f0ad4e}
+.m4rec-row{display:grid;grid-template-columns:168px 104px 74px 1fr;gap:2px 12px;align-items:baseline;padding:8px 2px;border-top:1px solid #f0e8d4}
+.m4rec-row:first-of-type{border-top:none}
+.m4rec-label{display:grid;grid-template-columns:1.6em auto;column-gap:6px;align-items:baseline;font-weight:bold;font-size:14px;color:#4a4a4a;white-space:nowrap}
+.m4rec-ic{text-align:center;min-width:0}
+.m4rec-tx{min-width:0;font-size:17px}
+.m4rec-val{font-weight:bold;font-size:18px;color:#1f2d3d;font-variant-numeric:tabular-nums;white-space:nowrap}
+.m4rec-gap{font-size:12px;color:#95a5a6;font-variant-numeric:tabular-nums;white-space:nowrap}
+.m4rec-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.m4rec-holder{display:inline-flex;align-items:baseline;gap:5px;background:#fff;border:1px solid #e6dcc2;border-radius:999px;padding:2px 10px;font-size:13px;line-height:1.6}
+.m4rec-holder .nm{font-weight:bold;color:#2c3e50}
+.m4rec-holder .rc{color:#9a8f76;font-size:11px}
+.m4rec-none{color:#9aa3ad;font-size:13px}
+.m4rec-rt{color:#e67e22;font-weight:bold;font-size:13px;margin-left:2px}
+.m4rec-full{color:#b8860b;font-weight:bold;font-size:12px;letter-spacing:.6px;margin-left:8px}
+.m4rec-cond{grid-column:2 / 4;color:#95a5a6;font-size:11px;align-self:baseline;min-width:0;line-height:1.3}
+@media(max-width:760px){.m4rec-row{grid-template-columns:1fr;gap:4px}.m4rec-val{font-size:16px}}
 </style>
 {# 結果入力カードの見た目は即決勝と共通の単一ソースに集約（この include が最後に効く＝権威）。 #}
 {% include "admin/_card_styles.html" %}
@@ -746,6 +766,81 @@
 </div>
 {% if not loop.last %}<hr class="hr-divider">{% endif %}
 {% endfor %}
+
+{# ── ⚡ M4LAPS RECORD HOLDERS（観覧スマホ・予選管理と同じパネル。ベスト表の上に表示）── #}
+{% if (record_holders and (record_holders.overall or record_holders.fastest_lap or record_holders.top_speed)) or point_leader or achievements %}
+<div class="m4rec" style="margin-top:16px">
+  <div class="m4rec-title"><span class="zap">⚡</span> M4LAPS RECORD HOLDERS（暫定）</div>
+  {% if record_holders and record_holders.overall %}
+  <div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">🏁</span><span class="m4rec-tx">{{ ach_labels.overall }}</span></span>
+    <span class="m4rec-val">{{ record_holders.overall.value_str }}</span>
+    <span class="m4rec-gap">{{ record_holders.overall.gap_str or "" }}</span>
+    <span class="m4rec-who">{% for h in record_holders.overall.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if record_holders and record_holders.fastest_lap_lanes %}
+  {% for fl in record_holders.fastest_lap_lanes %}
+  <div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">{{ ach_labels.fastest_lap }}<span style="color:#95a5a6;font-size:12px;margin-left:5px">{{ fl.lane }}コース</span></span></span>
+    <span class="m4rec-val">{{ fl.value_str }}</span>
+    <span class="m4rec-gap">{{ fl.gap_str or "" }}</span>
+    <span class="m4rec-who">{% for h in fl.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+  </div>
+  {% endfor %}
+  {% elif record_holders and record_holders.fastest_lap %}
+  <div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">⏱</span><span class="m4rec-tx">{{ ach_labels.fastest_lap }}</span></span>
+    <span class="m4rec-val">{{ record_holders.fastest_lap.value_str }}</span>
+    <span class="m4rec-gap">{{ record_holders.fastest_lap.gap_str or "" }}</span>
+    <span class="m4rec-who">{% for h in record_holders.fastest_lap.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if record_holders and record_holders.top_speed %}
+  <div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">🚀</span><span class="m4rec-tx">{{ ach_labels.top_speed }}</span></span>
+    <span class="m4rec-val">{{ record_holders.top_speed.value_str }}</span>
+    <span class="m4rec-gap">{{ record_holders.top_speed.gap_str or "" }}</span>
+    <span class="m4rec-who">{% for h in record_holders.top_speed.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}</span>
+  </div>
+  {% endif %}
+  {% if point_leader %}
+  <div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">🎯</span><span class="m4rec-tx">{{ ach_labels.point_leader }}</span></span>
+    <span class="m4rec-val">{{ point_leader.points }} points</span>
+    <span class="m4rec-gap"></span>
+    <span class="m4rec-who">{% for h in point_leader.holders %}<span class="m4rec-holder"><span class="nm">{{ h.name }}</span></span>{% endfor %}{% if point_leader.full_score %}<span class="m4rec-full">FULL SCORE</span>{% endif %}</span>
+  </div>
+  {% endif %}
+  {% if achievements %}
+  {% if achievements.sweep is not none %}<div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">💯</span><span class="m4rec-tx">{{ ach_labels.sweep }}</span></span>
+    <span class="m4rec-cond">予選 全レース1位（○のみ）</span>
+    <span class="m4rec-who">{% if achievements.sweep %}{% for n in achievements.sweep %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+  </div>{% endif %}
+  {% if achievements.grand_slam is not none %}<div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">👑</span><span class="m4rec-tx">{{ ach_labels.grand_slam }}</span></span>
+    <span class="m4rec-cond">OVERALL1位＋POINT LEADER＋決勝優勝</span>
+    <span class="m4rec-who">{% if achievements.grand_slam %}{% for n in achievements.grand_slam %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span> <span class="m4rec-rt">Right there!!</span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+  </div>{% endif %}
+  {% if achievements.speed_star is not none %}<div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">⭐</span><span class="m4rec-tx">{{ ach_labels.speed_star }}</span></span>
+    <span class="m4rec-cond">OVERALL・FASTEST LAP・TOP SPEED 全1位</span>
+    <span class="m4rec-who">{% if achievements.speed_star %}{% for n in achievements.speed_star %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+  </div>{% endif %}
+  {% if achievements.sprinter is not none %}<div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">⚡</span><span class="m4rec-tx">{{ ach_labels.sprinter }}</span></span>
+    <span class="m4rec-cond">各セクターの1位</span>
+    <span class="m4rec-who">{% if achievements.sprinter %}{% for s in achievements.sprinter %}<span class="m4rec-holder"><span class="rc">セクター{{ s.sector }}</span><span class="nm">{{ s.names|join("・") }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+  </div>{% endif %}
+  {% if achievements.zorome is not none %}<div class="m4rec-row">
+    <span class="m4rec-label"><span class="m4rec-ic">🎰</span><span class="m4rec-tx">{{ ach_labels.zorome }}</span></span>
+    <span class="m4rec-cond">いずれかの計測がゾロ目</span>
+    <span class="m4rec-who">{% if achievements.zorome %}{% for n in achievements.zorome %}<span class="m4rec-holder"><span class="nm">{{ n }}</span></span>{% endfor %}{% else %}<span class="m4rec-none">該当なし</span>{% endif %}</span>
+  </div>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
 
 {# ── ⚡M4LAPS ベスト表（最終ヒートの下・予選内の記録のみで集計）──
    観覧の予選ポイント制と同じ列構成（順位/レーサー/TOTAL BEST/LAP BEST）。 #}

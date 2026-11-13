@@ -839,6 +839,8 @@ function _showPubToast(msg) {
 
   // このページのシーン（予選・決勝 等。該当なしは空）。子テンプレートが宣言する。
   var CURRENT_SCENE = "{% block scene %}{% endblock %}".trim();
+  // 他のIIFE（GWアクティブPIP等）からも参照できるようにグローバル公開する。
+  try { window.M4_SCENE = CURRENT_SCENE; } catch(e){}
   // 自動BGMのON/OFF（この端末＝ブラウザ単位。localStorage に保持）
   function autoOn(){ try { return localStorage.getItem('bgmAuto') === '1'; } catch(e){ return false; } }
 
@@ -1820,7 +1822,7 @@ function _showPubToast(msg) {
   .slot-row.slot-empty{ background:#fff !important; border:none !important;
     border-bottom:1px solid #f0f0f0 !important; border-radius:0 !important; }
   /* ★勝者（反映済みカードで勝った人＝○選択 or 1位）の行をハイライト。bracket/heat_tournament 共通。20261110 */
-  .slot-row.is-winner{ background:#eafaf1 !important; }
+  .slot-row.is-winner{ background:#ffe1f4 !important; }
   .slot-row.is-winner .slot-name{ font-weight:700; }
 </style>
 <div id="gwpip"><div class="gwpip-head"><span class="gwpip-dot"></span>GW アクティブ</div>
@@ -1828,6 +1830,9 @@ function _showPubToast(msg) {
 <script>
 (function(){
   var onTourney = /\/admin\/tournaments\/\d+/.test(location.pathname);
+  // GWアクティブPIPは「予選管理・決勝管理」でのみ表示（レース情報等では出さない）。
+  var _m4Scene = (window.M4_SCENE || '');
+  var pipAllowed = onTourney && (_m4Scene === '予選' || _m4Scene === '決勝');
   // ★api読取は既存ラップタイマーPIPと同一方式（root_path接頭辞）。adminPOSTは既存の反映ボタン等と
   //   同じく接頭辞なしの /admin/... を使う（二重スラッグ防止・動作実績に合わせる）。
   var GWPFX = {{ (request.scope.get('root_path', '') if request else '') | tojson }};
@@ -1914,7 +1919,7 @@ function _showPubToast(msg) {
                             alert('アクティブ化に失敗（通信エラー）: '+e); });
     }, 300);
   };
-  if(!onTourney) return;   // PIP表示とポーリングは大会ページのみ（gwToggleActiveは上で定義済み）
+  if(!pipAllowed){ if(pip) pip.style.display='none'; return; }   // PIPは予選管理・決勝管理のみ（レース情報等では非表示）。gwToggleActiveは上で定義済み
   pip.style.display='block';   // 大会ページでは即表示（fetch前でも場所が分かる）
   body.innerHTML='<div class="gwpip-none">読込中…</div>';
   poll(); setInterval(poll, 4000);

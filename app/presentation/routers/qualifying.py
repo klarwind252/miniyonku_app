@@ -4092,6 +4092,48 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         m4laps_rows = []
         m4laps_best_ranks = {}
 
+    # ── ⚡ M4LAPS RECORD HOLDERS（観覧スマホ／予選管理と同じパネルをヒートトーナメントにも表示）──
+    #    記録(OVERALL/FASTEST LAP/TOP SPEED)＋称号(SWEEP/GRAND SLAM/…)を admin にも出す。
+    #    付加情報なので、どんな失敗でもページ本体は必ず表示する（丸ごと握りつぶす）。
+    record_holders = None
+    point_leader = None
+    achievements = None
+    ach_labels = {}
+    try:
+        from app.application import qualifying_records as _qrec
+        _ach_cfg = await _qrec.get_ach_config(db)
+        ach_labels = _qrec.labels_from_cfg(_ach_cfg)
+        if m4_on and _use_m4:
+            from app.application import timing_racer_best_service as _rbsvc_rh
+            _scan_rh = await _rbsvc_rh.scan_tournament_metrics(db, tid)
+            _rh_raw = _scan_rh["records"] if _scan_rh else None
+            _name_by_entry_rh = {}
+            async with db.execute(
+                """SELECT e.id AS eid, r.name FROM entries e
+                   JOIN racers r ON r.id=e.racer_id WHERE e.tournament_id=?""",
+                (tid,),
+            ) as cur:
+                for _r in await cur.fetchall():
+                    _name_by_entry_rh[_r["eid"]] = _r["name"]
+            record_holders = _qrec.format_records_display(_rh_raw, _name_by_entry_rh, {})
+            # ヒートトーナメントは単一の予選1位が定まらないため qualifying leader は None。
+            #   （POINT LEADER 行はポイント制のみ・GRAND SLAM の予選1位条件も自然に非該当）
+            try:
+                _sweep_rh = await _qrec.sweep_entries_for_tournament(db, tid)
+            except Exception:
+                _sweep_rh = set()
+            achievements = _qrec.compute_achievements(
+                _rh_raw, None, _sweep_rh, _name_by_entry_rh)
+            record_holders, point_leader, achievements = _qrec.apply_panel_config(
+                record_holders, point_leader, achievements, _ach_cfg)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "[ht_top] RECORD HOLDERS build failed (page continues)")
+        record_holders = None
+        point_leader = None
+        achievements = None
+
     return templates.TemplateResponse("admin/heat_tournament.html", {
         "request": request,
         "t": t,
@@ -4105,6 +4147,10 @@ async def ht_top(tid: int, request: Request, db: aiosqlite.Connection = Depends(
         "m4_on": m4_on,
         "m4laps_rows": m4laps_rows,
         "m4laps_best_ranks": m4laps_best_ranks,
+        "record_holders": record_holders,
+        "point_leader": point_leader,
+        "achievements": achievements,
+        "ach_labels": ach_labels,
     })
 
 

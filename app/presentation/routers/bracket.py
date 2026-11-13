@@ -5874,10 +5874,9 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 rightX = Math.max(rightX, cr.right);
                 midYs.push(cy);
               }
-              // 勝ち上がり＝その feeder 組の勝者が確定した時点で、合流点までの横線を赤にする
-              // （＝「そこまで到達した」ことを示す“途中まで”の赤）。合流点から次の組の箱へ
-              // 入る線は、次の組の勝者（＝この先の優勝者）が決まったとき、その勝者の経路だけを
-              // 最後まで赤にする。優勝していない勝ち上がり者は途中（合流点）までで止める。
+              // 次の組（nextGroup）で勝ち上がった＝次の組の勝者になった feeder 組の経路だけを赤にする。
+              // その feeder 組の右端から合流点→次の組の箱まで一本の赤線で結ぶ。
+              // 勝ち上がれなかった（＝次の組で敗退した）組の線は、勝者が確定していても灰のままにする。
               var nextWinnerName = nextGroup.dataset.winnerName || '';
               var advFlags = [], wf = -1;
               for (var wi = 0; wi < feeders.length; wi++) {
@@ -5898,7 +5897,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 var hg = feeders[hi];
                 var hr = getGroupRect(hg, container);
                 var hy = hr.top + hr.height / 2;
-                dline(svg, hr.right, hy, vX, hy, advFlags[hi] ? RED : GRAY);
+                dline(svg, hr.right, hy, vX, hy, (hi === wf) ? RED : GRAY);
               }
               if (midYs.length > 1) {
                 // 縦バスは灰。優勝者(wf)の経路だけ合流点までを赤で上書き
@@ -5943,7 +5942,7 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
                 var hg = feeders[hi];
                 var hr = getGroupRect(hg, container);
                 var hy = hr.top + hr.height / 2;
-                dline(svg, hr.left, hy, vX, hy, advFlags[hi] ? RED : GRAY);
+                dline(svg, hr.left, hy, vX, hy, (hi === wf) ? RED : GRAY);
               }
               if (midYs.length > 1) {
                 dline(svg, vX, Math.min.apply(null,midYs), vX, Math.max.apply(null,midYs), GRAY);
@@ -5971,17 +5970,19 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
         var RED = '#e2001a', GRAY = '#adb5bd';
         if (!fromRight) {
           var rightX = 0, advFlags = [], wf = -1;
+          // 先に優勝者(決勝の勝者)の経路 wf を確定してから線を引く。
+          // 決勝で勝ち上がった組だけ赤、勝ち上がれなかった組は灰にする。
+          semiGroups.forEach(function(g, gi) {
+            var wn = g.dataset.winnerName || '';
+            advFlags.push(wn !== '');
+            if (wn && wn === finalWinnerName) wf = gi;
+          });
           semiGroups.forEach(function(g, gi) {
             var r = getGroupRect(g, container);
             var cy = r.top + r.height / 2;
             rightX = Math.max(rightX, r.right);
             midYs.push(cy);
-            // 準決勝で勝てば決勝へ到達＝合流点まで赤（途中まで）。決勝の勝者（優勝者）の
-            // 経路だけ、合流点から決勝の箱へ入る線まで赤にする（最後まで）。
-            var wn = g.dataset.winnerName || '';
-            advFlags.push(wn !== '');
-            if (wn && wn === finalWinnerName) wf = gi;
-            dline(svg, r.right, cy, r.right + 24, cy, (wn !== '') ? RED : GRAY);
+            dline(svg, r.right, cy, r.right + 24, cy, (gi === wf) ? RED : GRAY);
           });
           var vX = rightX + 24;
           var centerY = midYs.reduce(function(a,b){return a+b;},0) / midYs.length;
@@ -5993,15 +5994,19 @@ def _render_html_bracket(svg_data: dict, tid: int = 0, winner_js_func: str = "se
           if (Math.abs(centerY - fMidY) > 2) dline(svg, fRect.left, Math.min(centerY,fMidY), fRect.left, Math.max(centerY,fMidY), wf >= 0 ? RED : GRAY);
         } else {
           var leftX = Infinity, advFlags = [], wf = -1;
+          // 先に優勝者(決勝の勝者)の経路 wf を確定してから線を引く。
+          // 決勝で勝ち上がった組だけ赤、勝ち上がれなかった組は灰にする。
+          semiGroups.forEach(function(g, gi) {
+            var wn = g.dataset.winnerName || '';
+            advFlags.push(wn !== '');
+            if (wn && wn === finalWinnerName) wf = gi;
+          });
           semiGroups.forEach(function(g, gi) {
             var r = getGroupRect(g, container);
             var cy = r.top + r.height / 2;
             leftX = Math.min(leftX, r.left);
             midYs.push(cy);
-            var wn = g.dataset.winnerName || '';
-            advFlags.push(wn !== '');
-            if (wn && wn === finalWinnerName) wf = gi;
-            dline(svg, r.left - 24, cy, r.left, cy, (wn !== '') ? RED : GRAY);
+            dline(svg, r.left - 24, cy, r.left, cy, (gi === wf) ? RED : GRAY);
           });
           var vX = leftX - 24;
           var centerY = midYs.reduce(function(a,b){return a+b;},0) / midYs.length;
