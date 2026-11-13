@@ -563,7 +563,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   </div>
   <div class="card-body">
     {% if pre_entries %}
-    <div id="pre-entry-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+    <div id="pre-entry-grid" style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
       {% for p in pre_entries %}
       <div class="pre-entry-card" data-seq="{{ p.seq_no }}" data-name="{{ p.name }}" data-id="{{ p.id }}" data-yomi="{{ p.yomi or '' }}" data-ischild="{{ 1 if p.is_child else 0 }}"
            style="display:flex;align-items:center;justify-content:space-between;gap:6px;
