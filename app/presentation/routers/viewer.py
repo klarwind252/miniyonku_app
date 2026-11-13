@@ -393,6 +393,22 @@ async def viewer_racer_stats(tid: int, entry_id: int, request: Request,
     return JSONResponse(data)
 
 
+@router.get("/tournament/{tid}/race/{heat_id}/laptimes")
+async def viewer_race_laptimes(tid: int, heat_id: int, request: Request,
+                               db: aiosqlite.Connection = Depends(get_db)):
+    """観覧用：1レース（ヒート）のレーン別 M4LAPS 明細（レース番号タップ時に都度取得）。
+
+    レーサー名タップ(stats)が予選全体を横断するのに対し、こちらは「そのレース1本」のみ。
+    M4LAPS 由来の表示なので、クラウド版＋ライセンス登録時のみ。それ以外は 404。
+    """
+    if not (IS_CLOUD and await m4laps_license.is_licensed(db)):
+        raise HTTPException(status_code=404)
+    data = await racer_stats_service.build_race_laptimes(db, tid, heat_id)
+    if data is None:
+        raise HTTPException(status_code=404)
+    return JSONResponse(data)
+
+
 @router.get("/tournament/{tid}/qualifying", response_class=HTMLResponse)
 async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
     """予選画面：スケジュール＋順位表"""

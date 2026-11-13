@@ -14,7 +14,7 @@
 {% block extra_style %}
 .schedule-table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
 .schedule-table th:first-child,.schedule-table td:first-child{width:30px}
-.schedule-table th{background:#1e3a5f;padding:8px 12px;text-align:center;color:#9fb3c8;font-size:12px;font-weight:normal}
+.schedule-table th{background:#555555;padding:8px 12px;text-align:center;color:#9fb3c8;font-size:12px;font-weight:normal}
 .schedule-table tr.race-row{transition:background .2s}
 .schedule-table tr.done{background:#0d2014}
 /* ★アクティブレース（admin が # クリックで指定）の行ハイライト。観覧・公開HTML共通。
@@ -26,6 +26,8 @@
 /* 薄い枠で全セルを罫線表示（暗背景でも見えるライトグレー） */
 .schedule-table th,.schedule-table td{border:1px solid rgba(255,255,255,.16)}
 .heat-no{color:#888888;font-weight:bold;font-size:13px}
+/* 結果入力済みレースの番号＝タップでM4LAPS明細モーダル */
+.heat-no.tap-laps{color:#4da3ff;text-decoration:underline;cursor:pointer}
 .lane-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
 .racer-cell{display:flex;align-items:center;font-size:15px;font-weight:bold;min-width:0}
 /* FINISHタイム上位3のセル着色（1紫/2青/3緑）。td に付けてセル枠いっぱいを塗る。
@@ -52,7 +54,7 @@
 /* 総当たり系：1巡（エントリー数//2 レース）ごとに太い区切り線＋「n巡目」ラベル（adminと同じ可視化）。 */
 .schedule-table tr.rr-round-sep td{padding:0;border:none;background:transparent}
 .rr-round-sep .rr-bar{border-top:2px solid rgba(255,255,255,.3);margin:8px 0 0}
-.rr-round-sep .rr-lbl{display:inline-block;font-size:11px;font-weight:bold;color:#90a2b5;background:transparent;
+.rr-round-sep .rr-lbl{display:inline-block;font-size:11px;font-weight:bold;color:#bbbbbb;background:transparent;
   padding:1px 0 2px;line-height:1.4;margin-bottom:2px}
 .status-done{color:#27ae60;font-size:12px;font-weight:bold}
 .status-pending{color:#888888;font-size:12px}
@@ -62,13 +64,13 @@
 .std-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .standings-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap}
 .standings-table thead th:nth-child(n+4){text-align:center}
-.standings-table th{background:#1e3a5f;padding:5px 8px;text-align:left;font-size:12px;color:#888888;font-weight:normal;white-space:nowrap;line-height:1.2;vertical-align:bottom}
-.standings-table td{padding:5px 8px;border-bottom:1px solid #555555;font-size:15px}
+.standings-table th{background:#333333;padding:5px 8px;text-align:left;font-size:12px;color:#ffffff;font-weight:normal;white-space:nowrap;line-height:1.2;vertical-align:bottom}
+.standings-table td{padding:9px 8px;border-bottom:1px solid #555555;font-size:17px}
 .standings-table tr:first-child td{background:#1a2a10}
 /* M4LAPS ベスト表（予選順位とエントリーの間）。TOTAL/LAP のベストを列表示。
    上位3人の配色は観覧の他ベスト表示と同じ 紫1位/青2位/緑3位。 */
 .m4l-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap;font-size:13px}
-.m4l-table th{background:#1e3a5f;color:#888888;font-weight:normal;font-size:11px;padding:4px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
+.m4l-table th{background:#333333;color:#888888;font-weight:normal;font-size:11px;padding:4px 8px;text-align:center;line-height:1.2;vertical-align:bottom}
 .m4l-table td{padding:10px 8px;border-bottom:1px solid #555555;text-align:center}
 .m4l-table tr.m4l-grp th{background:#16324f;color:#9fb3c8;font-size:11px;letter-spacing:1px}
 .m4l-sep{border-left:2px solid #33475f}
@@ -92,7 +94,7 @@
 .rs-sec-h{font-size:13px;font-weight:bold;color:#888888;margin:0 0 6px;letter-spacing:1px}
 .rs-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
 .rs-table th,.rs-table td{border:1px solid #555555;padding:4px 8px;text-align:center}
-.rs-table th{background:#1e3a5f;color:#cdd6df;font-weight:normal}
+.rs-table th{background:#333333;color:#cdd6df;font-weight:normal}
 .rs-table .rs-race{text-align:left;color:#cdd6df}
 .rs-num{font-variant-numeric:tabular-nums;color:#ecf0f1}
 .rs-total{font-weight:bold}
@@ -102,11 +104,11 @@
 
 /* 勝敗表 */
 .wl-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
-.wl-table th{background:#1e3a5f;padding:4px 2px;text-align:center;color:#888888;font-weight:normal;font-size:12px}
+.wl-table th{background:#333333;padding:4px 2px;text-align:center;color:#ffffff;font-weight:normal;font-size:12px}
 .wl-table th.wl-th-vert{writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;height:72px;vertical-align:bottom;padding-bottom:6px;width:28px}
-.wl-table td{padding:5px 4px;text-align:center;border:1px solid #1a2535;font-weight:bold;font-size:14px}
+.wl-table td{padding:5px 4px;text-align:center;border:1px solid #333333;font-weight:bold;font-size:14px}
 .wl-table td.wl-name{text-align:left;font-size:12px;color:#ecf0f1;background:#000000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wl-td-self{background:#333333;color:#3d5166}
+.wl-td-self{background:#333333;color:#666666}
 .wl-td-w{background:#0d2a14;color:#27ae60}
 .wl-td-l{background:#2a0d0d;color:#e74c3c}
 .wl-td-none{background:#000000;color:#3d5166}
@@ -202,8 +204,8 @@
   .schedule-table{font-size:13px}
   .schedule-table td,.schedule-table th{padding:5px 4px}
   /* 予選順位表：フォント・余白を詰める（横スクロールは維持） */
-  .standings-table th,.standings-table td{padding:4px 6px}
-  .standings-table td{font-size:13px}
+  .standings-table th,.standings-table td{padding:7px 6px}
+  .standings-table td{font-size:15px}
   /* M4LAPS パネル：余白を詰める */
   .v-m4rec{padding:9px 10px}
   .v-m4rec-title{font-size:16px}
@@ -933,7 +935,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         <table class="schedule-table">
           {# コース見出しを各レーン色で着色（1=青 / 2=赤 / 3=緑。総当たり・ヒートのコースドットと同じ配色）。
              白太字で背景色に対して視認性を確保。 #}
-          {% set _sc_lc = {1:'#08192a', 2:'#2e0d08', 3:'#061f11'} %}
+          {% set _sc_lc = {1:'#2e6ede', 2:'#2e9e46', 3:'#c9a400', 4:'#e24b4a', 5:'#8a8f98'} %}
           <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
           {% for heat in heats if heat.round_no == rno %}
@@ -941,7 +943,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
             {# 「#」は各予選回（round_no）内での連番（123 / 123 / 123）。
                行の id は全体通し番号 heat_no のまま（スクロール・追従用）。 #}
-            <td class="heat-no">{{ loop.index }}</td>
+            <td class="heat-no{% if m4laps_active and heat.status=='done' %} tap-laps{% endif %}"{% if m4laps_active and heat.status=='done' %} onclick="if(window.openRaceLaptimes)openRaceLaptimes({{ t.id }},{{ heat.id }})" title="このレースのM4LAPS明細を表示"{% endif %}>{{ loop.index }}</td>
             {% for col in [1,2,3] %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
             {% if ld %}{% set lane = ld[0] %}
@@ -998,9 +1000,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                   <thead>
                     <tr>
                       <th>#</th>
-                      {% set _hr_lc = {1:'#f0f0f0', 2:'#e74c3c', 3:'#27ae60'} %}
+                      {% set _hr_lc = {1:'#2e6ede', 2:'#2e9e46', 3:'#c9a400', 4:'#e24b4a', 5:'#8a8f98'} %}
                       {% for c in course_cols %}
-                      <th><span class="lane-dot" style="background:{{ _hr_lc[c] }};display:inline-block"></span>{{ c }}コース</th>
+                      <th style="background:{{ _hr_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>
                       {% endfor %}
                     </tr>
                   </thead>
@@ -1008,7 +1010,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                   {% for heat in grp.heats %}
                   {% set lanes = grp.lanes.get(heat.id, []) %}
                   <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row{% if heat.status=='done' %} done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
-                    <td class="heat-no">{{ heat.heat_no }}</td>
+                    <td class="heat-no{% if m4laps_active and heat.status=='done' %} tap-laps{% endif %}"{% if m4laps_active and heat.status=='done' %} onclick="if(window.openRaceLaptimes)openRaceLaptimes({{ t.id }},{{ heat.id }})" title="このレースのM4LAPS明細を表示"{% endif %}>{{ heat.heat_no }}</td>
                     {% for col in course_cols %}
                     {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
                     {% if ld %}{% set lane = ld[0] %}
@@ -1118,9 +1120,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <thead>
             <tr>
               <th>#</th>
-              {% set _rr_lc = {1:'#f0f0f0', 2:'#e74c3c', 3:'#27ae60'} %}
+              {% set _rr_lc = {1:'#2e6ede', 2:'#2e9e46', 3:'#c9a400', 4:'#e24b4a', 5:'#8a8f98'} %}
               {% for c in course_cols %}
-              <th><span class="lane-dot" style="background:{{ _rr_lc[c] }};display:inline-block"></span>{{ c }}コース</th>
+              <th style="background:{{ _rr_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>
               {% endfor %}
             </tr>
           </thead>
@@ -1130,7 +1132,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% for heat in heats %}
           {% set lanes = heat_lanes.get(heat.id, []) %}
           <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
-            <td class="heat-no">{{ heat.heat_no }}</td>
+            <td class="heat-no{% if m4laps_active and heat.status=='done' %} tap-laps{% endif %}"{% if m4laps_active and heat.status=='done' %} onclick="if(window.openRaceLaptimes)openRaceLaptimes({{ t.id }},{{ heat.id }})" title="このレースのM4LAPS明細を表示"{% endif %}>{{ heat.heat_no }}</td>
             {% for col in course_cols %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
             {% if ld %}{% set lane = ld[0] %}
@@ -1363,6 +1365,16 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     <div id="rs-body" style="overflow:auto;padding:10px 12px"></div>
   </div>
 </div>
+{# レース番号タップ→そのレース1本のレーン別M4LAPS明細モーダル（上の openRacerStats と同じ <script> IIFE 内で定義＝公開HTMLでも再注入される）。 #}
+<div id="rl-overlay" onclick="if(event.target===this&&window.m4CloseRl)window.m4CloseRl()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#000000;border:1px solid #555555;border-radius:10px;max-width:96vw;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #555555">
+      <div id="rl-title" style="font-weight:bold;font-size:15px;color:#ecf0f1">📊 M4LAPS（ベストタイム順）</div>
+      <button id="rl-close" type="button" onclick="if(window.m4CloseRl)window.m4CloseRl()" style="background:none;border:none;color:#888888;font-size:22px;line-height:1;cursor:pointer;padding:0 6px">×</button>
+    </div>
+    <div id="rl-body" style="overflow:auto;padding:10px 12px"></div>
+  </div>
+</div>
 <script>(function(){
   function fmt(v,d){ return (v==null)?'—':Number(v).toFixed(d); }
   function esc(s){ var e=document.createElement('div'); e.textContent=(s==null?'':s); return e.innerHTML; }
@@ -1438,8 +1450,68 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       })
       .catch(function(){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#e74c3c">取得に失敗しました</div>'; });
   };
-  document.addEventListener('click',function(e){ if(e.target&&(e.target.id==='rs-overlay'||e.target.id==='rs-close')) window.m4CloseRs(); });
-  document.addEventListener('keydown',function(e){ if(e.key==='Escape') window.m4CloseRs(); });
+  // ── レース番号タップ→そのレース1本のレーン別M4LAPS明細（ベストタイム順）──
+  //    レーサー名タップ(openRacerStats)が予選全体を横断するのに対し、こちらは1レースのみ。
+  //    行＝出走レーン（レーサー）。列は TOTAL/LAP/SECTOR BEST（完走率など大会トータル項目は無し）。
+  function raceTable(rows){
+    if(!rows||!rows.length) return '';
+    var maxSec=0; rows.forEach(function(r){ if(r.sectors&&r.sectors.length>maxSec) maxSec=r.sectors.length; });
+    var h='<div style="overflow-x:auto"><table class="rs-table"><thead>'
+      +'<tr><th rowspan="2">順位</th><th rowspan="2" style="text-align:left">レーサー</th>'
+      +'<th colspan="4">TOTAL BEST</th><th colspan="2">LAP BEST</th>'
+      +'<th colspan="'+Math.max(maxSec,1)+'">SECTOR BEST（上:秒／下:m/s）</th></tr>'
+      +'<tr><th>TIME</th><th>GAP</th><th>Av</th><th>MAX</th><th>TIME</th><th>Av</th>';
+    for(var s=1;s<=maxSec;s++) h+='<th>'+s+'</th>';
+    h+='</tr></thead><tbody>';
+    rows.forEach(function(r){
+      var tstyle=r.rank===1?'color:#fff;background:#6b21a8':r.rank===2?'color:#fff;background:#1e40af':r.rank===3?'color:#fff;background:#166534':'';
+      var gap=(r.gap==null)?'—':(r.gap<=0?'-':'+'+fmt(r.gap,3));
+      h+='<tr><td class="rs-num" style="font-weight:bold">'+(r.rank==null?'—':r.rank)+'</td>'
+        +'<td class="rs-race" style="text-align:left">'+esc(r.name)+'</td>'
+        +'<td class="rs-num rs-total" style="'+tstyle+'">'+fmt(r.total_time,3)+'</td>'
+        +'<td class="rs-num">'+gap+'</td>'
+        +'<td class="rs-num">'+fmt(r.total_avg,2)+'</td>'
+        +'<td class="rs-num">'+fmt(r.max_ms,2)+'</td>'
+        +'<td class="rs-num">'+fmt(r.best_lap_time,3)+'</td>'
+        +'<td class="rs-num">'+fmt(r.best_lap_avg,2)+'</td>';
+      for(var s=1;s<=maxSec;s++){
+        var sec=null,arr=r.sectors||[];
+        for(var i=0;i<arr.length;i++){ if(arr[i].no===s){ sec=arr[i]; break; } }
+        h+='<td class="rs-num">'+(sec?fmt(sec.time,3):'—')+((sec&&sec.speed!=null)?'<span class="rs-sp">'+fmt(sec.speed,2)+'</span>':'')+'</td>';
+      }
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+    return h;
+  }
+  window.m4CloseRl=function(){
+    var list=document.querySelectorAll('#rl-overlay');
+    for(var i=0;i<list.length;i++){ list[i].style.display='none'; }
+    var mi=document.getElementById('m4-info-overlay');
+    window.__m4ModalOpen = !!(mi && mi.style.display==='block');
+  };
+  window.openRaceLaptimes=function(tid,heatId){
+    var dups=document.querySelectorAll('#rl-overlay');
+    for(var k=dups.length-1;k>0;k--){ if(dups[k].parentNode) dups[k].parentNode.removeChild(dups[k]); }
+    var ov=document.getElementById('rl-overlay'),bd=document.getElementById('rl-body'),tt=document.getElementById('rl-title');
+    if(!ov) return;
+    window.__m4ModalOpen = true;
+    if(ov.parentNode !== document.body){ document.body.appendChild(ov); }
+    tt.textContent='📊 M4LAPS（ベストタイム順）';
+    bd.innerHTML='<div style="padding:20px;text-align:center;color:#888888">読み込み中…</div>';
+    ov.style.display='flex';
+    var base=location.pathname.replace(/\/view\/.*$/,'').replace(/\/$/,'');
+    fetch(base+'\x2Fview/tournament/'+tid+'/race/'+heatId+'/laptimes',{cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        tt.textContent=(d.label?d.label+'　':'')+'📊 M4LAPS（ベストタイム順）';
+        var tbl=raceTable(d.rows);
+        bd.innerHTML = tbl || '<div style="padding:20px;text-align:center;color:#888888">計測データがありません</div>';
+      })
+      .catch(function(){ bd.innerHTML='<div style="padding:20px;text-align:center;color:#e74c3c">取得に失敗しました</div>'; });
+  };
+  document.addEventListener('click',function(e){ if(e.target&&(e.target.id==='rs-overlay'||e.target.id==='rs-close')) window.m4CloseRs(); if(e.target&&(e.target.id==='rl-overlay'||e.target.id==='rl-close')) window.m4CloseRl(); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ window.m4CloseRs(); window.m4CloseRl(); } });
 })();</script>
 {% endif %}
 

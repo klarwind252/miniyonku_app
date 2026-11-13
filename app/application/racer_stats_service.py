@@ -285,3 +285,81 @@ async def build_racer_qualifying_stats(db, tournament_id: int, entry_id: int) ->
 
     return {"entry_id": entry_id, "name": name,
             "races": races, "final_races": final_races}
+
+
+async def build_race_laptimes(db, tournament_id: int, heat_id: int) -> dict | None:
+    """指定レース（1ヒート）の、出走レーン（レーサー）別 M4LAPS 明細を返す。
+
+    レース番号タップ時に、そのレース1本だけの計測値を表示する用途。
+    （レーサー名タップの build_racer_qualifying_stats は「予選全体」を横断するのに対し、
+      こちらは「そのレース1本」の値のみ。完走率など大会トータルが要る項目は含めない。）
+
+    戻り値:
+      {"label": "予選1回目 レース3" など,
+       "rows": [{"rank","name","total_time","gap","total_avg","max_ms",
+                 "best_lap_time","best_lap_avg","sectors"} ...]}  # total_time 昇順
+    計測が反映されていない（timing_races 無し／machine 無し）なら None。
+    """
+    # レース（ヒート）の存在確認＋ラベル用の round_no / heat_no
+    async with db.execute(
+        "SELECT round_no, heat_no FROM heats WHERE id=? AND tournament_id=?",
+        (heat_id, tournament_id),
+    ) as cur:
+        hrow = await cur.fetchone()
+    if hrow is None:
+        return None
+    label = (f"予選{hrow['round_no']}回目 レース{hrow['heat_no']}"
+             if hrow["round_no"] else f"レース{hrow['heat_no']}")
+
+    # このレースの出走レーン（レーン番号・レーサー名）
+    async with db.execute(
+        "SELECT hl.lane_no, hl.entry_id, r.name "
+        "FROM heat_lanes hl "
+        "LEFT JOIN entries e ON e.id=hl.entry_id "
+        "LEFT JOIN racers r ON r.id=e.racer_id "
+        "WHERE hl.heat_id=? ORDER BY hl.lane_no",
+        (heat_id,),
+    ) as cur:
+        lane_rows = await cur.fetchall()
+    if not lane_rows:
+        return None
+
+    # このレースの最新 timing_race（計測反映済みレース）
+    async with db.execute(
+        "SELECT id FROM timing_races WHERE heat_id=? ORDER BY id DESC LIMIT 1",
+        (heat_id,),
+    ) as cur:
+        tr = await cur.fetchone()
+    if tr is None:
+        return None
+    _race, result = await build_race_result(db, tr["id"])
+    if result is None:
+        return None
+    speeds = await speed_store.load_speeds(db, tr["id"])
+
+    rows: list[dict] = []
+    for lr in lane_rows:
+        lane_no = lr["lane_no"]
+        machine = result.machines.get(lane_no)
+        if machine is None:
+            continue
+        stat = _lane_stat(machine, speeds, lane_no)
+        rows.append({"name": lr["name"] or "", **stat})
+    if not rows:
+        return None
+
+    # total_time 昇順（None は末尾）＝ベストタイム順。GAP は race 内ベストとの差。
+    rows.sort(key=lambda x: (x["total_time"] is None, x["total_time"] or 0.0))
+    _best = next((x["total_time"] for x in rows if x["total_time"] is not None), None)
+    _rank = 0
+    _prev = None
+    for i, x in enumerate(rows, start=1):
+        _tt = x["total_time"]
+        if _tt is not None and _tt != _prev:
+            _rank = i
+            _prev = _tt
+        x["rank"] = _rank if _tt is not None else None
+        x["gap"] = (round(_tt - _best, 3)
+                    if (_tt is not None and _best is not None) else None)
+
+    return {"label": label, "rows": rows}
