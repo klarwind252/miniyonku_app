@@ -1568,8 +1568,12 @@ async function resetHtGroup(groupId, tid, hno){
    離脱/タブを閉じると停止し、サーバーの在席TTL(12s)でGWは通常READY（名前なし）へ自動復帰する。 */
 (function(){
   function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store'}).catch(function(){}); }catch(_){} }
-  beat();
-  setInterval(beat, 4000);
+  /* ★20261115b 画面が見えている間だけ送る。裏タブはブラウザがタイマーを間引く（5分超で毎分1回）ため、
+     送り続けるとGW側で名前が出たり消えたりする。非表示＝送らない／再表示＝即送信で確定的にする。 */
+  function tick(){ if(document.visibilityState === 'visible') beat(); }
+  tick();
+  setInterval(tick, 4000);
+  document.addEventListener('visibilitychange', tick);
 })();
 </script>
 {% endblock %}
