@@ -1567,14 +1567,18 @@ void setup() {
   { File sf = LittleFS.open(SPOOL, FILE_WRITE); if (sf) sf.close(); }
   Serial.println("[SPOOL] 起動時クリア（空作成）");
   Serial.printf("PSRAM=%u (VE normal: approx 4MB mapped of 8MB)\n", (unsigned)ESP.getPsramSize());
-  if (!mesh::begin(NODE_ID, g_channel, on_recv)) {
-    Serial.println("ESP-NOW init 失敗"); return;
-  }
+  // ★20261115 白画面防止：TFT初期化とスプラッシュを mesh::begin() より前に実行する。
+  //   旧構造は mesh 失敗で return → disp::begin 未実行 → まっしろだった（NVS破損でch異常時など）。
+  //   TFTを先に生かしておけば、ESP-NOW初期化が失敗しても画面は必ず表示される。
   beam::begin();
   disp::begin();                       // TFT初期化（PSRAMスプライト確保）
+  disp::g_status.gw_id = NODE_ID;
   s_state = ST_SPLASH; s_splash_ms = millis(); Serial.println("[SPLASH] start");   // 開始（非ブロッキング・loopで描画）
   buzzer_jingle_start();   // ★起動音（パチンコ風・約0.85秒）をスプラッシュと同時に開始（20261109・a/b共通）
-  disp::g_status.gw_id = NODE_ID;
+
+  if (!mesh::begin(NODE_ID, g_channel, on_recv)) {
+    Serial.println("ESP-NOW init 失敗");   // ★returnしない：TFTは初期化済み＝白画面にしない。異常はバー表示＋ch正常化→再起動で対処。
+  }
   disp::g_status.ch    = g_channel;
   // ★20261031 P2：HTTPS・WiFi維持は netタスク(core0)へ。loop(core1)はTLSで止まらない。
   s_spool_mtx = xSemaphoreCreateMutex();

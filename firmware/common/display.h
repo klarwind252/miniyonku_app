@@ -129,7 +129,8 @@ static bool s_ok = false;
 //  合わせてある（screen(312,8)基準）。フルフレームが下地、これを上に重ねる。
 //  ⚠経過秒は「見せかけの表示」で、公式タイムはS/GのISR打刻(µs)で確定するため、
 //    ここの描画頻度は計測精度に一切影響しない。
-static constexpr int TIME_X = 186, TIME_Y = 2, TIME_W = 130, TIME_H = 38;
+// ★20261114 size2(特大)も部分更新で描くため拡張。下端=2+52=54でレーン枠(y56)に未接触。
+static constexpr int TIME_X = 172, TIME_Y = 2, TIME_W = 144, TIME_H = 52;
 static TFT_eSprite s_time_spr = TFT_eSprite(&s_tft);
 static bool s_time_ok = false;
 
@@ -599,7 +600,7 @@ static void draw_ontrack(uint32_t elapsed_ms, bool blink_on, int laps) {
   s_spr.setTextDatum(TR_DATUM); s_spr.setTextColor(C_WHITE, C_BLACK); s_spr.setTextFont(4);
   if (few) s_spr.setTextSize(2);
   char t[16]; snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
-  s_spr.drawString(t, W - 8, few ? 6 : 8);
+  s_spr.drawString(t, W - 8, few ? 2 : 8);   // ★20261114 特大は y=2（部分更新スプライトと縦位置を一致）
   s_spr.setTextSize(1);
 
   const int lane_w = (W - 16) / 3;
@@ -632,7 +633,7 @@ static void draw_finish(int laps) {
   if (last_ms == 0)           snprintf(t, sizeof(t), "--.-");
   else if (last_ms >= 100000) snprintf(t, sizeof(t), "%.1f", last_ms / 1000.0);
   else                        snprintf(t, sizeof(t), "%.2f", last_ms / 1000.0);
-  s_spr.drawString(t, W - 8, few ? 6 : 8);
+  s_spr.drawString(t, W - 8, few ? 2 : 8);   // ★20261114 ON TRACKと縦位置を統一（y=2）
   s_spr.setTextSize(1);
 
   const int lane_w = (W - 16) / 3;
@@ -812,16 +813,17 @@ static void draw_error(const ErrItem* errs, int cnt) {
 //  hundredths=true で 1/100秒（ストップウォッチ的）、false で 1/10秒。
 static void draw_time_field(uint32_t elapsed_ms, bool hundredths) {
   if (!s_time_ok) return;
-  if (s_ontrack_big) return;   // ★1〜3周モードは特大タイム(size2)をベースで描く＝小サイズ上書きしない
   s_time_spr.fillSprite(C_BLACK);
   s_time_spr.setTextDatum(TR_DATUM);
   s_time_spr.setTextColor(C_WHITE, C_BLACK);
   s_time_spr.setTextFont(4);
+  if (s_ontrack_big) s_time_spr.setTextSize(2);   // ★20261114 1〜3周も部分更新で0.1秒ごとに特大タイムを刻む
   char t[16];
   if (hundredths) snprintf(t, sizeof(t), "%.2f", elapsed_ms / 1000.0);
   else            snprintf(t, sizeof(t), "%.1f", elapsed_ms / 1000.0);
-  // ローカル(126,6)=screen(312,8)=draw_ontrackの(W-8,8)に一致。
-  s_time_spr.drawString(t, TIME_W - 4, 6);
+  // 右端=screen(312)で一致。縦は size2=y2 / size1=y8（draw_ontrack・draw_finishと同じ）。
+  s_time_spr.drawString(t, TIME_W - 4, s_ontrack_big ? 0 : 6);
+  s_time_spr.setTextSize(1);
   s_time_spr.pushSprite(TIME_X, TIME_Y);
 }
 

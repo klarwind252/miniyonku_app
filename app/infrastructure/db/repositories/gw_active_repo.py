@@ -476,3 +476,43 @@ async def resolve_lanes(db) -> dict:
     label = await _race_label(db, cur["kind"], cur["ref_id"])
     return {"active": True, "kind": cur["kind"], "ref_id": cur["ref_id"],
             "race_label": label, "lanes": lanes}
+
+
+# ── GWレーサー名表示の在席（プレゼンス）管理（20261115）──────────────────────
+#  予選管理(heat_tournament)／決勝管理(bracket)の画面を開いている間だけ、画面JSが
+#  数秒ごとに keepalive を叩く。current_race_for_gw は「アクティブ設定あり かつ
+#  在席が新しい(TTL以内)」のときだけ lanes を返す。画面を離れる/閉じると keepalive が
+#  止まり、TTL経過で GW は自動的に通常READY（名前なし）へ戻る。
+async def ensure_presence(db) -> None:
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS gw_roster_presence ("
+        " id INTEGER PRIMARY KEY CHECK (id = 1), seen_at TEXT)"
+    )
+
+
+async def touch_presence(db) -> None:
+    """在席ビーコン受信＝現在時刻を記録。"""
+    await ensure_presence(db)
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    await db.execute(
+        "INSERT INTO gw_roster_presence (id, seen_at) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET seen_at = excluded.seen_at",
+        (now,),
+    )
+    await db.commit()
+
+
+async def presence_fresh(db, ttl_sec: int = 12) -> bool:
+    """最後の在席ビーコンが ttl_sec 秒以内なら True（＝予選/決勝画面を開いている）。"""
+    await ensure_presence(db)
+    async with db.execute(
+        "SELECT seen_at FROM gw_roster_presence WHERE id = 1"
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or not row["seen_at"]:
+        return False
+    try:
+        seen = _dt.datetime.fromisoformat(row["seen_at"])
+    except Exception:
+        return False
+    return (_dt.datetime.now() - seen).total_seconds() <= ttl_sec

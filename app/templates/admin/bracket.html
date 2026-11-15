@@ -2797,4 +2797,14 @@ async function applyTimingToBracket(groupId, btn, force){
 </script>
 {% endif %}
 
+<script>
+/* ★20261115 GWレーサー名表示の在席ビーコン：この決勝管理画面を開いている間だけ送信。
+   離脱/タブを閉じると停止し、サーバーの在席TTL(12s)でGWは通常READY（名前なし）へ自動復帰する。 */
+(function(){
+  function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store'}).catch(function(){}); }catch(_){} }
+  beat();
+  setInterval(beat, 4000);
+})();
+</script>
+
 {% endblock %}
