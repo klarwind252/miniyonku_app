@@ -176,6 +176,12 @@
 .sched-tbl thead th.crs:nth-child(3){background:#e8f0fb}
 .sched-tbl thead th.crs:nth-child(4){background:#fdecea}
 .sched-tbl thead th.crs:nth-child(5){background:#e8f7ee}
+/* ★20261115 レーススケジュールの横スクロール（右側の余計な余白）対策。
+   固定レイアウト＋幅100%で表自体はパネル幅を超えないが、順位表(右サイド)が広がって
+   スケジュール枠が圧迫されると、固定列からセル内容がはみ出してパネルが横スクロールしていた。
+   セル内でクリップして確実に抑える（レーサー名は従来どおり … で省略済み）。 */
+.sched-tbl{table-layout:fixed}
+.sched-tbl td{overflow:hidden}
 /* エントリー一覧：読み仮名順に横へ羅列して折り返す。1チップは名前＋よみの2段 */
 .entry-wrap{display:flex;flex-wrap:wrap;gap:6px}
 .entry-chip{display:inline-flex;flex-direction:column;align-items:flex-start;
@@ -269,6 +275,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
 {# 表示するコース列。総当たり系（roundrobin/heat_roundrobin/none_roundrobin）も 3コースを
    使えるよう全形式3列に統一（既定の割り当ては従来どおり 1・2 のみ使用）。 #}
 {% set course_cols = [1, 2, 3] %}
+{# ★20261115 ポイント予選でグループ分けが2以上か（スケジュール見出し・順位表のグループ列で使用） #}
+{% set _pt_grouping = (t.qualifying_type == 'point') and ((t.qual_pt_group_count|default(1)) > 1 or t.qual_pt_jr_group) %}
 <div class="detail-actionbar">
   {% if is_heat_roundrobin %}
   {# ヒート（総当たり）：ヒート（トーナメント）と同じアクションバー・表示ルール #}
@@ -1618,6 +1626,21 @@ document.addEventListener('DOMContentLoaded', function(){
     </tr>
     {% endmacro %}
 
+    {# ★20261115 ポイント予選グループ見出し行（Jr→A→B…）。group_no>0 のときだけ使用。
+       色は tournament_detail のグループ色（_grp_hue）と統一。 #}
+    {% macro grp_header(group_no) %}
+    {% set _glabel = 'Jr' if (t.qual_pt_jr_group and group_no == 1) else ('ABCDEFGHI'[group_no-2] if t.qual_pt_jr_group else 'ABCDEFGHI'[group_no-1]) %}
+    {% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(_glabel, 210) %}
+    <tr class="sched-grp-sep"><td colspan="{{ course_cols|length + 3 }}" style="padding:0;border:none">
+      <div style="margin:10px 0 2px;padding:5px 12px;border-radius:8px;font-weight:bold;font-size:14px;
+                  color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,90%);
+                  border-left:5px solid hsl({{ _gh }},60%,55%)">グループ{{ _glabel }}</div>
+    </td></tr>
+    {% endmacro %}
+
+    {# ★20261115 順位表のグループ列チップ（A/B/Jr…）。色は _grp_hue と統一。 #}
+    {% macro grp_chip(letter) %}{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(letter, 210) %}<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ letter if letter else '—' }}</span>{% endmacro %}
+
     {% macro hoshitori_table(hoshi) %}
     {% if hoshi and hoshi.entries %}
     <div style="overflow-x:auto">
@@ -1998,7 +2021,9 @@ document.addEventListener('DOMContentLoaded', function(){
             <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
             <tbody>
+            {% set _gns = namespace(last=None) %}
             {% for heat in heats if heat.round_no == rno %}
+            {% if heat.group_no and heat.group_no != _gns.last %}{{ grp_header(heat.group_no) }}{% set _gns.last = heat.group_no %}{% endif %}
             {{ race_row(heat, loop.index) }}
             {% endfor %}
             </tbody>
@@ -2010,7 +2035,8 @@ document.addEventListener('DOMContentLoaded', function(){
           <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
           <tbody>
-          {% for heat in heats %}{{ race_row(heat, loop.index) }}{% endfor %}
+          {% set _gns1 = namespace(last=None) %}
+          {% for heat in heats %}{% if heat.group_no and heat.group_no != _gns1.last %}{{ grp_header(heat.group_no) }}{% set _gns1.last = heat.group_no %}{% endif %}{{ race_row(heat, loop.index) }}{% endfor %}
           </tbody>
         </table>
       {% endif %}
@@ -2085,6 +2111,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
+            {% if _pt_grouping %}<th style="padding:3px 4px">グループ</th>{% endif %}
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
             <th style="padding:3px 4px">順位</th>
             <th style="padding:3px 6px;text-align:left">レーサー</th>
@@ -2097,6 +2124,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <tbody id="qp-rank-tbody">
           {% for s in standings %}
           <tr style="border-bottom:1px solid #f0f0f0;{% if s.rank==1 %}background:#fffde7{% endif %}">
+            {% if _pt_grouping %}<td style="padding:3px 4px;text-align:center">{{ grp_chip(s.pt_group) }}</td>{% endif %}
             <td style="padding:3px 4px;text-align:right;color:#aaa">{{ loop.index }}</td>
             <td style="padding:3px 4px;text-align:center;font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
             <td style="padding:3px 6px"><strong>{{ s.name }}</strong></td>
@@ -2147,7 +2175,7 @@ document.addEventListener('DOMContentLoaded', function(){
           {# ベスト列（M4LAPS）：決勝の右に TOTAL / LAP / SECTOR ベストを足す #}
           {% set show_best = racer_bests and racer_bests|length > 0 %}
           <tr class="std-grp">
-            <th colspan="8"></th>
+            <th colspan="{{ 9 if _pt_grouping else 8 }}"></th>
             {% if show_best %}
             <th class="bsep" colspan="4">TOTAL BEST</th>
             <th class="bsep" colspan="2">LAP BEST</th>
@@ -2155,7 +2183,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {% endif %}
           </tr>
           <tr>
-            <th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th>
+            {% if _pt_grouping %}<th>グループ</th>{% endif %}<th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th>
             {% if show_best %}
             <th class="bsep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
             <th class="bsep">TIME</th><th>Av.</th>
@@ -2171,6 +2199,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:3px dashed #f39c12;margin:2px 0"></div></td></tr>
           {% endif %}
           <tr style="{% if has_results and s.get('is_tied_cutoff') %}background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e{% elif s.rank==1 %}background:#fffde7{% endif %}">
+            {% if _pt_grouping %}<td style="text-align:center">{{ grp_chip(s.pt_group) }}</td>{% endif %}
             <td style="color:#aaa;font-size:12px">{{ loop.index }}</td>
             <td style="font-weight:bold;font-size:16px;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
             <td><strong>{{ s.name }}</strong></td>
@@ -2445,6 +2474,13 @@ async function generateNextHeat(tid, roundNo) {
 const IS_ROUNDROBIN_TYPE = {{ 'true' if is_roundrobin else 'false' }};
 const IS_NONE_RR_TYPE    = {{ 'true' if is_none_roundrobin else 'false' }};
 const IS_HEAT_RR_TYPE    = {{ 'true' if is_heat_roundrobin else 'false' }};
+// ★20261115 ポイント予選のグループ分け(2以上)。順位表のライブ更新でグループ列を描くのに使う。
+const PT_GROUPING = {{ 'true' if _pt_grouping else 'false' }};
+const GRP_HUE = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252};
+function grpChip(letter){
+  const h = (letter in GRP_HUE) ? GRP_HUE[letter] : 210;
+  return `<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl(${h},60%,26%);background:hsl(${h},65%,88%)">${letter || '—'}</span>`;
+}
 const IS_POINT_TYPE      = {{ 'true' if (not is_roundrobin and not is_none_roundrobin and not is_heat_roundrobin) else 'false' }};
 
 async function updateStandings() {
@@ -2461,7 +2497,7 @@ async function updateStandings() {
       const rowBg = isCutoff ? 'background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e' : s.rank===1 ? 'background:#fffde7' : '';
       const prevIsCutoff = i > 0 && hasResults && data.standings[i-1].is_tied_cutoff;
       const separator = isCutoff && !prevIsCutoff ? '<tr><td colspan="99" style="padding:0;border:none"><div style="border-top:3px dashed #f39c12;margin:2px 0"></div></td></tr>' : '';
-      let cells = `<td style="color:#aaa;font-size:12px">${i+1}</td>
+      let cells = `${PT_GROUPING ? `<td style="text-align:center">${grpChip(s.pt_group||'')}</td>` : ''}<td style="color:#aaa;font-size:12px">${i+1}</td>
         <td style="font-weight:bold;font-size:16px;color:${rankColor}">${s.rank}</td>
         <td><strong>${s.name}</strong></td>`;
       if (IS_NONE_RR_TYPE) {
@@ -2516,7 +2552,7 @@ async function updateStandings() {
       const rrows = data.standings.map((s, i) => {
         const rankColor = s.rank===1 ? '#d4a017' : s.rank===2 ? '#aaa' : s.rank===3 ? '#cd7f32' : '#636e72';
         const rowBg = s.rank===1 ? 'background:#fffde7' : '';
-        let rc = `<td style="padding:3px 4px;text-align:right;color:#aaa">${i+1}</td>
+        let rc = `${PT_GROUPING ? `<td style="padding:3px 4px;text-align:center">${grpChip(s.pt_group||'')}</td>` : ''}<td style="padding:3px 4px;text-align:right;color:#aaa">${i+1}</td>
           <td style="padding:3px 4px;text-align:center;font-weight:bold;color:${rankColor}">${s.rank}</td>
           <td style="padding:3px 6px"><strong>${s.name}</strong></td>`;
         if (IS_NONE_RR_TYPE || IS_ROUNDROBIN_TYPE) {

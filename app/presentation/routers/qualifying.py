@@ -2706,7 +2706,8 @@ async def set_advanced(
 
 async def _calc_standings(tid: int, db: aiosqlite.Connection):
     async with db.execute(
-        """SELECT e.id as entry_id, e.advanced, r.name, COALESCE(r.yomi,'') as yomi,
+        """SELECT e.id as entry_id, e.advanced, COALESCE(e.pt_group,'') as pt_group,
+                  r.name, COALESCE(r.yomi,'') as yomi,
                   COALESCE(SUM(hr.points),0) as total_points,
                   MIN(CASE WHEN hr.best_time > 0 THEN hr.best_time END) as best_time,
                   COUNT(hr.id) as race_count,

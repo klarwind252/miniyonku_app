@@ -1674,14 +1674,16 @@ async def _auto_assign_pt_group(tid: int, is_child: int, db) -> str | None:
     return min(letters, key=lambda g: counts[g])
 
 
-async def _promote_pre_entry_to_entry(tid: int, name: str, db, is_child: int = 0, seq_no: int = None) -> int:
+async def _promote_pre_entry_to_entry(tid: int, name: str, db, is_child: int = 0, seq_no: int = None, yomi: str = "") -> int:
     """名前を隠しレーサー（ephemeral）として racers に登録し、entries に紐付けて
     本エントリーへ昇格させる。seq_no を渡すとエントリーカードのバーコード番号として記録する。
+    yomi（読みがな）を渡すと一緒に登録し、五十音順ソートに反映される。★20261115
     既に同名の隠しレーサーがこのレースにいる場合はそれを使う。
     戻り値: entry_id"""
+    yomi = (yomi or "").strip()
     # 既存の隠しレーサーを探す
     async with db.execute(
-        """SELECT r.id FROM racers r
+        """SELECT r.id, COALESCE(r.yomi,'') AS yomi FROM racers r
            JOIN entries e ON e.racer_id = r.id
            WHERE e.tournament_id = ? AND COALESCE(r.ephemeral,0) = 1 AND r.name = ?
            LIMIT 1""",
@@ -1689,12 +1691,15 @@ async def _promote_pre_entry_to_entry(tid: int, name: str, db, is_child: int = 0
     ) as cur:
         existing = await cur.fetchone()
     if existing:
-        return None  # 既にエントリー済み
+        # 既にエントリー済み。読みが未設定で今回渡されていれば補完する。
+        if yomi and not (existing["yomi"] or "").strip():
+            await db.execute("UPDATE racers SET yomi=? WHERE id=?", (yomi, existing["id"]))
+        return None
 
     cur = await db.execute(
         "INSERT INTO racers (name, yomi, is_child, is_regular, ephemeral, owner_tournament_id, uid) "
         "VALUES (?,?,?,?,?,?,?)",
-        (name, "", is_child, 0, 1, tid, str(uuid.uuid4())),
+        (name, yomi, is_child, 0, 1, tid, str(uuid.uuid4())),
     )
     new_racer_id = cur.lastrowid
     async with db.execute(
@@ -1742,7 +1747,7 @@ async def scan_reception(tid: int, request: Request, db: aiosqlite.Connection = 
     seq = parsed["seq_no"]
     # 該当する事前エントリーを検索
     async with db.execute(
-        "SELECT id, name, checked_in, is_child FROM pre_entries WHERE tournament_id=? AND seq_no=?",
+        "SELECT id, name, COALESCE(yomi,'') AS yomi, checked_in, is_child FROM pre_entries WHERE tournament_id=? AND seq_no=?",
         (tid, seq),
     ) as cur:
         pe = await cur.fetchone()
@@ -1763,7 +1768,7 @@ async def scan_reception(tid: int, request: Request, db: aiosqlite.Connection = 
         })
 
     # 本エントリーへ昇格
-    await _promote_pre_entry_to_entry(tid, pe["name"], db, is_child=pe["is_child"] or 0, seq_no=seq)
+    await _promote_pre_entry_to_entry(tid, pe["name"], db, is_child=pe["is_child"] or 0, seq_no=seq, yomi=pe["yomi"])
     await db.execute("UPDATE pre_entries SET checked_in=1 WHERE id=?", (pe["id"],))
     await db.commit()
     return JSONResponse({
@@ -1924,7 +1929,7 @@ async def checkin_pre_entry(tid: int, pre_id: int, db: aiosqlite.Connection = De
     if await _is_result_finalized(tid, db):
         return JSONResponse({"ok": False, "message": "確定済みのため受付できません"})
     async with db.execute(
-        "SELECT id, seq_no, name, checked_in, is_child FROM pre_entries WHERE tournament_id=? AND id=?",
+        "SELECT id, seq_no, name, COALESCE(yomi,'') AS yomi, checked_in, is_child FROM pre_entries WHERE tournament_id=? AND id=?",
         (tid, pre_id),
     ) as cur:
         pe = await cur.fetchone()
@@ -1935,7 +1940,7 @@ async def checkin_pre_entry(tid: int, pre_id: int, db: aiosqlite.Connection = De
             "ok": False, "status": "already",
             "message": f"受付済みです（連番{pe['seq_no']:04d} {pe['name']}）",
         })
-    await _promote_pre_entry_to_entry(tid, pe["name"], db, is_child=pe["is_child"] or 0, seq_no=pe["seq_no"])
+    await _promote_pre_entry_to_entry(tid, pe["name"], db, is_child=pe["is_child"] or 0, seq_no=pe["seq_no"], yomi=pe["yomi"])
     await db.execute("UPDATE pre_entries SET checked_in=1 WHERE id=?", (pe["id"],))
     await db.commit()
     return JSONResponse({
