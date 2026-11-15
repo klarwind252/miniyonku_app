@@ -675,6 +675,13 @@ function copyPreEntryNames(btn) {
 
 <!-- エントリー一覧（常に表示） -->
 <div class="card">
+  {# ===== ポイント・グループ分けの共通変数（ヘッダのグループ別人数＋本体のバッジで共用）===== #}
+  {% set _pgc = t.qual_pt_group_count|default(1) %}
+  {% set _pt_grouping = (t.qualifying_type == 'point') and (_pgc > 1 or t.qual_pt_jr_group) %}
+  {% set _pt_groups = [] %}
+  {% if _pt_grouping %}{% if t.qual_pt_jr_group %}{% set _ = _pt_groups.append('Jr') %}{% endif %}{% for i in range(_pgc) %}{% set _ = _pt_groups.append('ABCDEFGHI'[i]) %}{% endfor %}{% endif %}
+  {# グループ色相（A〜I＋Jr の10色。隣接グループの色相を108°離して紛れないように） #}
+  {% set _grp_hue = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252} %}
   <div class="card-header" style="display:flex;align-items:center;gap:10px">
     <span>エントリー済みレーサー</span>
     <span class="badge">{{ entries|length }} 名</span>
@@ -693,6 +700,18 @@ function copyPreEntryNames(btn) {
     {% endif %}
     {% if not is_finalized %}
     <button type="button" class="btn btn-secondary btn-sm" style="height:40px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;line-height:1" onclick="openCopyEntriesModal()">📋 他のレースから追加</button>
+    {% endif %}
+    {# ★20261115：2グループ以上のとき、グループ別の人数を各グループ色で表示（「他のレースから追加」の右） #}
+    {% if _pt_grouping %}
+    <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+      {% for g in _pt_groups %}
+      {% set _gh = _grp_hue.get(g) %}
+      <span style="display:inline-flex;align-items:center;font-size:12px;font-weight:bold;line-height:1;
+                   padding:5px 11px;border-radius:12px;white-space:nowrap;
+                   color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%);
+                   border:1px solid hsl({{ _gh }},55%,72%)">{% if g == 'Jr' %}Jr{% else %}{{ g }}グループ{% endif %}：{{ entries|selectattr('pt_group','equalto',g)|list|length }}名</span>
+      {% endfor %}
+    </span>
     {% endif %}
   </div>
   <div class="card-body">
@@ -724,12 +743,7 @@ function copyPreEntryNames(btn) {
       </div>
     </div>
     {% endif %}
-    {% set _pgc = t.qual_pt_group_count|default(1) %}
-    {% set _pt_grouping = (t.qualifying_type == 'point') and (_pgc > 1 or t.qual_pt_jr_group) %}
-    {% set _pt_groups = [] %}
-    {% if _pt_grouping %}{% if t.qual_pt_jr_group %}{% set _ = _pt_groups.append('Jr') %}{% endif %}{% for i in range(_pgc) %}{% set _ = _pt_groups.append('ABCDEFGHI'[i]) %}{% endfor %}{% endif %}
-    {# グループ色相（A〜I＋Jr の10色。隣接グループの色相を108°離して紛れないように） #}
-    {% set _grp_hue = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252} %}
+    {# グループ変数はこのカード冒頭で定義済み（_pgc / _pt_grouping / _pt_groups / _grp_hue） #}
     {% if entries %}
     <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
       {% for e in entries %}
@@ -776,6 +790,10 @@ function copyPreEntryNames(btn) {
           <label style="font-size:13px;color:#636e72">レーサー名
             <input id="ee-name" type="text" {% if t.use_racer_master != 0 %}readonly{% endif %} style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box{% if t.use_racer_master != 0 %};background:#f1f3f5;color:#636e72{% endif %}">
           </label>
+          <label style="font-size:13px;color:#636e72">レーサー名かな（読みがな）
+            <input id="ee-yomi" type="text" placeholder="ひらがなで入力（例：あつし）" style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box">
+            <span style="display:block;font-size:11px;color:#95a5a6;margin-top:3px">エントリー一覧の五十音（あいうえお）順はこの読みがなで並びます。</span>
+          </label>
           {% if _pt_grouping %}
           <label style="font-size:13px;color:#636e72">グループ
             <select id="ee-group" style="width:100%;padding:8px;border:1px solid #dee2e6;border-radius:6px;margin-top:4px;box-sizing:border-box">
@@ -789,7 +807,7 @@ function copyPreEntryNames(btn) {
         <div style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid #e6e9ec">
           <button type="button" onclick="deleteEntryFromModal()" class="btn btn-danger btn-sm" style="margin-right:auto">削除</button>
           <button type="button" onclick="closeEntryEdit()" class="btn btn-secondary btn-sm">キャンセル</button>
-          {% if t.use_racer_master == 0 or _pt_grouping %}<button type="button" onclick="saveEntryEdit()" class="btn btn-success btn-sm">保存</button>{% endif %}
+          <button type="button" onclick="saveEntryEdit()" class="btn btn-success btn-sm">保存</button>
         </div>
       </div>
     </div>
@@ -1075,6 +1093,8 @@ function openEntryEdit(btn){
   const seq = (card.dataset.seq || '').trim();
   document.getElementById('ee-seq').value = seq ? String(seq).padStart(3, '0') : '（受付番号なし）';
   document.getElementById('ee-name').value = card.dataset.name || '';
+  const yomiEl = document.getElementById('ee-yomi');
+  if (yomiEl) yomiEl.value = card.dataset.yomi || '';
   const grpEl = document.getElementById('ee-group');
   if (grpEl) grpEl.value = card.dataset.group || '';
   const msg = document.getElementById('ee-edit-msg'); if (msg) msg.textContent = '';
@@ -1085,6 +1105,7 @@ function closeEntryEdit(){
 }
 async function saveEntryEdit(){
   const nameEl = document.getElementById('ee-name');
+  const yomiEl = document.getElementById('ee-yomi');
   const grpEl = document.getElementById('ee-group');
   const msg = document.getElementById('ee-edit-msg');
   if (msg) msg.textContent = '';
@@ -1094,6 +1115,12 @@ async function saveEntryEdit(){
     if (!name){ if (msg) msg.textContent = '名前を入力してください'; return; }
     const d = await _postForm(`${TOURN_BASE}/entries/${_eeEntryId}/rename-racer`, { name });
     if (!d.ok){ if (msg) msg.textContent = d.message || '名前の変更に失敗しました'; return; }
+  }
+  // 読みがな（五十音ソート用。マスタ使用・非使用どちらも変更可）
+  if (yomiEl){
+    const yomi = (yomiEl.value || '').trim();
+    const dy = await _postForm(`${TOURN_BASE}/entries/${_eeEntryId}/set-yomi`, { yomi });
+    if (!dy.ok){ if (msg) msg.textContent = dy.message || '読みがなの変更に失敗しました'; return; }
   }
   // グループ（グループ分けありの場合のみ）
   if (grpEl){

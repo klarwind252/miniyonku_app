@@ -70,3 +70,23 @@ def gw_display_name(name: str | None, yomi: str | None) -> str:
         return nm
     y = to_gw_name(yomi)
     return y or nm
+
+
+# ── 五十音（あいうえお）ソートキー。エントリー一覧・名簿の並び替え用（20261115）──
+#  読み(yomi)優先、無ければ名前を使う。カタカナ→ひらがな・全半角はNFKCで正規化して
+#  比較するため、ひらがな／カタカナ読みが混ざっても同じ「あ〜わ」位置にそろう。
+#  かな始まり→先頭グループ(0)、英数字・記号始まり(69/ATSUSHI等)→末尾グループ(1)。
+def gojuon_sort_key(name: str | None, yomi: str | None):
+    import unicodedata
+    raw = (yomi or "").strip() or (name or "").strip()
+    s = unicodedata.normalize("NFKC", raw)
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 0x30A1 <= o <= 0x30F6:        # カタカナ → ひらがな
+            ch = chr(o - 0x60)
+        out.append(ch)
+    s = "".join(out).lower()
+    first = s[0] if s else ""
+    is_kana = bool(first) and (0x3041 <= ord(first) <= 0x3096 or first in "ーゝゞ")
+    return (0 if is_kana else 1, s)

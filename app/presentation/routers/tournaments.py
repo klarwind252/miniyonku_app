@@ -587,6 +587,12 @@ async def tournament_detail(tid: int, request: Request, db: aiosqlite.Connection
     ) as cur:
         entries = await cur.fetchall()
 
+    # ★20261115：エントリー一覧は読み仮名の五十音（あいうえお）順で表示する。
+    #   SQLの ORDER BY はコードポイント順で、読み空の英数字名が先頭に固まり・カナ種別で
+    #   分離してしまうため、Python側で五十音キーに並べ替える（英数字名は末尾へ）。
+    from app.domain.kana import gojuon_sort_key
+    entries = sorted(entries, key=lambda e: gojuon_sort_key(e["racer_name"], e["yomi"]))
+
     t_dict = dict(t)
     is_junior = _is_junior_tournament(t_dict.get("regulation"))
 
@@ -1961,6 +1967,29 @@ async def rename_entry_racer(tid: int, entry_id: int, request: Request, db: aios
     await db.execute("UPDATE racers SET name=? WHERE id=?", (name, row["racer_id"]))
     await db.commit()
     return JSONResponse({"ok": True, "name": name})
+
+
+@router.post("/{tid}/entries/{entry_id}/set-yomi")
+async def set_entry_yomi(tid: int, entry_id: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """エントリー済みレーサーの読みがな（yomi）を変更する。★20261115
+       五十音（あいうえお）順ソートの読みを直すための操作。読みはレーサー共通の
+       メタ情報のため、マスタ登録レーサーでも更新可（＝マスタの読みも更新される）。"""
+    if await _is_result_finalized(tid, db):
+        return JSONResponse({"ok": False, "message": "確定済みのため変更できません"})
+    form = await request.form()
+    yomi = (form.get("yomi", "") or "").strip()
+    async with db.execute(
+        """SELECT r.id AS racer_id
+           FROM entries e JOIN racers r ON r.id = e.racer_id
+           WHERE e.tournament_id=? AND e.id=?""",
+        (tid, entry_id),
+    ) as cur:
+        row = await cur.fetchone()
+    if row is None:
+        return JSONResponse({"ok": False, "message": "対象が見つかりません"})
+    await db.execute("UPDATE racers SET yomi=? WHERE id=?", (yomi, row["racer_id"]))
+    await db.commit()
+    return JSONResponse({"ok": True, "yomi": yomi})
 
 
 @router.post("/{tid}/entries/{entry_id}/set-group")
