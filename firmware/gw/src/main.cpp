@@ -1495,20 +1495,23 @@ static void tick_roster() {
   if (millis() - last < 3000) return;
   last = millis();
   disp::g_status.unsent = spool_count();          // 未送信件数をバー(Send:N)へ反映
-  char sq[40]; int sn = 0; sq[0] = 0;
-  for (uint8_t id = 0; id <= 5; id++)
-    if (node_alive(id)) sn += snprintf(sq + sn, sizeof(sq) - sn, sn ? ",%u" : "%u", id);
-  if (sn == 0) { sq[0] = '-'; sq[1] = 0; }
-  char rc[16]; int rn = 0; rc[0] = 0;
-  for (uint8_t id = 8; id <= 9; id++)
-    if (node_alive(id)) rn += snprintf(rc + rn, sizeof(rc) - rn, rn ? ",%u" : "%u", id);
-  if (rn == 0) { rc[0] = '-'; rc[1] = 0; }
-  char sg[16]; int gn = 0; sg[0] = 0;
-  for (uint8_t id = 10; id <= 11; id++)
-    if (node_alive(id)) gn += snprintf(sg + gn, sizeof(sg) - gn, gn ? ",%u" : "%u", id);
-  if (gn == 0) { sg[0] = '-'; sg[1] = 0; }
-  Serial.printf("[LINK] SQ:%s RC:%s SG:%s GW7:%s (activeSG=%u)\n",
-                sq, rc, sg, node_alive(7) ? "on" : "-", s_active_sg_id);
+  // ★20261115 接続中の機材だけを表示（未接続の "-" は出さない＝ログを見やすく）。
+  char line[96]; int n = 0; line[0] = 0;
+  { char sq[40]; int sn = 0; sq[0] = 0;
+    for (uint8_t id = 0; id <= 5; id++)
+      if (node_alive(id)) sn += snprintf(sq + sn, sizeof(sq) - sn, sn ? ",%u" : "%u", id);
+    if (sn) n += snprintf(line + n, sizeof(line) - n, "%sSQ:%s", n ? " " : "", sq); }
+  { char rc[16]; int rn = 0; rc[0] = 0;
+    for (uint8_t id = 8; id <= 9; id++)
+      if (node_alive(id)) rn += snprintf(rc + rn, sizeof(rc) - rn, rn ? ",%u" : "%u", id);
+    if (rn) n += snprintf(line + n, sizeof(line) - n, "%sRC:%s", n ? " " : "", rc); }
+  { char sg[16]; int gn = 0; sg[0] = 0;
+    for (uint8_t id = 10; id <= 11; id++)
+      if (node_alive(id)) gn += snprintf(sg + gn, sizeof(sg) - gn, gn ? ",%u" : "%u", id);
+    if (gn) n += snprintf(line + n, sizeof(line) - n, "%sSG:%s", n ? " " : "", sg); }
+  if (node_alive(7)) n += snprintf(line + n, sizeof(line) - n, "%sGW7:on", n ? " " : "");
+  if (n == 0) snprintf(line, sizeof(line), "(接続なし)");
+  Serial.printf("[LINK] %s (activeSG=%u)\n", line, s_active_sg_id);
 }
 
 // ---- 設定の読み込み（NVS "m4cfg" → 無ければ secrets.h / 既定）---------------

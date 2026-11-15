@@ -1838,21 +1838,22 @@ async def auto_apply_dismiss(
 
 
 # ── ラップタイマー自動反映 ON/OFF（PIPのスライドスイッチ）。app_settings に永続化。 ──
-#    未設定は従来どおり ON（True）。OFF のときは _maybe_auto_apply が手動のみに切替。
+#    ★20261115：既定を OFF（False）へ変更。未設定＝OFF＝手動「反映」ボタンのみ。
+#    一度トグルした値は app_settings に保存され、次回以降は前回値を記憶する。
 async def _auto_apply_is_enabled(db) -> bool:
     try:
         async with db.execute(
             "SELECT value FROM app_settings WHERE key='auto_apply_enabled'"
         ) as cur:
             row = await cur.fetchone()
-        return (row is None) or (row["value"] != "0")   # 未設定=ON
+        return (row is not None) and (row["value"] == "1")   # 未設定=OFF（前回値を記憶）
     except Exception:
-        return True
+        return False   # 判定不能時は安全側＝自動反映しない
 
 
 @router.get("/api/timing/auto-apply/enabled")
 async def auto_apply_enabled_get(db: aiosqlite.Connection = Depends(get_db)):
-    """自動反映トグルの現在値（未設定は ON）。"""
+    """自動反映トグルの現在値（未設定は OFF／以後は前回値を記憶）。"""
     return JSONResponse({"enabled": await _auto_apply_is_enabled(db)})
 
 
@@ -1860,7 +1861,7 @@ async def auto_apply_enabled_get(db: aiosqlite.Connection = Depends(get_db)):
 async def auto_apply_enabled_set(request: Request,
                                  db: aiosqlite.Connection = Depends(get_db)):
     """自動反映トグルを保存。body {"enabled": true/false}。"""
-    enabled = True
+    enabled = False   # ★20261115：既定OFFに合わせ、解釈不能時も安全側=OFF
     try:
         body = await request.json()
         enabled = bool(body.get("enabled"))
