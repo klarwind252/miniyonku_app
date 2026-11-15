@@ -1774,24 +1774,31 @@ async def current_race_for_gw(
     # ★require_m4laps は外す（オンプレ=IS_CLOUD偽でもGWが名前を取れるように）。認証はトークンで担保。
     _check_token(x_timing_token)
     from app.infrastructure.db.repositories import gw_active_repo
-    # ★20261115 予選管理(heat_tournament)／決勝管理(bracket)の画面を開いている間だけ名前を返す。
-    #   画面を離れると keepalive が止まり、在席TTL経過で空配列→GWは通常READYへ自動復帰する。
-    if not await gw_active_repo.presence_fresh(db):
-        return JSONResponse({"active": False, "lanes": []})
-    data = await gw_active_repo.resolve_lanes(db)
-    return JSONResponse({"active": data["active"], "lanes": data["lanes"]})
+    # ★20261115c 名前を返すのは「予選管理／決勝管理を表示中」かつ「その画面・そのレースの
+    #   結果入力カードがアクティブ」のときだけ。それ以外は必ず空配列→GWは通常READY（名前なし）。
+    return JSONResponse(await gw_active_repo.resolve_lanes_for_gw(db))
 
 
-# ── GWレーサー名表示の在席ビーコン（予選/決勝管理画面が開いている間だけ叩く）。20261115 ──
+# ── GWレーサー名表示の在席ビーコン（予選/決勝管理画面を表示している間だけ叩く）。20261115 ──
 @router.post("/api/timing/gw_roster/keepalive")
 async def gw_roster_keepalive(
+    request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """予選管理(heat_tournament)／決勝管理(bracket)画面のJSが数秒ごとにPOSTする在席信号。
-       これが届いている間だけ current_race_for_gw が lanes を返す（＝GWに名前表示）。
-       require_m4laps は付けない（admin画面の同一オリジンJSから叩く・中身は時刻記録のみ）。"""
+       body {"kind": "ht_group"|"bracket_group", "tid": <レースID>}。
+       kind/tid が不正なビーコンは記録しない（＝名前は出ない側に倒す）。"""
     from app.infrastructure.db.repositories import gw_active_repo
-    await gw_active_repo.touch_presence(db)
+    kind, tid = None, None
+    try:
+        body = await request.json()
+        kind = body.get("kind")
+        tid = int(body.get("tid"))
+    except Exception:
+        kind, tid = None, None
+    if kind not in (gw_active_repo.KIND_HT_GROUP, gw_active_repo.KIND_BRACKET_GROUP) or not tid:
+        return JSONResponse({"ok": False})
+    await gw_active_repo.touch_presence(db, kind, tid)
     return JSONResponse({"ok": True})
 
 

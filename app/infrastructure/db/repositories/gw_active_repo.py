@@ -486,33 +486,80 @@ async def resolve_lanes(db) -> dict:
 async def ensure_presence(db) -> None:
     await db.execute(
         "CREATE TABLE IF NOT EXISTS gw_roster_presence ("
-        " id INTEGER PRIMARY KEY CHECK (id = 1), seen_at TEXT)"
+        " id INTEGER PRIMARY KEY CHECK (id = 1), seen_at TEXT, kind TEXT, tid INTEGER)"
     )
+    # ★20261115c 旧版（seen_at のみ）で作成済みのDBへ列を後付け（既にあれば無視）。
+    for col in ("kind TEXT", "tid INTEGER"):
+        try:
+            await db.execute(f"ALTER TABLE gw_roster_presence ADD COLUMN {col}")
+        except Exception:
+            pass
 
 
-async def touch_presence(db) -> None:
-    """在席ビーコン受信＝現在時刻を記録。"""
+async def touch_presence(db, kind: str | None = None, tid: int | None = None) -> None:
+    """在席ビーコン受信＝現在時刻と「どの画面(kind)・どのレース(tid)を開いているか」を記録。"""
     await ensure_presence(db)
     now = _dt.datetime.now().isoformat(timespec="seconds")
     await db.execute(
-        "INSERT INTO gw_roster_presence (id, seen_at) VALUES (1, ?) "
-        "ON CONFLICT(id) DO UPDATE SET seen_at = excluded.seen_at",
-        (now,),
+        "INSERT INTO gw_roster_presence (id, seen_at, kind, tid) VALUES (1, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET seen_at = excluded.seen_at, "
+        "kind = excluded.kind, tid = excluded.tid",
+        (now, kind, tid),
     )
     await db.commit()
 
 
-async def presence_fresh(db, ttl_sec: int = 12) -> bool:
-    """最後の在席ビーコンが ttl_sec 秒以内なら True（＝予選/決勝画面を開いている）。"""
+async def presence_get(db, ttl_sec: int = 12) -> dict | None:
+    """在席が ttl_sec 秒以内なら {"kind":.., "tid":..}、失効/未受信は None。"""
     await ensure_presence(db)
     async with db.execute(
-        "SELECT seen_at FROM gw_roster_presence WHERE id = 1"
+        "SELECT seen_at, kind, tid FROM gw_roster_presence WHERE id = 1"
     ) as cur:
         row = await cur.fetchone()
     if not row or not row["seen_at"]:
-        return False
+        return None
     try:
         seen = _dt.datetime.fromisoformat(row["seen_at"])
     except Exception:
-        return False
-    return (_dt.datetime.now() - seen).total_seconds() <= ttl_sec
+        return None
+    if (_dt.datetime.now() - seen).total_seconds() > ttl_sec:
+        return None
+    return {"kind": row["kind"], "tid": row["tid"]}
+
+
+async def presence_fresh(db, ttl_sec: int = 12) -> bool:
+    """最後の在席ビーコンが ttl_sec 秒以内なら True（＝予選/決勝画面を開いている）。"""
+    return (await presence_get(db, ttl_sec)) is not None
+
+
+async def active_tournament_id(db, kind: str, ref_id: int) -> int | None:
+    """アクティブ（グループ）が属するレース(tournament)のID。辿れなければ None。"""
+    tbl = {KIND_HT_GROUP: ("ht_groups", "ht_rounds"),
+           KIND_BRACKET_GROUP: ("bracket_groups", "bracket_rounds")}.get(kind)
+    if not tbl:
+        return None
+    async with db.execute(
+        f"SELECT rd.tournament_id AS tid FROM {tbl[0]} g "
+        f"JOIN {tbl[1]} rd ON rd.id = g.round_id WHERE g.id = ?", (int(ref_id),)
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row["tid"]) if row and row["tid"] is not None else None
+
+
+async def resolve_lanes_for_gw(db) -> dict:
+    """GW(TFT)向け。次を全部満たすときだけレーサー名を返す。それ以外は必ず空（＝通常READY）。
+         1) 予選管理(ht_group)／決勝管理(bracket_group)の画面を表示中（在席ビーコンがTTL以内）
+         2) アクティブレースが設定されている
+         3) アクティブの種別が、表示中の画面の種別と一致（予選管理↔ht_group／決勝管理↔bracket_group）
+         4) アクティブが、表示中の画面と同じレース(tournament)に属する"""
+    empty = {"active": False, "lanes": []}
+    pres = await presence_get(db)
+    if not pres or pres["kind"] not in (KIND_HT_GROUP, KIND_BRACKET_GROUP) or pres["tid"] is None:
+        return empty
+    cur = await get(db)
+    if not cur or cur["kind"] != pres["kind"]:
+        return empty
+    if await active_tournament_id(db, cur["kind"], cur["ref_id"]) != int(pres["tid"]):
+        return empty
+    data = await resolve_lanes(db)
+    return {"active": data["active"], "lanes": data["lanes"]}
