@@ -573,9 +573,9 @@
     {% set rc = {1:'#d4a017',2:'#aaa',3:'#cd7f32'} %}
     {% set _lane_sortable = (not result) and not (is_rank_rnd and ranks and ranks|length > 0) %}
     <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}"
-         id="vg-{{ g.id }}" data-gid="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
+         id="vg-{{ g.id }}" data-gid="{{ g.id }}" data-gw-kind="ht_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
       <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span style="font-size:18px;font-weight:bold">グループ{{ g.group_no }}</span>
+        <span onclick="gwToggleActive('ht_group', {{ g.id }})" style="cursor:pointer;font-size:18px;font-weight:bold" title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
         {% if result %}<span style="font-size:11px;color:#27ae60;font-weight:bold">✓完了</span>{% endif %}
         <span style="flex:1"></span>
         {% if m4_on %}{% if result %}<button type="button" class="m4-correct-btn" onclick="openCorrectModal('ht',{{ t.id }},{{ g.id }})" title="各レーンのタイム・順位を訂正します">訂正</button><button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>{% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}{% endif %}
@@ -682,9 +682,9 @@
   {% set n_slots=slots|length %}
   {% set _lane_sortable = (not result) and not (is_rank_rnd and ranks and ranks|length > 0) %}
   <div class="bracket-group {% if result %}done{% endif %} {% if is_rank_rnd %}{% if is_third_rnd %}is-third{% else %}is-final{% endif %}{% endif %}{% if _lane_sortable %} lane-sortable{% endif %}"
-       id="group-{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
+       id="group-{{ g.id }}" data-gw-kind="ht_group" data-gw-ref="{{ g.id }}"{% if _lane_sortable %} data-group-id="{{ g.id }}" data-tid="{{ t.id }}" data-hno="{{ hno }}"{% endif %}>
     <div style="font-size:14px;color:#333333;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span style="font-size:18px;font-weight:bold">グループ{{ g.group_no }}</span>
+      <span onclick="gwToggleActive('ht_group', {{ g.id }})" style="cursor:pointer;font-size:18px;font-weight:bold" title="クリックでGWにこの組を送る（アクティブ化／再クリックで解除）">グループ{{ g.group_no }}</span>
       {% if result %}<span style="font-size:11px;color:#27ae60;font-weight:bold">✓完了</span>{% endif %}
       <span style="flex:1"></span>
       {% if m4_on %}{% if result %}<button type="button" class="m4-reset-btn" onclick="resetHtGroup({{ g.id }},{{ t.id }},{{ hno }})" title="この組の結果を取り消します">取消</button>{% else %}<button type="button" class="m4-apply-btn" onclick="applyTimingToHtGroup({{ g.id }},{{ t.id }},{{ hno }},this)" title="ラップタイマーの最新の計測結果をこの組に反映します">反映</button>{% endif %}{% endif %}
@@ -1567,7 +1567,7 @@ async function resetHtGroup(groupId, tid, hno){
 /* ★20261115 GWレーサー名表示の在席ビーコン：この予選管理(ヒートトーナメント)画面を開いている間だけ送信。
    離脱/タブを閉じると停止し、サーバーの在席TTL(12s)でGWは通常READY（名前なし）へ自動復帰する。 */
 (function(){
-  function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store'}).catch(function(){}); }catch(_){} }
+  function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'ht_group',tid:{{ t.id }}})}).catch(function(){}); }catch(_){} }
   /* ★20261115b 画面が見えている間だけ送る。裏タブはブラウザがタイマーを間引く（5分超で毎分1回）ため、
      送り続けるとGW側で名前が出たり消えたりする。非表示＝送らない／再表示＝即送信で確定的にする。 */
   function tick(){ if(document.visibilityState === 'visible') beat(); }

@@ -2801,7 +2801,7 @@ async function applyTimingToBracket(groupId, btn, force){
 /* ★20261115 GWレーサー名表示の在席ビーコン：この決勝管理画面を開いている間だけ送信。
    離脱/タブを閉じると停止し、サーバーの在席TTL(12s)でGWは通常READY（名前なし）へ自動復帰する。 */
 (function(){
-  function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store'}).catch(function(){}); }catch(_){} }
+  function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'bracket_group',tid:{{ t.id }}})}).catch(function(){}); }catch(_){} }
   /* ★20261115b 画面が見えている間だけ送る。裏タブはブラウザがタイマーを間引く（5分超で毎分1回）ため、
      送り続けるとGW側で名前が出たり消えたりする。非表示＝送らない／再表示＝即送信で確定的にする。 */
   function tick(){ if(document.visibilityState === 'visible') beat(); }
