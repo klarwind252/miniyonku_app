@@ -1638,9 +1638,6 @@ document.addEventListener('DOMContentLoaded', function(){
     </td></tr>
     {% endmacro %}
 
-    {# ★20261115 順位表のグループ列チップ（A/B/Jr…）。色は _grp_hue と統一。 #}
-    {% macro grp_chip(letter) %}{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(letter, 210) %}<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ letter if letter else '—' }}</span>{% endmacro %}
-
     {% macro hoshitori_table(hoshi) %}
     {% if hoshi and hoshi.entries %}
     <div style="overflow-x:auto">
@@ -2124,7 +2121,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <tbody id="qp-rank-tbody">
           {% for s in standings %}
           <tr style="border-bottom:1px solid #f0f0f0;{% if s.rank==1 %}background:#fffde7{% endif %}">
-            {% if _pt_grouping %}<td style="padding:3px 4px;text-align:center">{{ grp_chip(s.pt_group) }}</td>{% endif %}
+            {% if _pt_grouping %}<td style="padding:3px 4px;text-align:center">{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(s.pt_group, 210) %}<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ s.pt_group if s.pt_group else '—' }}</span></td>{% endif %}
             <td style="padding:3px 4px;text-align:right;color:#aaa">{{ loop.index }}</td>
             <td style="padding:3px 4px;text-align:center;font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
             <td style="padding:3px 6px"><strong>{{ s.name }}</strong></td>
@@ -2199,7 +2196,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:3px dashed #f39c12;margin:2px 0"></div></td></tr>
           {% endif %}
           <tr style="{% if has_results and s.get('is_tied_cutoff') %}background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e{% elif s.rank==1 %}background:#fffde7{% endif %}">
-            {% if _pt_grouping %}<td style="text-align:center">{{ grp_chip(s.pt_group) }}</td>{% endif %}
+            {% if _pt_grouping %}<td style="text-align:center">{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(s.pt_group, 210) %}<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ s.pt_group if s.pt_group else '—' }}</span></td>{% endif %}
             <td style="color:#aaa;font-size:12px">{{ loop.index }}</td>
             <td style="font-weight:bold;font-size:16px;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
             <td><strong>{{ s.name }}</strong></td>
