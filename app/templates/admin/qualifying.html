@@ -2170,7 +2170,10 @@ document.addEventListener('DOMContentLoaded', function(){
           <tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th><th>タイム計</th><th style="text-align:center">決勝</th></tr>
           {% else %}
           {# ベスト列（M4LAPS）：決勝の右に TOTAL / LAP / SECTOR ベストを足す #}
-          {% set show_best = racer_bests and racer_bests|length > 0 %}
+          {# ★20261115 M4LAPS ON時もベスト列（TOTAL/LAP/SECTOR BEST）は出さず、
+             下部の予選順位表を通常ポイント制と同じ列構成にする。記録は上部の
+             RECORD HOLDERS で確認できるため、順位表はシンプルに保つ。 #}
+          {% set show_best = false %}
           <tr class="std-grp">
             <th colspan="{{ 9 if _pt_grouping else 8 }}"></th>
             {% if show_best %}
@@ -2226,9 +2229,9 @@ document.addEventListener('DOMContentLoaded', function(){
               </button>
             </td>
             {% endif %}
-            {# レーサー別ベスト（point型のみ・M4LAPS）。値=そのレーサーのベスト、
-               色=予選全体での上位3人（紫1位・青2位・緑3位）。基本文字色は黒。 #}
-            {% if not is_none_roundrobin and not is_roundrobin and racer_bests and racer_bests|length > 0 %}
+            {# レーサー別ベスト（point型のみ・M4LAPS）。★20261115 通常ポイント制と同じ表示に
+               統一するため show_best=false で非表示（記録は上部 RECORD HOLDERS に集約）。 #}
+            {% if show_best %}
             {% set rb = racer_bests.get(s.entry_id, {}) %}
             <td class="bsep bcell{% if best_ranks.total.get(s.entry_id) %} b{{ best_ranks.total.get(s.entry_id) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
             <td class="bcell">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
@@ -3551,4 +3554,19 @@ async function applyTimingToHeat(heatId, btn, force){
 </script>
 {% endif %}
 {% endif %}{# /not is_order_winner：汎用スケジュール〜スクリプトは勝ち抜けでは描画しない #}
+
+<script>
+/* ★20261116 GWレーサー名表示の在席ビーコン：このポイント/リスト予選管理画面を開いている間だけ送信。
+   従来は ht_group(ヒートトーナメント)/bracket(決勝) だけが送っており、リスト予選では GW実機に
+   名前が出なかった（PIPには出る）。heat(=リスト予選) も送って resolve_lanes_for_gw に拾わせる。
+   離脱/タブを閉じると停止し、サーバーの在席TTL(12s)でGWは通常READY（名前なし）へ自動復帰する。 */
+(function(){
+  function beat(){ try{ fetch('/api/timing/gw_roster/keepalive',{method:'POST',keepalive:true,cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'heat',tid:{{ t.id }}})}).catch(function(){}); }catch(_){} }
+  /* 画面が見えている間だけ送る（裏タブは間引かれ名前が点滅するため）。非表示=送らない／再表示=即送信。 */
+  function tick(){ if(document.visibilityState === 'visible') beat(); }
+  tick();
+  setInterval(tick, 4000);
+  document.addEventListener('visibilitychange', tick);
+})();
+</script>
 {% endblock %}

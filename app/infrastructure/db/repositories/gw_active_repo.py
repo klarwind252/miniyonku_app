@@ -533,7 +533,14 @@ async def presence_fresh(db, ttl_sec: int = 12) -> bool:
 
 
 async def active_tournament_id(db, kind: str, ref_id: int) -> int | None:
-    """アクティブ（グループ）が属するレース(tournament)のID。辿れなければ None。"""
+    """アクティブ（レース/グループ）が属するレース(tournament)のID。辿れなければ None。"""
+    # ★20261116 ポイント/リスト予選（heat）対応：heats.tournament_id を直接辿る。
+    if kind == KIND_HEAT:
+        async with db.execute(
+            "SELECT tournament_id AS tid FROM heats WHERE id = ?", (int(ref_id),)
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row["tid"]) if row and row["tid"] is not None else None
     tbl = {KIND_HT_GROUP: ("ht_groups", "ht_rounds"),
            KIND_BRACKET_GROUP: ("bracket_groups", "bracket_rounds")}.get(kind)
     if not tbl:
@@ -554,7 +561,9 @@ async def resolve_lanes_for_gw(db) -> dict:
          4) アクティブが、表示中の画面と同じレース(tournament)に属する"""
     empty = {"active": False, "lanes": []}
     pres = await presence_get(db)
-    if not pres or pres["kind"] not in (KIND_HT_GROUP, KIND_BRACKET_GROUP) or pres["tid"] is None:
+    # ★20261116 ポイント/リスト予選(heat)も対象に追加（従来は ht_group / bracket_group のみで、
+    #   リスト予選画面ではGWに名前が出なかった＝PIPには出るのに実機に出ない不具合）。
+    if not pres or pres["kind"] not in (KIND_HEAT, KIND_HT_GROUP, KIND_BRACKET_GROUP) or pres["tid"] is None:
         return empty
     cur = await get(db)
     if not cur or cur["kind"] != pres["kind"]:

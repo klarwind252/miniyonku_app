@@ -1785,8 +1785,9 @@ async def gw_roster_keepalive(
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """予選管理(heat_tournament)／決勝管理(bracket)画面のJSが数秒ごとにPOSTする在席信号。
-       body {"kind": "ht_group"|"bracket_group", "tid": <レースID>}。
+    """予選管理(ポイント/リスト=heat・ヒートトーナメント=ht_group)／決勝管理(bracket)画面の
+       JSが数秒ごとにPOSTする在席信号。
+       body {"kind": "heat"|"ht_group"|"bracket_group", "tid": <レースID=tournament_id>}。
        kind/tid が不正なビーコンは記録しない（＝名前は出ない側に倒す）。"""
     from app.infrastructure.db.repositories import gw_active_repo
     kind, tid = None, None
@@ -1796,7 +1797,8 @@ async def gw_roster_keepalive(
         tid = int(body.get("tid"))
     except Exception:
         kind, tid = None, None
-    if kind not in (gw_active_repo.KIND_HT_GROUP, gw_active_repo.KIND_BRACKET_GROUP) or not tid:
+    # ★20261116 heat（ポイント/リスト予選）も受け付ける（従来は ht_group/bracket_group のみ）。
+    if kind not in (gw_active_repo.KIND_HEAT, gw_active_repo.KIND_HT_GROUP, gw_active_repo.KIND_BRACKET_GROUP) or not tid:
         return JSONResponse({"ok": False})
     await gw_active_repo.touch_presence(db, kind, tid)
     return JSONResponse({"ok": True})
