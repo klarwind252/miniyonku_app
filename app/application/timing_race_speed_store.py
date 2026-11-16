@@ -29,11 +29,21 @@ from app.infrastructure.db.repositories.timing_repository import (
 
 NO = -1  # lap / sector_no の「該当なし」を表す番兵
 
-# 相対フィルタ: 同レースの他の通過計測（中央値）から「早い方向」に
+# 相対フィルタ①（レース全体）: 同レースの他の通過計測（中央値）から「早い方向」に
 # これ以上ずれた瞬間速度は、反射ノイズ由来の逸脱とみなして採用しない。
 # 絶対上限（timing_layouts.max_speed_ms・既定40km/h）をくぐり抜けた
 # 残りノイズを、各レースの実力値を基準に相対で落とすための保険。
 REL_K = 2.5
+
+# 相対フィルタ②（各レーン＝各車）: ★20261116 追加。
+# ①はレース全体の中央値基準のため、正常な速い車が中央値を押し上げ、
+# 「遅い車の単発誤発火」を取りこぼす（自車は1 m/s台なのに、ある区間だけ
+# 8〜10 m/s＝明らかな反射/二度打ち）。そこで「その車自身の周平均速度(中央値)
+# × REL_K_LANE」を超える瞬間速度を誤発火として落とす。周平均は1周まるごとの
+# 平均で誤発火に強く、中央値をとるのでさらに頑健。瞬間速度は直線で周平均の
+# 2〜2.5倍程度まで正常に出るため、3.0倍を既定の足切りとする（実測データで
+# 正常 p99≈3.7／誤発火 5〜14 と明確に分離することを確認・コース別調整可）。
+REL_K_LANE = 3.0
 
 
 async def has_stored_speeds(db, race_id: int) -> bool:
@@ -122,12 +132,32 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
                 if sp is not None:
                     beam_samples[(lane, lap.lap, sno)] = sp
 
-    # 相対の足切り値 = 同レース中央値 × REL_K（早い方向の逸脱を排除）
+    # 相対フィルタ①の足切り値 = 同レース中央値 × REL_K（早い方向の逸脱を排除）
     _vals = list(beam_samples.values())
     rel_cap = (statistics.median(_vals) * REL_K) if _vals else None
 
-    def _accept(v: float) -> bool:
-        return rel_cap is None or v <= rel_cap
+    # ★20261116 相対フィルタ②：各レーン自身の周平均速度(中央値)を先に出す。
+    #   周平均は絶対上限適用済み（lap_avg_speed_ms）なので誤発火で膨らんだ周は
+    #   そもそも None で除外されており、さらに中央値をとるので頑健。
+    lane_lapavg_med: dict = {}
+    for m in result.ranking():
+        _las = []
+        for lap in m.laps:
+            _la = spd.lap_avg_speed_ms(lap.lap_time_us, per_lap_len_m, max_speed_ms)
+            if _la is not None:
+                _las.append(_la)
+        if _las:
+            lane_lapavg_med[m.start_lane] = statistics.median(_las)
+
+    def _accept(lane: int, v: float) -> bool:
+        # ① レース全体の中央値基準
+        if rel_cap is not None and v > rel_cap:
+            return False
+        # ② その車自身の周平均(中央値)基準（遅い車の単発誤発火を捕捉）
+        lm = lane_lapavg_med.get(lane)
+        if lm is not None and v > REL_K_LANE * lm:
+            return False
+        return True
 
     rows: list[tuple] = []   # (start_lane, metric, lap, sector_no, value)
 
@@ -147,7 +177,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             # S/G通過(0) の速度（2周目以降のみ意味を持つ）
             if lap.lap >= 2:
                 sg = beam_samples.get((lane, lap.lap, 0))
-                if sg is not None and _accept(sg):
+                if sg is not None and _accept(lane, sg):
                     speeds_all.append(sg)
                     rows.append((lane, "sector_ms", lap.lap, 0, sg))
 
@@ -155,7 +185,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             for idx in range(len(lap.sectors)):
                 sno = idx + 1
                 sp = beam_samples.get((lane, lap.lap, sno))
-                if sp is not None and _accept(sp):
+                if sp is not None and _accept(lane, sp):
                     speeds_all.append(sp)
                     rows.append((lane, "sector_ms", lap.lap, sno, sp))
 
