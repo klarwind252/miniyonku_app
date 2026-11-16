@@ -19,19 +19,19 @@ from __future__ import annotations
 from app.domain.rotation import LANES, build_course, identify_start_lane
 
 # 現実的にありえない値を弾くための範囲（m/s）
-# ミニ四駆の物理上限は無負荷理論で 15.6 m/s（40000rpm / ギヤ比3.5 / タイヤ径26mm）だが、
-# 実走でそこまでは出ない。★20261116 実測（1日分・約8500通過）で、状態の良いゲート(SE0)は
-# 全通過が 7.3 m/s 以下・8 m/s 超は 0 件、周平均も最速で約 6.7 m/s。8 m/s 超の値は
-# 特定ゲート/レーンに偏って出ており（A/Bビームの誤発火）、実速度ではない。
-# そこで実用上限の既定を 40km/h(11.1) → 8.0 m/s へ引き下げる。
-# もっと速いレギュ/コースは timing_layouts.max_speed_ms で個別に上書きする。
+# ミニ四駆の物理上限は無負荷理論で 15.6 m/s（40000rpm / ギヤ比3.5 / タイヤ径26mm）。
+# ★20261116 競技規則の最高速度は 40km/h = 11.1 m/s。これが実車の上限なので、
+#   実用上限の既定を 40km/h(=11.1 m/s) とする（0.5mm級の治具公差・計測誤差ぶんは
+#   この値で吸収される）。これを超える値は車体の穴によるビーム早切れ等の計測ミス。
+#   ※一時 8.0 へ下げたが、40km/h規則の正常値まで落としてしまうため 11.1 に戻した。
+#   もっと速いレギュ/コースは timing_layouts.max_speed_ms で個別に上書きする。
 MIN_SPEED_MS = 0.5
 MAX_SPEED_MS = 30.0                 # 後方互換（未使用の旧フォールバック値）
-MAX_PASS_SPEED_MS_DEFAULT = 8.0     # 実用上限の既定 [m/s]（timing_layouts.max_speed_ms で上書き）
+MAX_PASS_SPEED_MS_DEFAULT = 11.1    # 実用上限の既定 [m/s] = 40km/h（timing_layouts.max_speed_ms で上書き）
 
 
 def _cap(max_speed_ms: float | None) -> float:
-    """有効な上限[m/s]を返す。レイアウト設定が無ければ既定(8.0 m/s)。"""
+    """有効な上限[m/s]を返す。レイアウト設定が無ければ既定(40km/h=11.1 m/s)。"""
     if max_speed_ms and max_speed_ms > 0:
         return max_speed_ms
     return MAX_PASS_SPEED_MS_DEFAULT
@@ -44,7 +44,7 @@ def pass_speed_ms(t_us: int | None, t_us_b: int | None,
 
     2本のビームを通過する時間差と、その間隔から求める。
     設定や打刻が欠けていれば None（＝画面では「—」表示）。
-    max_speed_ms: このコース/レギュの実用上限[m/s]（既定 8.0 m/s）。超過は採用しない。
+    max_speed_ms: このコース/レギュの実用上限[m/s]（既定 40km/h）。超過は採用しない。
     """
     if t_us is None or t_us_b is None or not beam_gap_mm:
         return None
@@ -170,7 +170,7 @@ async def load_speed_config(db, layout_id: int | None) -> dict:
     if row is not None:
         keys = row.keys() if hasattr(row, "keys") else []
         out["lap_length_m"] = row["lap_length_m"] if "lap_length_m" in keys else None
-        # コース/レギュ別の実用上限[m/s]（無ければ None → 既定 8.0 m/s が効く）
+        # コース/レギュ別の実用上限[m/s]（無ければ None → 既定 40km/h が効く）
         out["max_speed_ms"] = row["max_speed_ms"] if "max_speed_ms" in keys else None
 
     async with db.execute(

@@ -31,7 +31,7 @@ NO = -1  # lap / sector_no の「該当なし」を表す番兵
 
 # 相対フィルタ: 同レースの他の通過計測（中央値）から「早い方向」に
 # これ以上ずれた瞬間速度は、反射ノイズ由来の逸脱とみなして採用しない。
-# 絶対上限（timing_layouts.max_speed_ms・既定 8.0 m/s）をくぐり抜けた
+# 絶対上限（timing_layouts.max_speed_ms・既定 40km/h）をくぐり抜けた
 # 残りノイズを、各レースの実力値を基準に相対で落とすための保険。
 # ※20261116 「自車の周平均×K」で落とす案は不採用：コースアウト→復帰などで周平均だけ
 #   極端に遅い車の、正常な通過速度まで消してしまうため（実データで確認）。
@@ -74,38 +74,66 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
     cfg = await spd.load_speed_config(db, layout_id)
     total_len_m = cfg.get("lap_length_m")     # ← 意味は「合計距離(m)」
     gap_by_node = cfg.get("beam_gap_by_node") or {}
-    max_speed_ms = cfg.get("max_speed_ms")    # コース別の実用上限（None→既定 8.0 m/s）
+    max_speed_ms = cfg.get("max_speed_ms")    # コース別の実用上限（None→既定 40km/h）
 
     # 1周の距離 = 合計距離 ÷ 周回数（周回数はレースの target_laps）
     laps_n = race["target_laps"] or 0
     per_lap_len_m = (total_len_m / laps_n) if (total_len_m and laps_n) else None
 
     # 通過速度の引き当て表（ビーム間隔があるときだけ）
+    # ★20261116 引き当て方を変更。
+    #   旧：build_pass_index（物理レーン×ゲートごとの「何回目の通過か」から周回を逆算）。
+    #       これは全レーンに車がいる前提で、1〜2台走行（フリー/TA）や欠測があると
+    #       2周目以降の通過を別の周・別の車として数えてしまい、速度が出なかった。
+    #   新：レース結果(build_race_result)が区間の到達点として実際に採用したイベント
+    #       (SectorTime.to_event_id) の A/B 打刻をそのまま使う。タイムと同じ帰属になるので
+    #       台数・欠測に左右されない。結果がイベントidを持たない旧データのみ旧方式。
     pass_index = {}
+    ev_by_id: dict = {}          # timing_events.id -> (t_us, t_us_b, src)
+    ev_for: dict = {}            # (start_lane, lap, idx) -> timing_events.id
     if gap_by_node:
+        async with db.execute(
+            "SELECT id, lane, src, t_us, t_us_b FROM timing_events "
+            "WHERE race_id=? ORDER BY t_us",
+            (race_id,),
+        ) as cur:
+            _rows = await cur.fetchall()
+        evs = [
+            {"lane": e["lane"], "src": e["src"],
+             "t_us": e["t_us"], "t_us_b": e["t_us_b"]}
+            for e in _rows
+        ]
+        ev_by_id = {e["id"]: (e["t_us"], e["t_us_b"], e["src"]) for e in _rows}
+
+        for m in result.ranking():
+            prev_end = None      # 直前の周を終えたS/G通過（＝次の周の起点 idx 0）
+            prev_lap = None
+            for lap in m.laps:
+                if prev_end is not None and prev_lap == lap.lap - 1:
+                    ev_for[(m.start_lane, lap.lap, 0)] = prev_end
+                for idx, sec in enumerate(lap.sectors):
+                    if sec.to_event_id is not None:
+                        ev_for[(m.start_lane, lap.lap, idx + 1)] = sec.to_event_id
+                prev_end = lap.sectors[-1].to_event_id if lap.sectors else None
+                prev_lap = lap.lap
+
         elems = await lrepo.get_elements(layout_id)
         layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems]
         if layout_elems:
-            async with db.execute(
-                "SELECT lane, src, t_us, t_us_b FROM timing_events "
-                "WHERE race_id=? ORDER BY t_us",
-                (race_id,),
-            ) as cur:
-                evs = [
-                    {"lane": e["lane"], "src": e["src"],
-                     "t_us": e["t_us"], "t_us_b": e["t_us_b"]}
-                    for e in await cur.fetchall()
-                ]
             try:
                 pass_index = spd.build_pass_index(layout_elems, evs)
             except Exception:
                 pass_index = {}
 
     def _pass_speed(lane, lap, idx):
-        rec = pass_index.get((lane, lap, idx))
+        if ev_for:
+            rec = ev_by_id.get(ev_for.get((lane, lap, idx)))
+        else:
+            # レース結果がイベントidを持たない旧データだけ旧方式で引く
+            rec = pass_index.get((lane, lap, idx))
         if not rec:
             return None
-        # 絶対上限（コース別 max_speed_ms・既定 8.0 m/s）をここで適用
+        # 絶対上限（コース別 max_speed_ms・既定 40km/h）をここで適用
         return spd.pass_speed_ms(rec[0], rec[1], gap_by_node.get(rec[2]), max_speed_ms)
 
     # --- 1st pass: レース全体のビーム通過速度を集める（絶対上限は適用済み）---
