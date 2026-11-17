@@ -88,9 +88,15 @@
   {% elif state == 'closed' %}
     <div class="closed-box">
       <div class="ico">🏁</div>
+      {% if race_qr %}
+      <h2>このレースは終了しました</h2>
+      <p>「{{ t.name }}」（{{ t.date }}）は開催日を過ぎたため、</p>
+      <p>このQRコードからはご覧いただけません。</p>
+      {% else %}
       <h2>この事前告知は終了しました</h2>
       <p>「{{ t.name }}」（{{ t.date }}）は開催日を過ぎたため、</p>
       <p>このページはご覧いただけません。</p>
+      {% endif %}
     </div>
 
   {% else %}

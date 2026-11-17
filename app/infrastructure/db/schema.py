@@ -741,6 +741,16 @@ async def init_db(db_path: str = None):
             await db.execute("ALTER TABLE tournaments ADD COLUMN use_m4laps INTEGER DEFAULT 1")
             print("[DB] migration: tournaments.use_m4laps added")
 
+        # ★20261117 tournaments.public_qr_token（レースごとの固定QR用トークン / 初期値NULL）
+        #   /api/race-qr/<token>：開催日前＝そのレースの事前告知、開催当日（09:00〜翌08:59）＝
+        #   日替わり入場と同じ観覧許可を発行して当日の観覧URLへ誘導、翌日以降＝終了表示。
+        #   トークンは管理画面でQRを初めて開いたときに発行（推測困難な token_urlsafe）。
+        async with db.execute("PRAGMA table_info(tournaments)") as cur:
+            t_cols_rq = {r["name"] async for r in cur}
+        if "public_qr_token" not in t_cols_rq:
+            await db.execute("ALTER TABLE tournaments ADD COLUMN public_qr_token TEXT")
+            print("[DB] migration: tournaments.public_qr_token added")
+
         # tournaments.pre_entry / pre_entry_method（事前エントリー設定 / 作成時のみ確定）
         #   pre_entry        : 0=OFF（既定） / 1=ON
         #   pre_entry_method : NULL（既定） / 'manual'（手動） / 'form'（エントリーフォーム）

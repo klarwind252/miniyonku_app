@@ -438,7 +438,7 @@ function _racerShownUrl(url){
 function _rqRound(ctx,x,y,w,h,r){ ctx.beginPath();
   ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-function _racerQrRender(url, storeName, logoUrl){
+function _racerQrRender(url, storeName, logoUrl, dispText){
   var wrap = document.getElementById('racerQrCanvas');
   wrap.innerHTML = '';
   var qrSize = 240;
@@ -447,7 +447,8 @@ function _racerQrRender(url, storeName, logoUrl){
         colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.H}); }
   catch(e){ wrap.textContent = 'QR生成に失敗しました'; return; }
   var srcEl = tmp.querySelector('canvas') || tmp.querySelector('img');
-  var dispUrl = _racerShownUrl(url);
+  // QR下の表示文字。既定はQRのURLから作る。レース専用QRは右上QRと同じ文字を渡す（★20261117）
+  var dispUrl = dispText || _racerShownUrl(url);
   function draw(logoImg){
     var pad=16, capH = storeName ? 30 : 0, urlH = 26;
     var W = qrSize + pad*2, H = capH + qrSize + pad*2 + urlH;
@@ -508,6 +509,30 @@ function openRacerQr(){
       _racerQrSetUrl(location.origin + prefix + '/enter');
       _racerQrRender(location.origin + prefix + '/enter', _M4_STORE_NAME, logoUrl);
     });
+}
+// ★20261117 このレース専用のQR。モーダル・見出し・店舗名・QR下のURL表示は右上QRと同一で、
+//   QRの中身だけをレース固定URL（/api/race-qr/<token>）にする。誘導先は右上QRと同じ当日の観覧ページ
+//   （開催日前はそのレースの事前告知、翌日以降は終了表示＝固定URLで常時観覧できる穴を作らない）。
+function openRaceQr(tid){
+  var prefix = location.pathname.split('/admin')[0];
+  var modal = document.getElementById('racerQrModal');
+  modal.style.display = 'flex';
+  _racerQrDataUrl = '';
+  _racerQrSetUrl('');
+  document.getElementById('racerQrCanvas').innerHTML = '';
+  document.getElementById('racerQrUrl').textContent = '読み込み中…';
+  var logoUrl = prefix + '/pwa/icon-src-512.png?t=' + Date.now();
+  Promise.all([
+    fetch(prefix + '/admin/preview/race-qr/' + tid, {cache:'no-store'}).then(function(r){ if(!r.ok) throw 0; return r.json(); }),
+    fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'}).then(function(r){ return r.json(); }).catch(function(){ return {}; })
+  ]).then(function(res){
+    var raceUrl = new URL(res[0].url, location.origin).href;      // QRの中身（相対URLでも絶対化）
+    var daily = res[1].url || (location.origin + prefix + '/enter');
+    _racerQrSetUrl(raceUrl);                                      // 「ブラウザで開く」もレース固定URL
+    _racerQrRender(raceUrl, _M4_STORE_NAME, logoUrl, _racerShownUrl(daily)); // 表示文字は右上QRと同じ
+  }).catch(function(){
+    document.getElementById('racerQrUrl').textContent = 'QRを取得できませんでした。';
+  });
 }
 function printRacerQr(){
   if(!_racerQrDataUrl){ return; }

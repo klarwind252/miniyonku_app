@@ -227,13 +227,20 @@ async def preview_page(token: str, request: Request, db: aiosqlite.Connection = 
         return PlainTextResponse("404 Not Found", status_code=404)
 
     t, state = await _resolve_target(db)
+    return await _render_preview(request, db, t, state, token)
+
+
+async def _render_preview(request: Request, db: aiosqlite.Connection, t, state: str,
+                          token: str, race_qr: bool = False):
+    """事前告知ページ（preview.html）の描画。店舗固定URLとレース固定QRで共用。
+    race_qr=True のときは終了表示の文言をレース固定QR向けにする。"""
     prefix = getattr(getattr(request.state, "store", None), "prefix", "") or ""
 
     if t is None:
         return templates.TemplateResponse("preview.html", {
             "request": request, "t": None, "state": "none",
             "prefix": prefix, "store_name": await _store_name(db, request),
-            "preview_token": token,
+            "preview_token": token, "race_qr": race_qr,
         })
 
     td = dict(t)
@@ -254,7 +261,92 @@ async def preview_page(token: str, request: Request, db: aiosqlite.Connection = 
         "qualifying_labels": QUALIFYING_LABELS,
         "regulation_labels": await get_regulation_labels(db),
         "preview_token": token,
+        "race_qr": race_qr,
     })
+
+
+# ───────────────────────── レース固定QR（★20261117）─────────────────────────
+# 入口は2系統：①ヘッダーの日替わりQR（従来）②レースごとの固定QR（本機能）。
+# 行き先はどちらも同じ＝当日の観覧URL /<観覧語>（店舗prefix付き）。
+#   開催日より前        … そのレースの事前告知（preview.html と同じ内容）
+#   開催当日（論理日）   … 日替わり入場と同じ観覧クッキーを発行して /<観覧語> へ誘導
+#   開催日の翌日以降     … 終了表示（常時観覧の穴を作らない）
+# 「論理日」は日替わりURLと同じ区切り（09:00 JST 〜 翌08:59）。
+# 公開ルートは /api 配下（nginx が既にアプリへ転送＝nginx 設定変更不要）。
+
+_RACE_QR_COL = "public_qr_token"
+
+
+def _logical_today():
+    """日替わりURLと同じ区切り（09:00 JST）での「今日」の日付。"""
+    import datetime
+    from app.services import pub_gate
+    return datetime.date(1970, 1, 1) + datetime.timedelta(days=pub_gate._day_index())
+
+
+def _race_phase(date_str) -> str:
+    """'before'（開催日前）/ 'today'（開催当日）/ 'after'（翌日以降）。日付不明は 'before'。"""
+    import datetime
+    try:
+        d = datetime.date.fromisoformat(str(date_str or "").strip()[:10])
+    except Exception:
+        return "before"
+    today = _logical_today()
+    if d > today:
+        return "before"
+    if d == today:
+        return "today"
+    return "after"
+
+
+async def ensure_race_qr_token(db: aiosqlite.Connection, tid: int) -> str:
+    """レースの固定QRトークンを取得。無ければ発行して保存する（空文字＝レースなし）。"""
+    async with db.execute(
+        f"SELECT {_RACE_QR_COL} FROM tournaments WHERE id=?", (tid,)
+    ) as cur:
+        row = await cur.fetchone()
+    if row is None:
+        return ""
+    token = row[0] or ""
+    if token:
+        return token
+    token = secrets.token_urlsafe(16)
+    await db.execute(
+        f"UPDATE tournaments SET {_RACE_QR_COL}=? WHERE id=?", (token, tid)
+    )
+    await db.commit()
+    return token
+
+
+@router.get("/api/race-qr/{token}", response_class=HTMLResponse)
+async def race_qr_page(token: str, request: Request,
+                       db: aiosqlite.Connection = Depends(get_db)):
+    """レース固定QRの入口。"""
+    if not token or len(token) < 16:
+        return PlainTextResponse("404 Not Found", status_code=404)
+    async with db.execute(
+        f"SELECT * FROM tournaments WHERE {_RACE_QR_COL}=?", (token,)
+    ) as cur:
+        t = await cur.fetchone()
+    if t is None or not secrets.compare_digest(str(t[_RACE_QR_COL] or ""), token):
+        return PlainTextResponse("404 Not Found", status_code=404)
+
+    phase = _race_phase(t["date"])
+    if phase == "before":
+        return await _render_preview(request, db, t, "ok", token, race_qr=True)
+    if phase == "after":
+        return await _render_preview(request, db, t, "closed", token, race_qr=True)
+
+    # 開催当日：日替わり入場（/<観覧語>/enter/<鍵語>）と同じ判定・発行・誘導を行う。
+    from app.presentation.routers import public_misc as _pm
+    pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _pm._enter_common(request)
+    if _pm._rate_limited(_pm._client_ip(request)):
+        return _pm._blocked_page(key, False, "RATE_LIMIT",
+                                 enter_api_base=_pm._enter_path(request))
+    if not _pm._hours_ok(store):
+        return _pm._blocked_page(key, False, "CLOSED+RACEQR",
+                                 enter_api_base=_pm._enter_path(request))
+    return _pm._redirect_to_view(request, cname, secret, epoch)
 
 
 # ───────────────────────── 管理API（モーダル用）─────────────────────────
@@ -310,3 +402,21 @@ async def preview_admin_select(request: Request, db: aiosqlite.Connection = Depe
     token = await ensure_preview_token(db)
     base = _public_base(request)
     return JSONResponse({"ok": True, "url": f"{base}/api/preview/{token}", "selected_tid": tid})
+
+
+@admin_router.get("/race-qr/{tid}")
+async def race_qr_admin_info(tid: int, request: Request,
+                             db: aiosqlite.Connection = Depends(get_db)):
+    """レース詳細の「固定QR」モーダル用：このレースの固定URL（無ければ発行）を返す。"""
+    t = await _get_tournament(db, tid)
+    if t is None:
+        return JSONResponse({"ok": False, "error": "no_such_race"}, status_code=404)
+    token = await ensure_race_qr_token(db, tid)
+    base = _public_base(request)
+    return JSONResponse({
+        "ok": True,
+        "url": f"{base}/api/race-qr/{token}",
+        "name": t["name"] or "",
+        "date": t["date"] or "",
+        "phase": _race_phase(t["date"]),
+    }, headers={"Cache-Control": "no-store"})
