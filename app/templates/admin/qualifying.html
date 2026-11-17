@@ -2065,7 +2065,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {% endif %}
     </div>{# /qp-sched-left #}
     {# ★予選順位表（右サイド・項目のみ）。ポイント制のみ。幅は内容ぶんの可変で狭め。サイズ等は後で調整 #}
-    <aside class="qp-sched-rank" style="flex:0 0 auto;width:max-content;border-left:1px solid #eef1f4;padding-left:10px;box-sizing:border-box">
+    <aside class="qp-sched-rank" style="flex:0 0 auto;width:max-content;border-left:1px solid #eef1f4;padding-left:6px;box-sizing:border-box">
       <div style="font-weight:bold;font-size:13px;padding:6px 2px">予選順位表</div>
       {% if standings and (is_none_roundrobin or is_roundrobin) %}
       {# ★総当たり（即決勝=none_roundrobin／予選=roundrobin）：勝・負・出走。TIMEは出さない。リアルタイム更新対応（tbody id） #}
@@ -2108,7 +2108,8 @@ document.addEventListener('DOMContentLoaded', function(){
       <table style="border-collapse:collapse;font-size:12px;white-space:nowrap">
         <thead>
           <tr style="border-bottom:2px solid #dee2e6">
-            {% if _pt_grouping %}<th style="padding:3px 4px">グループ</th>{% endif %}
+            {# ★20261117 右サイドはグループ見出し不要（チップのみ）。列を詰めてスケジュール枠を広げる #}
+            {% if _pt_grouping %}<th style="padding:3px 1px"></th>{% endif %}
             <th style="padding:3px 4px;text-align:right;color:#aaa">#</th>
             <th style="padding:3px 4px">順位</th>
             <th style="padding:3px 6px;text-align:left">レーサー</th>
@@ -2121,7 +2122,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <tbody id="qp-rank-tbody">
           {% for s in standings %}
           <tr style="border-bottom:1px solid #f0f0f0;{% if s.rank==1 %}background:#fffde7{% endif %}">
-            {% if _pt_grouping %}<td style="padding:3px 4px;text-align:center">{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(s.pt_group, 210) %}<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ s.pt_group if s.pt_group else '—' }}</span></td>{% endif %}
+            {% if _pt_grouping %}<td style="padding:3px 1px;text-align:center">{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(s.pt_group, 210) %}<span style="display:inline-block;min-width:14px;padding:1px 4px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ s.pt_group if s.pt_group else '—' }}</span></td>{% endif %}
             <td style="padding:3px 4px;text-align:right;color:#aaa">{{ loop.index }}</td>
             <td style="padding:3px 4px;text-align:center;font-weight:bold;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
             <td style="padding:3px 6px"><strong>{{ s.name }}</strong></td>
@@ -2478,9 +2479,10 @@ const IS_HEAT_RR_TYPE    = {{ 'true' if is_heat_roundrobin else 'false' }};
 // ★20261115 ポイント予選のグループ分け(2以上)。順位表のライブ更新でグループ列を描くのに使う。
 const PT_GROUPING = {{ 'true' if _pt_grouping else 'false' }};
 const GRP_HUE = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252};
-function grpChip(letter){
+function grpChip(letter, compact){
   const h = (letter in GRP_HUE) ? GRP_HUE[letter] : 210;
-  return `<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl(${h},60%,26%);background:hsl(${h},65%,88%)">${letter || '—'}</span>`;
+  // compact=true：右サイド順位表用（列幅を詰める）
+  return `<span style="display:inline-block;min-width:${compact ? 14 : 18}px;padding:${compact ? '1px 4px' : '1px 6px'};border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl(${h},60%,26%);background:hsl(${h},65%,88%)">${letter || '—'}</span>`;
 }
 const IS_POINT_TYPE      = {{ 'true' if (not is_roundrobin and not is_none_roundrobin and not is_heat_roundrobin) else 'false' }};
 
@@ -2569,7 +2571,7 @@ async function updateStandings() {
       const rrows = data.standings.map((s, i) => {
         const rankColor = s.rank===1 ? '#d4a017' : s.rank===2 ? '#aaa' : s.rank===3 ? '#cd7f32' : '#636e72';
         const rowBg = s.rank===1 ? 'background:#fffde7' : '';
-        let rc = `${PT_GROUPING ? `<td style="padding:3px 4px;text-align:center">${grpChip(s.pt_group||'')}</td>` : ''}<td style="padding:3px 4px;text-align:right;color:#aaa">${i+1}</td>
+        let rc = `${PT_GROUPING ? `<td style="padding:3px 1px;text-align:center">${grpChip(s.pt_group||'', true)}</td>` : ''}<td style="padding:3px 4px;text-align:right;color:#aaa">${i+1}</td>
           <td style="padding:3px 4px;text-align:center;font-weight:bold;color:${rankColor}">${s.rank}</td>
           <td style="padding:3px 6px"><strong>${s.name}</strong></td>`;
         if (IS_NONE_RR_TYPE || IS_ROUNDROBIN_TYPE) {
