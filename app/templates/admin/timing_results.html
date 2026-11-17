@@ -411,6 +411,8 @@
                 <span class="linked-badge">ヒート{{ row.heat_id }}</span>
                 {% endif %}
               </div>
+              {# ★20261118 レース時点の周回数・コース合計距離 #}
+              {% if row.target_laps %}<div class="ts-len" style="font-size:11px;color:#7f8c8d;margin-top:2px">{{ row.target_laps }}周{% if row.course_len_m %}・{{ '%g'|format(row.course_len_m|round(1)) }}m{% endif %}</div>{% endif %}
               {% if row.sample_note %}
               <div class="smp-note-tag" title="サンプル送信で生成したイレギュラーパターン">
                 {% if row.sample_note_lines %}

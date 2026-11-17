@@ -179,10 +179,22 @@ class TimingRaceRepository:
                 row = await cur.fetchone()
             if row:
                 return row["id"] if hasattr(row, "keys") else row[0]
+        # ★20261118 その時点のコース合計距離(m)を記録（後でレイアウトを変えても変わらない）
+        course_len_m = None
+        if layout_id is not None:
+            try:
+                async with self.db.execute(
+                    "SELECT lap_length_m FROM timing_layouts WHERE id = ?", (layout_id,)
+                ) as cur:
+                    _lr = await cur.fetchone()
+                if _lr is not None:
+                    course_len_m = _lr[0]
+            except Exception:
+                course_len_m = None
         cur = await self.db.execute(
-            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note),
+            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m),
         )
         await self.db.commit()
         return cur.lastrowid
@@ -255,6 +267,15 @@ class TimingRaceRepository:
         # レース取得自体は失敗させない（列なしSELECTへフォールバック）。
         _base = ("id, heat_tag, layout_id, target_laps, green_t_us, heat_id, "
                  "applied_group_id, created_at, status")
+        # ★20261118 course_len_m（レース時点のコース合計距離）も取る。列が無い旧DBは下へフォールバック。
+        try:
+            async with self.db.execute(
+                f"SELECT {_base}, applied_ht_group_id, course_len_m FROM timing_races WHERE id = ?",
+                (race_id,),
+            ) as cur:
+                return await cur.fetchone()
+        except Exception:
+            pass
         try:
             async with self.db.execute(
                 f"SELECT {_base}, applied_ht_group_id FROM timing_races WHERE id = ?",

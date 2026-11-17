@@ -6,7 +6,7 @@
 
 <div class="ta-head">
   <span class="rid">#{{ race_id }}</span>
-  <span class="meta">{% if mode == 'f1' %}レース（反応込み）{% else %}フリー{% endif %}　/　{{ target_laps }}周{% if heat_tag is not none %}　/　ヒート{{ heat_tag }}{% endif %}{% if created_at %}　/　{{ created_at[5:16].replace('-','/') }}{% endif %}</span>
+  <span class="meta">{% if mode == 'f1' %}レース（反応込み）{% else %}フリー{% endif %}　/　{{ target_laps }}周{% if course_len_m %}・{{ '%g'|format(course_len_m|round(1)) }}m{% endif %}{% if heat_tag is not none %}　/　ヒート{{ heat_tag }}{% endif %}{% if created_at %}　/　{{ created_at[5:16].replace('-','/') }}{% endif %}</span>
 </div>
 
 {% if not has_result or not rows %}

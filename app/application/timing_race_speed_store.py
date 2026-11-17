@@ -73,6 +73,16 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
 
     cfg = await spd.load_speed_config(db, layout_id)
     total_len_m = cfg.get("lap_length_m")     # ← 意味は「合計距離(m)」
+    # ★20261118 レース生成時に記録した距離があればそれを優先（レイアウト変更後の再計算でも当時の距離）
+    try:
+        async with db.execute(
+            "SELECT course_len_m FROM timing_races WHERE id=?", (race_id,)
+        ) as _c:
+            _rr = await _c.fetchone()
+        if _rr is not None and _rr[0]:
+            total_len_m = _rr[0]
+    except Exception:
+        pass
     gap_by_node = cfg.get("beam_gap_by_node") or {}
     max_speed_ms = cfg.get("max_speed_ms")    # コース別の実用上限（None→既定 40km/h）
 

@@ -264,7 +264,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               <div style="font-size:11px;color:#888888;font-weight:bold;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #1e3a5f">グループ{{ gno }}</div>
               {% endif %}
               {% for slot in group_slots %}
-              <div style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:#0f2a1e;border:1px solid #27ae60;border-radius:5px;margin-bottom:3px">
+              <div data-m4hl-box="1" style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:#0f2a1e;border:1px solid #27ae60;border-radius:5px;margin-bottom:3px">
                 <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#888888{% endif %};min-width:28px">{{ slot.rank }}位</span>
                 <span style="font-size:13px;font-weight:bold;color:#ecf0f1" data-m4hl="1" data-racer-name="{{ slot.name }}">{% set _bn = (((slot.name or '')|string).split('（')[0].split('(')[0])|trim %}{{ slot.name if (not _bn or _fbh.count(_bn) > 1) else _bn }}</span>{% if (jr_eids and slot.entry_id in jr_eids) or (jr_names and slot.name in jr_names) %}<span class="jr-tag">Jr.</span>{% endif %}
               </div>
@@ -295,7 +295,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             ヒート {{ heat.heat_no }}
           </div>
           {% for a in heat.advanced %}
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+          <div data-m4hl-box="1" style="display:flex;align-items:center;gap:8px;padding:6px 10px;
                       background:#0f2a1e;border:1px solid #27ae60;border-radius:6px;margin-bottom:4px">
             <span style="font-weight:bold;font-size:{% if is_public_html %}13px{% else %}18px{% endif %};min-width:{% if is_public_html %}28px{% else %}2.6em{% endif %};color:{{ rank_c.get(a.overall_rank,'#888888') }}">{{ a.overall_rank }}位</span>
             <div style="display:flex;flex-direction:column;flex:1;line-height:1.15">
@@ -311,7 +311,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
       {# その他の予選形式：「順位 レーサー名」を折り返しで羅列（順位順）。view・HTML共通。 #}
       <div style="display:flex;flex-wrap:wrap;gap:6px 12px">
         {% for f in finalists_list|sort(attribute='qual_rank') %}
-        <span class="{% if m4laps_active and f.entry_id %}rs-clickable{% endif %}" style="display:inline-flex;align-items:baseline;gap:6px;padding:4px 9px;background:#0d1e12;border:1px solid #1e3a5f;border-radius:6px"{% if m4laps_active and f.entry_id %} onclick="openRacerStats({{ t.id }},{{ f.entry_id }})" title="タップで予選・決勝のタイム詳細"{% endif %}>
+        <span data-m4hl-box="1" class="{% if m4laps_active and f.entry_id %}rs-clickable{% endif %}" style="display:inline-flex;align-items:baseline;gap:6px;padding:4px 9px;background:#0d1e12;border:1px solid #1e3a5f;border-radius:6px"{% if m4laps_active and f.entry_id %} onclick="openRacerStats({{ t.id }},{{ f.entry_id }})" title="タップで予選・決勝のタイム詳細"{% endif %}>
           <span style="color:#27ae60;font-weight:bold;font-size:13px;white-space:nowrap">{{ f.qual_rank }}位</span>
           <span style="font-weight:bold;font-size:15px;color:#ecf0f1;white-space:nowrap" data-m4hl="1" data-racer-name="{{ f.name }}">{% set _bn = (((f.name or '')|string).split('（')[0].split('(')[0])|trim %}{{ f.name if (not _bn or _fbf.count(_bn) > 1) else _bn }}</span>{% if (jr_eids and f.entry_id in jr_eids) or (jr_names and f.name in jr_names) %}<span class="jr-tag">Jr.</span>{% endif %}
           {% if f.seeded %}<span style="color:#d4a017;font-size:12px">★</span>{% endif %}

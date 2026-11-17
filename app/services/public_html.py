@@ -1198,22 +1198,46 @@ window.m4nm = m4nm;
     document.body.style.paddingTop = (headerH + ownH) + 'px';
   }
 
-  /* ---------- ★20261117 名前の強調（決勝進出レーサー・予選順位表・エントリー一覧） ----------
-     data-m4hl を付けた名前要素を、選択中レーサーならスケジュールと同じ橙で強調する（正式名 data-racer-name で照合）。 */
+  /* ---------- ★20261117 選択レーサーの強調（決勝進出レーサー・予選順位表・エントリー一覧） ----------
+     data-m4hl を付けた名前要素を正式名（data-racer-name）で照合し、名前ではなく「行」ごと強調する。
+       予選順位表 … その行（tr）の全セル ／ 決勝進出レーサー・エントリー一覧 … 名前を囲む枠（親要素）。
+     色はスケジュールの強調と同じ橙＋白文字。 */
+  var _HL_PROPS = ['background','color','box-shadow'];
+  function _hlTargets(el){
+    var tr = el.closest('tr');
+    if(tr) return Array.prototype.slice.call(tr.children);   /* 行の全セル */
+    var box = el.closest('[data-m4hl-box]');
+    if(box) return [box];                                     /* 決勝進出レーサーのカード（ヒート制など） */
+    return el.parentElement ? [el.parentElement] : [el];    /* チップ／カード */
+  }
   function applyNameHighlight(names){
+    var on = [], off = [];
     document.querySelectorAll('[data-m4hl]').forEach(function(el){
-      var on = names.indexOf(m4nm(el).trim()) >= 0;
-      if(on){
-        el.style.setProperty('background', 'rgb(230,126,34)', 'important');
-        el.style.setProperty('color', '#ffffff', 'important');
-        el.style.setProperty('border-radius', '4px', 'important');
-        el.style.setProperty('padding', '1px 6px', 'important');
-        el.style.setProperty('box-shadow', '0 0 0 2px #ffffff', 'important');
-        el.style.fontWeight = 'bold';
-      } else {
-        ['background','color','border-radius','padding','box-shadow'].forEach(function(k){ el.style.removeProperty(k); });
-        el.style.fontWeight = '';
-      }
+      (names.indexOf(m4nm(el).trim()) >= 0 ? on : off).push(el);
+    });
+    off.forEach(function(el){
+      _hlTargets(el).forEach(function(t){
+        if(t.getAttribute('data-m4hl-on') !== '1') return;
+        _HL_PROPS.forEach(function(k){ t.style.removeProperty(k); });
+        t.removeAttribute('data-m4hl-on');
+      });
+    });
+    on.forEach(function(el){
+      var ts = _hlTargets(el), isRow = !!el.closest('tr');
+      ts.forEach(function(t, i){
+        t.setAttribute('data-m4hl-on', '1');
+        t.style.setProperty('background', 'rgb(230,126,34)', 'important');
+        t.style.setProperty('color', '#ffffff', 'important');
+        if(isRow){
+          /* 行全体を白線で囲む：上下は全セル、左右は両端セルだけ */
+          var sh = 'inset 0 2px 0 #ffffff, inset 0 -2px 0 #ffffff'
+                 + (i === 0 ? ', inset 2px 0 0 #ffffff' : '')
+                 + (i === ts.length - 1 ? ', inset -2px 0 0 #ffffff' : '');
+          t.style.setProperty('box-shadow', sh, 'important');
+        } else {
+          t.style.setProperty('box-shadow', '0 0 0 2px #ffffff', 'important');
+        }
+      });
     });
   }
 

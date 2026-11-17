@@ -1902,6 +1902,10 @@ def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> li
     created_at = race["created_at"] if "created_at" in _rkeys else None
     heat_id = race["heat_id"] if "heat_id" in _rkeys else None
     rid = race["id"] if "id" in _rkeys else None
+    # ★20261118 レース時点のコース合計距離(m)（記録が無い旧データは None → 表示しない）
+    course_len_m = (race["course_len_m"] if "course_len_m" in _rkeys
+                    else (src["course_len_m"] if "course_len_m" in _keys else None))
+    target_laps = race["target_laps"] if "target_laps" in _rkeys else None
 
     def _pass_speed(lane, lap_no, sector_idx):
         # sector_idx は 0=S/G通過, 1..7=各区間（保存キーと同じ）
@@ -1961,6 +1965,8 @@ def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> li
                 "date_part": _split_ts(created_at)[0],
                 "time_part": _split_ts(created_at)[1],
                 "heat_id": heat_id,
+                "course_len_m": course_len_m,
+                "target_laps": target_laps,
                 "mode": result.mode,               # 'f1'=レース / 'run'=フリー
                 "sample_note": sample_note,
                 "sample_note_lines": _format_sample_note_lines(sample_note),

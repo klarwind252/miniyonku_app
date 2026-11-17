@@ -8,6 +8,10 @@
 /* インライン入力 */
 .round-tab-btn { padding:8px 18px;border:2px solid #dee2e6;border-radius:20px;cursor:pointer;font-size:18px;font-weight:bold;background:#fff;font-family:inherit;transition:all .15s; }
 .round-tab-btn.active { background:#2980b9;color:#fff;border-color:#2980b9; }
+/* ★20261117 グループ分けありの「予選N回目：○グループ」タブはグループの色（帯と同じ色相 --gh）。
+   通常は薄い色、選択中は濃い色＋白文字。 */
+.round-tab-btn.grp-tab { background:hsl(var(--gh),65%,93%);border-color:hsl(var(--gh),55%,72%);color:hsl(var(--gh),60%,26%); }
+.round-tab-btn.grp-tab.active { background:hsl(var(--gh),55%,45%);border-color:hsl(var(--gh),55%,45%);color:#fff; }
 .win-btn {
   width:36px; height:36px; border:2px solid #dee2e6; border-radius:6px;
   cursor:pointer; font-size:18px; font-weight:bold; background:#fff;
@@ -1651,7 +1655,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {% set _glabel = grp_label(group_no) | trim %}
     {% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(_glabel, 210) %}
     <tr class="sched-grp-sep"><td colspan="{{ course_cols|length + 3 }}" style="padding:0;border:none">
-      <div style="margin:12px 0 4px;padding:9px 14px;border-radius:8px;font-weight:bold;font-size:18px;line-height:1.3;
+      <div style="margin:12px 0 4px;padding:9px 14px;border-radius:0 8px 8px 0;font-weight:bold;font-size:18px;line-height:1.3;
                   color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,90%);
                   border-left:5px solid hsl({{ _gh }},60%,55%)">{{ _glabel }}グループ</div>
     </td></tr>
@@ -2031,7 +2035,8 @@ document.addEventListener('DOMContentLoaded', function(){
             {% set g_heats = rno_heats | selectattr('group_no','equalto',gno) | list %}
             {% set g_done = g_heats | selectattr('id','in',done_heat_ids) | list %}
             {% set g_is_done = (g_heats and g_done | length == g_heats | length) %}
-            <button type="button" class="round-tab-btn{% if rno == ns_active.r and gno == ns_active_g.g %} active{% endif %}"
+            {% set _tgh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(grp_label(gno) | trim, 210) %}
+            <button type="button" class="round-tab-btn grp-tab{% if rno == ns_active.r and gno == ns_active_g.g %} active{% endif %}" style="--gh:{{ _tgh }}"
                     data-sched-round-tab="{{ rno }}" data-sched-grp-tab="{{ gno }}" onclick="showSchedRound({{ rno }}, {{ gno }})">
               予選{{ rno }}回目：{{ grp_label(gno) | trim }}グループ{% if g_is_done %} ✓{% endif %}
             </button>
@@ -3312,12 +3317,26 @@ async function resetDecideRank() {
     <div class="qp-sub">{{ t.regulation }}　/　{{ t.date }}　/　{{ course_cols|length }}レーン</div>
     {% endif %}
     <div class="qp-round">予選 {{ rno }} 回目</div>
+    {% set _pgx = namespace(on=False) %}{% for h in heats if h.round_no == rno and h.group_no %}{% set _pgx.on = True %}{% endfor %}
     <table class="qp-table">
-      <thead><tr><th class="qp-no">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}</tr></thead>
+      <thead{% if _pgx.on %} style="display:none"{% endif %}><tr><th class="qp-no">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}</tr></thead>
       <tbody>
+        {# ★20261118 グループ分けあり：グループ帯＋見出し行を挿入し、レース番号はグループごとに1始まり（admin画面と同じ）。
+           グループ分けなし：回ごとに1始まり（admin画面と同じ）。 #}
+        {% set _pg = namespace(last=None, idx=0) %}
         {% for heat in heats if heat.round_no == rno %}
+        {% if heat.group_no and heat.group_no != _pg.last %}
+        {% set _pgl = 'Jr' if (t.qual_pt_jr_group and heat.group_no == 1) else ('ABCDEFGHI'[heat.group_no-2] if t.qual_pt_jr_group else 'ABCDEFGHI'[heat.group_no-1]) %}
+        {% set _pgh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(_pgl, 210) %}
+        <tr class="qp-grp-row"><td colspan="{{ course_cols|length + 1 }}" class="qp-grp-cell">
+          <div class="qp-grp" style="color:hsl({{ _pgh }},60%,26%);background:hsl({{ _pgh }},65%,90%);border-left:5px solid hsl({{ _pgh }},60%,55%)">{{ _pgl }}グループ</div>
+        </td></tr>
+        <tr class="qp-colhead"><th class="qp-no">#</th>{% for c in course_cols %}<th>{{ c }}コース</th>{% endfor %}</tr>
+        {% set _pg.last = heat.group_no %}{% set _pg.idx = 0 %}
+        {% endif %}
+        {% set _pg.idx = _pg.idx + 1 %}
         <tr>
-          <td class="qp-no">{{ heat.heat_no }}</td>
+          <td class="qp-no">{{ _pg.idx }}</td>
           {% set planes = heat_lanes_map.get(heat.id, []) %}
           {% for col in course_cols %}
             {% set pld = planes | selectattr("lane_no","equalto",col) | list %}
@@ -3341,7 +3360,7 @@ async function resetDecideRank() {
       <tbody>
         {% for heat in heats %}
         <tr>
-          <td class="qp-no">{{ heat.heat_no }}</td>
+          <td class="qp-no">{{ loop.index }}</td>
           {% set planes = heat_lanes_map.get(heat.id, []) %}
           {% for col in course_cols %}
             {% set pld = planes | selectattr("lane_no","equalto",col) | list %}
@@ -3377,7 +3396,11 @@ function printQualSchedule() {
     '.qp-table tr{page-break-inside:avoid}' +
     '.qp-no{width:36px;text-align:center;color:#555}' +
     '.qp-empty{text-align:center;color:#aaa}' +
-    '.qp-yomi{font-size:10px;color:#888;margin-left:4px}';
+    '.qp-yomi{font-size:10px;color:#888;margin-left:4px}' +
+    '.qp-table td.qp-grp-cell{border:none;padding:0}' +
+    '.qp-grp{margin:10px 0 4px;padding:6px 12px;border-radius:0 6px 6px 0;font-weight:bold;font-size:15px;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '.qp-grp-row,.qp-colhead{page-break-after:avoid;break-after:avoid}' +
+    '.qp-round,.qp-table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}';
   win.document.write(
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>予選組み合わせ表</title>' +
     '<style>' + css + '</style></head><body>' + src.innerHTML + '</body></html>'

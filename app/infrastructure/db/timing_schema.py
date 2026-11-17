@@ -282,4 +282,19 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         pass
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_timing_races_status ON timing_races(status)")
+
+    # ★20261118 既存DBへの追加列（course_len_m）: レース生成時点のコース合計距離(m)。
+    #   timing_layouts.lap_length_m（合計距離）は後から書き換えられるため、レースごとに
+    #   その時の値を記録しておく（表示「3周・180m」と速度の再計算に使う）。
+    #   列を足したときだけ、既存レースを「現在のレイアウトの距離」で一度だけ埋める。
+    try:
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
+        if "course_len_m" not in cols:
+            await db.execute("ALTER TABLE timing_races ADD COLUMN course_len_m REAL")
+            await db.execute(
+                "UPDATE timing_races SET course_len_m = ("
+                " SELECT l.lap_length_m FROM timing_layouts l WHERE l.id = timing_races.layout_id)"
+                " WHERE course_len_m IS NULL")
+    except Exception:
+        pass
     await db.commit()

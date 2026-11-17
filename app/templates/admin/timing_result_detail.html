@@ -23,7 +23,7 @@
   <h1>計測結果 #{{ race.id }}</h1>
   <p>
     {% if mode == 'f1' %}レース（スタート反応を含む）{% elif mode == 'run' %}フリー{% endif %}
-    ／ {{ race.target_laps }}周
+    ／ {{ race.target_laps }}周{% if race.course_len_m %}・{{ '%g'|format(race.course_len_m|round(1)) }}m{% endif %}
     {% if race.heat_tag is not none %}／ ヒート {{ race.heat_tag }}{% endif %}
   </p>
 </div>
