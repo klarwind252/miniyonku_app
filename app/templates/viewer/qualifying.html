@@ -968,9 +968,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% set _sc_lc = {1:'#15356d', 2:'#175124', 3:'#6f5a00', 4:'#e24b4a', 5:'#8a8f98'} %}
           <thead><tr><th>#</th>{% for c in [1,2,3] %}<th style="background:{{ _sc_lc[c] }};color:#fff;font-weight:bold">{{ c }}コース</th>{% endfor %}</tr></thead>
           <tbody>
-          {% set _vg = namespace(last=None) %}
+          {% set _vg = namespace(last=None, idx=0) %}
           {% for heat in heats if heat.round_no == rno %}
-          {% if _vgrp.any and heat.group_no and heat.group_no != _vg.last %}{% set _vg.last = heat.group_no %}
+          {% if _vgrp.any and heat.group_no and heat.group_no != _vg.last %}{% set _vg.last = heat.group_no %}{% set _vg.idx = 0 %}
           {% set _gl2 = v_grp_label(heat.group_no) | trim %}
           {% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(_gl2, 210) %}
           <tr class="v-grp-sep"><td colspan="4" style="padding:0;border:none;background:transparent">
@@ -982,8 +982,9 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <tr id="heat-{{ heat.heat_no }}" data-heat-id="{{ heat.id }}" class="race-row {% if heat.status=='done' %}done{% endif %}{% if active_heat_id and heat.id == active_heat_id %} gw-active-live{% endif %}">
             {# 「#」は各予選回（round_no）内での連番（123 / 123 / 123）。
                行の id は全体通し番号 heat_no のまま（スクロール・追従用）。 #}
+            {% set _vg.idx = _vg.idx + 1 %}{# ★20261117 #はグループごとに1始まり（グループ分けなしは回内の通し番号） #}
             {% if _vgrp_color and heat.group_no %}{% set _nh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(v_grp_label(heat.group_no) | trim, 210) %}{% endif %}
-            <td class="heat-no{% if m4laps_active and heat.status=='done' %} tap-laps{% endif %}"{% if _vgrp_color and heat.group_no %} style="background:hsl({{ _nh }},45%,22%);color:hsl({{ _nh }},70%,88%)"{% endif %}{% if m4laps_active and heat.status=='done' %} onclick="if(window.openRaceLaptimes)openRaceLaptimes({{ t.id }},{{ heat.id }})" title="このレースのM4LAPS明細を表示"{% endif %}>{{ loop.index }}</td>
+            <td class="heat-no{% if m4laps_active and heat.status=='done' %} tap-laps{% endif %}"{% if _vgrp_color and heat.group_no %} style="background:hsl({{ _nh }},45%,22%);color:hsl({{ _nh }},70%,88%)"{% endif %}{% if m4laps_active and heat.status=='done' %} onclick="if(window.openRaceLaptimes)openRaceLaptimes({{ t.id }},{{ heat.id }})" title="このレースのM4LAPS明細を表示"{% endif %}>{{ _vg.idx }}</td>
             {% for col in [1,2,3] %}
             {% set ld = lanes | selectattr("lane_no","equalto",col) | list %}
             {% if ld %}{% set lane = ld[0] %}

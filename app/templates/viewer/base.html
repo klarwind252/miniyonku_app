@@ -179,29 +179,27 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#1919
 button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-sizing:border-box}
 {% block extra_style %}{% endblock %}
 </style>
-{% if slideshow_urls %}
+{% if slideshow_urls or bg_url %}
 <style>
-  /* 待機画面：画面下に固定・横幅100%で静止画表示（アニメなし）。
-     URLは ?v=バージョン固定でブラウザキャッシュが効くため、リロード時に再取得されにくい */
+  /* 待機画面の画像（スライドショー／背景とも）。
+     ★20261117 上限サイズ指定：幅 最大800px・縦横比維持・縮小のみ（元画像より大きくは引き伸ばさない）、
+     画面の下寄せ・左右中央寄せ。URLは ?v=バージョン固定でブラウザキャッシュが効く。 */
   .v-standby-images{
     position:fixed;left:0;bottom:0;
     width:100vw;max-width:100vw;
-    display:flex;flex-direction:column;align-items:stretch;gap:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:0;
     margin:0;padding:0;z-index:1;pointer-events:none;
   }
   .v-standby-images img{
-    width:100vw;max-width:100vw;height:auto;
-    display:block;margin:0;object-fit:cover;
+    width:auto;max-width:min(800px,100vw);height:auto;
+    display:block;margin:0 auto;
   }
 </style>
-{% elif bg_url %}
+{% endif %}
+{% if not slideshow_urls and bg_url %}
 <style>
-  /* 待機画面の背景（設定ON時のみ）。view / html 双方の「お待ちください」で表示 */
-  body{
-    background-image:url('{{ bg_url }}');
-    background-size:cover;background-position:center;background-repeat:no-repeat;
-    background-attachment:fixed;
-  }
+  /* 待機画面の背景（設定ON時のみ）。view / html 双方の「お待ちください」で表示。
+     ★20261117 全面cover表示をやめ、スライドショーと同じ「下寄せ・中央・幅最大800px・縮小のみ」の画像表示に */
   .v-waiting{
     background:rgba(15,25,35,.55);
     border-radius:18px;padding:36px 28px;
@@ -300,12 +298,47 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
     <div class="v-clock-date" id="v-clock-date">----年--月--日</div>
     <div class="v-clock-time" id="v-clock-time">--：--</div>
   </div>
+  {% if IS_CLOUD and not is_public_html %}
+  {# ★20261117 時刻の下に当日の参加者QR（日替わり2語URL・会場モニター用）。参加者向けHTMLには出さない。 #}
+  <div id="v-entry-qr" style="display:none;margin:4px auto 14px;text-align:center">
+    <div id="v-entry-qr-box" style="display:inline-block;background:#fff;padding:10px;border-radius:10px;line-height:0"></div>
+    <div style="margin-top:6px;font-size:14px;color:#eaf2fb;text-shadow:0 1px 4px rgba(0,0,0,.75)">参加者用QR（本日）</div>
+  </div>
+  {% endif %}
   <p class="dot-anim">レース開始までしばらくお待ちください</p>
 </div>
 {% if slideshow_urls %}
 <div class="v-standby-images">
   {% for u in slideshow_urls %}<img src="{{ u }}" alt="" loading="eager" decoding="async">{% endfor %}
 </div>
+{% elif bg_url %}
+<div class="v-standby-images">
+  <img src="{{ bg_url }}" alt="" loading="eager" decoding="async">
+</div>
+{% endif %}
+{% if IS_CLOUD and not is_public_html %}
+<script src="/static/js/qrcode.min.js"></script>
+<script>
+/* ★20261117 当日の参加者QR。60秒ごとに取得し、09:00の切替でURLが変われば描き直す。 */
+(function(){
+  var wrap=document.getElementById('v-entry-qr'), box=document.getElementById('v-entry-qr-box');
+  if(!wrap||!box||typeof QRCode==='undefined') return;
+  var pfx=location.pathname.split('/view')[0], last='';
+  function draw(url){
+    if(!url||url===last) return; last=url;
+    box.innerHTML='';
+    try{ new QRCode(box,{text:url,width:180,height:180,colorDark:'#000',colorLight:'#fff',
+                         correctLevel:QRCode.CorrectLevel.M}); wrap.style.display=''; }
+    catch(e){ wrap.style.display='none'; }
+  }
+  function tick(){
+    fetch(pfx+'/view/entry-qr',{cache:'no-store'})
+      .then(function(r){return r.json();}).then(function(j){ if(j&&j.url) draw(j.url); })
+      .catch(function(){});
+  }
+  tick(); setInterval(tick,60000);
+})();
+</script>
 {% endif %}
 {% endblock %}
 </div>

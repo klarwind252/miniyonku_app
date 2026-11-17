@@ -36,13 +36,18 @@ def kana_row_of(s: str | None):
 #   ・ひらがな → カタカナ
 #   ・カタカナ(長音ー・中黒・含む)と半角ASCIIのみ残し、漢字等の未収録文字は破棄
 #   例： "ああ11AAaa" → "アア11AAaa" ／ "グレ太郎" → "グレ" + (太郎は漢字なので破棄)
+#   ・括弧とその中身は丸ごと破棄（★20261117）："RS（宮崎）" → "RS"
 #  ※名前はGW側 char[24]（UTF-8・カタカナ3バイト/字）に収めるため、UTF-8で23バイトに切る。
 #   画面側は右はみ出しをクリップするので、長い名前はこの範囲で十分。
 def to_gw_name(s: str | None, max_bytes: int = 23) -> str:
     import unicodedata
     if not s:
         return ""
-    s = unicodedata.normalize("NFKC", str(s))
+    s = unicodedata.normalize("NFKC", str(s))   # 全角（）もここで半角()になる
+    # ★20261117 括弧とその中身（地域名など。例「らっしー（鹿児島）」の（鹿児島））は GW に送らない。
+    #   閉じ括弧が無い（文字数で切れた）場合も末尾まで落とす。前後の空白も詰める。
+    import re as _re
+    s = _re.sub(r"\([^)]*\)?", "", s).strip()
     out = []
     for ch in s:
         o = ord(ch)
@@ -66,7 +71,12 @@ def gw_display_name(name: str | None, yomi: str | None) -> str:
       ・日本語名 → yomi(ひらがな読み)をカタカナ化して表示（読みが無ければ名前の正規化結果）
     どちらもカタカナ＋半角ASCIIに正規化済み（jpfontで出せる文字のみ）。"""
     nm = to_gw_name(name)
-    if nm and all(ord(c) < 0x80 for c in nm):   # 全部ASCII＝英数字ハンドル
+    # ★20261117 英数字ハンドル判定は「元の名前（括弧と中身を除く）が全部ASCII」で行う。
+    #   以前は漢字を捨てた後の結果で判定していたため「VZ太郎」→「VZ」になっていた。
+    import re as _re
+    import unicodedata as _ud
+    _raw = _re.sub(r"\([^)]*\)?", "", _ud.normalize("NFKC", str(name or ""))).strip()
+    if nm and _raw and all(ord(c) < 0x80 for c in _raw):   # 全部ASCII＝英数字ハンドル
         return nm
     y = to_gw_name(yomi)
     return y or nm

@@ -26,20 +26,30 @@
   #side .shd b{color:var(--fg)}
   #hist{flex:1;overflow-y:auto;overflow-x:hidden}
   #hist::-webkit-scrollbar{width:8px}#hist::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:4px}
-  .hi{padding:1.1vh 1vw;border-bottom:1px solid var(--line);cursor:pointer;display:flex;align-items:baseline;gap:.5vw;line-height:1.2}
+  /* ★20261117 日時（11/10 11:55）が「11/10 1…」と切れていたため、サイドバー幅は変えずに
+     行の左右余白・番号欄の最小幅・間隔を詰めて日時を全部出す。最速タイム(.bt)が付く行で
+     入りきらない時は .bt だけ次の行の右端へ折り返す（日時は省略しない）。 */
+  .hi{padding:1.1vh .6vw;border-bottom:1px solid var(--line);cursor:pointer;display:flex;flex-wrap:wrap;
+    align-items:baseline;column-gap:.35vw;row-gap:.2vh;line-height:1.2}
   .hi:hover{background:#141416}
-  .hi .no{font-size:2.0vh;font-weight:800;min-width:3.2em}
-  .hi .mt{font-size:1.4vh;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hi .no{font-size:2.0vh;font-weight:800;min-width:2.6em}
+  .hi .mt{font-size:1.4vh;color:var(--dim);flex:1 0 auto;white-space:nowrap}
   .hi .md{font-size:1.25vh;color:var(--dim);font-weight:700}
   /* 右端：その計測の最速トータルタイム */
   .hi .bt{font-size:1.6vh;font-weight:800;color:var(--fg);flex:0 0 auto;
-    font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:.4vw}
+    font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:auto}
   .hi.active{background:var(--fg);color:var(--bg)}              /* ハイライト=反転 */
   .hi.active .mt,.hi.active .md,.hi.active .bt{color:var(--bg)}
   #live{padding:.9vh 1vw;border-top:1px solid var(--line);font-size:1.4vh;font-weight:800;color:var(--dim);
     display:flex;align-items:center;gap:.5vw}
   #live .dot{width:1.1vh;height:1.1vh;border-radius:50%;background:#3a3a3e}
   #live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
+  /* ★20261117 左下：当日の参加者QR（会場モニター用・/view/ta のみ）。履歴(#hist)は flex:1 なので
+     このぶん上に縮む。QRは白地＋余白（読み取り用クワイエットゾーン）。 */
+  #entryqr{flex:0 0 auto;border-top:1px solid var(--line);padding:1vh .8vw .6vh;text-align:center}
+  #entryqr .qbox{display:inline-block;background:#fff;padding:.8vh;border-radius:6px;line-height:0}
+  #entryqr .qbox img,#entryqr .qbox canvas{width:min(calc(100% - 0px),19vh) !important;height:auto !important;display:block}
+  #entryqr .qcap{margin-top:.6vh;font-size:1.3vh;font-weight:700;color:var(--dim)}
 
   /* ===== 右：1集計を大きく（本物テーブルを注入）===== */
   /* 右側はウインドウ高さいっぱいに。ヘッダ固定・テーブルが残り高さを埋める */
@@ -133,6 +143,7 @@
     .hi .mt{display:inline;font-size:3.6vw}
     .hi .bt{font-size:4.4vw;margin-left:2vw}
     #live{display:none}
+    #entryqr{display:none}
     /* 戻るボタン＝最下部に常時固定（絶対に隠さない） */
     #ta-exit{order:3;flex:0 0 auto;display:block;text-align:center;padding:3.8vw;font-size:4.2vw;
       font-weight:800;color:var(--fg);text-decoration:none;
@@ -168,6 +179,9 @@
   <aside id="side">
     <div class="shd"><span>履歴</span><span><b id="hcount">0</b> 件</span></div>
     <div id="hist"></div>
+    {% if show_entry_qr %}
+    <div id="entryqr" style="display:none"><div class="qbox" id="entryqrbox"></div><div class="qcap">参加者用QR（本日）</div></div>
+    {% endif %}
     <div id="live"><span class="dot"></span><span id="livetxt">接続中…</span></div>
   </aside>
   <section id="main"><div class="ta-empty">読み込み中…</div></section>
@@ -220,7 +234,7 @@
 
   var live=document.getElementById("live"), liveTxt=document.getElementById("livetxt");
   var pollTimer=null;
-  function setLive(on){ live.classList.toggle("on",on); liveTxt.textContent=on?"自動更新 中":"ポーリング"; }
+  function setLive(on){ live.classList.toggle("on",on); liveTxt.textContent=on?"自動更新中":"ポーリング"; }
   function startPoll(){ if(pollTimer)return; pollTimer=setInterval(refreshToLatest,10000); }
   var sseReady=false;
   function startSSE(){
@@ -237,5 +251,29 @@
   refreshToLatest(); startSSE(); startPoll();
 })();
 </script>
+{% if show_entry_qr %}
+<script src="/static/js/qrcode.min.js"></script>
+<script>
+/* ★20261117 当日の参加者QR（日替わり2語URL）。60秒ごとに取得し、09:00の切替で変われば描き直す。 */
+(function(){
+  var box=document.getElementById("entryqrbox"), wrap=document.getElementById("entryqr");
+  if(!box||!wrap||typeof QRCode==="undefined") return;
+  var pfx=location.pathname.split("/view")[0], last="";
+  function draw(url){
+    if(!url||url===last) return; last=url;
+    box.innerHTML="";
+    try{ new QRCode(box,{text:url,width:256,height:256,colorDark:"#000",colorLight:"#fff",
+                         correctLevel:QRCode.CorrectLevel.M}); wrap.style.display=""; }
+    catch(e){ wrap.style.display="none"; }
+  }
+  function tick(){
+    fetch(pfx+"/view/entry-qr",{cache:"no-store"})
+      .then(function(r){return r.json();}).then(function(j){ if(j&&j.url) draw(j.url); })
+      .catch(function(){});
+  }
+  tick(); setInterval(tick,60000);
+})();
+</script>
+{% endif %}
 </body>
 </html>

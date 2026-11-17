@@ -2052,14 +2052,16 @@ document.addEventListener('DOMContentLoaded', function(){
             <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:58px"></th></tr></thead>
             <tbody data-sched-grp="0">
-            {% set _gns = namespace(last=None) %}
+            {% set _gns = namespace(last=None, idx=0) %}
             {% for heat in heats if heat.round_no == rno %}
             {% if heat.group_no and heat.group_no != _gns.last %}
             {# グループごとに tbody を分ける（グループタブで表示を切り替えるため） #}
             </tbody><tbody data-sched-grp="{{ heat.group_no }}"{% if not (rno == ns_active.r and heat.group_no == ns_active_g.g) %} style="display:none"{% endif %}>
-            {{ grp_header(heat.group_no) }}{% set _gns.last = heat.group_no %}
+            {{ grp_header(heat.group_no) }}{% set _gns.last = heat.group_no %}{% set _gns.idx = 0 %}
             {% endif %}
-            {{ race_row(heat, loop.index) }}
+            {# ★20261117 レース番号（#）はグループごとに1始まり（グループ分けなしは従来どおり回内の通し番号） #}
+            {% set _gns.idx = _gns.idx + 1 %}
+            {{ race_row(heat, _gns.idx) }}
             {% endfor %}
             </tbody>
           </table>
