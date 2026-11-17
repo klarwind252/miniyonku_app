@@ -140,6 +140,11 @@
 /* 総当たり（roundrobin / none_roundrobin）：「1巡」（エントリー数//2 レース＝全員が1回ずつ走る）
    ごとに太い区切り線＋余白を入れて、何巡目かを一目で分かるようにする。 */
 .rr-round-sep td{padding:0 !important;border:none !important;background:transparent !important}
+/* ★20261117 レーススケジュール右端「訂正」ボタンが列幅(44px)からはみ出して切れていた。
+   ボタンは共通部品（base.html .m4-correct-btn）なので触らず、この表の右端セル内だけ余白を詰める
+   （列幅は thead 側で 44→58px、狭い画面 32→46px）。 */
+.sched-tbl td.ed{padding-left:2px;padding-right:4px}
+.sched-tbl td.ed .m4-correct-btn{margin-right:0}
 .rr-round-sep .rr-bar{border-top:2px solid #aab4c0;margin:8px 0 0}
 .rr-round-sep .rr-lbl{display:inline-block;font-size:11px;font-weight:bold;color:#5f6b78;background:transparent;
   padding:1px 0 2px;line-height:1.4;margin-bottom:2px}
@@ -152,7 +157,7 @@
   .sched-tbl th,.sched-tbl td{padding:2px 3px !important}
   .sched-tbl th.st{width:62px !important;font-size:11px}
   .sched-tbl th.no{width:18px !important;font-size:11px}
-  .sched-tbl th.ed{width:32px !important}
+  .sched-tbl th.ed{width:46px !important}
   .sched-tbl th.crs{font-size:11px}
   /* セル内：順位枠は小さく、名前ブロックは縦積み */
   .sched-tbl .rc{gap:2px !important;align-items:flex-start !important}
@@ -1629,13 +1634,16 @@ document.addEventListener('DOMContentLoaded', function(){
 
     {# ★20261115 ポイント予選グループ見出し行（Jr→A→B…）。group_no>0 のときだけ使用。
        色は tournament_detail のグループ色（_grp_hue）と統一。 #}
+    {% macro grp_label(group_no) -%}
+    {{ 'Jr' if (t.qual_pt_jr_group and group_no == 1) else ('ABCDEFGHI'[group_no-2] if t.qual_pt_jr_group else 'ABCDEFGHI'[group_no-1]) }}
+    {%- endmacro %}
     {% macro grp_header(group_no) %}
-    {% set _glabel = 'Jr' if (t.qual_pt_jr_group and group_no == 1) else ('ABCDEFGHI'[group_no-2] if t.qual_pt_jr_group else 'ABCDEFGHI'[group_no-1]) %}
+    {% set _glabel = grp_label(group_no) | trim %}
     {% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(_glabel, 210) %}
     <tr class="sched-grp-sep"><td colspan="{{ course_cols|length + 3 }}" style="padding:0;border:none">
       <div style="margin:10px 0 2px;padding:5px 12px;border-radius:8px;font-weight:bold;font-size:14px;
                   color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,90%);
-                  border-left:5px solid hsl({{ _gh }},60%,55%)">グループ{{ _glabel }}</div>
+                  border-left:5px solid hsl({{ _gh }},60%,55%)">{{ _glabel }}グループ</div>
     </td></tr>
     {% endmacro %}
 
@@ -1711,7 +1719,7 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <table class="sched-tbl" style="width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:58px"></th></tr></thead>
       <tbody>
       {% for heat in heats | selectattr('round_no','equalto',rno) | selectattr('group_no','equalto',gno) | list %}
       {{ race_row(heat) }}
@@ -1991,16 +1999,41 @@ document.addEventListener('DOMContentLoaded', function(){
         {% endif %}
         {% if ns_active.r is none %}{% set ns_active.r = sorted_rounds | last %}{% endif %}
 
+        {# ★20261117 グループ分けあり（ポイント予選・heats.group_no>0）のときは「回×グループ」でタブを分ける。
+           例「予選１回目：Jrグループ」「予選１回目：Aグループ」…。選んだグループの行だけ表示する。
+           アクティブ＝現在の回で未完了レースが残る最初のグループ（全完了なら最初のグループ）。 #}
+        {% set ns_active_g = namespace(g=None) %}
+        {% for heat in heats if heat.round_no == ns_active.r and heat.group_no %}
+          {% if ns_active_g.g is none and heat.id not in done_heat_ids %}{% set ns_active_g.g = heat.group_no %}{% endif %}
+        {% endfor %}
+        {% if ns_active_g.g is none %}
+          {% for heat in heats if heat.round_no == ns_active.r and heat.group_no %}{% if loop.first %}{% set ns_active_g.g = heat.group_no %}{% endif %}{% endfor %}
+        {% endif %}
+
         {# ── ラウンド切替タブ ── #}
         <div class="sched-round-tabbar" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid #eee;background:#fafafa">
           {% for rno in sorted_rounds %}
           {% set rno_heats = heats | selectattr('round_no','equalto',rno) | list %}
+          {% set _rgs = namespace(list=[]) %}
+          {% for h in rno_heats if h.group_no and h.group_no not in _rgs.list %}{% set _rgs.list = _rgs.list + [h.group_no] %}{% endfor %}
+          {% if _rgs.list %}
+            {% for gno in _rgs.list %}
+            {% set g_heats = rno_heats | selectattr('group_no','equalto',gno) | list %}
+            {% set g_done = g_heats | selectattr('id','in',done_heat_ids) | list %}
+            {% set g_is_done = (g_heats and g_done | length == g_heats | length) %}
+            <button type="button" class="round-tab-btn{% if rno == ns_active.r and gno == ns_active_g.g %} active{% endif %}"
+                    data-sched-round-tab="{{ rno }}" data-sched-grp-tab="{{ gno }}" onclick="showSchedRound({{ rno }}, {{ gno }})">
+              予選{{ rno }}回目：{{ grp_label(gno) | trim }}グループ{% if g_is_done %} ✓{% endif %}
+            </button>
+            {% endfor %}
+          {% else %}
           {% set rno_done = rno_heats | selectattr('id','in',done_heat_ids) | list %}
           {% set is_done = (rno_heats and rno_done | length == rno_heats | length) %}
           <button type="button" class="round-tab-btn{% if rno == ns_active.r %} active{% endif %}"
                   data-sched-round-tab="{{ rno }}" onclick="showSchedRound({{ rno }})">
             {% if is_order %}ラウンド {{ rno }}{% else %}予選 {{ rno }} 回目{% endif %}{% if is_done %} ✓{% endif %}
           </button>
+          {% endif %}
           {% endfor %}
         </div>
 
@@ -2017,11 +2050,15 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
           <table class="sched-tbl" style="width:100%;table-layout:fixed">
             <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
-            <tbody>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:58px"></th></tr></thead>
+            <tbody data-sched-grp="0">
             {% set _gns = namespace(last=None) %}
             {% for heat in heats if heat.round_no == rno %}
-            {% if heat.group_no and heat.group_no != _gns.last %}{{ grp_header(heat.group_no) }}{% set _gns.last = heat.group_no %}{% endif %}
+            {% if heat.group_no and heat.group_no != _gns.last %}
+            {# グループごとに tbody を分ける（グループタブで表示を切り替えるため） #}
+            </tbody><tbody data-sched-grp="{{ heat.group_no }}"{% if not (rno == ns_active.r and heat.group_no == ns_active_g.g) %} style="display:none"{% endif %}>
+            {{ grp_header(heat.group_no) }}{% set _gns.last = heat.group_no %}
+            {% endif %}
             {{ race_row(heat, loop.index) }}
             {% endfor %}
             </tbody>
@@ -2031,7 +2068,7 @@ document.addEventListener('DOMContentLoaded', function(){
       {% else %}
         <table class="sched-tbl" style="width:100%;table-layout:fixed">
           <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:58px"></th></tr></thead>
           <tbody>
           {% set _gns1 = namespace(last=None) %}
           {% for heat in heats %}{% if heat.group_no and heat.group_no != _gns1.last %}{{ grp_header(heat.group_no) }}{% set _gns1.last = heat.group_no %}{% endif %}{{ race_row(heat, loop.index) }}{% endfor %}
@@ -2042,7 +2079,7 @@ document.addEventListener('DOMContentLoaded', function(){
     {# 通常ヒート・総当たり #}
     <table class="sched-tbl" style="width:100%;table-layout:fixed">
       <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
-                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:44px"></th></tr></thead>
+                    編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:58px"></th></tr></thead>
       <tbody>
       {# 総当たり：エントリー数//2 レースを「1巡」（全員が1回ずつ走る）として、巡の境目に太い区切り行を入れる。
          人数が奇数のときは1巡に1人休みが出るため目安の区切り。2〜3名（1巡=1レース）では区切らない。 #}
@@ -2739,13 +2776,27 @@ function showRound(round, btn) {
 }
 
 // レーススケジュール：ラウンドをタブ切替（現在ラウンド＝アクティブ）
-function showSchedRound(rno) {
+// ★20261117 grp を渡すと「回×グループ」タブ：その回の中で該当グループの行（tbody）だけ表示する。
+//   grp 省略時は従来どおり回の切替のみ（グループ分けありの回なら最初のグループを表示）。
+function showSchedRound(rno, grp) {
   const key = String(rno);
+  let pane = null;
   document.querySelectorAll('.sched-round-pane').forEach(p => {
-    p.style.display = (String(p.dataset.schedRoundPane) === key) ? '' : 'none';
+    const on = (String(p.dataset.schedRoundPane) === key);
+    p.style.display = on ? '' : 'none';
+    if (on) pane = p;
   });
+  let gkey = (grp === undefined || grp === null) ? null : String(grp);
+  if (pane) {
+    const bodies = pane.querySelectorAll('tbody[data-sched-grp]:not([data-sched-grp="0"])');
+    if (bodies.length) {
+      if (gkey === null) gkey = bodies[0].dataset.schedGrp;
+      bodies.forEach(tb => { tb.style.display = (tb.dataset.schedGrp === gkey) ? '' : 'none'; });
+    }
+  }
   document.querySelectorAll('.round-tab-btn[data-sched-round-tab]').forEach(b => {
-    b.classList.toggle('active', String(b.dataset.schedRoundTab) === key);
+    const g = b.dataset.schedGrpTab;
+    b.classList.toggle('active', String(b.dataset.schedRoundTab) === key && (g === undefined || g === gkey));
   });
 }
 
