@@ -250,6 +250,7 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "admin/_qual_best_cells.html" import best_cells %}
 {# 走行回数バッジ：残り回数で色分け（未走行=灰 / 残2以上=青 / 残1=橙 / 残0=赤） #}
 {% macro runs_badge(runs, max_runs) %}
 {% set r = runs or 0 %}{% set left = (max_runs or 0) - r %}
@@ -2167,7 +2168,7 @@ document.addEventListener('DOMContentLoaded', function(){
          計測ベストがあるときは、ポイント系の予選順位表に TOTAL/LAP/SECTOR BEST 列を出す
          （11/15 に一律非表示にしたものを M4LAPS ON 時のみ復活）。thead/tbody 共通の判定。 #}
       {% set show_best = m4_on and (not is_none_roundrobin) and (not is_roundrobin) and racer_bests and racer_bests|length > 0 %}
-      <table class="std-tbl">
+      <table class="std-tbl" id="std-tbl" data-best-sig="{{ max_sector_no if show_best else '' }}">
         <thead>
           {% if is_none_roundrobin %}
           <tr><th>#</th><th>順位</th><th>レーサー</th><th style="color:#27ae60">勝</th><th style="color:#e74c3c">負</th><th>出走</th><th>TIME</th></tr>
@@ -2234,23 +2235,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {# レーサー別ベスト（point型のみ・M4LAPS）。値=そのレーサーのベスト、
                色=予選全体での上位3人（紫1位・青2位・緑3位）。★20261117 M4LAPS ON 時のみ表示。 #}
             {% if show_best %}
-            {% set rb = racer_bests.get(s.entry_id, {}) %}
-            <td class="bsep bcell{% if best_ranks.total.get(s.entry_id) %} b{{ best_ranks.total.get(s.entry_id) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
-            <td class="bcell">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
-            <td class="bcell{% if best_ranks.total_avg.get(s.entry_id) %} b{{ best_ranks.total_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
-            <td class="bcell{% if best_ranks.max_ms.get(s.entry_id) %} b{{ best_ranks.max_ms.get(s.entry_id) }}{% endif %}">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
-            <td class="bsep bcell{% if best_ranks.lap.get(s.entry_id) %} b{{ best_ranks.lap.get(s.entry_id) }}{% endif %}">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
-            <td class="bcell{% if best_ranks.lap_avg.get(s.entry_id) %} b{{ best_ranks.lap_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('lap_avg') is not none %}{{ '%.2f'|format(rb['lap_avg']) }}{% else %}—{% endif %}</td>
-            {% for n in range(1, max_sector_no + 1) %}
-            {% set _st = rb.get('sector' ~ n) %}
-            {% set _sp = rb.get('sector_ms' ~ n) %}
-            {% set _rt = best_ranks['sector' ~ n].get(s.entry_id) %}
-            {% set _rp = best_ranks['sector_ms' ~ n].get(s.entry_id) %}
-            <td class="bsec2{% if n == 1 %} bsep{% endif %}">
-              <span class="st{% if _rt %} b{{ _rt }}{% endif %}">{% if _st is not none %}{{ '%.3f'|format(_st) }}{% else %}—{% endif %}</span>
-              <span class="sp{% if _rp %} b{{ _rp }}{% endif %}">{% if _sp is not none %}{{ '%.2f'|format(_sp) }}{% else %}—{% endif %}</span>
-            </td>
-            {% endfor %}
+            {{ best_cells(s.entry_id, racer_bests, best_ranks, best_total_min, max_sector_no) }}
             {% endif %}
           </tr>
           {% endfor %}
@@ -2488,7 +2473,7 @@ const IS_POINT_TYPE      = {{ 'true' if (not is_roundrobin and not is_none_round
 
 async function updateStandings() {
   try {
-    const res = await fetch(`/admin/tournaments/${TID}/qualifying/standings-json`);
+    const res = await fetch(`/admin/tournaments/${TID}/qualifying/standings-json?bests=1`, {cache:'no-store'});
     const data = await res.json();
     if (!data.ok || !data.standings) return;
     const tbody = document.getElementById('standings-tbody');
@@ -2533,23 +2518,32 @@ async function updateStandings() {
       }
       return separator + `<tr style="${rowBg}">${cells}</tr>`;
     });
-    // ★20261117 M4LAPS ベスト列（td.bcell / td.bsec2）はサーバー描画のみ。JSで描き直すと
-    //   列が消えて見出しとずれるため、描き直し前の各行のベストセルを entry_id ごとに退避し、
-    //   新しい行の末尾へそのまま付け直す（値の更新は反映時の再読込で行われる）。
-    const _bestCells = {};
+    // ★20261117 M4LAPS ベスト列（td.bcell / td.bsec2）をその場で更新する。
+    //   サーバー（standings-json?bests=1）がページと同じマクロで描いたセルHTMLを各行の末尾へ付ける。
+    //   列構成（best_sig＝最大セクター番号／ベスト列の有無）がページと違えば、見出しを作り直すため再読込。
+    const _tbl = document.getElementById('std-tbl');
+    const _pageSig = _tbl ? (_tbl.dataset.bestSig || '') : '';
+    const _srvSig = (data.best_cells && data.best_sig != null) ? String(data.best_sig) : '';
+    if (_srvSig !== '' && _srvSig !== _pageSig) { location.reload(); return; }
+    // 予備：サーバーからセルが来ない時（集計失敗等）は、描き直し前のセルを entry_id ごとに付け直す
+    const _oldCells = {};
     tbody.querySelectorAll('tr[data-eid]').forEach(tr => {
       const cs = tr.querySelectorAll('td.bcell, td.bsec2');
-      if (cs.length) _bestCells[tr.dataset.eid] = Array.from(cs).map(td => td.outerHTML).join('');
+      if (cs.length) _oldCells[tr.dataset.eid] = Array.from(cs).map(td => td.outerHTML).join('');
     });
-    const _hasBest = Object.keys(_bestCells).length > 0;
-    const _bestCount = _hasBest ? tbody.querySelector('tr[data-eid]').querySelectorAll('td.bcell, td.bsec2').length : 0;
-    const _emptyBest = _hasBest ? '<td class="bcell">—</td>'.repeat(_bestCount) : '';
+    const _hasBest = _pageSig !== '';
+    const _bestCount = Object.keys(_oldCells).length
+      ? tbody.querySelector('tr[data-eid]').querySelectorAll('td.bcell, td.bsec2').length : 0;
+    const _emptyBest = '<td class="bcell">—</td>'.repeat(_bestCount);
     const rows2 = data.standings.map((s, i) => {
-      if (!_hasBest) return rows[i];
-      const extra = _bestCells[String(s.entry_id)] || _emptyBest;
-      return rows[i].replace(/<tr style="/, `<tr data-eid="${s.entry_id}" style="`).replace(/<\/tr>$/, extra + '</tr>');
+      let r = rows[i].replace(/<tr style="/, `<tr data-eid="${s.entry_id}" style="`);
+      if (!_hasBest) return r;
+      const k = String(s.entry_id);
+      const extra = (data.best_cells && data.best_cells[k] != null) ? data.best_cells[k]
+                  : (_oldCells[k] || _emptyBest);
+      return r.replace(/<\/tr>$/, extra + '</tr>');
     });
-    tbody.innerHTML = (_hasBest ? rows2 : rows.map((r, i) => r.replace(/<tr style="/, `<tr data-eid="${data.standings[i].entry_id}" style="`))).join('');
+    tbody.innerHTML = rows2.join('');
 
     // ── 右サイドの予選順位表（qp-sched-rank）も同じデータで更新 ──
     const rankBody = document.getElementById('qp-rank-tbody');

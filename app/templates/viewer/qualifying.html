@@ -66,6 +66,8 @@
 .standings-table thead th:nth-child(n+4){text-align:center}
 .standings-table th{background:#333333;padding:5px 8px;text-align:left;font-size:12px;color:#ffffff;font-weight:normal;white-space:nowrap;line-height:1.2;vertical-align:bottom}
 .standings-table td{padding:9px 8px;border-bottom:1px solid #555555;font-size:17px}
+/* ★20261117 予選順位表の枠の背景は黒（他セクションの #191919 より一段暗く） */
+.v-section.v-std-section{background:#000000}
 .standings-table tr:first-child td{background:#1a2a10}
 /* M4LAPS ベスト表（予選順位とエントリーの間）。TOTAL/LAP のベストを列表示。
    上位3人の配色は観覧の他ベスト表示と同じ 紫1位/青2位/緑3位。 */
@@ -918,7 +920,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% if round_nos | length > 1 %}
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
           {% for rno in round_nos %}
-          <a href="#qsched-{{ rno }}" style="display:inline-block;padding:8px 18px;background:#1e3a5f;color:#fff;border:1px solid #2c5a8a;border-radius:999px;font-size:14px;font-weight:bold;text-decoration:none;white-space:nowrap">予選 {{ rno }} 回目</a>
+          <a href="#qsched-{{ rno }}" style="display:inline-block;padding:8px 18px;background:#cc0055;color:#fff;border:1px solid #e0337a;border-radius:999px;font-size:14px;font-weight:bold;text-decoration:none;white-space:nowrap">予選 {{ rno }} 回目</a>
           {% endfor %}
         </div>
         {% endif %}
@@ -937,7 +939,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </div>
         </div>
         {% else %}
-        <div id="qsched-{{ rno }}" style="background:#a90045;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;scroll-margin-top:60px;{% if not loop.first %}margin-top:12px{% endif %}">
+        <div id="qsched-{{ rno }}" style="background:#cc0055;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;scroll-margin-top:60px;{% if not loop.first %}margin-top:12px{% endif %}">
           予選 {{ rno }} 回目
         </div>
         {% endif %}
@@ -1217,7 +1219,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   {% if qualifying_type != 'heat_roundrobin' %}
   <div class="v-sticky-col">
     {% if standings %}
-    <div class="v-section">
+    <div class="v-section v-std-section">
       <div class="v-section-title">📊 予選順位</div>
       <div class="std-scroll">
       <table class="standings-table">

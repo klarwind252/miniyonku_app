@@ -1203,48 +1203,12 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
         racer_bests = _m4_scan_q["bests"] if _m4_scan_q else {}
     except Exception:
         racer_bests = {}
-    # 実際に記録のある最大セクター番号（列を出す範囲を決める）
-    max_sector_no = 0
-    for _bm in racer_bests.values():
-        for _i in range(1, 8):
-            if _bm.get(f"sector{_i}") is not None or _bm.get(f"sector_ms{_i}") is not None:
-                max_sector_no = max(max_sector_no, _i)
-    # ベストのTOTAL最小値（GAP表示の基準）
-    best_total_min = None
-    for _bm in racer_bests.values():
-        _tv = _bm.get("total")
-        if _tv is not None and (best_total_min is None or _tv < best_total_min):
-            best_total_min = _tv
-
-    # 各項目について「予選全体で上位3人」を判定し、entry_id→順位(1..3) を作る。
-    # 値はそのレーサーのベスト。色は予選全体で見た順位を示す（計測結果と同じ配色）。
-    # タイム系は小さいほど上位、速度系は大きいほど上位。
-    _LOWER = {"total", "lap"}
-    for _i in range(1, 8):
-        _LOWER.add(f"sector{_i}")   # 区間タイムは小さいほど上位
-    def _rank_map(metric, lower):
-        vals = [(eid, bm[metric]) for eid, bm in racer_bests.items()
-                if bm.get(metric) is not None]
-        vals.sort(key=lambda x: x[1], reverse=not lower)
-        # 同率は同順位（例: 2位が2人いれば両方とも2位＝同じ色）。
-        # 3位までを色付けするので、4位相当まで進んだら打ち切る。
-        out = {}
-        pos = 0
-        prev = None
-        for i, (eid, v) in enumerate(vals, start=1):
-            if prev is None or v != prev:
-                pos = i          # 同率の次は人数分ずれる（1,1,3 のような順位）
-                prev = v
-            if pos > 3:
-                break
-            out[eid] = pos
-        return out
-    best_ranks = {}
-    for _m in ["total", "total_avg", "max_ms", "lap", "lap_avg"]:
-        best_ranks[_m] = _rank_map(_m, _m in _LOWER)
-    for _i in range(1, 8):
-        best_ranks[f"sector{_i}"] = _rank_map(f"sector{_i}", True)
-        best_ranks[f"sector_ms{_i}"] = _rank_map(f"sector_ms{_i}", False)
+    # ★20261117 ベスト列の表示用データ（最大セクター番号・GAP基準・上位3人の色順位）は
+    #   standings-json（ライブ更新）と共通の _best_display() で作る。
+    _bd = _best_display(racer_bests)
+    max_sector_no = _bd["max_sector_no"]
+    best_total_min = _bd["best_total_min"]
+    best_ranks = _bd["best_ranks"]
 
     # ⚡ M4LAPS RECORD HOLDERS（予選順位表の上に出す3記録）。
     #   OVERALL=総合最速TOTAL / FASTEST LAP=最速ラップ / TOP SPEED=最高速MAX。
@@ -2196,9 +2160,61 @@ async def heat_result_form(tid: int, heat_id: int, request: Request, db: aiosqli
 
 
 # ── 結果保存 ──────────────────────────────────────────────
+def _best_display(racer_bests: dict) -> dict:
+    """予選順位表のM4LAPSベスト列の表示用データを作る（★20261117 ページ描画と standings-json で共用）。
+    戻り値: {"max_sector_no", "best_total_min", "best_ranks"}。"""
+    # 実際に記録のある最大セクター番号（列を出す範囲を決める）
+    max_sector_no = 0
+    for _bm in racer_bests.values():
+        for _i in range(1, 8):
+            if _bm.get(f"sector{_i}") is not None or _bm.get(f"sector_ms{_i}") is not None:
+                max_sector_no = max(max_sector_no, _i)
+    # ベストのTOTAL最小値（GAP表示の基準）
+    best_total_min = None
+    for _bm in racer_bests.values():
+        _tv = _bm.get("total")
+        if _tv is not None and (best_total_min is None or _tv < best_total_min):
+            best_total_min = _tv
+
+    # 各項目について「予選全体で上位3人」を判定し、entry_id→順位(1..3) を作る。
+    # 値はそのレーサーのベスト。色は予選全体で見た順位を示す（計測結果と同じ配色）。
+    # タイム系は小さいほど上位、速度系は大きいほど上位。
+    _LOWER = {"total", "lap"}
+    for _i in range(1, 8):
+        _LOWER.add(f"sector{_i}")   # 区間タイムは小さいほど上位
+    def _rank_map(metric, lower):
+        vals = [(eid, bm[metric]) for eid, bm in racer_bests.items()
+                if bm.get(metric) is not None]
+        vals.sort(key=lambda x: x[1], reverse=not lower)
+        # 同率は同順位（例: 2位が2人いれば両方とも2位＝同じ色）。
+        # 3位までを色付けするので、4位相当まで進んだら打ち切る。
+        out = {}
+        pos = 0
+        prev = None
+        for i, (eid, v) in enumerate(vals, start=1):
+            if prev is None or v != prev:
+                pos = i          # 同率の次は人数分ずれる（1,1,3 のような順位）
+                prev = v
+            if pos > 3:
+                break
+            out[eid] = pos
+        return out
+    best_ranks = {}
+    for _m in ["total", "total_avg", "max_ms", "lap", "lap_avg"]:
+        best_ranks[_m] = _rank_map(_m, _m in _LOWER)
+    for _i in range(1, 8):
+        best_ranks[f"sector{_i}"] = _rank_map(f"sector{_i}", True)
+        best_ranks[f"sector_ms{_i}"] = _rank_map(f"sector_ms{_i}", False)
+    return {"max_sector_no": max_sector_no, "best_total_min": best_total_min,
+            "best_ranks": best_ranks}
+
+
 @router.get("/{tid}/qualifying/standings-json")
-async def qualifying_standings_json(tid: int, db: aiosqlite.Connection = Depends(get_db)):
-    """順位表をJSONで返す（保存後のリアルタイム更新用）"""
+async def qualifying_standings_json(tid: int, request: Request, bests: int = 0,
+                                    db: aiosqlite.Connection = Depends(get_db)):
+    """順位表をJSONで返す（保存後のリアルタイム更新用）。
+    ★20261117 bests=1 のとき、ポイント系＋M4LAPS ON なら各行のベスト列セルHTML（best_cells）も同梱。
+    （4秒ポーリング等の軽い呼び出しは bests=0 のまま＝M4LAPS集計を走らせない）"""
     async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
         t = await cur.fetchone()
     if not t:
@@ -2222,6 +2238,29 @@ async def qualifying_standings_json(tid: int, db: aiosqlite.Connection = Depends
     # ★ヒート総当たりは右サイド順位表に「総合成績（勝/出走/タイム計）」を使うため同梱（リアルタイム更新用）。
     if dict(t).get("qualifying_type") == "heat_roundrobin":
         _resp["overall"] = [dict(s) for s in await _calc_standings_overall(tid, db)]
+    # ★20261117 M4LAPSベスト列をその場で更新するためのセルHTML（ページと同じマクロで描画）。
+    #   best_sig＝列構成（最大セクター番号）。ページ側と食い違えばJSが再読込して見出しを作り直す。
+    if bests and not nr and not rr:
+        try:
+            from app.core.config import IS_CLOUD as _IS_CLOUD_SJ
+            _use_m4 = dict(t).get("use_m4laps", 1) != 0
+            if _IS_CLOUD_SJ and getattr(request.state, "m4laps_licensed", False) and _use_m4:
+                from app.application import timing_racer_best_service as _rb_sj
+                _scan = await _rb_sj.scan_tournament_metrics(db, tid)
+                _rbests = (_scan or {}).get("bests") or {}
+                if _rbests:
+                    _bd = _best_display(_rbests)
+                    _mac = templates.env.get_template("admin/_qual_best_cells.html").module.best_cells
+                    _resp["best_sig"] = _bd["max_sector_no"]
+                    _resp["best_cells"] = {
+                        str(s["entry_id"]): str(_mac(s["entry_id"], _rbests, _bd["best_ranks"],
+                                                     _bd["best_total_min"], _bd["max_sector_no"]))
+                        for s in standings
+                    }
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "[standings-json] M4LAPS best cells failed (standings still returned)")
     return JSONResponse(_resp)
 
 
