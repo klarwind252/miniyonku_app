@@ -742,8 +742,8 @@ async def init_db(db_path: str = None):
             print("[DB] migration: tournaments.use_m4laps added")
 
         # ★20261117 tournaments.public_qr_token（レースごとの固定QR用トークン / 初期値NULL）
-        #   /api/race-qr/<token>：開催日前＝そのレースの事前告知、開催当日（09:00〜翌08:59）＝
-        #   日替わり入場と同じ観覧許可を発行して当日の観覧URLへ誘導、翌日以降＝終了表示。
+        #   /api/race-qr/<token>：開催日の翌朝08:59までは日替わり入場と同じ観覧許可を発行して
+        #   当日の観覧URLへ誘導（いつものadmin連動）、それ以降＝終了表示。
         #   トークンは管理画面でQRを初めて開いたときに発行（推測困難な token_urlsafe）。
         async with db.execute("PRAGMA table_info(tournaments)") as cur:
             t_cols_rq = {r["name"] async for r in cur}

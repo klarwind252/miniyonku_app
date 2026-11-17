@@ -267,10 +267,10 @@ async def _render_preview(request: Request, db: aiosqlite.Connection, t, state: 
 
 # ───────────────────────── レース固定QR（★20261117）─────────────────────────
 # 入口は2系統：①ヘッダーの日替わりQR（従来）②レースごとの固定QR（本機能）。
-# 行き先はどちらも同じ＝当日の観覧URL /<観覧語>（店舗prefix付き）。
-#   開催日より前        … そのレースの事前告知（preview.html と同じ内容）
-#   開催当日（論理日）   … 日替わり入場と同じ観覧クッキーを発行して /<観覧語> へ誘導
-#   開催日の翌日以降     … 終了表示（常時観覧の穴を作らない）
+# 行き先はどちらも同じ＝当日の観覧URL /<観覧語>（店舗prefix付き・いつものadmin連動）。
+#   開催日の翌朝08:59まで … 日替わり入場と同じ観覧クッキーを発行して /<観覧語> へ誘導
+#   それ以降             … 終了表示（期限付き＝常時観覧の穴を作らない）
+#   ★20261117 開催日前の「事前告知表示」は廃止（事前告知は店舗固定URL側で行う）
 # 「論理日」は日替わりURLと同じ区切り（09:00 JST 〜 翌08:59）。
 # 公開ルートは /api 配下（nginx が既にアプリへ転送＝nginx 設定変更不要）。
 
@@ -332,12 +332,10 @@ async def race_qr_page(token: str, request: Request,
         return PlainTextResponse("404 Not Found", status_code=404)
 
     phase = _race_phase(t["date"])
-    if phase == "before":
-        return await _render_preview(request, db, t, "ok", token, race_qr=True)
     if phase == "after":
         return await _render_preview(request, db, t, "closed", token, race_qr=True)
 
-    # 開催当日：日替わり入場（/<観覧語>/enter/<鍵語>）と同じ判定・発行・誘導を行う。
+    # 開催日の翌朝08:59まで（開催日前・当日とも）：日替わり入場（/<観覧語>/enter/<鍵語>）と同じ判定・発行・誘導を行う。
     from app.presentation.routers import public_misc as _pm
     pub_gate, store, slug, base, key, dbp, secret, epoch, cname, state = _pm._enter_common(request)
     if _pm._rate_limited(_pm._client_ip(request)):

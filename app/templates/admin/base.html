@@ -512,7 +512,7 @@ function openRacerQr(){
 }
 // ★20261117 このレース専用のQR。モーダル・見出し・店舗名・QR下のURL表示は右上QRと同一で、
 //   QRの中身だけをレース固定URL（/api/race-qr/<token>）にする。誘導先は右上QRと同じ当日の観覧ページ
-//   （開催日前はそのレースの事前告知、翌日以降は終了表示＝固定URLで常時観覧できる穴を作らない）。
+//   （開催日の翌朝8:59まで有効。それ以降は終了表示＝固定URLで常時観覧できる穴を作らない）。
 function openRaceQr(tid){
   var prefix = location.pathname.split('/admin')[0];
   var modal = document.getElementById('racerQrModal');
