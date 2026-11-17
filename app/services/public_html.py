@@ -1045,12 +1045,13 @@ window.m4nm = m4nm;
       });
       if(myRows.length > 0){
         /* 全出走に控えめハイライト（複数回出走でも全部わかる） */
-        var SUB_BG = 'rgba(230,126,34,0.15)', SUB_BD = 'rgba(230,126,34,0.45)';
+        /* ★20261117 黒背景で見えにくかったため強めに（塗り45%＋明るい橙の太枠） */
+        var SUB_BG = 'rgba(230,126,34,0.45)', SUB_BD = 'rgb(255,170,60)';
         myRows.forEach(function(r){
           r.cells.forEach(function(cell){
             var td = cell.closest('td') || cell;
             td.style.setProperty('background', SUB_BG, 'important');
-            td.style.setProperty('box-shadow', 'inset 0 0 0 2px ' + SUB_BD, 'important');
+            td.style.setProperty('box-shadow', 'inset 0 0 0 3px ' + SUB_BD, 'important');
           });
         });
         /* 次に走行する行＝未走行の最初の行。ここだけ現行の強いハイライト。 */
@@ -1062,7 +1063,7 @@ window.m4nm = m4nm;
           nextRow.cells.forEach(function(cell){
             var td = cell.closest('td') || cell;
             td.style.setProperty('background', 'rgb(230,126,34)', 'important');
-            td.style.setProperty('box-shadow', 'inset 0 0 0 2px rgb(160,80,15)', 'important');
+            td.style.setProperty('box-shadow', 'inset 0 0 0 3px #ffffff', 'important');   /* ★20261117 次の出走は白枠で最も目立たせる */
             cell.style.setProperty('color', '#ffffff', 'important');
             cell.style.fontWeight = 'bold';
           });
