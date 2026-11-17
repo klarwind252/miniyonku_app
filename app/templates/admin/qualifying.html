@@ -2162,6 +2162,10 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="card-body" style="padding:0;overflow-x:auto">
       {% if standings %}
+      {# ★20261117 M4LAPS ON（m4_on＝クラウド＋ライセンス＋このレースの use_m4laps）かつ
+         計測ベストがあるときは、ポイント系の予選順位表に TOTAL/LAP/SECTOR BEST 列を出す
+         （11/15 に一律非表示にしたものを M4LAPS ON 時のみ復活）。thead/tbody 共通の判定。 #}
+      {% set show_best = m4_on and (not is_none_roundrobin) and (not is_roundrobin) and racer_bests and racer_bests|length > 0 %}
       <table class="std-tbl">
         <thead>
           {% if is_none_roundrobin %}
@@ -2170,10 +2174,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <tr><th>順位</th><th>レーサー</th><th>勝</th><th>出走</th><th>タイム計</th><th style="text-align:center">決勝</th></tr>
           {% else %}
           {# ベスト列（M4LAPS）：決勝の右に TOTAL / LAP / SECTOR ベストを足す #}
-          {# ★20261115 M4LAPS ON時もベスト列（TOTAL/LAP/SECTOR BEST）は出さず、
-             下部の予選順位表を通常ポイント制と同じ列構成にする。記録は上部の
-             RECORD HOLDERS で確認できるため、順位表はシンプルに保つ。 #}
-          {% set show_best = false %}
+          {# show_best は table 直前で判定（M4LAPS ON かつ計測ベストあり） #}
           <tr class="std-grp">
             <th colspan="{{ 9 if _pt_grouping else 8 }}"></th>
             {% if show_best %}
@@ -2198,7 +2199,7 @@ document.addEventListener('DOMContentLoaded', function(){
           {% if has_results and s.get('is_tied_cutoff') and (loop.first or not standings[loop.index0 - 1].get('is_tied_cutoff')) %}
           <tr><td colspan="99" style="padding:0;border:none"><div style="border-top:3px dashed #f39c12;margin:2px 0"></div></td></tr>
           {% endif %}
-          <tr style="{% if has_results and s.get('is_tied_cutoff') %}background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e{% elif s.rank==1 %}background:#fffde7{% endif %}">
+          <tr data-eid="{{ s.entry_id }}" style="{% if has_results and s.get('is_tied_cutoff') %}background:#fff9e6;border-left:4px solid #f39c12;outline:1px solid #f0ad4e{% elif s.rank==1 %}background:#fffde7{% endif %}">
             {% if _pt_grouping %}<td style="text-align:center">{% set _gh = {'A':0,'B':108,'C':216,'D':324,'E':72,'F':180,'G':288,'H':36,'I':144,'Jr':252}.get(s.pt_group, 210) %}<span style="display:inline-block;min-width:18px;padding:1px 6px;border-radius:8px;font-weight:bold;font-size:11px;text-align:center;color:hsl({{ _gh }},60%,26%);background:hsl({{ _gh }},65%,88%)">{{ s.pt_group if s.pt_group else '—' }}</span></td>{% endif %}
             <td style="color:#aaa;font-size:12px">{{ loop.index }}</td>
             <td style="font-weight:bold;font-size:16px;color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#aaa{% elif s.rank==3 %}#cd7f32{% else %}#636e72{% endif %}">{{ s.rank }}</td>
@@ -2229,8 +2230,8 @@ document.addEventListener('DOMContentLoaded', function(){
               </button>
             </td>
             {% endif %}
-            {# レーサー別ベスト（point型のみ・M4LAPS）。★20261115 通常ポイント制と同じ表示に
-               統一するため show_best=false で非表示（記録は上部 RECORD HOLDERS に集約）。 #}
+            {# レーサー別ベスト（point型のみ・M4LAPS）。値=そのレーサーのベスト、
+               色=予選全体での上位3人（紫1位・青2位・緑3位）。★20261117 M4LAPS ON 時のみ表示。 #}
             {% if show_best %}
             {% set rb = racer_bests.get(s.entry_id, {}) %}
             <td class="bsep bcell{% if best_ranks.total.get(s.entry_id) %} b{{ best_ranks.total.get(s.entry_id) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
@@ -2530,7 +2531,23 @@ async function updateStandings() {
       }
       return separator + `<tr style="${rowBg}">${cells}</tr>`;
     });
-    tbody.innerHTML = rows.join('');
+    // ★20261117 M4LAPS ベスト列（td.bcell / td.bsec2）はサーバー描画のみ。JSで描き直すと
+    //   列が消えて見出しとずれるため、描き直し前の各行のベストセルを entry_id ごとに退避し、
+    //   新しい行の末尾へそのまま付け直す（値の更新は反映時の再読込で行われる）。
+    const _bestCells = {};
+    tbody.querySelectorAll('tr[data-eid]').forEach(tr => {
+      const cs = tr.querySelectorAll('td.bcell, td.bsec2');
+      if (cs.length) _bestCells[tr.dataset.eid] = Array.from(cs).map(td => td.outerHTML).join('');
+    });
+    const _hasBest = Object.keys(_bestCells).length > 0;
+    const _bestCount = _hasBest ? tbody.querySelector('tr[data-eid]').querySelectorAll('td.bcell, td.bsec2').length : 0;
+    const _emptyBest = _hasBest ? '<td class="bcell">—</td>'.repeat(_bestCount) : '';
+    const rows2 = data.standings.map((s, i) => {
+      if (!_hasBest) return rows[i];
+      const extra = _bestCells[String(s.entry_id)] || _emptyBest;
+      return rows[i].replace(/<tr style="/, `<tr data-eid="${s.entry_id}" style="`).replace(/<\/tr>$/, extra + '</tr>');
+    });
+    tbody.innerHTML = (_hasBest ? rows2 : rows.map((r, i) => r.replace(/<tr style="/, `<tr data-eid="${data.standings[i].entry_id}" style="`))).join('');
 
     // ── 右サイドの予選順位表（qp-sched-rank）も同じデータで更新 ──
     const rankBody = document.getElementById('qp-rank-tbody');
