@@ -16,7 +16,7 @@
 .schedule-table th:first-child,.schedule-table td:first-child{width:30px}
 .schedule-table th{background:#555555;padding:8px 12px;text-align:center;color:#9fb3c8;font-size:12px;font-weight:normal}
 .schedule-table tr.race-row{transition:background .2s}
-.schedule-table tr.done{background:#0d2014}
+.schedule-table tr.done{background:#000000}
 /* ★アクティブレース（admin が # クリックで指定）の行ハイライト。観覧・公開HTML共通。
    左に太いアンバー帯＋淡い背景。done より優先させるため !important。 */
 .schedule-table tr.race-row.gw-active-live > td{background:rgba(255,205,70,.20) !important}
@@ -937,7 +937,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           </div>
         </div>
         {% else %}
-        <div id="qsched-{{ rno }}" style="background:#1e3a5f;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;scroll-margin-top:60px;{% if not loop.first %}margin-top:12px{% endif %}">
+        <div id="qsched-{{ rno }}" style="background:#a90045;padding:6px 12px;font-weight:bold;font-size:16px;color:#fff;margin-bottom:4px;scroll-margin-top:60px;{% if not loop.first %}margin-top:12px{% endif %}">
           予選 {{ rno }} 回目
         </div>
         {% endif %}
