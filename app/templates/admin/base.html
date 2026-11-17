@@ -397,6 +397,7 @@ select{background:#fff}
     <div id="racerQrCanvas" style="display:inline-block;line-height:0;border:1px solid #e9ecef;border-radius:8px;padding:10px;background:#fff"></div>
     <div id="racerQrUrl" style="font-size:12px;color:#95a5a6;margin-top:12px;word-break:break-all"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:center">
+      <button type="button" id="racerQrOpenBtn" onclick="openRacerQrInBrowser()" disabled title="QRの入場ページを別ウインドウで開きます" style="padding:8px 16px;border:none;border-radius:6px;background:#1a56db;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">🌐 ブラウザで開く</button>
       <button type="button" onclick="printRacerQr()" style="padding:8px 20px;border:none;border-radius:6px;background:#2e7d32;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">🖨 印刷</button>
       <button type="button" onclick="closeRacerQr()" style="padding:8px 24px;border:none;border-radius:6px;background:#2c3e50;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">閉じる</button>
     </div>
@@ -409,6 +410,21 @@ select{background:#fff}
 // ダウンロードQRと同じ見た目：店舗名（上）＋中央ロゴ＋入口URL（下）を1枚の画像に合成する。
 var _M4_STORE_NAME = "{{ request.state.store.name|e }}";
 var _racerQrDataUrl = "";   // 印刷用に合成画像(dataURL)を保持
+var _racerQrUrl = "";       // ★20261117「ブラウザで開く」用：QRに埋め込んだ入場URL
+function _racerQrSetUrl(url){
+  _racerQrUrl = url || "";
+  var b = document.getElementById('racerQrOpenBtn');
+  if(b){ b.disabled = !_racerQrUrl; b.style.opacity = _racerQrUrl ? '1' : '.5';
+         b.style.cursor = _racerQrUrl ? 'pointer' : 'default'; }
+}
+// QRと同じURLを別ウインドウ（タブではなく独立ウインドウ）で開く
+function openRacerQrInBrowser(){
+  if(!_racerQrUrl){ return; }
+  var w = window.open(_racerQrUrl, 'm4RacerEntry',
+    'width=480,height=900,menubar=no,toolbar=yes,location=yes,resizable=yes,scrollbars=yes');
+  if(!w){ alert('ウインドウを開けませんでした（ポップアップ許可を確認してください）。'); return; }
+  try{ w.opener = null; w.focus(); }catch(e){}
+}
 function _racerShownUrl(url){
   // 画面に出す文字列は入口（/）だけにし、秘密語は露出させない
   try{
@@ -474,12 +490,14 @@ function openRacerQr(){
   var modal = document.getElementById('racerQrModal');
   modal.style.display = 'flex';
   _racerQrDataUrl = '';
+  _racerQrSetUrl('');
   document.getElementById('racerQrCanvas').innerHTML = '';
   document.getElementById('racerQrUrl').textContent = '読み込み中…';
   fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'})
     .then(function(r){ return r.json(); })
     .then(function(j){
       var url = j.url || (location.origin + prefix + '/enter');
+      _racerQrSetUrl(url);
       // ロゴは QR の入場URL が指す店舗のアイコンを使う（設定QRと同じ icon-src-512.png）
       var logoPfx = _slugPrefixFromEntryUrl(url) || prefix;
       var logoUrl = logoPfx + '/pwa/icon-src-512.png?t=' + Date.now();
@@ -487,6 +505,7 @@ function openRacerQr(){
     })
     .catch(function(){
       var logoUrl = prefix + '/pwa/icon-src-512.png?t=' + Date.now();
+      _racerQrSetUrl(location.origin + prefix + '/enter');
       _racerQrRender(location.origin + prefix + '/enter', _M4_STORE_NAME, logoUrl);
     });
 }
