@@ -1198,12 +1198,32 @@ window.m4nm = m4nm;
     document.body.style.paddingTop = (headerH + ownH) + 'px';
   }
 
+  /* ---------- ★20261117 名前の強調（決勝進出レーサー・予選順位表・エントリー一覧） ----------
+     data-m4hl を付けた名前要素を、選択中レーサーならスケジュールと同じ橙で強調する（正式名 data-racer-name で照合）。 */
+  function applyNameHighlight(names){
+    document.querySelectorAll('[data-m4hl]').forEach(function(el){
+      var on = names.indexOf(m4nm(el).trim()) >= 0;
+      if(on){
+        el.style.setProperty('background', 'rgb(230,126,34)', 'important');
+        el.style.setProperty('color', '#ffffff', 'important');
+        el.style.setProperty('border-radius', '4px', 'important');
+        el.style.setProperty('padding', '1px 6px', 'important');
+        el.style.setProperty('box-shadow', '0 0 0 2px #ffffff', 'important');
+        el.style.fontWeight = 'bold';
+      } else {
+        ['background','color','border-radius','padding','box-shadow'].forEach(function(k){ el.style.removeProperty(k); });
+        el.style.fontWeight = '';
+      }
+    });
+  }
+
   /* ---------- 全体適用 ---------- */
   function applyAll(){
     var list = getMyRacers();
     var names = list.map(function(r){ return r.name; });
     renderBanner(list);
     applyEntryHighlight(names);
+    applyNameHighlight(names);
     renderPositionBanner(list);
   }
 
@@ -1259,6 +1279,7 @@ window.m4nm = m4nm;
     document.body.style.paddingTop = '';
     var panel = document.getElementById('m4-racer-panel');
     if(panel) panel.style.display = 'none';
+    applyNameHighlight([]);   /* ★20261117 */
     renderBanner([]);
   };
 
