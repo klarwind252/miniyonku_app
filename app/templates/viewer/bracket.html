@@ -89,6 +89,9 @@
 {% block nav_subtitle %}：決勝トーナメント表 🏆{% endblock %}
 
 {% block content %}
+{# ★20261117 予選・決勝のレーサー名を（地域）ごと省略して表示（正式名→省略名の対応表。m4_short_names.js が使う） #}
+{% if name_short_map %}<div id="m4-name-short" style="display:none">{{ name_short_map | tojson }}</div>
+<script src="/static/js/m4_short_names.js?v=20261117"></script>{% endif %}
 {% if not is_public_html %}
 {% raw %}
 <button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
@@ -239,6 +242,10 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
   {# id="m4-finalists-sec"：決勝表(.br-wrap)と同様、部分更新の二重化に備えたdedup対象マーカー #}
   <div id="m4-finalists-sec" class="v-section" style="margin-top:12px;padding:4px 8px">
       {% if hr_heats_data %}
+      {# ★20261117 決勝進出レーサー：（ より前の名前が同じ人が他にいなければ（地域）ごと省略して表示。
+   同じ名前が2人以上いる時だけ（）付きのまま（例「あああああ（福岡）」「あああああ（ふくおか）」）。 #}
+      {% set _hrall = [] %}{% for _hd in hr_heats_data %}{% for _x in _hd.advanced %}{% set _ = _hrall.append(_x) %}{% endfor %}{% endfor %}
+      {% set _fbh = [] %}{% for _x in _hrall %}{% set _ = _fbh.append((((_x.name or '')|string).split('（')[0].split('(')[0])|trim) %}{% endfor %}
       {# ヒート制総当たり：ヒート×グループ別列表示 #}
       <div style="font-size:14px;font-weight:bold;color:#27ae60;margin-bottom:12px">🏆 決勝進出レーサー</div>
       <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px">
@@ -259,7 +266,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
               {% for slot in group_slots %}
               <div style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:#0f2a1e;border:1px solid #27ae60;border-radius:5px;margin-bottom:3px">
                 <span style="font-size:12px;font-weight:bold;color:{% if slot.rank==1 %}#d4a017{% elif slot.rank==2 %}#888{% elif slot.rank==3 %}#cd7f32{% else %}#888888{% endif %};min-width:28px">{{ slot.rank }}位</span>
-                <span style="font-size:13px;font-weight:bold;color:#ecf0f1">{{ slot.name }}</span>
+                <span style="font-size:13px;font-weight:bold;color:#ecf0f1" data-racer-name="{{ slot.name }}">{% set _bn = (((slot.name or '')|string).split('（')[0].split('(')[0])|trim %}{{ slot.name if (not _bn or _fbh.count(_bn) > 1) else _bn }}</span>{% if (jr_eids and slot.entry_id in jr_eids) or (jr_names and slot.name in jr_names) %}<span class="jr-tag">Jr.</span>{% endif %}
               </div>
               {% endfor %}
             </div>
@@ -269,6 +276,11 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% endfor %}
       </div>
       {% elif finalists_list or ht_advanced_by_heat %}
+      {# ★20261117 決勝進出レーサー：（ より前の名前が同じ人が他にいなければ（地域）ごと省略して表示。
+   同じ名前が2人以上いる時だけ（）付きのまま（例「あああああ（福岡）」「あああああ（ふくおか）」）。 #}
+      {% set _htall = [] %}{% for _h in (ht_advanced_by_heat or []) %}{% for _x in _h.advanced %}{% set _ = _htall.append(_x) %}{% endfor %}{% endfor %}
+      {% set _fbt = [] %}{% for _x in _htall %}{% set _ = _fbt.append((((_x.name or '')|string).split('（')[0].split('(')[0])|trim) %}{% endfor %}
+      {% set _fbf = [] %}{% for _x in (finalists_list or []) %}{% set _ = _fbf.append((((_x.name or '')|string).split('（')[0].split('(')[0])|trim) %}{% endfor %}
       {# 決勝進出者が確定している場合 #}
       {% set rank_c = {1:'#d4a017',2:'#636e72',3:'#cd7f32'} %}
       <div style="font-size:14px;font-weight:bold;color:#27ae60;margin-bottom:12px">
@@ -287,7 +299,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                       background:#0f2a1e;border:1px solid #27ae60;border-radius:6px;margin-bottom:4px">
             <span style="font-weight:bold;font-size:{% if is_public_html %}13px{% else %}18px{% endif %};min-width:{% if is_public_html %}28px{% else %}2.6em{% endif %};color:{{ rank_c.get(a.overall_rank,'#888888') }}">{{ a.overall_rank }}位</span>
             <div style="display:flex;flex-direction:column;flex:1;line-height:1.15">
-              <span class="entry-name" style="font-weight:bold;font-size:{% if is_public_html %}14px{% else %}24px{% endif %};color:#ecf0f1">{{ a.name }}</span>
+              <span class="entry-name" style="font-weight:bold;font-size:{% if is_public_html %}14px{% else %}24px{% endif %};color:#ecf0f1" data-racer-name="{{ a.name }}">{% set _bn = (((a.name or '')|string).split('（')[0].split('(')[0])|trim %}{{ a.name if (not _bn or _fbt.count(_bn) > 1) else _bn }}</span>{% if (jr_eids and a.entry_id in jr_eids) or (jr_names and a.name in jr_names) %}<span class="jr-tag">Jr.</span>{% endif %}
               {% if a.yomi %}<span style="font-size:10px;color:#888888">{{ a.yomi }}</span>{% endif %}
             </div>
           </div>
@@ -301,7 +313,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% for f in finalists_list|sort(attribute='qual_rank') %}
         <span class="{% if m4laps_active and f.entry_id %}rs-clickable{% endif %}" style="display:inline-flex;align-items:baseline;gap:6px;padding:4px 9px;background:#0d1e12;border:1px solid #1e3a5f;border-radius:6px"{% if m4laps_active and f.entry_id %} onclick="openRacerStats({{ t.id }},{{ f.entry_id }})" title="タップで予選・決勝のタイム詳細"{% endif %}>
           <span style="color:#27ae60;font-weight:bold;font-size:13px;white-space:nowrap">{{ f.qual_rank }}位</span>
-          <span style="font-weight:bold;font-size:15px;color:#ecf0f1;white-space:nowrap">{{ f.name }}</span>
+          <span style="font-weight:bold;font-size:15px;color:#ecf0f1;white-space:nowrap" data-racer-name="{{ f.name }}">{% set _bn = (((f.name or '')|string).split('（')[0].split('(')[0])|trim %}{{ f.name if (not _bn or _fbf.count(_bn) > 1) else _bn }}</span>{% if (jr_eids and f.entry_id in jr_eids) or (jr_names and f.name in jr_names) %}<span class="jr-tag">Jr.</span>{% endif %}
           {% if f.seeded %}<span style="color:#d4a017;font-size:12px">★</span>{% endif %}
         </span>
         {% endfor %}

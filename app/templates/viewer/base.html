@@ -64,6 +64,10 @@ body{font-family:'Hiragino Kaku Gothic Pro','Meiryo',sans-serif;background:#1919
 .v-nav.v-nav-ro .v-nav-btn{ padding:6px 12px; font-size:13px; }
 .v-nav.v-nav-ro .v-nav-back{ order:-1; background:#1f6feb; border-color:#1f6feb; color:#fff; }
 
+/* ★20261117 ジュニアレーサーの名前の後に付ける「Jr.」（予選順位表・決勝進出レーサー共通。Jrグループと同じ紫系） */
+.jr-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;font-size:11px;font-weight:bold;
+  line-height:1.4;vertical-align:middle;color:#e9e3ff;background:#5b3fa8;border:1px solid #8b6fe0;white-space:nowrap}
+
 /* 待機画面 */
 .v-waiting{
   display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
@@ -182,24 +186,32 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 {% if slideshow_urls or bg_url %}
 <style>
   /* 待機画面の画像（スライドショー／背景とも）。
-     ★20261117 上限サイズ指定：幅 最大800px・縦横比維持・縮小のみ（元画像より大きくは引き伸ばさない）、
-     画面の下寄せ・左右中央寄せ。URLは ?v=バージョン固定でブラウザキャッシュが効く。 */
+     ★20261117 「レース開始までしばらくお待ちください」の下〜画面下端の残り領域に合わせて自動で拡大・縮小する
+     （縦横比維持・幅制限なし・下寄せ・左右中央）。待機画面のときだけページを縦の flex レイアウトにして、
+     残りの高さを画像枠に割り当てる（CSSのみ＝スクリプトが除去される公開HTMLでも同じ見た目）。
+     ※このスタイルは画像がある待機画面（viewer_top）だけで出力される。 */
+  html{height:100%}
+  body{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:0;box-sizing:border-box}
+  body > *{flex:0 0 auto}
+  body > .v-container{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;box-sizing:border-box;width:100%}
+  .v-container > .v-waiting{flex:0 0 auto}
+  body > .v-container:not([style]){padding-bottom:0}   /* 画像を画面下端まで（公開HTMLは下部ボタン用の余白を維持） */
   .v-standby-images{
-    position:fixed;left:0;bottom:0;
-    width:100vw;max-width:100vw;
-    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:0;
+    position:relative;flex:1 1 auto;min-height:0;width:100%;
+    display:flex;flex-direction:column;gap:0;
     margin:0;padding:0;z-index:1;pointer-events:none;
   }
   .v-standby-images img{
-    width:auto;max-width:min(800px,100vw);height:auto;
-    display:block;margin:0 auto;
+    flex:1 1 0;min-height:0;width:100%;height:100%;
+    object-fit:contain;object-position:center bottom;
+    display:block;margin:0;
   }
 </style>
 {% endif %}
 {% if not slideshow_urls and bg_url %}
 <style>
   /* 待機画面の背景（設定ON時のみ）。view / html 双方の「お待ちください」で表示。
-     ★20261117 全面cover表示をやめ、スライドショーと同じ「下寄せ・中央・幅最大800px・縮小のみ」の画像表示に */
+     ★20261117 全面cover表示をやめ、スライドショーと同じ「お待ちくださいの下〜画面下端に収まるよう自動拡大縮小」の画像表示に */
   .v-waiting{
     background:rgba(15,25,35,.55);
     border-radius:18px;padding:36px 28px;
@@ -318,25 +330,13 @@ button, a.btn, .btn, .cbtn, .v-nav-btn, .add-btn, .del-btn{min-height:40px; box-
 {% endif %}
 {% if IS_CLOUD and not is_public_html %}
 <script src="/static/js/qrcode.min.js"></script>
+<script src="/static/js/m4_entry_qr.js?v=20261117"></script>
 <script>
-/* ★20261117 当日の参加者QR。60秒ごとに取得し、09:00の切替でURLが変われば描き直す。 */
+/* ★20261117 当日の参加者QR（くっきり・店舗ロゴ入り・一辺180px）。60秒ごとに更新。 */
 (function(){
   var wrap=document.getElementById('v-entry-qr'), box=document.getElementById('v-entry-qr-box');
-  if(!wrap||!box||typeof QRCode==='undefined') return;
-  var pfx=location.pathname.split('/view')[0], last='';
-  function draw(url){
-    if(!url||url===last) return; last=url;
-    box.innerHTML='';
-    try{ new QRCode(box,{text:url,width:180,height:180,colorDark:'#000',colorLight:'#fff',
-                         correctLevel:QRCode.CorrectLevel.M}); wrap.style.display=''; }
-    catch(e){ wrap.style.display='none'; }
-  }
-  function tick(){
-    fetch(pfx+'/view/entry-qr',{cache:'no-store'})
-      .then(function(r){return r.json();}).then(function(j){ if(j&&j.url) draw(j.url); })
-      .catch(function(){});
-  }
-  tick(); setInterval(tick,60000);
+  if(!wrap||!box||!window.M4EntryQr) return;
+  window.M4EntryQr.start({box:box, wrap:wrap, size:function(){ return 180; }});
 })();
 </script>
 {% endif %}

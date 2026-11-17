@@ -1509,8 +1509,16 @@ async def bracket_top(tid: int, request: Request, db: aiosqlite.Connection = Dep
     from app.application import qualifying_records as _qrlbl
     _ach_labels_b = _qrlbl.labels_from_cfg(_ach_cfg_b)
 
+    # ★20261117 決勝進出レーサーのジュニアに「Jr.」を付ける
+    from app.infrastructure.db.repositories.jr_repo import jr_sets as _jr_sets_a
+    _jr_eids_a, _jr_names_a = await _jr_sets_a(db, tid)
+    from app.infrastructure.db.repositories.jr_repo import short_name_map as _snm_a
+    _name_short_a = await _snm_a(db, tid)
     return templates.TemplateResponse("admin/bracket.html", {
+        "name_short_map": _name_short_a,
         "request": request,
+        "jr_eids": _jr_eids_a,
+        "jr_names": _jr_names_a,
         "t": t,
         "record_holders": record_holders,
         "point_leader": point_leader,
@@ -1652,8 +1660,16 @@ async def bracket_confirm_finalists(
     patterns_single = combinations_2_3(target_n_single) if target_n_single >= 2 else []
     target_n = target_n_multi
 
+    # ★20261117 決勝進出レーサーのジュニアに「Jr.」を付ける
+    from app.infrastructure.db.repositories.jr_repo import jr_sets as _jr_sets_a
+    _jr_eids_a, _jr_names_a = await _jr_sets_a(db, tid)
+    from app.infrastructure.db.repositories.jr_repo import short_name_map as _snm_a
+    _name_short_a = await _snm_a(db, tid)
     return templates.TemplateResponse("admin/bracket.html", {
+        "name_short_map": _name_short_a,
         "request": request,
+        "jr_eids": _jr_eids_a,
+        "jr_names": _jr_names_a,
         "t": t,
         "finalists": finalists,
         "finalist_n": finalist_n,

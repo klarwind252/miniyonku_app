@@ -46,9 +46,10 @@
   #live.on .dot{background:var(--l2);box-shadow:0 0 10px var(--l2)}
   /* ★20261117 左下：当日の参加者QR（会場モニター用・/view/ta のみ）。履歴(#hist)は flex:1 なので
      このぶん上に縮む。QRは白地＋余白（読み取り用クワイエットゾーン）。 */
-  #entryqr{flex:0 0 auto;border-top:1px solid var(--line);padding:1vh .8vw .6vh;text-align:center}
-  #entryqr .qbox{display:inline-block;background:#fff;padding:.8vh;border-radius:6px;line-height:0}
-  #entryqr .qbox img,#entryqr .qbox canvas{width:min(calc(100% - 0px),19vh) !important;height:auto !important;display:block}
+  #entryqr{flex:0 0 auto;border-top:1px solid var(--line);padding:1vh .4vw .6vh;text-align:center}
+  #entryqr .qbox{display:inline-block;background:#fff;padding:6px;border-radius:6px;line-height:0}
+  /* QRは m4_entry_qr.js が「1マス＝整数ピクセル」で描く（CSSで拡大縮小しない＝滲まない） */
+  #entryqr .qbox canvas{display:block}
   #entryqr .qcap{margin-top:.6vh;font-size:1.3vh;font-weight:700;color:var(--dim)}
 
   /* ===== 右：1集計を大きく（本物テーブルを注入）===== */
@@ -99,6 +100,7 @@
   .c-totav{text-align:right;vertical-align:middle;font-size:2.7vh;color:#5fd0c4}
   .c-max{text-align:right;vertical-align:middle;font-size:2.7vh;color:var(--l4)}
   .unit{color:#6a6a70;font-size:1.2vh;margin-left:1px}
+  .unit.kmh{color:inherit;font-weight:800;margin-left:2px}   /* ★20261117 km/h は数値と同じ濃い色 */
 
   .c-lapno{text-align:center;color:var(--dim);font-size:2.1vh;width:2vw}
   .c-lapt{text-align:right;font-weight:800;font-size:2.7vh}
@@ -179,10 +181,11 @@
   <aside id="side">
     <div class="shd"><span>履歴</span><span><b id="hcount">0</b> 件</span></div>
     <div id="hist"></div>
+    <div id="live"><span class="dot"></span><span id="livetxt">接続中…</span></div>
+    {# ★20261117 並び：履歴 → 自動更新中 → QR（一番下） #}
     {% if show_entry_qr %}
     <div id="entryqr" style="display:none"><div class="qbox" id="entryqrbox"></div><div class="qcap">参加者用QR（本日）</div></div>
     {% endif %}
-    <div id="live"><span class="dot"></span><span id="livetxt">接続中…</span></div>
   </aside>
   <section id="main"><div class="ta-empty">読み込み中…</div></section>
   <a id="ta-exit" href="javascript:history.back()">← 観覧に戻る</a>
@@ -253,25 +256,17 @@
 </script>
 {% if show_entry_qr %}
 <script src="/static/js/qrcode.min.js"></script>
+<script src="/static/js/m4_entry_qr.js?v=20261117"></script>
 <script>
-/* ★20261117 当日の参加者QR（日替わり2語URL）。60秒ごとに取得し、09:00の切替で変われば描き直す。 */
+/* ★20261117 当日の参加者QR（くっきり・店舗ロゴ入り）。サイズは左欄の幅と画面高さ(19vh)の小さい方。 */
 (function(){
   var box=document.getElementById("entryqrbox"), wrap=document.getElementById("entryqr");
-  if(!box||!wrap||typeof QRCode==="undefined") return;
-  var pfx=location.pathname.split("/view")[0], last="";
-  function draw(url){
-    if(!url||url===last) return; last=url;
-    box.innerHTML="";
-    try{ new QRCode(box,{text:url,width:256,height:256,colorDark:"#000",colorLight:"#fff",
-                         correctLevel:QRCode.CorrectLevel.M}); wrap.style.display=""; }
-    catch(e){ wrap.style.display="none"; }
-  }
-  function tick(){
-    fetch(pfx+"/view/entry-qr",{cache:"no-store"})
-      .then(function(r){return r.json();}).then(function(j){ if(j&&j.url) draw(j.url); })
-      .catch(function(){});
-  }
-  tick(); setInterval(tick,60000);
+  if(!box||!wrap||!window.M4EntryQr) return;
+  window.M4EntryQr.start({box:box, wrap:wrap, size:function(){
+    var side=document.getElementById("side");
+    var w=(side?side.clientWidth:170) - Math.ceil(window.innerWidth*0.008) - 14;   // 左右余白(.4vw×2)＋白枠(6px×2)＋枠線
+    return Math.min(w, Math.round(window.innerHeight*0.19));
+  }});
 })();
 </script>
 {% endif %}

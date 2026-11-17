@@ -181,6 +181,13 @@
 .sched-tbl thead th.crs:nth-child(3){background:#e8f0fb}
 .sched-tbl thead th.crs:nth-child(4){background:#fdecea}
 .sched-tbl thead th.crs:nth-child(5){background:#e8f7ee}
+/* ★20261117 グループ分けありの回は「予選N回目 → グループ帯 → 見出し(状態/#/コース) → レース」の順。
+   列幅は固定レイアウトの基準として thead を残し（高さ0で非表示）、見出しはグループ帯の直後に出す。 */
+.sched-tbl thead.ghost th{padding-top:0 !important;padding-bottom:0 !important;height:0;line-height:0;
+  font-size:0 !important;border:0 !important;overflow:hidden}
+.sched-tbl tr.sched-colhead th.crs:nth-child(3){background:#e8f0fb}
+.sched-tbl tr.sched-colhead th.crs:nth-child(4){background:#fdecea}
+.sched-tbl tr.sched-colhead th.crs:nth-child(5){background:#e8f7ee}
 /* ★20261115 レーススケジュールの横スクロール（右側の余計な余白）対策。
    固定レイアウト＋幅100%で表自体はパネル幅を超えないが、順位表(右サイド)が広がって
    スケジュール枠が圧迫されると、固定列からセル内容がはみ出してパネルが横スクロールしていた。
@@ -255,6 +262,9 @@
 </style>
 {% endblock %}
 {% block content %}
+{# ★20261117 予選・決勝のレーサー名を（地域）ごと省略して表示（正式名→省略名の対応表。m4_short_names.js が使う） #}
+{% if name_short_map %}<div id="m4-name-short" style="display:none">{{ name_short_map | tojson }}</div>
+<script src="/static/js/m4_short_names.js?v=20261117"></script>{% endif %}
 {% from "admin/_qual_best_cells.html" import best_cells %}
 {# 走行回数バッジ：残り回数で色分け（未走行=灰 / 残2以上=青 / 残1=橙 / 残0=赤） #}
 {% macro runs_badge(runs, max_runs) %}
@@ -2048,8 +2058,10 @@ document.addEventListener('DOMContentLoaded', function(){
             <span style="font-size:12px;font-weight:normal;opacity:0.8">✓完了</span>
             {% endif %}
           </div>
+          {% set _rgx = namespace(on=False) %}
+          {% for h in heats if h.round_no == rno and h.group_no %}{% set _rgx.on = True %}{% endfor %}
           <table class="sched-tbl" style="width:100%;table-layout:fixed">
-            <thead><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
+            <thead{% if _rgx.on %} class="ghost"{% endif %}><tr>{# 状態（取消/反映）は左端。よく使う操作なので横スクロールしても見える位置に置く。
                     編集（✏️）はめったに使わないので従来どおり右端。 #}<th class="st" style="width:84px">状態</th><th class="no" style="width:36px">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed" style="width:58px"></th></tr></thead>
             <tbody data-sched-grp="0">
             {% set _gns = namespace(last=None, idx=0) %}
@@ -2058,6 +2070,7 @@ document.addEventListener('DOMContentLoaded', function(){
             {# グループごとに tbody を分ける（グループタブで表示を切り替えるため） #}
             </tbody><tbody data-sched-grp="{{ heat.group_no }}"{% if not (rno == ns_active.r and heat.group_no == ns_active_g.g) %} style="display:none"{% endif %}>
             {{ grp_header(heat.group_no) }}{% set _gns.last = heat.group_no %}{% set _gns.idx = 0 %}
+            <tr class="sched-colhead"><th class="st">状態</th><th class="no">#</th>{% for c in course_cols %}<th class="crs">{{ c }}コース</th>{% endfor %}<th class="ed"></th></tr>
             {% endif %}
             {# ★20261117 レース番号（#）はグループごとに1始まり（グループ分けなしは従来どおり回内の通し番号） #}
             {% set _gns.idx = _gns.idx + 1 %}

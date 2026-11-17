@@ -3,6 +3,10 @@
 {% block title %}決勝管理 - {{ t.name }}{% endblock %}
 {% block head %}
 <style>
+/* ★20261117 決勝進出レーサー：ジュニアの名前の後に「Jr.」（Jrグループと同じ紫系） */
+.jr-tag-a{flex:0 0 auto;display:inline-block;padding:0 6px;border-radius:6px;font-size:11px;font-weight:bold;
+  line-height:1.5;color:#5b3fa8;background:#ede7fb;border:1px solid #b9a5ef;white-space:nowrap}
+
 /* 決勝管理画面に限り、すべての .btn を高さ40px・テキスト/アイコン中央揃えに統一 */
 .btn{height:40px !important;min-height:40px !important;padding-top:0 !important;padding-bottom:0 !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;line-height:1 !important;}
 /* ===== 上部アクションバー（sticky・全admin画面で共通） =====
@@ -185,6 +189,9 @@
 {% include "admin/_card_styles.html" %}
 {% endblock %}
 {% block content %}
+{# ★20261117 予選・決勝のレーサー名を（地域）ごと省略して表示（正式名→省略名の対応表。m4_short_names.js が使う） #}
+{% if name_short_map %}<div id="m4-name-short" style="display:none">{{ name_short_map | tojson }}</div>
+<script src="/static/js/m4_short_names.js?v=20261117"></script>{% endif %}
 {% raw %}
 <button type="button" id="m4-reload-btn" onclick="m4ForceReload()" aria-label="再読み込み" title="再読み込み">↻</button>
 <style>
@@ -411,7 +418,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                     background:#f8f9fa;border-radius:6px;border:1px solid #dee2e6;margin-bottom:4px;
                     {% if a.entry_id in super_seeded_ids|default([]) %}border-color:#8e44ad;background:#f5eef8;{% elif is_seeded %}border-color:#f39c12;background:#fff3cd;{% endif %}">
           <span style="font-size:12px;font-weight:bold;min-width:28px;color:{{ rank_colors.get(a.overall_rank,'#7f8c8d') }}">{{ a.overall_rank }}位</span>
-          <span style="flex:1;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.name }}</span>
+          <span style="flex:1;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.name }}</span>{% if (jr_eids and a.entry_id in jr_eids) or (jr_names and a.name in jr_names) %}<span class="jr-tag-a">Jr.</span>{% endif %}
           {% if use_ht_seed %}
           <button type="button"
                   class="seed-toggle {% if is_seeded %}seeded{% endif %}"
@@ -448,7 +455,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
                   background:#f8f9fa;border-radius:6px;border:1px solid #dee2e6;
                   {% if f.seeded == 2 %}border-color:#8e44ad;background:#f5eef8;{% elif f.entry_id in seeded_ids or f.seeded == 1 %}border-color:#f39c12;background:#fff3cd;{% endif %}">
         {% if t.qualifying_type != "none" %}<span style="color:#95a5a6;font-size:11px;min-width:28px;">{{ f.rank if f.rank is defined and f.rank else (f.qual_rank if f.qual_rank is defined and f.qual_rank else loop.index) }}位</span>{% endif %}
-        <span style="flex:1;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.name }}</span>
+        <span style="flex:1;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.name }}</span>{% if (jr_eids and f.entry_id in jr_eids) or (jr_names and f.name in jr_names) %}<span class="jr-tag-a">Jr.</span>{% endif %}
         <div class="seed-btn-group" id="sbg-{{ f.entry_id }}">
           <button type="button"
                   class="seed-btn {% if f.seeded == 1 %}active-seed{% endif %}"

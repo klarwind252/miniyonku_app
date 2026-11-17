@@ -613,6 +613,15 @@ window.addEventListener('load', function(){
     else:
         redraw_script = ""
     my_racer_script = """<script>
+/* ★20261117 正式名の取得：予選・決勝画面は表示名を（地域）省略することがあるので data-racer-name を優先 */
+var m4nm = window.m4nm || function(el){
+  if(!el) return '';
+  var a = el.getAttribute && el.getAttribute('data-racer-name');
+  if(a) return a;
+  if(el.querySelectorAll){ var d = el.querySelectorAll('[data-racer-name]'); if(d.length === 1) return d[0].getAttribute('data-racer-name') || ''; }
+  return el.textContent || '';
+};
+window.m4nm = m4nm;
 /* ===== マイレーサー フォーカス機能（複数選択対応） ===== */
 (function(){
   var SLUG_KEY = '__SLUGKEY__';
@@ -698,13 +707,17 @@ window.addEventListener('load', function(){
     document.querySelectorAll('.entry-card').forEach(function(card){
       var n = card.querySelector('.entry-name');
       if(!n) return;
-      var t = n.textContent.trim();
+      var t = m4nm(n).trim();
       var y = card.querySelector('.entry-yomi');
       add(t, y ? y.textContent.trim() : '');
     });
-    document.querySelectorAll('.entry-name').forEach(function(el){ add(el.textContent.trim(), ''); });
-    document.querySelectorAll('.rr-name').forEach(function(el){ add(el.textContent.trim(), ''); });
-    document.querySelectorAll('.br-slot-name').forEach(function(el){ add(el.textContent.trim(), ''); });
+    /* ★20261117 表示名は（地域）を省略することがあるので、data-racer-name（正式名）があればそちらを使う */
+    document.querySelectorAll('.entry-name').forEach(function(el){ add((el.getAttribute('data-racer-name') || el.textContent).trim(), ''); });
+    document.querySelectorAll('.rr-name').forEach(function(el){ add(m4nm(el).trim(), ''); });
+    document.querySelectorAll('.br-slot-name').forEach(function(el){ add(m4nm(el).trim(), ''); });
+    /* ★20261117 決勝進出レーサー一覧（data-racer-name）からも集める。トーナメント表がまだ無い決勝ページでも
+       一覧が作れる（「レーサーが見つかりません」対策）。 */
+    document.querySelectorAll('[data-racer-name]').forEach(function(el){ add((el.getAttribute('data-racer-name') || '').trim(), ''); });
     var list = order.map(function(n){ return { name: n, yomi: map[n] }; });
     list.sort(kanaCompare);
     return list;
@@ -842,7 +855,7 @@ window.addEventListener('load', function(){
     cards.forEach(function(card){
       var n = card.querySelector('.entry-name');
       if(!n) return;
-      var match = names.indexOf(n.textContent.trim()) >= 0;
+      var match = names.indexOf((n.getAttribute('data-racer-name') || n.textContent).trim()) >= 0;
       if(match){
         card.style.setProperty('background', 'rgb(230,126,34)', 'important');
         card.style.setProperty('border', '2px solid rgb(160,80,15)', 'important');
@@ -884,7 +897,7 @@ window.addEventListener('load', function(){
        ['.br-third-pod', '.br-third-pod-name', 3]].forEach(function(p){
         document.querySelectorAll(p[0]).forEach(function(card){
           var nm = card.querySelector(p[1]);
-          if(nm && nm.textContent.trim() === name){ podRank = p[2]; }
+          if(nm && m4nm(nm).trim() === name){ podRank = p[2]; }
         });
       });
       if(podRank === 1){ return { text: '🎉🏆 優勝おめでとうございます 🏆🎉', urgency: 3 }; }
@@ -907,7 +920,7 @@ window.addEventListener('load', function(){
         rs.forEach(function(rnd, ri){
           rnd.querySelectorAll('.br-group').forEach(function(grp, gi){
             grp.querySelectorAll('.br-slot-name').forEach(function(el){
-              if(el.textContent.trim() === name){ mR = ri; mG = gi; }
+              if(m4nm(el).trim() === name){ mR = ri; mG = gi; }
             });
           });
         });
@@ -925,7 +938,7 @@ window.addEventListener('load', function(){
         });
         rs.forEach(function(rnd){
           rnd.querySelectorAll('.br-slot-name').forEach(function(el){
-            if(el.textContent.trim() === name){
+            if(m4nm(el).trim() === name){
               el.style.setProperty('background', 'rgb(230,126,34)', 'important');
               el.style.setProperty('color', '#ffffff', 'important');
               el.style.fontWeight = 'bold';
@@ -950,7 +963,7 @@ window.addEventListener('load', function(){
         rounds.forEach(function(rnd, ri){
           rnd.querySelectorAll('.br-group').forEach(function(grp, gi){
             grp.querySelectorAll('.br-slot-name').forEach(function(el){
-              if(el.textContent.trim() === name){ myRound = ri; myGroup = gi; }
+              if(m4nm(el).trim() === name){ myRound = ri; myGroup = gi; }
             });
           });
         });
@@ -981,7 +994,7 @@ window.addEventListener('load', function(){
             });
             rounds.forEach(function(rnd){
               rnd.querySelectorAll('.br-slot-name').forEach(function(el){
-                if(el.textContent.trim() === name){
+                if(m4nm(el).trim() === name){
                   el.style.setProperty('background', 'rgb(230,126,34)', 'important');
                   el.style.setProperty('color', '#ffffff', 'important');
                   el.style.fontWeight = 'bold';
@@ -1004,7 +1017,7 @@ window.addEventListener('load', function(){
        .rr-name が無い簡易セルはセル全体テキストにフォールバック。 */
     function rcName(cell){
       var n = cell.querySelector('.rr-name');
-      return (n ? n.textContent : cell.textContent).trim();
+      return m4nm(n || cell).trim();
     }
     var racerCells = document.querySelectorAll('.racer-cell');
     if(racerCells.length > 0){
@@ -1203,7 +1216,7 @@ window.addEventListener('load', function(){
       card.addEventListener('click', function(){
         var n = card.querySelector('.entry-name');
         if(!n) return;
-        var name = n.textContent.trim();
+        var name = (n.getAttribute('data-racer-name') || n.textContent).trim();
         var y = card.querySelector('.entry-yomi');
         toggleRacer(name, y ? y.textContent.trim() : '');
         applyAll();
@@ -1455,7 +1468,7 @@ window.addEventListener('load', function(){
     # に置き換わる。新版クライアントには常に同じ形で見えるため無害（表示なし・
     # 行数0なので世代印は以後安定する）。
     _migrate_marker = '<div style="display:none" aria-hidden="true"><table class="schedule-table"></table></div>'
-    patched = patched.replace('</body>', _migrate_marker + expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + racer_stats_js + '</body>', 1)
+    patched = patched.replace('</body>', _migrate_marker + expiry_script + my_racer_script + redraw_script + reload_btn_script + wakelock_script + info_bar_script + telop_script + clock_script + racer_stats_js + '<script src="/static/js/m4_short_names.js?v=20261117"></script>' + '</body>', 1)
 
     # スラッグ店舗: 公開HTMLは内部レンダリング（StoreResolver の応答書き換えを通らない）
     # で生成されるため、本文に残るクォート直後の絶対パス（例: /api/race-asset の画像、

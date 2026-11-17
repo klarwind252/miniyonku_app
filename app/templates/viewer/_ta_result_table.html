@@ -1,3 +1,7 @@
+{# ★20261117 速度の km/h 表示（MAX・セクター速度）。値は m/s で保持しているので ×3.6・小数1桁。
+   単位 km/h は .unit.kmh（数値と同じ濃い色）で表示。Av.（平均速度）は従来どおり m/s。 #}
+{% macro kmh(v) %}{{ '%.1f'|format(v * 3.6) }}<span class="unit kmh">km/h</span>{% endmacro %}
+{% macro bestcell_kmh(it) %}{% if it %}<span class="tb-v">{{ kmh(it.value) }}</span>{% else %}<span class="tb-dash">—</span>{% endif %}{% endmacro %}
 {% macro bestcell(it) %}{% if it %}<span class="tb-v">{% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}<span class="unit">m/s</span>{% endif %}</span>{% else %}<span class="tb-dash">—</span>{% endif %}{% endmacro %}
 
 <div class="ta-head">
@@ -53,7 +57,7 @@
           {% if row.total_avg_ms is not none %}{{ '%.2f'|format(row.total_avg_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
         </td>
         <td class="c-max{% if row.rank_max %} r{{ row.rank_max }}{% endif %}" rowspan="{{ row.lane_row_count }}">
-          {% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+          {% if row.max_ms is not none %}{{ kmh(row.max_ms) }}{% else %}—{% endif %}
         </td>
         {% endif %}
         <td class="c-lapno gsep">{{ row.lap_no if row.lap_no is not none else '—' }}</td>
@@ -66,7 +70,7 @@
         <td class="c-sec{% if n == 0 %} sg gsep{% endif %}">
           {% if sec %}
             {% if sec.s is not none %}<div class="sec-t{% if sec.rank_s %} r{{ sec.rank_s }}{% endif %}">{{ '%.3f'|format(sec.s) }}</div>{% endif %}
-            {% if sec.ms is not none %}<div class="sec-v{% if sec.rank_ms %} r{{ sec.rank_ms }}{% endif %}">{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
+            {% if sec.ms is not none %}<div class="sec-v{% if sec.rank_ms %} r{{ sec.rank_ms }}{% endif %}">{{ kmh(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
           {% else %}—{% endif %}
         </td>
         {% endfor %}
@@ -81,7 +85,7 @@
         <td class="c-total gsep">{{ bestcell(today_best_map.get('total')) }}</td>
         <td class="c-gap tb-dash">—</td>
         <td class="c-totav">{{ bestcell(today_best_map.get('total_avg')) }}</td>
-        <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
+        <td class="c-max">{{ bestcell_kmh(today_best_map.get('max_ms')) }}</td>
         <td class="c-lapno gsep tb-dash">—</td>
         <td class="c-lapt">{{ bestcell(today_best_map.get('lap')) }}</td>
         <td class="c-lapav">{{ bestcell(today_best_map.get('lap_avg')) }}</td>
@@ -92,7 +96,7 @@
             {% set _st = today_best_map.get('sector' ~ n) %}
             {% set _sv = today_best_map.get('sector_ms' ~ n) %}
             {% if _st %}<div class="sec-t">{{ '%.3f'|format(_st.value) }}</div>{% endif %}
-            {% if _sv %}<div class="sec-v">{{ '%.2f'|format(_sv.value) }}</div>{% endif %}
+            {% if _sv %}<div class="sec-v">{{ kmh(_sv.value) }}</div>{% endif %}
             {% if not _st and not _sv %}<span class="tb-dash">—</span>{% endif %}
           {% endif %}
         </td>

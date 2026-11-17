@@ -1353,7 +1353,16 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
         except Exception:
             hr_unresolved = []
 
+    # ★20261117 予選順位表でジュニアレーサーの名前の後に「Jr.」を付けるための一覧。
+    #   順位の作り方は形式ごとに違い entry_id を持たない行もあるので、entry_id と名前の両方で照合する。
+    from app.infrastructure.db.repositories.jr_repo import jr_sets as _jr_sets
+    jr_eids, jr_names = await _jr_sets(db, tid)
+    from app.infrastructure.db.repositories.jr_repo import short_name_map as _snm
+    _name_short = await _snm(db, tid)
     return templates.TemplateResponse("viewer/qualifying.html", {
+        "name_short_map": _name_short,
+        "jr_eids": jr_eids,
+        "jr_names": jr_names,
         "request": request,
         "t": t,
         "active_heat_id": active_heat_id,
@@ -1821,7 +1830,15 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             if _r.get("total") is not None:
                 entry_best_total[_r["entry_id"]] = _r["total"]
 
+    # ★20261117 決勝進出レーサーのジュニアに「Jr.」を付ける
+    from app.infrastructure.db.repositories.jr_repo import jr_sets as _jr_sets_b
+    _jr_eids_b, _jr_names_b = await _jr_sets_b(db, tid)
+    from app.infrastructure.db.repositories.jr_repo import short_name_map as _snm_b
+    _name_short_b = await _snm_b(db, tid)
     return templates.TemplateResponse("viewer/bracket.html", {
+        "name_short_map": _name_short_b,
+        "jr_eids": _jr_eids_b,
+        "jr_names": _jr_names_b,
         "request": request,
         "is_public_html": (request.query_params.get("_public") == "1"),
         "m4laps_use": m4laps_use,

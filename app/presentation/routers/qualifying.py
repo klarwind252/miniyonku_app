@@ -1275,7 +1275,11 @@ async def qualifying_top(tid: int, request: Request, db: aiosqlite.Connection = 
     _playoff_data = await _get_playoff_data(tid, db) if hr else {}
     hr_unresolved_ties = _hr_unresolved_ties(_playoff_data) if hr else []
 
+    # ★20261117 予選画面のレーサー名を（地域）ごと省略して表示する対応表（m4_short_names.js が使う）
+    from app.infrastructure.db.repositories.jr_repo import short_name_map as _snm_q
+    _name_short_q = await _snm_q(db, tid)
     return templates.TemplateResponse("admin/qualifying.html", {
+        "name_short_map": _name_short_q,
         "request": request,
         "t": t,
         "entries": entries,
