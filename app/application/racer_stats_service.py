@@ -298,7 +298,8 @@ async def build_race_laptimes(db, tournament_id: int, heat_id: int) -> dict | No
       {"label": "予選1回目 レース3" など,
        "rows": [{"rank","name","total_time","gap","total_avg","max_ms",
                  "best_lap_time","best_lap_avg","sectors"} ...]}  # total_time 昇順
-    計測が反映されていない（timing_races 無し／machine 無し）なら None。
+    レース自体が無いときだけ None。計測が反映されていない（timing_races 無し／machine 無し）
+    レースは rows=[] で返す（観覧側は「計測データがありません」と表示）。
     """
     # レース（ヒート）の存在確認＋ラベル用の round_no / heat_no
     async with db.execute(
@@ -322,7 +323,7 @@ async def build_race_laptimes(db, tournament_id: int, heat_id: int) -> dict | No
     ) as cur:
         lane_rows = await cur.fetchall()
     if not lane_rows:
-        return None
+        return {"label": label, "rows": []}   # ★20261117 計測なし＝空（404にしない）
 
     # このレースの最新 timing_race（計測反映済みレース）
     async with db.execute(
@@ -331,10 +332,10 @@ async def build_race_laptimes(db, tournament_id: int, heat_id: int) -> dict | No
     ) as cur:
         tr = await cur.fetchone()
     if tr is None:
-        return None
+        return {"label": label, "rows": []}   # ★20261117 計測なし＝空（404にしない）
     _race, result = await build_race_result(db, tr["id"])
     if result is None:
-        return None
+        return {"label": label, "rows": []}   # ★20261117 計測なし＝空（404にしない）
     speeds = await speed_store.load_speeds(db, tr["id"])
 
     rows: list[dict] = []
@@ -346,7 +347,7 @@ async def build_race_laptimes(db, tournament_id: int, heat_id: int) -> dict | No
         stat = _lane_stat(machine, speeds, lane_no)
         rows.append({"name": lr["name"] or "", **stat})
     if not rows:
-        return None
+        return {"label": label, "rows": []}   # ★20261117 計測なし＝空（404にしない）
 
     # total_time 昇順（None は末尾）＝ベストタイム順。GAP は race 内ベストとの差。
     rows.sort(key=lambda x: (x["total_time"] is None, x["total_time"] or 0.0))
