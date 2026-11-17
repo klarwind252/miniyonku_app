@@ -409,43 +409,9 @@ async def viewer_race_laptimes(tid: int, heat_id: int, request: Request,
     return JSONResponse(data)
 
 
-@router.get("/tournament/{tid}/qualifying", response_class=HTMLResponse)
-async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
-    """予選画面：スケジュール＋順位表"""
-    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
-        t = await cur.fetchone()
-    if not t:
-        return RedirectResponse("/view/")
-
-    # ヒート一覧
-    async with db.execute(
-        """SELECT h.id, h.heat_no, h.status, h.round_no, COALESCE(h.group_no,0) AS group_no
-           FROM heats h WHERE h.tournament_id=? ORDER BY h.heat_no""",
-        (tid,),
-    ) as cur:
-        heats = [dict(r) for r in await cur.fetchall()]
-
-    # レーンマップ
-    heat_lanes = {}
-    if heats:
-        hids = [h["id"] for h in heats]
-        ph = ",".join("?" * len(hids))
-        async with db.execute(
-            f"""SELECT hl.heat_id, hl.lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') as name,
-                       COALESCE(r.yomi,'') as yomi,
-                       hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win,
-                       hr.total_time as total_time
-                FROM heat_lanes hl
-                LEFT JOIN entries e ON e.id=hl.entry_id
-                LEFT JOIN racers r ON r.id=e.racer_id
-                LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id
-                WHERE hl.heat_id IN ({ph})
-                ORDER BY hl.lane_no""",
-            hids,
-        ) as cur:
-            for row in await cur.fetchall():
-                heat_lanes.setdefault(row["heat_id"], []).append(dict(row))
-
+async def _viewer_qual_standings(tid: int, t, db):
+    """観覧用の予選順位（standings）を算出する。予選画面・決勝画面で共通利用。
+    戻り値: (standings, ta_grid, ta_runs_count)"""
     # 予選順位
     standings = []
     ta_grid = []          # タイムアタックの走行記録グリッド（他形式では空）
@@ -603,6 +569,49 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
             _avg_rank = {eid: i for i, (_v, eid) in enumerate(_av[:3], start=1)}
             for s in standings:
                 s["best_avg_rank"] = _avg_rank.get(s.get("entry_id"))
+    return standings, ta_grid, ta_runs_count
+
+
+@router.get("/tournament/{tid}/qualifying", response_class=HTMLResponse)
+async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection = Depends(get_db)):
+    """予選画面：スケジュール＋順位表"""
+    async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as cur:
+        t = await cur.fetchone()
+    if not t:
+        return RedirectResponse("/view/")
+
+    # ヒート一覧
+    async with db.execute(
+        """SELECT h.id, h.heat_no, h.status, h.round_no, COALESCE(h.group_no,0) AS group_no
+           FROM heats h WHERE h.tournament_id=? ORDER BY h.heat_no""",
+        (tid,),
+    ) as cur:
+        heats = [dict(r) for r in await cur.fetchall()]
+
+    # レーンマップ
+    heat_lanes = {}
+    if heats:
+        hids = [h["id"] for h in heats]
+        ph = ",".join("?" * len(hids))
+        async with db.execute(
+            f"""SELECT hl.heat_id, hl.lane_no, hl.entry_id AS entry_id, COALESCE(r.name,'') as name,
+                       COALESCE(r.yomi,'') as yomi,
+                       hr.rank, COALESCE(hr.is_co,0) as is_co, hr.win,
+                       hr.total_time as total_time
+                FROM heat_lanes hl
+                LEFT JOIN entries e ON e.id=hl.entry_id
+                LEFT JOIN racers r ON r.id=e.racer_id
+                LEFT JOIN heat_results hr ON hr.heat_lane_id=hl.id
+                WHERE hl.heat_id IN ({ph})
+                ORDER BY hl.lane_no""",
+            hids,
+        ) as cur:
+            for row in await cur.fetchall():
+                heat_lanes.setdefault(row["heat_id"], []).append(dict(row))
+
+    # 予選順位（★20261118 決勝画面でも使うため _viewer_qual_standings に切り出し）
+    qt = dict(t).get("qualifying_type", "")
+    standings, ta_grid, ta_runs_count = await _viewer_qual_standings(tid, t, db)
 
     # ポイント制／並び順（ポイント制）: ボーダーライン同率グループに is_tied_cutoff フラグ付与
     if qt in ("point", "order") and standings:
@@ -1830,6 +1839,23 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
             if _r.get("total") is not None:
                 entry_best_total[_r["entry_id"]] = _r["total"]
 
+    # ★20261118 決勝画面：「決勝進出レーサー」の上に予選管理と同じ予選順位表を出す。
+    #   表示するのは決勝進出者（advanced>=1）のみ。予選順位・Pt 等の値は予選画面と同一。
+    #   ヒート制（総当たり／トーナメント）・即決勝は対象外（予選画面でも順位表を出さない形式）。
+    final_standings = []
+    if qt in ("point", "order", "roundrobin", "time_attack"):
+        try:
+            _fs_all, _x1, _x2 = await _viewer_qual_standings(tid, t, db)
+            _adv_ids = set()
+            async with db.execute(
+                "SELECT id FROM entries WHERE tournament_id=? AND advanced>=1", (tid,)
+            ) as cur:
+                for _r in await cur.fetchall():
+                    _adv_ids.add(_r["id"])
+            final_standings = [s for s in _fs_all if s["entry_id"] in _adv_ids]
+        except Exception:
+            final_standings = []
+
     # ★20261117 決勝進出レーサーのジュニアに「Jr.」を付ける
     from app.infrastructure.db.repositories.jr_repo import jr_sets as _jr_sets_b
     _jr_eids_b, _jr_names_b = await _jr_sets_b(db, tid)
@@ -1851,6 +1877,8 @@ async def viewer_bracket(tid: int, request: Request, db: aiosqlite.Connection = 
         "show_info_bar": True,
         "tid": tid,
         "finalists_list": finalists_list,
+        "final_standings": final_standings,
+        "qualifying_type": qt,
         "entries": entries,
         "ht_advanced_by_heat": ht_advanced_by_heat,
         "hr_heats_data": hr_heats_data_bv,

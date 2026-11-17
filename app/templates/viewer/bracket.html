@@ -19,6 +19,18 @@
   .br-final-podium{flex-wrap:nowrap;gap:6px}
   .br-final-podium > div{min-width:0!important;padding:8px 6px!important;flex:1}
 }
+/* ★20261118 予選順位表（決勝進出者のみ）：観覧の予選画面と同じ見た目 */
+.std-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.standings-table{min-width:100%;border-collapse:collapse;table-layout:auto;white-space:nowrap}
+.standings-table thead th:nth-child(n+4){text-align:center}
+.standings-table th{background:#333333;padding:5px 8px;text-align:left;font-size:12px;color:#ffffff;font-weight:normal;white-space:nowrap;line-height:1.2;vertical-align:bottom}
+.standings-table td{padding:9px 8px;border-bottom:1px solid #555555;font-size:17px}
+.standings-table tr:first-child td{background:#1a2a10}
+.v-section.v-std-section{background:#000000}
+@media(max-width:480px){
+  .standings-table th,.standings-table td{padding:7px 6px}
+  .standings-table td{font-size:15px}
+}
 /* 決勝進出レーサー クリック→タイム詳細モーダル */
 .rs-clickable{cursor:pointer}
 .rs-sec-h{font-size:13px;font-weight:bold;color:#888888;margin:0 0 6px;letter-spacing:1px}
@@ -236,6 +248,54 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     {{ _m4tbl }}
   </div>
   {% endif %}
+  {% endif %}
+
+  {# ★20261118 📊 予選順位（決勝進出者のみ）：予選管理／観覧予選画面の予選順位表と同じ列・値。
+     「決勝進出レーサー」の直上に表示。#列は決勝進出者内の連番、順位は予選順位そのまま。 #}
+  {% if final_standings %}
+  <div id="m4-final-std-sec" class="v-section v-std-section" style="margin-top:12px">
+    <div class="v-section-title">📊 予選順位（決勝進出者）</div>
+    <div class="std-scroll">
+    <table class="standings-table">
+      <thead>
+        <tr>
+          <th style="color:#555;font-weight:normal">#</th>
+          <th>順位</th><th>レーサー</th>
+          {% if qualifying_type == 'roundrobin' %}<th>勝</th>
+          {% elif qualifying_type == 'time_attack' %}<th>最速タイム</th><th style="color:#888888;text-align:center">出走</th><th style="color:#888888;text-align:center">完走</th><th style="color:#888888;text-align:center">完走率</th>
+          {% else %}<th>Pt</th><th style="color:#888888;text-align:center">出走</th><th style="color:#888888;text-align:center">完走</th><th style="color:#888888;text-align:center">完走率</th>{% if m4laps_active and qualifying_type == 'point' %}<th style="color:#888888;text-align:center">ベスト</th><th style="color:#888888;text-align:center">Av</th>{% endif %}{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in final_standings %}
+      <tr {% if m4laps_active and s.entry_id %}onclick="openRacerStats({{ t.id }},{{ s.entry_id }})" style="cursor:pointer"{% endif %}>
+        <td style="color:#555;font-size:11px">{{ loop.index }}</td>
+        <td class="rank-col" style="color:{% if s.rank==1 %}#d4a017{% elif s.rank==2 %}#888{% elif s.rank==3 %}#cd7f32{% else %}#888888{% endif %}">{{ s.rank }}</td>
+        <td style="font-weight:bold;font-size:15px"><span data-m4hl="1" data-racer-name="{{ s.name }}">{{ s.name }}</span>{% if (jr_eids and s.entry_id in jr_eids) or (jr_names and s.name in jr_names) %}<span class="jr-tag">Jr.</span>{% endif %}</td>
+        <td>
+          {% if qualifying_type == 'roundrobin' %}<span style="color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:13px">{{ s.wins }}勝</span>
+          {% elif qualifying_type == 'time_attack' %}<span style="font-variant-numeric:tabular-nums;font-weight:bold;color:#dddddd;font-size:14px">{{ s.best_str }}</span>
+          {% else %}<span style="color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px;font-size:13px">{{ s.total_points }}pt</span>{% endif %}
+        </td>
+        {% if qualifying_type == 'time_attack' %}
+        <td style="color:#888888;font-size:11px;text-align:center">{{ s.started }}</td>
+        <td style="color:#888888;font-size:11px;text-align:center">{{ s.finished }}</td>
+        <td style="color:#888888;font-size:11px;text-align:center">{{ s.finish_rate }}%</td>
+        {% elif qualifying_type in ('point', 'order') %}
+        <td style="color:#888888;font-size:11px;text-align:center">{{ s.race_count or 0 }}</td>
+        <td style="color:#888888;font-size:11px;text-align:center">{{ s.finish_count or 0 }}</td>
+        <td style="color:#888888;font-size:11px;text-align:center">{% if (s.race_count or 0) > 0 %}{{ ((s.finish_count or 0) / s.race_count * 100) | round(0, 'floor') | int }}%{% else %}—{% endif %}</td>
+        {% if m4laps_active and qualifying_type == 'point' %}
+        <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_rank == 1 %}color:#fff;background:rgba(64,18,96,.5);font-weight:bold{% elif s.best_rank == 2 %}color:#fff;background:rgba(18,38,96,.5);font-weight:bold{% elif s.best_rank == 3 %}color:#fff;background:rgba(14,66,40,.5);font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_total is not none %}{{ '%.3f'|format(s.best_total) }}{% else %}—{% endif %}</td>
+        <td class="rs-num" style="text-align:center;font-size:12px;{% if s.best_avg_rank == 1 %}color:#fff;background:rgba(64,18,96,.5);font-weight:bold{% elif s.best_avg_rank == 2 %}color:#fff;background:rgba(18,38,96,.5);font-weight:bold{% elif s.best_avg_rank == 3 %}color:#fff;background:rgba(14,66,40,.5);font-weight:bold{% else %}color:#8aa0b6{% endif %}">{% if s.best_avg is not none %}{{ '%.2f'|format(s.best_avg) }}{% else %}—{% endif %}</td>
+        {% endif %}
+        {% endif %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
   {% endif %}
 
   {# 🏆 決勝進出レーサー（M4LAPSの下・トーナメント表の有無に関わらず常時表示） #}

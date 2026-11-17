@@ -597,7 +597,7 @@ window._m4DedupBracket = function(){
     for (var i = ws.length - 1; i >= 1; i--){ if (ws[i] && ws[i].remove) ws[i].remove(); }
     // ⚡ M4LAPS 節・🏆 決勝進出レーサー 節も、決勝表(.br-wrap)と同様に
     // 部分更新のタイミングで二重化することがあるため、先頭の1つだけ残す。
-    ['m4-records-sec','m4-laps-sec','m4-finalists-sec'].forEach(function(id){
+    ['m4-records-sec','m4-laps-sec','m4-final-std-sec','m4-finalists-sec'].forEach(function(id){
       var es = document.querySelectorAll('#' + id);
       for (var k = es.length - 1; k >= 1; k--){ if (es[k] && es[k].remove) es[k].remove(); }
     });
@@ -1702,6 +1702,7 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
     # bracket.html 側で付与した安定 id をマーカーにブロック単位で除去する。
     html = _keep_first_div_block(html, '<div id="m4-laps-sec"')
     html = _keep_first_div_block(html, '<div id="m4-finalists-sec"')
+    html = _keep_first_div_block(html, '<div id="m4-final-std-sec"')  # ★20261118 予選順位（決勝進出者）
 
     # 予選ページ限定：👥エントリー一覧より後ろに出た表示をすべて除去する（＝エントリーの下は何も出さない）。
     #   予選ページの正規レイアウトでは、トーナメント表(.br-wrap)・⚡M4LAPSベスト表・🏆決勝進出節は
@@ -1713,6 +1714,7 @@ async def _inject_bracket_html(html: str, view_url: str, store=None) -> str:
             '<div class="br-wrap"',        # 属性付きの br-wrap（前方一致）
             '<div id="m4-laps-sec"',       # ⚡ M4LAPS ベスト表
             '<div id="m4-finalists-sec"',  # 🏆 決勝進出レーサー節
+            '<div id="m4-final-std-sec"',  # ★20261118 📊 予選順位（決勝進出者）節
         ])
 
     return html
