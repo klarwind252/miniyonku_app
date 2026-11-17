@@ -883,16 +883,23 @@ function _showPubToast(msg) {
   var curSlot = null;
   var curVer  = '';
 
+  // ★20261118 店舗（スラッグ）ごとに保存キーを分ける。
+  //   全店舗が同一オリジンのため、localStorage/sessionStorage のキーが共通だと
+  //   自動ON/OFF・音量・再生中の曲（bgmState）が他店舗へ漏れていた。
+  //   スラッグなし（既定店舗）は従来キーのまま（既存設定を引き継ぐ）。
+  var BGM_NS = {{ (request.scope.get('root_path', '') if request else '') | tojson }};
+  function K(name){ return BGM_NS ? (name + '@' + BGM_NS) : name; }
+
   // このページのシーン（予選・決勝 等。該当なしは空）。子テンプレートが宣言する。
   var CURRENT_SCENE = "{% block scene %}{% endblock %}".trim();
   // 他のIIFE（GWアクティブPIP等）からも参照できるようにグローバル公開する。
   try { window.M4_SCENE = CURRENT_SCENE; } catch(e){}
   // 自動BGMのON/OFF（この端末＝ブラウザ単位。localStorage に保持）
-  function autoOn(){ try { return localStorage.getItem('bgmAuto') === '1'; } catch(e){ return false; } }
+  function autoOn(){ try { return localStorage.getItem(K('bgmAuto')) === '1'; } catch(e){ return false; } }
 
   // ---- 音量（この端末＝ブラウザ単位。localStorage 保持） ----
-  function getVol(){ var v = parseFloat(localStorage.getItem('bgmVolume')); return (isFinite(v) && v>=0 && v<=1) ? v : 1; }
-  function isMuted(){ try { return localStorage.getItem('bgmMuted') === '1'; } catch(e){ return false; } }
+  function getVol(){ var v = parseFloat(localStorage.getItem(K('bgmVolume'))); return (isFinite(v) && v>=0 && v<=1) ? v : 1; }
+  function isMuted(){ try { return localStorage.getItem(K('bgmMuted')) === '1'; } catch(e){ return false; } }
   function applyVolume(){
     try { audio.volume = getVol(); audio.muted = isMuted(); } catch(e){}
     syncVolumeUI();
@@ -909,13 +916,13 @@ function _showPubToast(msg) {
   window.setBgmVolume = function(val){
     var v = Math.max(0, Math.min(1, (parseFloat(val)||0)/100));
     try {
-      localStorage.setItem('bgmVolume', String(v));
-      if (v > 0) localStorage.setItem('bgmMuted','0');   // スライダー操作でミュート解除
+      localStorage.setItem(K('bgmVolume'), String(v));
+      if (v > 0) localStorage.setItem(K('bgmMuted'),'0');   // スライダー操作でミュート解除
     } catch(e){}
     applyVolume();
   };
   window.toggleBgmMute = function(){
-    try { localStorage.setItem('bgmMuted', isMuted() ? '0' : '1'); } catch(e){}
+    try { localStorage.setItem(K('bgmMuted'), isMuted() ? '0' : '1'); } catch(e){}
     applyVolume();
   };
 
@@ -923,21 +930,21 @@ function _showPubToast(msg) {
   function saveState(){
     try {
       if (curSlot){
-        sessionStorage.setItem('bgmState', JSON.stringify({
+        sessionStorage.setItem(K('bgmState'), JSON.stringify({
           slot: curSlot, ver: curVer, scene: CURRENT_SCENE, t: audio.currentTime || 0
         }));
       } else {
-        sessionStorage.removeItem('bgmState');
+        sessionStorage.removeItem(K('bgmState'));
       }
     } catch(e){}
   }
   function loadState(){
-    try { return JSON.parse(sessionStorage.getItem('bgmState') || 'null'); } catch(e){ return null; }
+    try { return JSON.parse(sessionStorage.getItem(K('bgmState')) || 'null'); } catch(e){ return null; }
   }
   // 「このシーンは手動で止めた」印（同一シーン内では自動再開しない）
-  function markUserStopped(scene){ try { sessionStorage.setItem('bgmUserStopped', scene || ''); } catch(e){} }
-  function isUserStopped(scene){ try { return sessionStorage.getItem('bgmUserStopped') === (scene||''); } catch(e){ return false; } }
-  function clearUserStopped(){ try { sessionStorage.removeItem('bgmUserStopped'); } catch(e){} }
+  function markUserStopped(scene){ try { sessionStorage.setItem(K('bgmUserStopped'), scene || ''); } catch(e){} }
+  function isUserStopped(scene){ try { return sessionStorage.getItem(K('bgmUserStopped')) === (scene||''); } catch(e){ return false; } }
+  function clearUserStopped(){ try { sessionStorage.removeItem(K('bgmUserStopped')); } catch(e){} }
 
   // 手動モード（自動OFF）用：開いた／復帰したら必ずBGMをOFFにする
   function forceBgmOff(){
@@ -1064,7 +1071,7 @@ function _showPubToast(msg) {
   // ---- 自動BGM（シーンに合わせて自動再生。この端末のみ） ----
   window.toggleBgmAuto = function(){
     var next = autoOn() ? '0' : '1';
-    try { localStorage.setItem('bgmAuto', next); } catch(e){}
+    try { localStorage.setItem(K('bgmAuto'), next); } catch(e){}
     syncAutoBtn();
     if (next === '1'){ clearUserStopped(); initAutoBgm(); }
     else { forceBgmOff(); saveState(); }

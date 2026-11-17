@@ -38,6 +38,9 @@ MAX_STORES = 5
 RESERVED_SLUGS = {
     "admin", "view", "static", "logo", "health", "api", "favicon", "enter",
     "store", "stores", "_archive",
+    # ★20261118 既定店舗の公開ディレクトリ直下に作るサブフォルダ名（BGM・PWAアイコン）。
+    #   スラッグ店舗は {PUBLIC_HTML_DIR}/{slug}/ に置くため、同名スラッグだと既定店舗と衝突する。
+    "bgm", "pwa",
 }
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
 
