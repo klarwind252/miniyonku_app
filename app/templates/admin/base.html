@@ -521,13 +521,15 @@ function openRaceQr(tid){
   _racerQrSetUrl('');
   document.getElementById('racerQrCanvas').innerHTML = '';
   document.getElementById('racerQrUrl').textContent = '読み込み中…';
-  var logoUrl = prefix + '/pwa/icon-src-512.png?t=' + Date.now();
   Promise.all([
     fetch(prefix + '/admin/preview/race-qr/' + tid, {cache:'no-store'}).then(function(r){ if(!r.ok) throw 0; return r.json(); }),
     fetch(prefix + '/admin/pub-gate/entry-url', {cache:'no-store'}).then(function(r){ return r.json(); }).catch(function(){ return {}; })
   ]).then(function(res){
     var raceUrl = new URL(res[0].url, location.origin).href;      // QRの中身（相対URLでも絶対化）
     var daily = res[1].url || (location.origin + prefix + '/enter');
+    // ★ロゴは右上QRと同じく「当日の入口URLが指す店舗」のアイコン（スラッグ店舗対応・DC106と同方式）
+    var logoPfx = _slugPrefixFromEntryUrl(daily) || prefix;
+    var logoUrl = logoPfx + '/pwa/icon-src-512.png?t=' + Date.now();
     _racerQrSetUrl(raceUrl);                                      // 「ブラウザで開く」もレース固定URL
     _racerQrRender(raceUrl, _M4_STORE_NAME, logoUrl, _racerShownUrl(daily)); // 表示文字は右上QRと同じ
   }).catch(function(){
