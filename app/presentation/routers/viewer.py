@@ -419,7 +419,7 @@ async def viewer_qualifying(tid: int, request: Request, db: aiosqlite.Connection
 
     # ヒート一覧
     async with db.execute(
-        """SELECT h.id, h.heat_no, h.status, h.round_no
+        """SELECT h.id, h.heat_no, h.status, h.round_no, COALESCE(h.group_no,0) AS group_no
            FROM heats h WHERE h.tournament_id=? ORDER BY h.heat_no""",
         (tid,),
     ) as cur:
@@ -1865,10 +1865,29 @@ def _ta_mode(race) -> str:
 async def ta_board(request: Request):
     """TA用view（FHD全画面・計測結果ビューア）のシェル。"""
     from app import pwa as _pwa
+    from app.core.config import IS_CLOUD as _IS_CLOUD_TA
     return templates.TemplateResponse("viewer/ta_board.html", {
         "request": request,
         "bg_url": _pwa.bg_url(request),
+        # ★20261117 左下に当日の参加者QRを出す（会場モニター用）。/api/ta（参加者向け）では出さない。
+        "show_entry_qr": bool(_IS_CLOUD_TA),
     })
+
+
+@router.get("/entry-qr")
+async def view_entry_qr(request: Request):
+    """★20261117 当日の参加者入口URL（日替わり2語）を返す。観覧(view)の待機画面・TA view の
+    QR表示用。/view 配下＝観覧トークンで保護。中身は管理の /admin/pub-gate/entry-url と同じ。
+    クライアントは定期的に取得し、09:00 の切替で変わればQRを描き直す。"""
+    from fastapi.responses import JSONResponse
+    from app.core.config import IS_CLOUD as _IS_CLOUD_EQ, PUBLIC_BASE_URL
+    if not _IS_CLOUD_EQ:
+        return JSONResponse({"ok": False, "url": ""}, headers={"Cache-Control": "no-store"})
+    from app.services import pub_gate as _pg
+    store = getattr(request.state, "store", None)
+    pfx = ("/" + store.slug) if (store is not None and getattr(store, "slug", "")) else ""
+    url = _pg.entry_url(PUBLIC_BASE_URL, pfx, store)
+    return JSONResponse({"ok": True, "url": url}, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/ta/list")
