@@ -1524,7 +1524,8 @@ window.initBracketConnectors = initBracketConnectors;
 
 {% if final_groups %}
 <div style="margin-bottom:3px"><span class="round-header rh-final">🏆 決勝</span></div>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;margin-bottom:10px">
+{# ★20261118 決勝カードの幅を拡張（順位セレクトが枠からはみ出していた）300px→420px #}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:6px;margin-bottom:10px">
   {% for gd in final_groups %}
   {% set g = gd.group %}{% set slots = gd.slots %}{% set result = gd.result %}{% set ranks = gd.ranks %}
   {# 決勝も他ラウンドと同じ横長レイアウト：⠿ でドラッグして出走レーン（1・2・3コース）を
@@ -1748,8 +1749,8 @@ window.initBracketConnectors = initBracketConnectors;
         </tr>
         <tr>
           <th>順位</th><th style="text-align:left">レーサー</th><th>予選完走率</th>
-          <th class="bsep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
-          <th class="bsep">TIME</th><th>Av.</th>
+          <th class="bsep">TIME</th><th>GAP</th><th>Av.(m/s)</th><th>MAX(km/h)</th>
+          <th class="bsep">TIME</th><th>Av.(m/s)</th>
           {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep"{% endif %}>{{ n }}</th>{% endfor %}
         </tr>
       </thead>
