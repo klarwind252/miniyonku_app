@@ -380,7 +380,7 @@ def _best_items(bests: dict) -> list[dict]:
     metric_view = [
         ("total",     "トータルタイム",     "秒",  "最速"),
         ("total_avg", "TOTAL平均SPEED",     "m/s", "最高"),
-        ("max_ms",    "MAX SPEED",          "m/s", "最高"),
+        ("max_ms",    "MAX SPEED",          "km/h", "最高"),   # ★20261118 MAX・通過速度は km/h（Av.は m/s）
         ("lap",       "ラップタイム",       "秒",  "最速"),
         ("lap_avg",   "ラップ平均SPEED",    "m/s", "最高"),
     ]
@@ -390,7 +390,7 @@ def _best_items(bests: dict) -> list[dict]:
                 (best_svc.sector_metric(i), f"S{i} セクタータイム", "秒", "最速"))
         if bests.get(best_svc.sector_speed_metric(i)):
             metric_view.append(
-                (best_svc.sector_speed_metric(i), f"S{i} 通過SPEED", "m/s", "最高"))
+                (best_svc.sector_speed_metric(i), f"S{i} 通過SPEED", "km/h", "最高"))
 
     items = []
     for key, label, unit, kind in metric_view:

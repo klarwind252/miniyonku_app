@@ -230,7 +230,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
             <td class="m4l-sep m4l-num{% if m4laps_best_ranks.total.get(r.entry_id) %} b{{ m4laps_best_ranks.total.get(r.entry_id) }}{% endif %}">{% if r.total is not none %}{{ '%.3f'|format(r.total) }}{% else %}—{% endif %}</td>
             <td class="m4l-num">{% if r.gap is not none %}{% if r.gap < 0.001 %}-{% else %}+{{ '%.3f'|format(r.gap) }}{% endif %}{% else %}—{% endif %}</td>
             <td class="m4l-num{% if m4laps_best_ranks.total_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.total_avg.get(r.entry_id) }}{% endif %}">{% if r.total_avg is not none %}{{ '%.2f'|format(r.total_avg) }}{% else %}—{% endif %}</td>
-            <td class="m4l-num{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}{% endif %}">{% if r.max_ms is not none %}{{ '%.2f'|format(r.max_ms) }}{% else %}—{% endif %}</td>
+            <td class="m4l-num{% if m4laps_best_ranks.max_ms.get(r.entry_id) %} b{{ m4laps_best_ranks.max_ms.get(r.entry_id) }}{% endif %}">{% if r.max_ms is not none %}{{ '%.1f'|format(r.max_ms * 3.6) }}{% else %}—{% endif %}</td>
             <td class="m4l-sep m4l-num{% if m4laps_best_ranks.lap.get(r.entry_id) %} b{{ m4laps_best_ranks.lap.get(r.entry_id) }}{% endif %}">{% if r.lap is not none %}{{ '%.3f'|format(r.lap) }}{% else %}—{% endif %}</td>
             <td class="m4l-num{% if m4laps_best_ranks.lap_avg.get(r.entry_id) %} b{{ m4laps_best_ranks.lap_avg.get(r.entry_id) }}{% endif %}">{% if r.lap_avg is not none %}{{ '%.2f'|format(r.lap_avg) }}{% else %}—{% endif %}</td>
           </tr>
@@ -422,7 +422,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
     var maxSec=0; list.forEach(function(rc){ if(rc.sectors&&rc.sectors.length>maxSec) maxSec=rc.sectors.length; });
     var h='<div style="overflow-x:auto"><table class="rs-table"><thead>'
       +'<tr><th rowspan="2">レース</th><th colspan="'+(withGap?4:3)+'">TOTAL BEST</th><th colspan="2">LAP BEST</th>'
-      +'<th colspan="'+Math.max(maxSec,1)+'">SECTOR BEST（上:秒／下:m/s）</th></tr>'
+      +'<th colspan="'+Math.max(maxSec,1)+'">SECTOR BEST（上:秒／下:km/h）</th></tr>'
       +'<tr><th>TIME</th>'+(withGap?'<th>GAP</th>':'')+'<th>Av</th><th>MAX</th><th>TIME</th><th>Av</th>';
     for(var s=1;s<=maxSec;s++) h+='<th>'+s+'</th>';
     h+='</tr></thead><tbody>';
@@ -432,13 +432,13 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         +'<td class="rs-num rs-total" style="'+tstyle+'">'+fmt(rc.total_time,3)+'</td>';
       if(withGap){ var gap=(rc.gap==null)?'—':(rc.gap<=0?'-':'+'+fmt(rc.gap,3)); h+='<td class="rs-num">'+gap+'</td>'; }
       h+='<td class="rs-num">'+fmt(rc.total_avg,2)+'</td>'
-        +'<td class="rs-num">'+fmt(rc.max_ms,2)+'</td>'
+        +'<td class="rs-num">'+fmt(rc.max_ms==null?null:rc.max_ms*3.6,1)+'</td>'
         +'<td class="rs-num">'+fmt(rc.best_lap_time,3)+'</td>'
         +'<td class="rs-num">'+fmt(rc.best_lap_avg,2)+'</td>';
       for(var s=1;s<=maxSec;s++){
         var sec=null,arr=rc.sectors||[];
         for(var i=0;i<arr.length;i++){ if(arr[i].no===s){ sec=arr[i]; break; } }
-        h+='<td class="rs-num">'+(sec?fmt(sec.time,3):'—')+((sec&&sec.speed!=null)?'<span class="rs-sp">'+fmt(sec.speed,2)+'</span>':'')+'</td>';
+        h+='<td class="rs-num">'+(sec?fmt(sec.time,3):'—')+((sec&&sec.speed!=null)?'<span class="rs-sp">'+fmt(sec.speed*3.6,1)+'</span>':'')+'</td>';
       }
       h+='</tr>';
     });

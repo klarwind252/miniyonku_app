@@ -40,11 +40,12 @@ def format_records_display(raw, name_by_entry: dict, heat_labels: dict):
         if not rec or rec.get("value") is None or not rec.get("holders"):
             return None
         v = rec["value"]
-        vstr = f"{v:.2f} m/s" if speed else f"{v:.3f} sec"
+        # ★20261118 最高速（TOP SPEED）は km/h 表示（値は m/s 保持・×3.6・小数1桁）
+        vstr = f"{v * 3.6:.1f} km/h" if speed else f"{v:.3f} sec"
         _gap = rec.get("gap")
         gap_str = None
         if _gap is not None:
-            gap_str = f"-{_gap:.2f}" if speed else f"-{_gap:.3f}"
+            gap_str = f"-{_gap * 3.6:.1f}" if speed else f"-{_gap:.3f}"
         holders = [
             {"name": name_by_entry.get(eid, "?"), "label": heat_labels.get(hid, "")}
             for (eid, hid) in rec["holders"]

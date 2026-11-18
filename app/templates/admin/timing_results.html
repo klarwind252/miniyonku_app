@@ -324,9 +324,9 @@
   <div class="card-body">
     {# --- 当日のベスト（09:00〜翌08:59の24時間・各項目の1位だけ）--- #}
     {# 別表にすると列がずれて見比べにくいので、明細表のヘッダー直下に1行だけ差し込む。 #}
-    {% macro bestcell(it) %}
+    {% macro bestcell(it, kmh=false) %}{# ★20261118 kmh=true は m/s→km/h(×3.6) 表示 #}
       {% if it %}
-        <div class="tb-v">{% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% else %}{{ '%.2f'|format(it.value) }}<span class="unit">m/s</span>{% endif %}</div>
+        <div class="tb-v">{% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% elif kmh %}{{ '%.1f'|format(it.value * 3.6) }}<span class="unit">km/h</span>{% else %}{{ '%.2f'|format(it.value) }}<span class="unit">m/s</span>{% endif %}</div>
         <div class="tb-m">
           {% if it.start_lane %}<span class="tb-lane lane-{{ ((it.start_lane - 1) % 5) + 1 }}">{{ it.start_lane }}</span>{% endif %}
           {% if it.lap %}L{{ it.lap }}{% endif %}
@@ -375,7 +375,7 @@
             <td class="c-total gsep">{{ bestcell(today_best_map.get('total')) }}</td>
             <td class="c-gap tb-blank">—</td>
             <td class="c-totav">{{ bestcell(today_best_map.get('total_avg')) }}</td>
-            <td class="c-max">{{ bestcell(today_best_map.get('max_ms')) }}</td>
+            <td class="c-max">{{ bestcell(today_best_map.get('max_ms'), true) }}</td>
             <td class="c-lapno gsep tb-blank">—</td>
             <td class="c-lapt">{{ bestcell(today_best_map.get('lap')) }}</td>
             <td class="c-lapav">{{ bestcell(today_best_map.get('lap_avg')) }}</td>
@@ -386,7 +386,7 @@
                 {% set _st = today_best_map.get('sector' ~ n) %}
                 {% set _sv = today_best_map.get('sector_ms' ~ n) %}
                 {% if _st %}<div class="sec-t">{{ '%.3f'|format(_st.value) }}</div>{% endif %}
-                {% if _sv %}<div class="sec-v">{{ '%.2f'|format(_sv.value) }}</div>{% endif %}
+                {% if _sv %}<div class="sec-v">{{ '%.1f'|format(_sv.value * 3.6) }}</div>{% endif %}
                 {% if not _st and not _sv %}<span class="tb-dash">—</span>{% endif %}
               {% endif %}
             </td>
@@ -444,7 +444,7 @@
             </td>
             <td class="c-max{% if row.rank_max %} r{{ row.rank_max }}{% endif %}" rowspan="{{ row.lane_row_count }}"
                 {% if row.rank_max %}title="この日の{{ row.rank_max }}位（最高速）"{% endif %}>
-              {% if row.max_ms is not none %}{{ '%.2f'|format(row.max_ms) }}<span class="unit">m/s</span>{% else %}—{% endif %}
+              {% if row.max_ms is not none %}{{ '%.1f'|format(row.max_ms * 3.6) }}<span class="unit">km/h</span>{% else %}—{% endif %}
             </td>
             {% endif %}
             {# LAP：周ごと #}
@@ -463,7 +463,7 @@
                 {% if sec.s is not none %}<div class="sec-t{% if sec.rank_s %} r{{ sec.rank_s }}{% endif %}"
                      {% if sec.rank_s %}title="この日の{{ sec.rank_s }}位（セクタータイム）"{% endif %}>{{ '%.3f'|format(sec.s) }}</div>{% endif %}
                 {% if sec.ms is not none %}<div class="sec-v{% if sec.rank_ms %} r{{ sec.rank_ms }}{% endif %}"
-                     {% if sec.rank_ms %}title="この日の{{ sec.rank_ms }}位（通過速度）"{% endif %}>{{ '%.2f'|format(sec.ms) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
+                     {% if sec.rank_ms %}title="この日の{{ sec.rank_ms }}位（通過速度）"{% endif %}>{{ '%.1f'|format(sec.ms * 3.6) }}</div>{% elif sec.s is none %}<div class="sec-t">-</div>{% endif %}
               {% else %}—{% endif %}
             </td>
             {% endfor %}
@@ -487,7 +487,7 @@
       </table>
     </div>
     <p style="margin-top:10px;color:#95a5a6;font-size:11px">
-      ※ SECTOR上段=区間タイム／下段=通過速度(m/s)。0はS/G（その周の起点）で、1周目はスタート地点のため速度なし。<br>※ その日の上位3傑を色分け：<span class="r1" style="padding:1px 6px">1位</span>
+      ※ SECTOR上段=区間タイム／下段=通過速度(km/h)。MAX（最高速）も km/h 表示（平均速度 Av. は m/s のまま）。0はS/G（その周の起点）で、1周目はスタート地点のため速度なし。<br>※ その日の上位3傑を色分け：<span class="r1" style="padding:1px 6px">1位</span>
       <span class="r2" style="padding:1px 6px">2位</span>
       <span class="r3" style="padding:1px 6px">3位</span>
       （トータル・最高速・ラップ・ラップ平均速度・セクター・セクター速度の6項目それぞれ）

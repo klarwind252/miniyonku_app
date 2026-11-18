@@ -103,7 +103,7 @@
           <td class="bt-label">{{ it.label }}<span class="bt-kind">{{ it.kind }}</span></td>
           <td class="bt-value">
             {% if it.value is not none %}
-              {{ '%.3f'|format(it.value) if it.unit == '秒' else '%.2f'|format(it.value) }}<span class="bt-unit">{{ it.unit }}</span>
+              {% if it.unit == '秒' %}{{ '%.3f'|format(it.value) }}{% elif it.unit == 'km/h' %}{{ '%.1f'|format(it.value * 3.6) }}{% else %}{{ '%.2f'|format(it.value) }}{% endif %}<span class="bt-unit">{{ it.unit }}</span>
             {% else %}<span class="bt-none">—</span>{% endif %}
           </td>
           <td class="bt-when">

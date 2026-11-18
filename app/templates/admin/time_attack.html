@@ -160,7 +160,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% if show_m4 %}
           <th class="bsep center" colspan="4">TOTAL BEST</th>
           <th class="bsep center" colspan="2">LAP BEST</th>
-          {% if max_sector_no > 0 %}<th class="bsep center" colspan="{{ max_sector_no }}">SECTOR BEST（上:秒／下:m/s）</th>{% endif %}
+          {% if max_sector_no > 0 %}<th class="bsep center" colspan="{{ max_sector_no }}">SECTOR BEST（上:秒／下:km/h）</th>{% endif %}
           {% endif %}
         </tr>
         {% if show_m4 %}
@@ -194,7 +194,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           <td class="bsep bcell{% if best_ranks.total.get(s.entry_id) %} b{{ best_ranks.total.get(s.entry_id) }}{% endif %}">{% if rb.get('total') is not none %}{{ '%.3f'|format(rb['total']) }}{% else %}—{% endif %}</td>
           <td class="bcell">{% if rb.get('total') is not none and best_total_min is not none %}{% if (rb['total'] - best_total_min) < 0.001 %}-{% else %}+{{ '%.3f'|format(rb['total'] - best_total_min) }}{% endif %}{% else %}—{% endif %}</td>
           <td class="bcell{% if best_ranks.total_avg.get(s.entry_id) %} b{{ best_ranks.total_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('total_avg') is not none %}{{ '%.2f'|format(rb['total_avg']) }}{% else %}—{% endif %}</td>
-          <td class="bcell{% if best_ranks.max_ms.get(s.entry_id) %} b{{ best_ranks.max_ms.get(s.entry_id) }}{% endif %}">{% if rb.get('max_ms') is not none %}{{ '%.2f'|format(rb['max_ms']) }}{% else %}—{% endif %}</td>
+          <td class="bcell{% if best_ranks.max_ms.get(s.entry_id) %} b{{ best_ranks.max_ms.get(s.entry_id) }}{% endif %}">{% if rb.get('max_ms') is not none %}{{ '%.1f'|format(rb['max_ms'] * 3.6) }}{% else %}—{% endif %}</td>
           <td class="bsep bcell{% if best_ranks.lap.get(s.entry_id) %} b{{ best_ranks.lap.get(s.entry_id) }}{% endif %}">{% if rb.get('lap') is not none %}{{ '%.3f'|format(rb['lap']) }}{% else %}—{% endif %}</td>
           <td class="bcell{% if best_ranks.lap_avg.get(s.entry_id) %} b{{ best_ranks.lap_avg.get(s.entry_id) }}{% endif %}">{% if rb.get('lap_avg') is not none %}{{ '%.2f'|format(rb['lap_avg']) }}{% else %}—{% endif %}</td>
           {% for n in range(1, max_sector_no + 1) %}
@@ -202,7 +202,7 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
           {% set _rt = best_ranks['sector' ~ n].get(s.entry_id) %}{% set _rp = best_ranks['sector_ms' ~ n].get(s.entry_id) %}
           <td class="bsec2{% if n == 1 %} bsep{% endif %}">
             <span class="st{% if _rt %} b{{ _rt }}{% endif %}">{% if _st is not none %}{{ '%.3f'|format(_st) }}{% else %}—{% endif %}</span>
-            <span class="sp{% if _rp %} b{{ _rp }}{% endif %}">{% if _sp is not none %}{{ '%.2f'|format(_sp) }}{% else %}—{% endif %}</span>
+            <span class="sp{% if _rp %} b{{ _rp }}{% endif %}">{% if _sp is not none %}{{ '%.1f'|format(_sp * 3.6) }}{% else %}—{% endif %}</span>
           </td>
           {% endfor %}
           {% endif %}
