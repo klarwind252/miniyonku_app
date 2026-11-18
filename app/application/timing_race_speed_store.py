@@ -36,6 +36,25 @@ NO = -1  # lap / sector_no の「該当なし」を表す番兵
 # ※20261116 「自車の周平均×K」で落とす案は不採用：コースアウト→復帰などで周平均だけ
 #   極端に遅い車の、正常な通過速度まで消してしまうため（実データで確認）。
 REL_K = 2.5
+# ★20261118 相対フィルタの基準を「ラップ平均（LAP Av.）の上側の統計」に変更。
+#   ・ラップ平均はラップタイム÷距離で出すためビーム揺れの影響を受けない。
+#   ・遅い方向の外れ（コースアウト・減速・S/G打刻抜けで周が長くなる）はよくあるが、
+#     速い方向の外れは物理的にほぼ起きない。中央値は遅い車に引っ張られて速い車の正常値まで
+#     切り得るため、基準は上側＝速い側で取る：
+#       基準 = max(このレースの最速ラップ平均, 同コース過去レースのラップ平均 P95)
+#     （同コース＝同じ layout_id かつ同じ合計距離。過去データが COURSE_MIN_N 件以上のときだけ使う）
+#   ・通過速度 ≤ 基準 × REL_K_LAP を採用。
+#   実データ（arcadebase 4524通過・20261118集計）：通過速度/そのレース最速ラップ平均 は
+#     中央 1.19・P90 1.59（正常走行の最大はおよそ1.5〜1.6）。2超の裾は「最速ラップ平均が
+#     2m/s台＝コースアウト・停止のみのレース」で、基準が低すぎることが原因＝上記の保険で吸収。
+#   → REL_K_LAP=2.0（正常最大1.52に約3割の余裕）。現状のクラスで上限 約44km/h。
+#   距離未設定でラップ平均が無いレースだけ、従来どおり通過速度の中央値 × REL_K を基準にする。
+REL_K_LAP = 2.0
+COURSE_PCT = 0.95
+COURSE_MIN_N = 20
+LAP_SANE_K = 1.5       # これを超える「速すぎる周」は S/G 余分打刻とみなし ref に使わない
+NODE_MIN_N = 3          # ノード中央値を使う最小サンプル数（このレース内）
+# 係数 pass_k / rel_k / node_med_k は timing_speed_calib（日次の自動校正）が管理する。
 
 
 async def has_stored_speeds(db, race_id: int) -> bool:
@@ -49,7 +68,8 @@ async def delete_speeds(db, race_id: int) -> None:
     await db.execute("DELETE FROM timing_race_speeds WHERE race_id=?", (race_id,))
 
 
-async def compute_and_store_speeds(db, race_id: int) -> int:
+async def compute_and_store_speeds(db, race_id: int, *, params: dict | None = None,
+                                   sink: dict | None = None) -> int:
     """race_id の速度を計算し、timing_race_speeds へ入れ直す。
 
     既存のこのレースぶんは削除してから入れ直す（再計算＝上書き）。
@@ -68,7 +88,8 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
     except Exception:
         result = None
     if result is None:
-        await delete_speeds(db, race_id)
+        if sink is None:
+            await delete_speeds(db, race_id)
         return 0
 
     cfg = await spd.load_speed_config(db, layout_id)
@@ -114,7 +135,9 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             except Exception:
                 pass
         gap_by_node = {n: g for n, g in _snap_gap.items() if g}
-    max_speed_ms = cfg.get("max_speed_ms")    # コース別の実用上限（None→既定 40km/h）
+    # ★20261118 コース設定の固定上限は使わない（統計フィルタ＋安全上限100km/hのみ）。
+    #   設定値に依存しないので、後から設定を変えても過去レースの速度は変わらない。
+    max_speed_ms = None
 
     # 1周の距離 = 合計距離 ÷ 周回数（周回数はレースの target_laps）
     laps_n = race["target_laps"] or 0
@@ -169,38 +192,124 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
                 pass_index = {}
 
     def _pass_speed(lane, lap, idx):
+        """(速度m/s or None, ノードID)。安全上限(100km/h)のみ適用。"""
         if ev_for:
             rec = ev_by_id.get(ev_for.get((lane, lap, idx)))
         else:
             # レース結果がイベントidを持たない旧データだけ旧方式で引く
             rec = pass_index.get((lane, lap, idx))
         if not rec:
-            return None
-        # 絶対上限（コース別 max_speed_ms・既定 40km/h）をここで適用
-        return spd.pass_speed_ms(rec[0], rec[1], gap_by_node.get(rec[2]), max_speed_ms)
+            return None, None
+        return spd.pass_speed_ms(rec[0], rec[1], gap_by_node.get(rec[2]), max_speed_ms), rec[2]
 
-    # --- 1st pass: レース全体のビーム通過速度を集める（絶対上限は適用済み）---
-    #     相対フィルタの基準（中央値）を作るため、先に全レーン分を集計する。
+    # --- 1st pass: レース全体のビーム通過速度を集める（安全上限のみ適用）---
     beam_samples: dict = {}          # (lane, lap, idx) -> speed[m/s]
+    beam_node: dict = {}             # (lane, lap, idx) -> node_id
     for m in result.ranking():
         lane = m.start_lane
         for lap in m.laps:
             if lap.lap >= 2:
-                sg = _pass_speed(lane, lap.lap, 0)
+                sg, nd = _pass_speed(lane, lap.lap, 0)
                 if sg is not None:
                     beam_samples[(lane, lap.lap, 0)] = sg
+                    beam_node[(lane, lap.lap, 0)] = nd
             for idx in range(len(lap.sectors)):
                 sno = idx + 1
-                sp = _pass_speed(lane, lap.lap, sno)
+                sp, nd = _pass_speed(lane, lap.lap, sno)
                 if sp is not None:
                     beam_samples[(lane, lap.lap, sno)] = sp
+                    beam_node[(lane, lap.lap, sno)] = nd
 
-    # 相対の足切り値 = 同レース中央値 × REL_K（早い方向の逸脱を排除）
+    # --- 基準速度 ref（速い側の統計。遅い車に引っ張られない）---
+    #   ref_course = 同コース（同 layout_id・同合計距離）の過去レースのラップ平均 P95（COURSE_MIN_N 件以上）
+    #   このレースのラップ平均のうち「ありえる範囲」のものの最大を ref_race とする。
+    #     ありえる範囲 = ref_course × LAP_SANE_K 以下（履歴が無ければ このレースのラップ平均中央値 × LAP_SANE_K）
+    #     ※S/G の余分な打刻で「速すぎる周」が1本混ざると、最大値が化ける（実例 race378: 20m/s）ため。
+    #   ref = max(ref_race, ref_course)
+    #   ※通過速度の中央値を基準に使うのは廃止（全通過が揺れのレースで基準ごと膨らむ＝実例 race356）。
+    _lap_refs = []
+    for m in result.ranking():
+        for lap in m.laps:
+            _la = spd.lap_avg_speed_ms(lap.lap_time_us, per_lap_len_m, None)
+            if _la is not None:
+                _lap_refs.append(_la)
     _vals = list(beam_samples.values())
-    rel_cap = (statistics.median(_vals) * REL_K) if _vals else None
+    _ref = None
+    if _lap_refs:
+        _ref_course = None
+        try:
+            async with db.execute(
+                "SELECT s.value FROM timing_race_speeds s JOIN timing_races r ON r.id = s.race_id "
+                "WHERE s.metric = 'lap_avg' AND s.race_id <> ? AND r.layout_id IS ? "
+                "AND ABS(COALESCE(r.course_len_m, 0) - COALESCE(?, 0)) < 0.05",
+                (race_id, layout_id, total_len_m),
+            ) as _c:
+                _hist = sorted(r[0] for r in await _c.fetchall() if r[0] is not None)
+            if len(_hist) >= COURSE_MIN_N:
+                _ref_course = _hist[min(len(_hist) - 1, int(round(COURSE_PCT * (len(_hist) - 1))))]
+        except Exception:
+            _ref_course = None
+        _sane = (_ref_course if _ref_course else statistics.median(_lap_refs)) * LAP_SANE_K
+        _ok = [x for x in _lap_refs if x <= _sane]
+        _ref = max(_ok) if _ok else None
+        if _ref_course:
+            _ref = max(_ref or 0, _ref_course)
 
-    def _accept(v: float) -> bool:
-        return rel_cap is None or v <= rel_cap
+    # --- フィルタの係数（★20261118 学習調整：timing_speed_calib）---
+    #   レースごとに「使った係数」を timing_races.speed_params に記録し、再計算でも同じ係数を使う
+    #   （日次の自動調整で係数が変わっても、過去レースの速度は変わらない）。
+    #   params を明示で渡されたとき（校正の試算・強制再計算）だけそれを使う。
+    from app.application import timing_speed_calib as _calib
+    if params is None:
+        params = await _calib.params_for_race(db, race_id)
+    pass_k = float(params.get("pass_k", _calib.DEFAULTS["pass_k"]))
+    rel_k = float(params.get("rel_k", _calib.DEFAULTS["rel_k"]))
+    node_med_k = float(params.get("node_med_k", _calib.DEFAULTS["node_med_k"]))
+    node_rel_k = float(params.get("node_rel_k", _calib.DEFAULTS["node_rel_k"]))
+    node_base = params.get("node_base") or {}
+
+    # ノード別の中央値（このレース内）。外れはノード（機器）ごとに出るため、ノード単位で見る。
+    _by_node: dict = {}
+    for k, v in beam_samples.items():
+        _by_node.setdefault(beam_node.get(k), []).append(v)
+    node_med = {n: statistics.median(vs) for n, vs in _by_node.items() if len(vs) >= NODE_MIN_N}
+    # ノード健全性：ノード中央値/ref が、そのノードの基準線 node_base × node_rel_k を超えたら
+    #   そのノード全体がずれている（ビーム揺れ・センサー幅の誤設定など）→ このレースでは不採用。
+    #   基準線の無いノード（新設など）は絶対線 node_med_k を使う。
+    bad_nodes = set()
+    if _ref:
+        for n, md in node_med.items():
+            _b = node_base.get(str(n))
+            _line = (_b * node_rel_k) if _b else node_med_k
+            if md > _ref * _line:
+                bad_nodes.add(n)
+
+    if _ref:
+        rel_cap = _ref * rel_k
+    else:
+        rel_cap = (statistics.median(_vals) * REL_K) if _vals else None
+
+    if sink is not None:
+        # 校正用：生の材料だけ返して保存しない
+        sink.update({"race_id": race_id, "layout_id": layout_id, "ref": _ref,
+                     "samples": [(beam_node.get(k), k[1], k[2], v) for k, v in beam_samples.items()],
+                     "lap_refs": _lap_refs})
+        return 0
+
+    _accepted = set()
+    for k, v in beam_samples.items():
+        nd = beam_node.get(k)
+        if nd in bad_nodes:
+            continue
+        if rel_cap is not None and v > rel_cap:
+            continue
+        md = node_med.get(nd)
+        if md is not None and v > md * pass_k:
+            continue
+        _accepted.add(k)
+
+    def _accept_key(k) -> bool:
+        return k in _accepted
 
     rows: list[tuple] = []   # (start_lane, metric, lap, sector_no, value)
 
@@ -220,7 +329,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             # S/G通過(0) の速度（2周目以降のみ意味を持つ）
             if lap.lap >= 2:
                 sg = beam_samples.get((lane, lap.lap, 0))
-                if sg is not None and _accept(sg):
+                if sg is not None and _accept_key((lane, lap.lap, 0)):
                     speeds_all.append(sg)
                     rows.append((lane, "sector_ms", lap.lap, 0, sg))
 
@@ -228,7 +337,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             for idx in range(len(lap.sectors)):
                 sno = idx + 1
                 sp = beam_samples.get((lane, lap.lap, sno))
-                if sp is not None and _accept(sp):
+                if sp is not None and _accept_key((lane, lap.lap, sno)):
                     speeds_all.append(sp)
                     rows.append((lane, "sector_ms", lap.lap, sno, sp))
 
@@ -242,6 +351,7 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
             rows.append((lane, "max_ms", NO, NO, round(max(speeds_all), 2)))
 
     await delete_speeds(db, race_id)
+    await _calib.remember_params(db, race_id, params)
     for (lane, metric, lap, sno, val) in rows:
         await db.execute(
             "INSERT OR REPLACE INTO timing_race_speeds "

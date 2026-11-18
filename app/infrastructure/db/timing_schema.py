@@ -308,6 +308,10 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
         if "layout_json" not in cols:
             await db.execute("ALTER TABLE timing_races ADD COLUMN layout_json TEXT")
+        # ★20261118 速度フィルタの係数（timing_speed_calib）を、そのレースの計算に使った値で記録する。
+        #   日次の自動校正で係数が変わっても、過去レースの再計算は記録済みの係数で行う。
+        if "speed_params" not in cols:
+            await db.execute("ALTER TABLE timing_races ADD COLUMN speed_params TEXT")
     except Exception:
         pass
     await db.commit()

@@ -27,7 +27,11 @@ from app.domain.rotation import LANES, build_course, identify_start_lane
 #   もっと速いレギュ/コースは timing_layouts.max_speed_ms で個別に上書きする。
 MIN_SPEED_MS = 0.5
 MAX_SPEED_MS = 30.0                 # 後方互換（未使用の旧フォールバック値）
-MAX_PASS_SPEED_MS_DEFAULT = 11.1    # 実用上限の既定 [m/s] = 40km/h（timing_layouts.max_speed_ms で上書き）
+# ★20261118 固定の実用上限(40km/h)は廃止。40km/h を超える走行もあり得るため、正常値まで
+#   切り捨てていた。異常値の除外は timing_race_speed_store の統計フィルタ（同レース全車の
+#   ラップ平均の中央値×REL_K）が担い、ここは「物理的にありえない値」だけを落とす安全上限。
+#   ビーム揺れ由来のサブms打刻（例 0.1ms→270m/s）はこの上限で確実に落ちる。
+MAX_PASS_SPEED_MS_DEFAULT = 27.8    # 安全上限 [m/s] = 100km/h（timing_layouts.max_speed_ms は参照しない）
 
 
 def _cap(max_speed_ms: float | None) -> float:

@@ -230,6 +230,9 @@ async def startup():
         # DB自動バックアップ（毎晩03:30 JST・14世代保持）をクラウド版で開始
         from app.services import backup_scheduler
         backup_scheduler.launch()
+        # ★20261118 通過速度フィルタの係数を毎日自動校正（04:20 JST・全店舗）
+        from app.services import speed_calib_scheduler
+        speed_calib_scheduler.launch()
         print(f"[APP] 起動完了（クラウド版 / 複数店舗 {len(stores)}件 / "
               f"DEPLOY_MODE={DEPLOY_MODE}）"
               f"{' / ' + PUBLIC_BASE_URL if PUBLIC_BASE_URL else ''}", flush=True)
