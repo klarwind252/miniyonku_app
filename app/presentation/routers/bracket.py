@@ -4561,10 +4561,13 @@ async def _prefill_next_round(tid: int, round_id: int, round_no: int, db: aiosql
 
     # 次ラウンドの全スロットをグループ順・スロット順で取得
     async with db.execute(
+        # ★20261118 枠の並びは「作成順（bs.id）」で固定する。slot_no は出走レーンで、
+        #   決勝カードのD&Dで入れ替えられる。slot_no 順で勝者を割り当てると、レーン変更後に
+        #   この仮反映が走るたび（結果保存・取消など）勝者が元のレーンへ戻されていた。
         """SELECT bs.id as slot_id, bs.entry_id, bg.group_no, bs.slot_no
            FROM bracket_slots bs
            JOIN bracket_groups bg ON bg.id=bs.group_id
-           WHERE bg.round_id=? ORDER BY bg.group_no, bs.slot_no""",
+           WHERE bg.round_id=? ORDER BY bg.group_no, bs.id""",
         (next_round["id"],),
     ) as cur:
         all_next_slots = [dict(r) for r in await cur.fetchall()]
@@ -4705,7 +4708,7 @@ async def _prefill_next_round(tid: int, round_id: int, round_no: int, db: aiosql
     for s in non_seed_slots:
         next_groups_nonseed.setdefault(s["group_no"], []).append(s)
     for gno in next_groups_nonseed:
-        next_groups_nonseed[gno].sort(key=lambda x: x.get("slot_no", 0))
+        next_groups_nonseed[gno].sort(key=lambda x: x.get("slot_id", 0))   # ★20261118 レーン(slot_no)ではなく作成順
     ordered_next_group_nos = sorted(next_groups_nonseed.keys())
 
     placed_this_run: set = set()
