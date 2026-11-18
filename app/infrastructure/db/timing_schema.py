@@ -297,4 +297,17 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
                 " WHERE course_len_m IS NULL")
     except Exception:
         pass
+    # ★20261118 既存DBへの追加列（layout_json）: レース生成時点のコース構成（通過順の SG/SQ/LC と
+    #   ノード・ビーム間隔）を JSON で固定する。build_race_result は従来からこの列を最優先で読む
+    #   設計だったが、書き込み側が未実装で常に「現在のレイアウト」で解釈されていた。
+    #   → レース後にセクターゲートを足す/並べ替えると、過去レースの全周が「SQ欠け」になり
+    #     セクターが全消えしていた（arcadebase 大会32）。
+    #   既存レースは当時の構成が分からないため埋めない（NULL＝従来どおり現在のレイアウト）。
+    #   過去分は tools/fix_race_layout.py で当時の構成を推定・設定する。
+    try:
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(timing_races)")).fetchall()]
+        if "layout_json" not in cols:
+            await db.execute("ALTER TABLE timing_races ADD COLUMN layout_json TEXT")
+    except Exception:
+        pass
     await db.commit()

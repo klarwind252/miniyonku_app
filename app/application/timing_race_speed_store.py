@@ -84,6 +84,36 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
     except Exception:
         pass
     gap_by_node = cfg.get("beam_gap_by_node") or {}
+    # ★20261118 レース生成時に固定したコース構成（layout_json）があれば、そのノードと
+    #   センサー幅を使う（後でレイアウトや台帳を変えても、このレースの速度は変わらない）。
+    #   固定値にセンサー幅が無いノードだけ台帳の値で補う（旧スナップショット互換）。
+    snap_elems = None
+    try:
+        async with db.execute(
+            "SELECT layout_json FROM timing_races WHERE id=?", (race_id,)
+        ) as _c:
+            _lr = await _c.fetchone()
+        if _lr is not None and _lr[0]:
+            import json as _json
+            snap_elems = _json.loads(_lr[0])
+    except Exception:
+        snap_elems = None
+    if snap_elems:
+        _snap_gap = {e.get("node_id"): e.get("beam_gap_mm") for e in snap_elems
+                     if e.get("node_id") is not None}
+        _need = [n for n, g in _snap_gap.items() if not g]
+        if _need:
+            try:
+                _ph = ",".join("?" * len(_need))
+                async with db.execute(
+                    f"SELECT node_id, sensor_width_mm FROM timing_devices WHERE node_id IN ({_ph})", _need
+                ) as _c:
+                    for _d in await _c.fetchall():
+                        if _d["sensor_width_mm"]:
+                            _snap_gap[_d["node_id"]] = _d["sensor_width_mm"]
+            except Exception:
+                pass
+        gap_by_node = {n: g for n, g in _snap_gap.items() if g}
     max_speed_ms = cfg.get("max_speed_ms")    # コース別の実用上限（None→既定 40km/h）
 
     # 1周の距離 = 合計距離 ÷ 周回数（周回数はレースの target_laps）
@@ -127,8 +157,11 @@ async def compute_and_store_speeds(db, race_id: int) -> int:
                 prev_end = lap.sectors[-1].to_event_id if lap.sectors else None
                 prev_lap = lap.lap
 
-        elems = await lrepo.get_elements(layout_id)
-        layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems]
+        if snap_elems:
+            layout_elems = [LayoutElement(kind=e["kind"], node_id=e.get("node_id")) for e in snap_elems]
+        else:
+            elems = await lrepo.get_elements(layout_id)
+            layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"]) for e in elems]
         if layout_elems:
             try:
                 pass_index = spd.build_pass_index(layout_elems, evs)

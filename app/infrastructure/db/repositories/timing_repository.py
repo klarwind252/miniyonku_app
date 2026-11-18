@@ -191,11 +191,48 @@ class TimingRaceRepository:
                     course_len_m = _lr[0]
             except Exception:
                 course_len_m = None
-        cur = await self.db.execute(
-            "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m),
-        )
+        # ★20261118 その時点のコース構成（通過順の SG/SQ/LC・ノード・ビーム間隔）も固定する。
+        #   後でレイアウトを編集しても、このレースは走った時の構成で解釈される。
+        layout_json = None
+        if layout_id is not None:
+            try:
+                import json as _json
+                async with self.db.execute(
+                    "SELECT kind, node_id, beam_gap_mm FROM timing_layout_elements "
+                    "WHERE layout_id = ? ORDER BY position", (layout_id,)
+                ) as _c:
+                    _els = await _c.fetchall()
+                if _els:
+                    # センサー幅（ダブルセンサー間隔）は機器台帳の値をレース時点で固定する
+                    _w = {}
+                    try:
+                        async with self.db.execute(
+                            "SELECT node_id, sensor_width_mm FROM timing_devices"
+                        ) as _c2:
+                            for _d in await _c2.fetchall():
+                                if _d["sensor_width_mm"]:
+                                    _w[_d["node_id"]] = _d["sensor_width_mm"]
+                    except Exception:
+                        _w = {}
+                    layout_json = _json.dumps(
+                        [{"kind": e["kind"], "node_id": e["node_id"],
+                          "beam_gap_mm": (_w.get(e["node_id"]) or e["beam_gap_mm"])}
+                         for e in _els], ensure_ascii=False)
+            except Exception:
+                layout_json = None
+        try:
+            cur = await self.db.execute(
+                "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m, layout_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m, layout_json),
+            )
+        except Exception:
+            # layout_json 列が未作成の旧DB（起動時マイグレーション前）でもレース生成は止めない
+            cur = await self.db.execute(
+                "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m),
+            )
         await self.db.commit()
         return cur.lastrowid
 
