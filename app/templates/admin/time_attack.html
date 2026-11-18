@@ -166,8 +166,8 @@ function m4ForceReload(){try{var u=new URL(location.href);u.searchParams.set('_'
         {% if show_m4 %}
         <tr>
           <th colspan="7"></th>
-          <th class="bsep center">TIME</th><th class="center">GAP</th><th class="center">Av.</th><th class="center">MAX</th>
-          <th class="bsep center">TIME</th><th class="center">Av.</th>
+          <th class="bsep center">TIME</th><th class="center">GAP</th><th class="center">Av.(m/s)</th><th class="center">MAX(km/h)</th>
+          <th class="bsep center">TIME</th><th class="center">Av.(m/s)</th>
           {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep center"{% else %} class="center"{% endif %}>{{ n }}</th>{% endfor %}
         </tr>
         {% endif %}

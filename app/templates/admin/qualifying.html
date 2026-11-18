@@ -2245,8 +2245,8 @@ document.addEventListener('DOMContentLoaded', function(){
           <tr>
             {% if _pt_grouping %}<th>グループ</th>{% endif %}<th>#</th><th>順位</th><th>レーサー</th><th>ポイント</th><th>出走</th><th>完走</th><th>完走率</th><th style="text-align:center">決勝</th>
             {% if show_best %}
-            <th class="bsep">TIME</th><th>GAP</th><th>Av.</th><th>MAX</th>
-            <th class="bsep">TIME</th><th>Av.</th>
+            <th class="bsep">TIME</th><th>GAP</th><th>Av.(m/s)</th><th>MAX(km/h)</th>
+            <th class="bsep">TIME</th><th>Av.(m/s)</th>
             {% for n in range(1, max_sector_no + 1) %}<th{% if n == 1 %} class="bsep"{% endif %}>{{ n }}</th>{% endfor %}
             {% endif %}
           </tr>
