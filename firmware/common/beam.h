@@ -17,6 +17,14 @@
 #include <Preferences.h>
 #include "esp_timer.h"
 
+#ifndef BEAM_DIAG
+#define BEAM_DIAG 0      // ★20261120 1=診断版（A/B遮光時間を [DIAG] でシリアル出力）。通常は0
+#endif
+#if BEAM_DIAG
+#include "soc/soc.h"
+#include "soc/gpio_reg.h"
+#endif
+
 namespace beam {
 
 // ---- レーン数とピン（docs/03・07）-----------------------------------------
@@ -88,16 +96,80 @@ static volatile uint64_t s_b_last[LANES] = {0};
 
 static inline uint64_t now_us() { return (uint64_t)esp_timer_get_time(); }
 
+// ============================================================================
+// ★20261120 診断版（BEAM_DIAG=1 のときだけ有効・通常ビルドは従来と同一のコード）
+//   目的：1回の通過で A と B の「遮光時間」が一致しているかを見る（速い値が本物か、Bの早切れかの判定）。
+//   ・遮光の始まり(FALLING)の打刻・通過確定・送信は従来と同じロジックのまま（下の isr_a/isr_b 参照）。
+//   ・追加で、戻り(RISING)の時刻と、通過中に何回切れたか（穴またぎの回数）を記録し、
+//     通過が終わった（再武装した）瞬間に [DIAG] 1行をシリアルへ出す。
+//   ・ISRは CHANGE で張り、ISR内でピンのレベルを直接レジスタから読んで「切れた/戻った」を判別する。
+// ============================================================================
+#if BEAM_DIAG
+// ピン番号はコンパイル時定数で渡す（ISRがフラッシュ上の定数表を読まないように）
+static constexpr int diag_pin_a(int l) { return l == 0 ? 32 : (l == 1 ? 33 : 34); }   // = PIN_A
+static constexpr int diag_pin_b(int l) { return l == 0 ? 19 : (l == 1 ? 21 : 22); }   // = PIN_B
+static inline bool IRAM_ATTR diag_pin_low(int pin) {
+  uint32_t v = (pin < 32) ? REG_READ(GPIO_IN_REG) : REG_READ(GPIO_IN1_REG);
+  return ((v >> (pin & 31)) & 1u) == 0;   // 74HC14先：遮断=LOW
+}
+struct DiagBeam {
+  uint64_t fall0;   // この通過で最初に切れた時刻
+  uint64_t rise0;   // 最初の遮光が戻った時刻（＝1回目の遮光の長さ）
+  uint64_t rise_last; // 最後に戻った時刻（＝通過全体の長さ）
+  uint16_t falls;   // 切れた回数（穴またぎ・ノイズなら2以上）
+};
+static volatile DiagBeam s_dA[LANES] = {};
+static volatile DiagBeam s_dB[LANES] = {};
+static inline void IRAM_ATTR diag_edge(volatile DiagBeam& d, bool low, uint64_t t) {
+  if (low) { if (d.fall0 == 0) d.fall0 = t; if (d.falls < 0xFFFF) d.falls++; }
+  else if (d.fall0 != 0) { if (d.rise0 == 0) d.rise0 = t; d.rise_last = t; }
+}
+static void diag_reset(int i) {
+  noInterrupts();
+  s_dA[i].fall0 = 0; s_dA[i].rise0 = 0; s_dA[i].rise_last = 0; s_dA[i].falls = 0;
+  s_dB[i].fall0 = 0; s_dB[i].rise0 = 0; s_dB[i].rise_last = 0; s_dB[i].falls = 0;
+  interrupts();
+}
+// 通過が終わった（再武装した）ときに1行出す。単位 µs。速度は 30mm 前提の参考値。
+//   dAB = B最初の切れ − A最初の切れ（サーバーの速度計算に使う時間差と同じ）
+//   wA/wB = 1回目の遮光の長さ、WA/WB = 最初に切れてから最後に戻るまで、nA/nB = 切れた回数
+static void diag_print(int i) {
+  noInterrupts();
+  DiagBeam a = {s_dA[i].fall0, s_dA[i].rise0, s_dA[i].rise_last, s_dA[i].falls};
+  DiagBeam b = {s_dB[i].fall0, s_dB[i].rise0, s_dB[i].rise_last, s_dB[i].falls};
+  interrupts();
+  long dab = (a.fall0 && b.fall0) ? (long)((int64_t)b.fall0 - (int64_t)a.fall0) : 0;
+  long wA = (a.fall0 && a.rise0) ? (long)(a.rise0 - a.fall0) : 0;
+  long wB = (b.fall0 && b.rise0) ? (long)(b.rise0 - b.fall0) : 0;
+  long WA = (a.fall0 && a.rise_last) ? (long)(a.rise_last - a.fall0) : 0;
+  long WB = (b.fall0 && b.rise_last) ? (long)(b.rise_last - b.fall0) : 0;
+  float kmh = (dab > 0) ? (30.0f / 1000.0f) / (dab / 1e6f) * 3.6f : 0.0f;
+  float ratio = (wA > 0 && wB > 0) ? (float)wB / (float)wA : 0.0f;
+  Serial.printf("[DIAG] lane=%d dAB=%ld kmh=%.1f wA=%ld wB=%ld wB/wA=%.2f WA=%ld WB=%ld nA=%u nB=%u\n",
+                i + 1, dab, kmh, wA, wB, ratio, WA, WB, a.falls, b.falls);
+}
+#endif
+
 // レーンごとISR：74HC14経由で遮断=LOW。FALLINGで発火。
 // テンプレートで3レーン分を生成（引数なしISRにレーン番号を焼き込む）。
 template <int L> static void IRAM_ATTR isr_a() {
   uint64_t t = now_us();
+#if BEAM_DIAG
+  bool low = diag_pin_low(diag_pin_a(L));
+  diag_edge(s_dA[L], low, t);
+  if (!low) return;                 // 戻り(RISING)は記録だけ。以下は従来の FALLING 処理そのまま
+#endif
   if (t - s_a_last[L] < DEBOUNCE_US) return;
   s_a_last[L] = t;
   if (s_a_edge[L] == 0) s_a_edge[L] = t;
 }
 template <int L> static void IRAM_ATTR isr_b() {
   uint64_t t = now_us();
+#if BEAM_DIAG
+  bool low = diag_pin_low(diag_pin_b(L));
+  diag_edge(s_dB[L], low, t);
+  if (!low) return;                 // 戻り(RISING)は記録だけ。以下は従来の FALLING 処理そのまま
+#endif
   if (t - s_b_last[L] < DEBOUNCE_US) return;
   s_b_last[L] = t;
   if (s_b_edge[L] == 0) s_b_edge[L] = t;
@@ -128,12 +200,19 @@ static void begin() {
     pinMode(PIN_B[i], INPUT);
   }
   // 遮断=LOW立下り → FALLING。マスク外レーンはISRを張らない（浮きピン誤発火対策）。
-  if (lane_on(0)) { attachInterrupt(digitalPinToInterrupt(PIN_A[0]), isr_a<0>, FALLING);
-                    attachInterrupt(digitalPinToInterrupt(PIN_B[0]), isr_b<0>, FALLING); }
-  if (lane_on(1)) { attachInterrupt(digitalPinToInterrupt(PIN_A[1]), isr_a<1>, FALLING);
-                    attachInterrupt(digitalPinToInterrupt(PIN_B[1]), isr_b<1>, FALLING); }
-  if (lane_on(2)) { attachInterrupt(digitalPinToInterrupt(PIN_A[2]), isr_a<2>, FALLING);
-                    attachInterrupt(digitalPinToInterrupt(PIN_B[2]), isr_b<2>, FALLING); }
+  //   ★20261120 診断版(BEAM_DIAG=1)だけ CHANGE（戻りの時刻も取る）。通常ビルドは FALLING のまま。
+#if BEAM_DIAG
+#define BEAM_ISR_MODE CHANGE
+  Serial.println("[BEAM] DIAG build: A/B block widths are logged as [DIAG]");
+#else
+#define BEAM_ISR_MODE FALLING
+#endif
+  if (lane_on(0)) { attachInterrupt(digitalPinToInterrupt(PIN_A[0]), isr_a<0>, BEAM_ISR_MODE);
+                    attachInterrupt(digitalPinToInterrupt(PIN_B[0]), isr_b<0>, BEAM_ISR_MODE); }
+  if (lane_on(1)) { attachInterrupt(digitalPinToInterrupt(PIN_A[1]), isr_a<1>, BEAM_ISR_MODE);
+                    attachInterrupt(digitalPinToInterrupt(PIN_B[1]), isr_b<1>, BEAM_ISR_MODE); }
+  if (lane_on(2)) { attachInterrupt(digitalPinToInterrupt(PIN_A[2]), isr_a<2>, BEAM_ISR_MODE);
+                    attachInterrupt(digitalPinToInterrupt(PIN_B[2]), isr_b<2>, BEAM_ISR_MODE); }
   // 起動時 自己診断ログ（HIGH=受光中/LOW=未受光。LED未点灯直後はLOWでも正常）
   Serial.printf("[BEAM] mask=0x%X  ", s_mask);
   for (int i = 0; i < LANES; i++) {
@@ -241,6 +320,9 @@ static bool poll(Hit& out) {
         s_open_since[i] = t;                        // 両方開いた瞬間から連続開を計測開始
       } else if (t - s_open_since[i] >= CLEAR_US) {
         s_pass_latched[i] = false; s_open_since[i] = 0;   // 連続開が続いた→再武装
+#if BEAM_DIAG
+        diag_print(i); diag_reset(i);                     // ★診断：通過が終わった時点で1行出す
+#endif
       }
       // ラッチ中に溜まったエッジは通過ではない（同一車の残響・空洞）→読み捨てる
       noInterrupts(); s_a_edge[i] = 0; s_b_edge[i] = 0; interrupts();
@@ -291,6 +373,9 @@ static void flush() {
     s_stick_fired[i]  = false;
     s_pass_latched[i] = false;
     s_open_since[i]   = 0;
+#if BEAM_DIAG
+    diag_reset(i);
+#endif
   }
 }
 

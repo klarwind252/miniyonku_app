@@ -221,9 +221,10 @@ class TimingRaceRepository:
             except Exception:
                 layout_json = None
         try:
+            # ★20261120 skip_absent=1：このレースは「通過0件のSE」を無いものとして組み立てる（新規レースのみ）
             cur = await self.db.execute(
-                "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m, layout_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO timing_races (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m, layout_json, skip_absent) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
                 (heat_tag, layout_id, target_laps, green_t_us, client_key, sample_note, course_len_m, layout_json),
             )
         except Exception:
@@ -235,6 +236,24 @@ class TimingRaceRepository:
             )
         await self.db.commit()
         return cur.lastrowid
+
+    # ★20261120 同一通過の重複保存を防ぐ（A1）。
+    #   ノードの再送で同じ通過が seq だけ変わって届くことがあり（実データ：同じ t_us が最大4行）、
+    #   冪等キー (device_id, src, src_boot_id, seq) をすり抜けていた。
+    #   同じレース・同じノード・同じ物理レーンで打刻差 1ms 未満の通過は物理的に起きないので、
+    #   既にあれば保存しない（重複として数える）。既存の行には触らない。
+    NEAR_DUP_US = 1000
+
+    async def _is_near_duplicate(self, race_id: int, src: int, lane: int, t_us: int) -> bool:
+        try:
+            async with self.db.execute(
+                "SELECT 1 FROM timing_events WHERE race_id = ? AND src = ? AND lane = ? "
+                "AND t_us > ? AND t_us < ? LIMIT 1",
+                (race_id, src, lane, t_us - self.NEAR_DUP_US, t_us + self.NEAR_DUP_US),
+            ) as cur:
+                return (await cur.fetchone()) is not None
+        except Exception:
+            return False
 
     async def insert_events_batch(self, race_id: int, events: list) -> tuple[int, int]:
         """イベント一括挿入（単一トランザクション）。戻り値 (inserted, duplicate)。
@@ -250,6 +269,9 @@ class TimingRaceRepository:
                 lane = int(ev["lane"])
                 if not (1 <= lane <= 8):
                     raise ValueError(f"lane out of range: {lane}")
+                if await self._is_near_duplicate(race_id, int(ev["src"]), lane, int(ev["t_us"])):
+                    duplicate += 1
+                    continue
                 cur = await self.db.execute(
                     "INSERT OR IGNORE INTO timing_events "
                     "(race_id, device_id, src, src_boot_id, seq, lane, t_us, t_us_b, quality) "
@@ -435,6 +457,8 @@ class TimingRaceRepository:
         戻り値: True=新規挿入 / False=重複（既にある）
         ev: {device_id, src, src_boot_id, seq, lane, t_us, t_us_b?, quality?}
         """
+        if await self._is_near_duplicate(race_id, int(ev["src"]), int(ev["lane"]), int(ev["t_us"])):
+            return False
         cur = await self.db.execute(
             "INSERT OR IGNORE INTO timing_events "
             "(race_id, device_id, src, src_boot_id, seq, lane, t_us, t_us_b, quality) "

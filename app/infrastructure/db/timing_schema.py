@@ -312,6 +312,11 @@ async def ensure_timing_schema(db: aiosqlite.Connection) -> None:
         #   日次の自動校正で係数が変わっても、過去レースの再計算は記録済みの係数で行う。
         if "speed_params" not in cols:
             await db.execute("ALTER TABLE timing_races ADD COLUMN speed_params TEXT")
+        # ★20261120 不在SEの扱い（skip_absent）: 1 のレースは「そのレースで通過を1件も送ってこなかった
+        #   セクターゲート(SE)」を無いものとして組み立てる（区間は合算して詰める）。
+        #   レース作成時に 1 を立てる。既存レースは NULL のまま＝従来どおり（表示・再計算とも不変）。
+        if "skip_absent" not in cols:
+            await db.execute("ALTER TABLE timing_races ADD COLUMN skip_absent INTEGER")
     except Exception:
         pass
     await db.commit()

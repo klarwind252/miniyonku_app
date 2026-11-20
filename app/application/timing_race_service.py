@@ -99,10 +99,14 @@ async def build_race_result(db, race_id: int):
     #   layout_id から現在のレイアウトを引く（旧レコード後方互換）。
 
     # ---- キャッシュ照合（組み立てに効く入力だけで指紋を作る）----
+    try:
+        _skip_absent = bool(race["skip_absent"]) if "skip_absent" in race.keys() else False
+    except Exception:
+        _skip_absent = False
     key = (
         _db_identity(db), race_id,
         race["layout_id"], race["target_laps"], race["green_t_us"], race["heat_tag"],
-        _lj or "", n_ev, mx_ev,
+        _lj or "", n_ev, mx_ev, _skip_absent,
     )
     cached = _cache_get(key)
     if cached is not _MISS:
@@ -152,6 +156,17 @@ async def build_race_result(db, race_id: int):
         for r in ev_rows
     ]
 
+    # ★20261120 不在SEは無いものとして組み立てる（skip_absent=1 のレース＝この機能の導入後に作成した分だけ）。
+    #   そのレースで通過を1件も送ってこなかったセクターゲート(SQ)をレイアウトから外す。
+    #   S/G・レーンチェンジ(LC)は残すので、レーン追跡（どの車か）は変わらない。区間は自然に合算・詰めになる。
+    #   既存レース（skip_absent が NULL）は従来どおりレイアウト全体で組み立てる＝表示・再計算とも不変。
+    reduced = False
+    if _skip_absent:
+        present = {e.node_id for e in events}
+        eff = [el for el in layout if not (el.kind == "SQ" and el.node_id not in present)]
+        reduced = len(eff) != len(layout)
+        layout = eff
+
     result = build_race(
         layout,
         events,
@@ -159,6 +174,9 @@ async def build_race_result(db, race_id: int):
         green_t_us=race["green_t_us"],
         heat_id=race["heat_tag"],
     )
+    if _skip_absent:
+        result.layout_used = list(layout)
+        result.sectors_reduced = reduced
     _cache_put(key, result)
     return race, result
 

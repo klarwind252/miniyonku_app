@@ -1644,6 +1644,10 @@ async def race_position_chart(
     elem_rows = await lrepo.get_elements(race["layout_id"])
     layout_elems = [LayoutElement(kind=e["kind"], node_id=e["node_id"])
                     for e in elem_rows]
+    # ★20261120 不在SEを除いて組み立てたレース（skip_absent）は、組み立てに使った実効レイアウトで描く
+    #   （ゲート数が結果の区間数と一致する）。既存レースは従来どおり。
+    if getattr(result, "layout_used", None):
+        layout_elems = list(result.layout_used)
 
     chart = build_position_chart(race, result, layout_elems)
 
@@ -1946,11 +1950,12 @@ def rows_for_race(race, result, stored: dict, bst: dict, *, list_row=None) -> li
                     if idx + 1 > 7:
                         break
                     sp = _pass_speed(m.start_lane, lap.lap, idx + 1)
+                    _red = getattr(result, "sectors_reduced", False)   # ★20261120 区間を詰めたレースは区間ベスト判定なし
                     sectors[idx + 1] = {
                         "s": round(sec.dt_us / 1e6, 3), "ms": sp, "sg": False,
                         # その日のベストか（タイムは最小・速度は最大）。区間ごとに独立して判定。
-                        "rank_s": _best_rank(sec.dt_us / 1e6, bst.get(best_svc.sector_metric(idx + 1))),
-                        "rank_ms": _best_rank(sp, bst.get(best_svc.sector_speed_metric(idx + 1))),
+                        "rank_s": 0 if _red else _best_rank(sec.dt_us / 1e6, bst.get(best_svc.sector_metric(idx + 1))),
+                        "rank_ms": 0 if _red else _best_rank(sp, bst.get(best_svc.sector_speed_metric(idx + 1))),
                     }
             lap_avg = (stored["lap"].get((m.start_lane, lap.lap)) if lap is not None else None)
             rows.append({

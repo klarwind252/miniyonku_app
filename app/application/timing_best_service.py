@@ -130,12 +130,15 @@ def collect_from_result(result, race_id: int, speed_fn, lap_avg_fn,
                 sno = idx + 1
                 if sno > MAX_SECTORS:
                     break
-                # 区間ごとに独立した metric へ入れる（S1はS1の中だけで競う）
-                put(sector_metric(sno), sec.dt_us / 1e6, start_lane=m.start_lane,
-                    lap=lap.lap, sector_no=sno)
                 sp = speed_fn(race_id, m.start_lane, idx, lap.lap)
-                put(sector_speed_metric(sno), sp, start_lane=m.start_lane,
-                    lap=lap.lap, sector_no=sno)
+                # ★20261120 不在SEで区間を詰めたレースは、区間番号の中身がレイアウトと一致しない
+                #   ので区間ごとのベストには入れない（最高速 max_ms は場所によらないので入れる）。
+                if not getattr(result, "sectors_reduced", False):
+                    # 区間ごとに独立した metric へ入れる（S1はS1の中だけで競う）
+                    put(sector_metric(sno), sec.dt_us / 1e6, start_lane=m.start_lane,
+                        lap=lap.lap, sector_no=sno)
+                    put(sector_speed_metric(sno), sp, start_lane=m.start_lane,
+                        lap=lap.lap, sector_no=sno)
                 # 最高速は全区間を通じた最大（こちらは横断で正しい）
                 put("max_ms", sp, start_lane=m.start_lane,
                     lap=lap.lap, sector_no=sno)

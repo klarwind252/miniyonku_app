@@ -296,7 +296,9 @@ async def scan_tournament_metrics(db, tournament_id: int,
                 _put(entry_id, "lap_avg", _lavg)
                 if _zorome_hit(speed_ms=_lavg):
                     _zorome_pairs.add((entry_id, _hid))
-                for idx, sec in enumerate(lap.sectors):
+                # ★20261120 不在SEで区間を詰めたレースは区間番号の中身がレイアウトと一致しないので
+                #   区間の記録（区間タイム/区間速度/区間ゾロ目）には使わない。
+                for idx, sec in enumerate([] if getattr(result, "sectors_reduced", False) else lap.sectors):
                     sno = idx + 1
                     if sno > best_svc.MAX_SECTORS:
                         break

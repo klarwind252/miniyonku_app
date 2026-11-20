@@ -125,6 +125,11 @@ class RaceResult:
     mode: StartMode
     target_laps: int
     machines: dict[int, MachineResult] = field(default_factory=dict)  # start_lane -> result
+    # ★20261120 不在SEを除いて組み立てたとき（skip_absent レースのみ）に使った実効レイアウト。
+    #   None＝レイアウトどおり（従来）。sectors_reduced=True＝区間を合算して詰めたレース
+    #   （セクター番号の中身がレイアウトの並びと一致しないので、区間ベスト・記録の対象外）。
+    layout_used: list | None = None
+    sectors_reduced: bool = False
 
     def ranking(self) -> list[MachineResult]:
         """合計タイムの昇順（完了者優先）。未完了は末尾。"""
