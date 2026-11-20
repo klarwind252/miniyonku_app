@@ -164,8 +164,11 @@ async def build_race_result(db, race_id: int):
     if _skip_absent:
         present = {e.node_id for e in events}
         eff = [el for el in layout if not (el.kind == "SQ" and el.node_id not in present)]
-        reduced = len(eff) != len(layout)
-        layout = eff
+        # ★20261120b 動いているSEが1台も無いレースは詰めない（＝従来どおりセクターは「—」）。
+        #   全部外すと「1周＝1区間」になり、SECTOR 1 に1周タイムが出てしまうため。
+        if any(el.kind == "SQ" for el in eff):
+            reduced = len(eff) != len(layout)
+            layout = eff
 
     result = build_race(
         layout,
